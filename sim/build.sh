@@ -7,7 +7,7 @@
 #   out/sim/scripts/<Name>.dll + manifest.tsv   every scripts/*.cs, wrapped like the PB does
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$ROOT/out/sim"; SC="$OUT/scripts"; WRAP="$OUT/wrapped"
+OUT="${SIM_OUT:-$ROOT/out/sim}"; SC="$OUT/scripts"; WRAP="$OUT/wrapped"
 mkdir -p "$OUT" "$SC" "$WRAP"
 NOWARN="-nowarn:0169,0414,0649,0219"
 
