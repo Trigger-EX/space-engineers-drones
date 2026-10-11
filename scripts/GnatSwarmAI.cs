@@ -142,7 +142,7 @@ double _powerScale = 1, _batFrac = 1;
 bool _firing = false, _hadAmmo = false;
 int _scanIdx = 0;
 string _err = "";
-double _aimErrDeg, _latSpd, _avgMs;
+double _aimErrDeg, _latSpd, _avgMs; int _peakIns = 0;   // PB limit is Runtime.MaxInstructionCount per run
 StringBuilder _sb = new StringBuilder();
 
 public Program()
@@ -201,6 +201,7 @@ void Tick(string arg, UpdateType src)
     if (_rc == null || !_rc.IsFunctional) { _err = "No working Remote Control"; Display(); Release(); return; }
 
     ReadIGC(); ReadJoin();
+    StepSlimScan();
     if (_tick % 20 == 7) CheckDamage();
     if (_tick % 6 == 0) { Broadcast(); PollDesignators(); }
     if (_tick % 10 == 5) PollSensors();
@@ -210,6 +211,7 @@ void Tick(string arg, UpdateType src)
     if (_tgt == null && !_aiOn && AutoScan && _mode != Mode.IDLE && _mode != Mode.RTB) AutoScanStep();
     if (_tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0) ShareTarget();
     if (!AiStep()) Control(dt);
+    _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % 30 == 0) Display();
 }
 
@@ -782,6 +784,7 @@ void Display()
     _sb.Append("Sens : ").Append(_sensors.Count).Append("  desig ").Append(_turrets.Count + _ctcs.Count).Append('\n');
     _sb.Append("Thr  : fwd ").Append(_fwdThr.Count).Append(" rev ").Append(_revThr.Count).Append("  bat ").Append((_batFrac * 100).ToString("0")).Append("%\n");
     _sb.Append("Run  : ").Append(_avgMs.ToString("0.000")).Append(" ms\n");
+    _sb.Append("Ins  : ").Append(Runtime.CurrentInstructionCount).Append(" / ").Append(Runtime.MaxInstructionCount).Append("  peak ").Append(_peakIns).Append('\n');
     if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
     _sb.Append(HiveStatus());
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner\n");
@@ -955,19 +958,35 @@ double HiveScore(Track t)
 }
 
 // Every block's integrity; a drop means this drone is being hit.
+// Incremental: walking the whole bounding box in one tick blows the PB instruction limit once the drone is
+// merged into a printer (one huge grid). Starts a pass; StepSlimScan() does SlimCellsPerTick cells per tick.
+List<IMySlimBlock> _slimsNew = new List<IMySlimBlock>(); HashSet<Vector3I> _slimSeen = new HashSet<Vector3I>();
+IMyCubeGrid _slimsGrid, _scanGrid; bool _slimBusy = false; int _sx, _sy, _sz, _mnx, _mny, _mnz, _mxx, _mxy, _mxz;
+const int SlimCellsPerTick = 200, SlimMaxCells = 30000;
 void ScanSlims()
 {
-    _slims.Clear();
-    var g = Me.CubeGrid; var seen = new HashSet<Vector3I>();
+    var g = Me.CubeGrid;
+    if (_slimsGrid != g) { _slims.Clear(); _integ = -1; }
+    _slimBusy = false;
     Vector3I mn = g.Min, mx = g.Max;
-    for (int x = mn.X; x <= mx.X; x++) for (int y = mn.Y; y <= mx.Y; y++) for (int z = mn.Z; z <= mx.Z; z++)
+    if ((long)(mx.X - mn.X + 1) * (mx.Y - mn.Y + 1) * (mx.Z - mn.Z + 1) > SlimMaxCells) return;   // docked to something big: skip
+    _scanGrid = g; _slimsNew.Clear(); _slimSeen.Clear();
+    _mnx = mn.X; _mny = mn.Y; _mnz = mn.Z; _mxx = mx.X; _mxy = mx.Y; _mxz = mx.Z;
+    _sx = _mnx; _sy = _mny; _sz = _mnz; _slimBusy = true;
+}
+void StepSlimScan()
+{
+    if (!_slimBusy) return;
+    var g = _scanGrid;
+    if (g != Me.CubeGrid) { _slimBusy = false; return; }
+    for (int n = 0; n < SlimCellsPerTick; n++)
     {
-        var p = new Vector3I(x, y, z);
-        if (!g.CubeExists(p)) continue;
-        var s = g.GetCubeBlock(p);
-        if (s != null && seen.Add(s.Position)) _slims.Add(s);
+        var p = new Vector3I(_sx, _sy, _sz);
+        if (g.CubeExists(p)) { var s = g.GetCubeBlock(p); if (s != null && _slimSeen.Add(s.Position)) _slimsNew.Add(s); }
+        if (++_sz > _mxz) { _sz = _mnz; if (++_sy > _mxy) { _sy = _mny; if (++_sx > _mxx) { _slimBusy = false; break; } } }
     }
-    _integ = -1;
+    if (_slimBusy) return;
+    _slims.Clear(); _slims.AddRange(_slimsNew); _slimsGrid = g; _integ = -1;   // swap in the finished pass
 }
 void CheckDamage()
 {

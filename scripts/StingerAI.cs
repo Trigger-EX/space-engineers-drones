@@ -23,7 +23,7 @@ double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
 enum Mode { WAIT, HUNT, IDLE }
 Mode _mode = Mode.WAIT;
 MyIni _ini = new MyIni();
-double _now; long _tick;
+double _now; long _tick; int _peakIns = 0;   // PB limit is Runtime.MaxInstructionCount per run
 IMyShipController _rc;
 List<IMyGyro> _gyros = new List<IMyGyro>();
 List<IMyThrust> _fwd = new List<IMyThrust>();
@@ -148,6 +148,7 @@ void Tick(string arg, UpdateType src)
     bool docked = Docked();
     if (_mode == Mode.WAIT && !docked && AutoLaunch && Nearest() != null) Launch();
     if (_mode == Mode.HUNT) Hunt(dt);
+    _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % 20 == 0) Show();
 }
 
@@ -244,7 +245,8 @@ void Release()
 void Show()
 {
     string s = "STINGER v" + VER + "\nMode: " + _mode + (Docked() ? "  (docked)" : "") + "\nContacts: " + _contacts.Count +
-               "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") + "\n" + _status;
+               "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") + "\n" + _status +
+               "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);
 }

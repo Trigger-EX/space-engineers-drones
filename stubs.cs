@@ -1,4 +1,6 @@
-// Minimal stand-ins for the SE ingame API, matching real member names/types, for syntax/type checking only.
+// Minimal stand-ins for the SE ingame API (a SUBSET of Sandbox.ModAPI.Ingame / VRage / VRageMath), for type checking only.
+// Namespaces and member signatures follow the real API (MDK-SE api wiki, malforge pbapi, Keen SpaceEngineers source).
+// A script must never compile only because of a looser stub: see docs/script-audit.md for what was and was not verified.
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -44,7 +46,16 @@ namespace VRage {
 }
 namespace VRage.ObjectBuilders { public struct SerializableDefinitionId { public string SubtypeId {get{return "";}} } }
 namespace VRage.Game.Components { public class MyEntityComponentBase {} public class MyEntityComponentContainer { public bool TryGet<T>(out T c) where T: MyEntityComponentBase { c = null; return false; } } }
-namespace Sandbox.Game.EntityComponents { }
+namespace Sandbox.Game.EntityComponents { internal static class NsAnchor {} }
+namespace VRage.Collections { internal static class NsAnchor {} }
+namespace VRage.Game.ObjectBuilders.Definitions { internal static class NsAnchor {} }
+namespace SpaceEngineers.Game.ModAPI.Ingame {
+  using Sandbox.ModAPI.Ingame; using VRage.Game.ModAPI.Ingame;
+  public interface IMyShipMergeBlock : IMyFunctionalBlock { bool IsConnected {get;} }
+  public interface IMyTurretControlBlock : IMyFunctionalBlock { bool HasTarget {get;} MyDetectedEntityInfo GetTargetedEntity(); }
+  public interface IMySmallMissileLauncherReload : IMyUserControllableGun {}
+  public interface IMySmallGatlingGun : IMyUserControllableGun {}
+}
 namespace VRage.Game {
   public enum MyCubeSize : byte { Large, Small }
   public struct MyDefinitionId { public static MyDefinitionId Parse(string s){return new MyDefinitionId();} }
@@ -67,17 +78,24 @@ namespace VRage.Game.ModAPI.Ingame {
 }
 namespace VRage.Game.ModAPI.Ingame.Utilities {
   public struct MyIniValue { public string ToString(string d){return d;} public double ToDouble(double d){return d;} public bool ToBoolean(bool d){return d;} }
-  public struct MyIniParseResult { public int LineNo; }
+  public struct MyIniParseResult { public int LineNo; public bool Success; public Exception Error; }
   public class MyIni { public bool TryParse(string s, out MyIniParseResult r){r=new MyIniParseResult();return true;} public bool ContainsKey(string s,string k){return true;}
     public void Set(string s,string k,string v){} public void Set(string s,string k,double v){} public void Set(string s,string k,bool v){}
-    public MyIniValue Get(string s,string k){return new MyIniValue();} }
+    public MyIniValue Get(string s,string k){return new MyIniValue();} public override string ToString(){return "";} }
+}
+namespace Sandbox.ModAPI.Interfaces {
+  using Sandbox.ModAPI.Ingame;
+  public interface ITerminalProperty {}
+  public static class TerminalPropertyExtensions { }
 }
 namespace Sandbox.ModAPI.Ingame {
   using VRageMath; using VRage.Game.ModAPI.Ingame; using VRage.Game.GUI.TextPanel;
-  public interface ITerminalProperty {} public interface IMyTerminalBlock : IMyCubeBlock { ITerminalProperty GetProperty(string id); string CustomName {get;set;} string CustomData {get;set;} bool IsSameConstructAs(IMyTerminalBlock o); }
+  using Sandbox.ModAPI.Interfaces;
+  public interface IMyTerminalBlock : IMyCubeBlock { ITerminalProperty GetProperty(string id); string CustomName {get;set;} string CustomData {get;set;} bool IsSameConstructAs(IMyTerminalBlock o); }
   public interface IMyFunctionalBlock : IMyTerminalBlock { bool Enabled {get;set;} }
   public interface IMyTextSurface { ContentType ContentType {get;set;} float FontSize {get;set;} string Font {get;set;} bool WriteText(string s, bool append=false); }
-  public interface IMyProgrammableBlock : IMyFunctionalBlock { IMyTextSurface GetSurface(int i); }
+  public interface IMyTextSurfaceProvider { IMyTextSurface GetSurface(int index); int SurfaceCount {get;} }
+  public interface IMyProgrammableBlock : IMyFunctionalBlock, IMyTextSurfaceProvider {}
   public struct MyShipVelocities { public Vector3D LinearVelocity; public Vector3D AngularVelocity; }
   public struct MyShipMass { public float BaseMass, TotalMass, PhysicalMass; }
   public interface IMyShipController : IMyTerminalBlock { bool CanControlShip {get;} bool IsUnderControl {get;} bool DampenersOverride {get;set;}
@@ -85,19 +103,22 @@ namespace Sandbox.ModAPI.Ingame {
   public interface IMyRemoteControl : IMyShipController {}
   public interface IMyGyro : IMyFunctionalBlock { bool GyroOverride {get;set;} float Pitch {get;set;} float Yaw {get;set;} float Roll {get;set;} }
   public interface IMyThrust : IMyFunctionalBlock { float ThrustOverridePercentage {get;set;} float MaxEffectiveThrust {get;} }
+  public interface IMyWarhead : IMyTerminalBlock { bool IsCountingDown {get;} float DetonationTime {get;} bool IsArmed {get;set;} void StartCountdown(); void StopCountdown(); void Detonate(); }
+  public interface IMyProjector : IMyFunctionalBlock { bool IsProjecting {get;} int RemainingBlocks {get;} int TotalBlocks {get;} }
+  public interface IMyShipToolBase : IMyFunctionalBlock {}
+  public interface IMyShipWelder : IMyShipToolBase {}
   public interface IMyUserControllableGun : IMyFunctionalBlock {}
-  public interface IMySmallMissileLauncherReload : IMyUserControllableGun {} public interface IMySmallGatlingGun : IMyUserControllableGun {}
   public interface IMyLargeTurretBase : IMyUserControllableGun { bool HasTarget {get;} MyDetectedEntityInfo GetTargetedEntity(); }
-  public interface IMyTurretControlBlock : IMyFunctionalBlock { bool HasTarget {get;} MyDetectedEntityInfo GetTargetedEntity(); }
-  public interface IMyCameraBlock : IMyFunctionalBlock { bool EnableRaycast {get;set;} double AvailableScanRange {get;}
-     MyDetectedEntityInfo Raycast(double d, float pitch=0, float yaw=0); MyDetectedEntityInfo Raycast(Vector3D target); }
+  public interface IMyCameraBlock : IMyFunctionalBlock { bool EnableRaycast {get;set;} double AvailableScanRange {get;} bool CanScan(double distance);
+     MyDetectedEntityInfo Raycast(double d, float pitch=0, float yaw=0); MyDetectedEntityInfo Raycast(Vector3D target); MyDetectedEntityInfo Raycast(double distance, Vector3D direction); }
   public interface IMySensorBlock : IMyFunctionalBlock { void DetectedEntities(List<MyDetectedEntityInfo> l); }
   public interface IMyBatteryBlock : IMyFunctionalBlock { float CurrentOutput {get;} float MaxOutput {get;} float CurrentStoredPower {get;} float MaxStoredPower {get;} }
   public interface IMyGridTerminalSystem { void GetBlocksOfType<T>(List<T> l, Func<T,bool> f=null) where T: class; }
   public static class TerminalBlockExtentions { public static void ApplyAction(this IMyTerminalBlock b, string a){} public static void SetValueFloat(this IMyTerminalBlock b, string n, float v){} public static void SetValueBool(this IMyTerminalBlock b, string n, bool v){} }
-  [Flags] public enum UpdateType { None=0, Terminal=1, Trigger=2, Mod=8, Script=16, Update1=32, Update10=64, Update100=128, Once=256, IGC=512 }
+  [Flags] public enum UpdateType { None=0, Terminal=1, Trigger=2, Mod=4, Script=8, Update1=16, Update10=32, Update100=64, Once=128, IGC=256 }
   [Flags] public enum UpdateFrequency { None=0, Update1=1, Update10=2, Update100=4, Once=8 }
-  public interface IMyGridProgramRuntimeInfo { TimeSpan TimeSinceLastRun {get;} double LastRunTimeMs {get;} UpdateFrequency UpdateFrequency {get;set;} }
+  public interface IMyGridProgramRuntimeInfo { TimeSpan TimeSinceLastRun {get;} double LastRunTimeMs {get;} UpdateFrequency UpdateFrequency {get;set;}
+     int CurrentInstructionCount {get;} int MaxInstructionCount {get;} int CurrentCallChainDepth {get;} int MaxCallChainDepth {get;} }
   public struct MyIGCMessage { public object Data; public string Tag; public long Source; }
   public interface IMyBroadcastListener { bool HasPendingMessage {get;} MyIGCMessage AcceptMessage(); }
   public enum TransmissionDistance { CurrentConstruct, ConnectedConstructs, AntennaRelay }

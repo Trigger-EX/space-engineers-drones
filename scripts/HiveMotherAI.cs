@@ -27,6 +27,8 @@ string Tag = "GNAT";
 string DronePrefix = "Gnat";
 int MaxDrones = 8;
 bool RackMode = false;
+int _peakIns = 0;
+string LaunchTag = "STINGER";   // rack mode sends "launch" here, not on the drone tag
 double ChargeSeconds = 20, CooldownSeconds = 5, StallSeconds = 45;
 bool Printing = true;
 
@@ -62,6 +64,7 @@ void LoadConfig()
     DronePrefix = C(S, "Drone Block Name Prefix", DronePrefix);
     MaxDrones = (int)C(S, "Max Drones", MaxDrones);
     RackMode = C(S, "Rack Mode (keep docked, launch on targets)", RackMode);
+    LaunchTag = C(S, "Rack Launch Command Tag", LaunchTag);
     ChargeSeconds = C(S, "Max Charge Seconds", ChargeSeconds);
     CooldownSeconds = C(S, "Cooldown Seconds", CooldownSeconds);
     StallSeconds = C(S, "Stall Warning Seconds", StallSeconds);
@@ -75,9 +78,9 @@ void GetBlocks()
 {
     var old = _bays; _bays = new List<Bay>();
     var projs = new List<IMyProjector>(); var welders = new List<IMyShipWelder>(); var merges = new List<IMyShipMergeBlock>();
-    GridTerminalSystem.GetBlocksOfType(projs, b => b.CustomName.Contains("[Bay"));
-    GridTerminalSystem.GetBlocksOfType(welders, b => b.CustomName.Contains("[Bay"));
-    GridTerminalSystem.GetBlocksOfType(merges, b => b.CustomName.Contains("[Bay") && !b.CustomName.StartsWith(DronePrefix));
+    GridTerminalSystem.GetBlocksOfType(projs, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("[Bay"));
+    GridTerminalSystem.GetBlocksOfType(welders, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("[Bay"));
+    GridTerminalSystem.GetBlocksOfType(merges, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("[Bay") && !b.CustomName.StartsWith(DronePrefix));
     for (int n = 1; n <= 8; n++)
     {
         string tag = "[Bay " + n + "]";
@@ -127,6 +130,7 @@ void Tick(string arg, UpdateType src)
     int building = 0, docked = 0;
     foreach (var b in _bays) { if (b.State == "BUILD" || b.State == "CHARGE") building++; if (b.State == "DOCKED") docked++; }
     foreach (var b in _bays) StepBay(b, ref building, ref docked);
+    _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % 3 == 0) Show(building, docked);
 }
 
@@ -156,7 +160,7 @@ void StepBay(Bay b, ref int building, ref int docked)
             }
             break;
         case "DOCKED":   // rack: wait for a target
-            if (_targets.Count > _launched && _targets.Count > 0) { _launched++; Release(b); IGC.SendBroadcastMessage(Tag + "_CMD", "launch"); }
+            if (_targets.Count > _launched && _targets.Count > 0) { _launched++; Release(b); IGC.SendBroadcastMessage(LaunchTag + "_CMD", "launch"); }
             break;
         case "RELEASE":
             if (t > 1.0) { IGC.SendBroadcastMessage(Tag + "_JOIN", "join"); b.State = "COOLDOWN"; b.T = _now; }
@@ -214,6 +218,7 @@ void Show(int building, int docked)
         _sb.Append("  welders ").Append(b.Welders.Count).Append('\n');
     }
     if (_bays.Count == 0) _sb.Append("No bays: name a projector, welders and\na merge block with [Bay 1]\n");
+    _sb.Append("Ins: ").Append(Runtime.CurrentInstructionCount).Append(" / ").Append(Runtime.MaxInstructionCount).Append("  peak ").Append(_peakIns).Append('\n');
     string s = _sb.ToString();
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);
