@@ -1,0 +1,38 @@
+# Space Engineers drone printers v{{VERSION}} ({{VARIANT}})
+
+{{INTRO}}
+
+Package contents: {{COUNTS}}. All printers are **dynamic** small-grid ships; **no DLC blocks**.
+
+A printer is a pod (large battery, remote control, Programmable Block running `HiveMotherAI.cs`, gyros, antenna, thrusters in all six
+directions) with docking bays on stalks. A bay is a projector `[Bay N]` (the drone blueprint is pre-loaded, Keep Projection on), welders
+`[Bay N]` and a merge block `[Bay N]`. The cycle per bay is BUILD (welders on until nothing is left to build), CHARGE (the drone shares
+the printer's power and its PB is recompiled), RELEASE (merge blocks off, the printer nudges away, `<Tag>_JOIN` is broadcast) and
+COOLDOWN. Printed drones then start working by themselves.
+
+{{INSTALL}}
+
+## Models
+
+{{MODEL_TABLE}}
+
+{{MODEL_SECTIONS}}
+
+## Configure and command
+
+{{SCRIPT_REFERENCE}}
+
+Before the first start: put the component stock for the drone into the `[Stock]` cargo (Full printers) or into the welders (the needed
+components are listed as `;` comment lines at the top of the PB Custom Data). Then run the printer's PB with `start`.
+
+## Known unknowns
+
+{{UNKNOWNS}}
+
+## In-game tests (do them in this order)
+
+{{TESTS}}
+
+## Changelog
+
+{{CHANGELOG}}

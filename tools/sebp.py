@@ -30,6 +30,10 @@ try:
     SHAPES = json.load(open(os.path.join(HERE, 'shapes.json')))   # sanitized game-written block tails (tools/extract_shapes.py)
 except (OSError, ValueError):
     SHAPES = {}
+# the reference ship's antenna label ("CAMERA DRONE") must not leak into every generated antenna
+for _v in SHAPES.values():
+    if isinstance(_v, dict) and isinstance(_v.get('tail'), str) and '<HudText>' in _v['tail']:
+        _v['tail'] = _v['tail'].replace('<HudText>CAMERA DRONE</HudText>', '<HudText />')
 DIR = {"Forward": (0,0,-1), "Backward": (0,0,1), "Up": (0,1,0), "Down": (0,-1,0), "Left": (-1,0,0), "Right": (1,0,0)}
 SHRINK = 0.001
 XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance'

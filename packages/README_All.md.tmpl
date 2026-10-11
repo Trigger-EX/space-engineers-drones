@@ -1,0 +1,34 @@
+# Space Engineers drones and printers v{{VERSION}} (everything)
+
+{{INTRO}}
+
+Package contents: {{COUNTS}}. **No DLC blocks.** `MODELS.md` in this zip is the master table (blocks, mass, thrust-to-weight, PCU, cost).
+
+{{INSTALL}}
+
+## Models
+
+{{MODEL_TABLE}}
+
+{{MODEL_SECTIONS}}
+
+## Configure and command
+
+Every script keeps its settings in the Programmable Block's **Custom Data** (ini; written on first run, edit and run `reload`).
+Commands go in the PB's *argument* (run the PB with the text, or use a toolbar slot / button panel) or arrive over IGC on `<IGC Tag>_CMD`.
+Printed drones start in IDLE and wait for the printer's `_JOIN`; a drone pasted by hand needs `guard` or `hunt`.
+Printers: put the component stock in the `[Stock]` cargo or the welders, then run the printer PB with `start`.
+
+{{SCRIPT_REFERENCE}}
+
+## Known unknowns
+
+{{UNKNOWNS}}
+
+## In-game tests (do them in this order)
+
+{{TESTS}}
+
+## Changelog
+
+{{CHANGELOG}}
