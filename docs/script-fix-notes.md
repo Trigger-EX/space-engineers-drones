@@ -720,3 +720,568 @@ Friendly fire: Basilisk 2v3 40 -> 25 damage per run, collisions 0.9 -> 0.2; Aegi
 Frozen blueprint snapshot (`out/Blueprints` copied, only Aegis/Basilisk/Stinger Rack replaced for "after"), `SimHost.exe run --repo <snapshot>`, filter
 `^1v1/(Aegis|Basilisk)-vs-X$|^1v1/X-vs-(Aegis|Basilisk)$|^1v2/(Aegis|Basilisk)-vs-2x(Hornet|Wasp|Longbow S|Harrier|Midge)$|^2v3/2x(Aegis|Basilisk)-vs-3x(Hornet|Wasp|Midge)$|^pirate/(Aegis|Basilisk)-vs-Pirate$|^mixed/.*-vs-(Aegis|Basilisk)$`
 (X = Aegis|Basilisk|Harrier|Hornet|Lancer|Longbow S|Mantis|Midge|Wasp), `--seeds 20 --start-distance 1500:2400`. Remember `build_all.py --only` takes one model per call.
+
+## Round 2: hornet-harrier (`scripts/HornetDroneAI.cs` v2.2-hornet, `scripts/HarrierAI.cs` v2.2-harrier; the Watcher runs the Hornet script)
+
+Written by the hornet-harrier agent. Private copy of the repo and sim (frozen opponents: all other scripts exactly as in the round-2 baseline, settings hash
+86da6f4425ff003e; checked on 1v1/Harrier-vs-Hornet, 30 seeds: the unmodified scripts reproduce the baseline file bit for bit), same seeds before and after, `--jobs 2`. "orig" = the scripts at the start of this
+round. Modes: **hybrid** = default AI-block search with `--start-distance 1500:2400` (removes the 2.5 km search-range artefact), **default** = the shipped
+1.5-3 km starts (compared with `out/sim/results/r2-base-1v1` / `r2-base-team`, same seed prefix), **locked** = `--face --start-distance 800:950 --commands "0.5:ai off;0.5:lock;0.5:hunt"`.
+"Win" = the Hornet/Harrier side wins, pooled over every ship-run of the two models in the set.
+
+### R1. The Hornet gets the Harrier's tracking (Hornet only; biggest single gain)
+`HornetDroneAI.cs` was still v1.8 plus the round-1 H1-H6 patches and lacked the later fixes that Wasp/Lancer/Harrier received (W2, W3, W8 of the section above):
+`Track.Raw/RawMax` + `AccHold` (acceleration trusted 1 s, constant velocity afterwards), the ellipse `ReacquirePoint` and the predicted-point/search split in
+`MaintainLock` (`SearchTenths`), the debris rule in `Disabled`, `RegisterFeeds`/`ReadTgt` (other fleets' `_TGT` feeds, own grid and wingmates filtered), `Jink Interval` keys.
+Pasted from the Harrier and checked with `diff` (the two files now differ only in doctrine constants, target scoring, missiles and the cue channel). In the Hornet's hybrid
+1v1 set: **win 57.6 -> 70.2 %, loss 38.6 -> 28.1 %, median time from first script target to kill 71 -> 39 s** (Hornet vs Harrier 23 -> 40 %, vs Lancer 23 -> 53, vs Longbow S 27 -> 63,
+vs Midge 63 -> 100, vs Aegis 13 -> 47). The Hornet's own constants (standoff 350, orbit 22, jink 12) stay: sweeps of standoff 200/250/450, orbit 0/40, jink 0/35 and
+Evade Speed 20/45 were all inside the noise (+-2.5 points at n=360) in locked and hybrid mode.
+
+### R2. AI confirm rays (`AiStep`)
+Measured with a ray log (debug build): the first script target of a hybrid fight needs about 25 confirm rays at 2 km. The two forward cameras fire at the same instant,
+every 1.3 s (2.6 km of charge each), one down the boresight and one on the spiral. The AI nose is 0.2-0.5 deg off, the target is 0.1 deg wide and sparse, so about 3 % of the rays hit:
+a pure ray-budget limit (changing the spiral from 2.5 to 0.8 or 1.2 deg changed nothing, keys `AI Confirm Spiral Min/Max/Exponent` stay for experiments).
+- `AiConfirmRange` default 1300 -> 2600: the second forward camera used to fire 1.3 km rays that cannot reach a target farther away. **First script target (median) 32 -> 22 s,
+  time to kill 82 -> 67 s** (Hornet, 13 scenarios x 30 seeds), win rate unchanged.
+- `AI Confirm Rays Shorten After A Fight` (new, default on): for the first 6 s of an AI stint within 25 s of a fight the ray length is `1.5 x last range + 200 m` (min 500): a ray costs its
+  length, so close fights re-lock with more rays per second. The 6 s limit matters: without it the rays stayed 1,058 m long while the AI had picked a Gnat 1.5 km away (33 s without a lock in a 12-Gnat fight).
+  Pooled hybrid +0.7 / +0.9 points (1v1 / teams), inside the noise, kept because it is free.
+- `Search2nd`: two cameras that can cast in the same tick no longer aim at the same point (the second ray goes to the search ellipse). Neutral, kept.
+
+### R3. AI re-pick (`AiStep`, `AiRepick`, `AiRepickWindow`)
+Trace of 2xHornet-vs-3xMidge: after Midge #3 was reduced to one block the sim AI kept its nose on the wreck (the stand-in keeps a target until it is dead or its next 30 s search), the
+Hornet's confirm rays hit nothing it wanted, and the healthy Hornet idled in "AI on, no lock" for 25 s while two untouched Midges shot it. Now an AI stint that lasts more than
+6 s although the drone had a target within the last 40 s is power-cycled for one tick (`Enabled=false`, next tick `true`), which makes the AI search again. It never fires before the
+first contact, so the opening search stays with the AI block. 2xHornet-vs-3xMidge 4 -> 10 wins of 20, 2xHarrier-vs-3xMidge 6 -> 8. Assumption: an AI block that is switched off and on picks its target again.
+The related `AiHeldIgnored` (an enemy I wrote off as finished that two confirm rays find under the AI's nose is taken off the ignore list again) is inert in the measured sets (identical runs) and
+kept as a safeguard.
+
+### R4. HUNT search patrol (`PatrolStep`, `Control`) - the default-mode artefact
+59 % of the baseline timeouts are ships that start beyond the AI block's search range (2,500 m in the stand-in) and wait at home. In HUNT mode with `[AI]` blocks, in open space
+(natural gravity < 0.5 m/s^2), a drone that has had no target for 15 s (90 s after a fight) now flies the chords of a square of radius 1,200 m round its home point at 60 m/s with the AI blocks off
+and stops for a 4 s listening stop (AI on) at every corner. The AI engagement test keeps the AI on while it flies the ship (velocity changed by 3 m/s or turning in the last 4 s, up to 90 s) -
+the first version used an instantaneous speed test, the AI's own speed jitters through 3 m/s, and it dragged drones away from fights they were about to lock (hybrid 70.5 -> 66.9 %, fixed to 70.1).
+Damage ends the patrol. Config: `Search Patrol When Nothing Found (HUNT)`, `Radius`, `Starts After`, `Starts After A Fight`, `Listening Stop`, `Speed`.
+**Default mode (1.5-3 km), 1v1 with Hornet/Harrier, 30 seeds: win 40.2 -> 61.8 %, timeouts 35.6 -> 8.1 %** (Hornet 34.5 -> 62.6, Harrier 46.0 -> 61.0; Harrier losses 17.6 -> 28.6 because more fights are
+fought); default-mode team sets (2v3, mixed, pirate, swarm, 20 seeds): win 45.6 -> 65.2 %, timeouts 35.4 -> 12.9 %, timeouts without a shot (nobody ever in range) 413 of 1,530 -> 15 of 1,020 runs. Inert in `ai off` modes, for
+the Watcher (no AI blocks) and in GUARD. Assumption about the real game: the AI blocks stop searching beyond some range and start flying the ship once they hold a target.
+
+### R5. Bug in every script: config keys that contain "="
+`Cfg(S, "Split Targets Across Hive (false = focus fire)", ...)` and `"Lead Scale (1 = calculated)"` cannot be set from Custom Data: `MyIni` splits `key=value` at the first "=", so
+the key is read back as `Split Targets Across Hive (false ` and the typed value is ignored (in the sim `--custom-data` with the key had no effect at all; every `reload` also appends one more
+mangled line). Renamed in Hornet/Harrier to `Split Targets Across Hive (false: focus fire)` and `Lead Scale (1: as calculated)`. **Same keys, not changed (not my files):** Aegis L434/L432, Basilisk L439/L437,
+Gnat L392/L390, Lancer L434/L432, Wasp L460/L458 (`Split ...`, `Lead Scale ...`), Longbow L414/L436/L446/L451 and Mantis L431/L453/L463/L468 (`Forced Range (0 = auto)`, `Fresh Acceleration Weight (0 = old smoothing)`, plus the two above).
+Focus fire could therefore never be tested before: with the key fixed, `Split=false` vs `true` is flat (2v3 and mixed sets, 20 seeds, +-0).
+
+### R6. Tuned and left alone (all flat inside the noise; keys exist where it was cheap)
+Aim modes AUTO/CENTER/FACING/SPREAD/ENGINES (locked Hornet, 360 runs each: 56.4/56.9/58.1/56.1/57.2 %); standoff, orbit, jink, evade speed (R1); `Target Stickiness` 400/1200/3000;
+`AI Takes Over After Stale Lock` 1.5/3/6 s; `Ghost Target Time` 4/8/14 s; AI re-pick interval 3/6/12 s. Awareness rays (spare camera charge spent on neighbours of the target, side contacts kept 12 s, so the
+next target of a swarm is known when the first dies) were built and removed: no gain in swarms, -6 points in the 1v2/1v3 set (Wasp fights). Shot statistics from a private diagnostic build of the sim: the gun
+axis is within 0.17 deg (median) of the constant-velocity intercept at every range 300-800 m, so the 36 % hit rate is the target's manoeuvring plus the 0.15 deg spread, not aiming; a duel is decided by
+accumulated damage: 22 of 64 disabled Hornets lost all weapons, 22 all power (4 small batteries), 15 the RC (101 hp, non-functional below 85), 5 the PB.
+
+### R7. Watcher (Hornet script in scout mode) with armed squads
+Private harness `Wt` (not in the repo; `ScenarioGen.Build` teams, 20 seeds; "blind" = armed receivers have `Auto Camera Scan`, `All-around Close Scan` and `AI Block Search Assist` off, 800-1,100 m, the Watcher gets `lock` at 0.5 s)
+so the squad can only get its target from the Watcher over HORNET_TGT / FLEET: Watcher+2xHornet vs Aegis 17 wins, Watcher+Harrier+Hornet vs Lancer 15, Watcher+2xHornet vs Hornet 13, Watcher+Mantis+Lancer vs Hornet 14,
+Watcher+2xWasp vs Lancer 13, Watcher+Longbow S vs Aegis 12, Watcher+3xGnat vs Hornet 16 / vs Aegis 11; the same blind 2xHornet squad without the Watcher wins 0 of 20 against Aegis. Median time to kill 11-50 s, the Watcher is never destroyed.
+Hybrid (normal AI search) 30 seeds: the Watcher changes nothing for 2xHornet vs Aegis/Lancer/Midge (30/30 wins either way, kill time 56 -> 53, 56 -> 50, 50 -> 45 s) and draws fire in 2v2 (2xHornet vs 2xHornet 14 -> 20 wins of 30).
+**By itself the Watcher finds nothing** (first script target in 0 of 500 baseline ship-runs): it has no AI block, ray search cannot find a small ship (see the Hornet section). It needs `[AI]` blocks in the blueprint
+(`tools/designs/support.py`, not my file) to scout on its own; the patrol and re-pick code are inert without them.
+
+### R8. Measured effect (hybrid unless noted; orig -> final; 30 seeds 1v1, 20 seeds teams)
+| set | model | n | win % | loss % | timeout % | damage taken | median kill s |
+|---|---|---|---|---|---|---|---|
+| 1v1 hybrid (28 scenarios with Hornet or Harrier) | Hornet | 420 | 57.6 > 70.0 | 38.6 > 28.1 | 1.0 > 0.7 | 3686 > 2999 | 110 > 69 |
+|  | Harrier | 420 | 71.4 > 70.2 | 26.7 > 29.0 | 0.7 > 0.5 | 2559 > 2583 | 91 > 81 |
+|  | Harrier, 60 seeds, without the Hornet/mirror scenarios | 660 | 74.2 > 73.2 | 24.1 > 25.5 | 0.3 > 0.8 | 2009 > 2079 | 89 > 80 |
+| 2v3 + mixed teams with Hornet/Harrier | Hornet | 1080 | 80.7 > 84.2 | 14.0 > 11.0 | 5.3 > 4.4 | 3391 > 3042 | 89 > 79 |
+|  | Harrier | 280 | 61.8 > 66.1 | 37.9 > 33.2 | 0.4 > 0.7 | 4498 > 4323 | 120 > 116 |
+| swarm 6/9/12 Gnat, 1v2, 1v3, pirate | Hornet | 360 | 32.8 > 42.2 | 55.0 > 46.1 | 12.2 > 11.4 | 5718 > 5191 | 132 > 106 |
+|  | Harrier | 360 | 35.6 > 35.8 | 54.2 > 53.9 | 10.3 > 10.0 | 5726 > 5998 | 105 > 106 |
+| 1v1 default 1.5-3 km (r2 baseline files) | Hornet | 420 | 34.5 > 62.6 | 28.3 > 28.8 | 34.8 > 6.9 | 2540 > 2880 | 114 > 91 |
+|  | Harrier | 420 | 46.0 > 61.0 | 17.6 > 28.6 | 36.4 > 9.3 | 1620 > 2708 | 90 > 98 |
+| team/swarm/pirate default (r2 baseline files) | Hornet | 1260 | 49.9 > 73.0 | 13.0 > 16.7 | 36.9 > 10.2 | 2593 > 3796 | 92 > 107 |
+|  | Harrier | 460 | 37.6 > 49.8 | 36.1 > 39.6 | 25.4 > 10.7 | 4575 > 5273 | 117 > 114 |
+The Harrier's pooled 1v1 row drops by 1.2 points only because the improved Hornet is now among its opponents (the 60-seed row without Hornet and mirror scenarios: 74.2 > 73.2, i.e. unchanged, but 11 s faster; all round-2 features switched off by Custom Data give 74.2 as well).
+Friendly fire: 0 for Hornet/Harrier in the 1v1 sets, 0.1-0.4 % of team ship-runs (as before); wingmate collisions 0-0.01 per ship-run. No script exceptions in any run; CPU per `Main` call 0.0145 -> 0.0111 ms (sim), peak tick 9 ms.
+Robustness (Hornet+Harrier pooled, 1v1, 20 seeds; hybrid / default start distances; orig > final win %): `--vanilla-search-range 3500` 64.5 > 69.8 / 63.6 > 65.9; `--thruster-torque true` 57.9 > 56.6 / 39.8 > 49.5;
+`--gyro-pitch-sign 1` (the convention the user's game contradicts) 62.1 > 57.0 / 40.5 > 47.1. In the two alternative-physics runs the hybrid result is flat to slightly worse (loss 33 > 37 and 31 > 36 %): the
+gain comes from acquisition and the AI hand-over, which do not depend on how well the ship aims, while those variants only change how well it aims.
+Scripts-only (`ai off; hunt`): unchanged 0 shots in 840 runs, with or without `--face --start-distance 400:900` (ray search cannot find a small ship, as in the Hornet section).
+
+### R9. Still weak / needs from other files
+- Harrier vs Longbow S 23 % (hybrid, unchanged), Hornet vs Harrier 30 % (Hornet side), Hornet/Harrier vs Lancer 53 %, vs Pirate 5-10 % solo (35-80 % in groups of 2-3): the sniper outranges and retreats at the same 98 m/s, slug damage kills in 1-2 hits; the pirate's roof turrets are not
+  distinguishable from armour with ray hits (hull-point aim modes are flat), so shots are spread over about 30 blocks per kill.
+- 12 idle Gnats take 300 s for one Hornet (13 of 20 timeouts): after each kill the next target costs 10-30 s of AI search plus confirm rays; the AI does most of the killing in that fight.
+- Blueprint needs (not allowed here): Watcher with `[AI]` blocks; a third and fourth forward camera on Hornet/Harrier (acquisition at 2 km is limited to 1.5 rays/s, 3 % per ray, so 4 cameras would halve the 22 s to the first lock);
+  RC and PB sit one armour plate behind the nose cameras (RC dies to one 90-damage hit once the plate is gone).
+- Unverified in the game: power-cycling AI blocks re-triggers their search; AI blocks fly the ship once they hold a target and idle without one (patrol listening logic); camera charge builds past 2.6 km (the long confirm ray of both cameras);
+  `MyIni` really splits keys at "=" (R5). A saved `[Hornet]`/`[Harrier]` Custom Data section keeps the old `AI Confirm Raycast Range=1300`: delete the section after pasting v2.2.
+
+### R10. Reproduce
+Private repo copy + `SIM_OUT=<dir> bash sim/build.sh`, `python3 -I tools/build_all.py --only "Hornet" "Harrier" "Watcher"` after each script edit (run `SimHost.exe` from inside the copy or pass `--repo`).
+Sets: 1v1 `^1v1/((Hornet|Harrier)-vs-|.*-vs-(Hornet|Harrier)$)` 30 seeds; teams `^(2v3|mixed)/.*(Hornet|Harrier)` 20 seeds; unfair `^(swarm/(6|9|12)xGnat-vs-(Hornet|Harrier)|1v3/(Hornet|Harrier)-vs-3x(Gnat|Midge|Wasp)|1v2/(Hornet|Harrier)-vs-2x(Wasp|Midge|Gnat|Longbow S|Longbow L|Lancer)|pirate/.*(Hornet|Harrier))` 20 seeds,
+hybrid `--start-distance 1500:2400`; parameter sweeps with `--custom-data "[Hornet]\nKey=value\n[Harrier]\nKey=value"` (keys must not contain "=").
+
+## Round 2: wasp-lancer (`scripts/WaspAI.cs` v2.2-wasp, `scripts/LancerAI.cs` v2.2-lancer)
+
+Written by the wasp-lancer agent. Method: private copy of the repo + sim (`repo`), and a **control copy** (`ctl`) that differs only in `WaspAI.cs` / `LancerAI.cs` (the
+v2.1 originals, blueprints rebuilt); same seeds, `--jobs 2`. "Before" = ctl, "after" = final scripts; every number below is a pooled ship-run share for that model
+(mirror fights count both sides; "win" = that model's side wins). Opponents are the blueprints of the moment the copy was made: **Hornet and Harrier already
+were the v2.2 ones of the hornet-harrier agent** (stronger than in `r2-base-*`), everything else as in the round-2 baseline (settings hash 86da6f4425ff003e), so the
+ctl rows are not identical to the files in `out/sim/results/r2-base-1v1` (Wasp 23.1 / 43.3 / 32.1 %, Lancer 47.4 / 17.4 / 34.8 % win / lose / timeout there; ctl reproduces
+Wasp 23.3 / 47.1 / 28.1 and Lancer 49.3 / 21.7 / 28.3). Modes as in the earlier sections: **default** (shipped 1.5-3 km starts), **hybrid** (`--start-distance 1500:2400`),
+**locked** (`--face --start-distance 800:950 --commands "0.5:ai off;0.5:lock;0.5:hunt"`), **scripts-only** (`--commands "0.5:ai off;0.5:hunt"`, also with `--face --start-distance 400:900`).
+
+### V1. Lancer and Wasp take the Harrier v2.2 search and AI hand-over (R2-R5 of the section above)
+Pasted with a script (`diff` against `HarrierAI.cs` shows only doctrine differences): `AiRays` with both forward cameras on the long ray + shortening to the last fight range, `AiRepick`
+(power-cycle an AI block that held the nose 6 s without a lock), `AiHeldIgnored`, `Search2nd`, **HUNT search patrol** (`PatrolStep`, square of 1.2 km, AI listening stops), config keys with "="
+renamed (R5), `GhostTime`/`AiStaleTakeover`/`Stickiness` made settings. Effect, 1v1 default (30 seeds x 14 opponents):
+Lancer win 49.3 -> 61.4, lose 21.7 -> 28.3, timeout 28.3 -> 9.5 %, ever held a script target 69 -> 91 %; Wasp win 23.3 -> 31.9, lose 47.1 -> 53.1, timeout 28.1 -> 12.9 %, target 30 -> 49 %.
+Hybrid and locked are unchanged for the Lancer (67.6 -> 67.9, 55.0 -> 54.0): the whole gain is the patrol (R4), i.e. the "no fight at all" timeouts. The losses rise because fights now happen.
+**Patrol start**: every drone gets its own direction (+-) and radius (0.8-1.2 x 1.2 km, from its grid id; `Search Patrol Own Start Corner And Direction`), the first corner stays "forward".
+Reason: with mirror-image starts two identical scripts flew the same square in lock-step and stayed 2.5-2.9 km apart for the whole 300 s (Harrier-vs-Lancer, Lancer mirror: 6 of 30 runs, identical
+`ai_on_s` / `avg_speed` in both ships). Random start corner as well (first version) made hybrid worse (timeouts 1.9 -> 3.1 %), so the first corner is not randomised.
+
+### V2. Wasp: rocket doctrine when the stock is unknown (`MaxFireRangeU`, `MaxLeadTimeU`, `StandoffU`, `FireRange`)
+Locked duels (isolates gunnery): launchers fire from `Max Fire Range` 420 m / 2.0 s of flight / standoff 250 m (round-1 W5, chosen for hit rate per rocket). Gatling and rail ships shoot from 700-1400 m, so the Wasp spent
+most of the fight "out of range" while being shot (gate log of a duel: out of range 965 ticks, not on target 0, 0 launches in 19 s). Sweeps (420 runs each, win %): standoff 150/250/350 = 35.2 / 34.8 / 40.5;
+fire range 300/420/550(3 s) = 31.7 / 34.8 / 38.6; **standoff 350 + range 650 + 3.5 s = 43.6** (450/650: 41.7), hit rate falls 28 -> 16 % but damage dealt rises 3.7k -> 4.9k per ship. Jink 0/15/40 = 25.7/33.8/34.8, orbit 0 = 34.3,
+salvo pause 0.2, window x1.5 / x0.7, jink gate off/x2, "do not fire while the target accelerates": all inside +-2.5 (a hold-fire gate on the instantaneous target acceleration is worse: 34.8 at 6 m/s^2).
+Rule: the longer doctrine applies when `_rockets < 0` (launcher inventories empty = creative/unknown stock); with a counted stock (survival, `_rockets >= 0`) the v2.1 numbers stay, because 8 rockets cannot be spent at 16 % hits.
+Config: `... (unlimited rockets)` keys. Effect: locked 35.5 -> 43.6 %, team proxy (1v3/2v3/mixed with Wasp, 10 seeds) 30.5 -> 40.4 (old doctrine with the other changes: 37.9).
+Rocket friendly fire stays ~0 (3 of 820 Wasp ship-runs with friendly damage, all in scenarios where the Wasps are the opposing team; probably the sim AI, not checked).
+
+### V3. Wasp acquisition: what limits it, what was tried
+Wasp ship-runs in hybrid fights (360 runs, not the mirror): **with a script target win 68 % / lose 28 %, without 7 % / 88 %**; median first target 18 s, 43 % of the ships ever get one. The Wasp is killed
+within 10-15 s of the first enemy lock, and the enemy locks (gatling lead is exact, the AI holds the nose on a ship that sits still) long before the Wasp does.
+- The AI leads rockets by `v_target/150` rad (verified against the trace: nose error 0.4-3.4 deg = |v_perp|/150 for 1-10 m/s targets, 5-10 deg once the script ship closes in at 40-55 m/s; a circling 40 m/s ship would be 15 deg off), a 5 m ship at 1-2 km is 0.15-0.3 deg: a cone cannot find it.
+  Rays: 6 of 8 straight down the boresight (`AI Confirm Boresight Rays (of 8)`, was 2 of 8): ever-locked 43 -> 52 % (hybrid, 8 of 8 gives 52 and the same win rate), win +1.
+- **Lead-line rays (tried, removed)**: derive the target bearing from the nose turn rate (n - T (w x n) - v_me_perp/150, one ray per assumed flight time T, ray length 150 T). The model of the offset is right, but the AI's attitude loop
+  jitters at 0.1-0.5 rad/s (limit cycle), so the turn rate is noise; 0 hits in 2,000 rays, predicted bearing 11-16 deg off against a 2.6 deg nose error (windows 0.5-3 s).
+- **Hot rays (tried, removed)**: while hit, short (750 m) rays in a wide flat cone (14 x 4 deg): lock 48.3 -> 49.8 %, win 34.5 -> 34.8: the Wasp is hit only in the last 5-20 s of its life, too late.
+- **Dash along the AI heading (kept, off by default: `Dash Along AI Heading`)**: the AI block flies at its speed limit (10 m/s in the sim, the wiki default) and a ray needs a few hundred metres, so after `Dash Starts After AI Stint` (4 s) of AI flight the script flies 8 s at
+  90 m/s along the smoothed nose heading with the AI off (rays keep casting, anything that is not a live enemy ahead aborts it), 2.5 s back to the AI to re-aim, repeat. 1v1 hybrid, 60 seeds: win 34.0 -> 38.7, hit rate 10 -> 17 %, ever-locked 49 -> 55 %
+  (against the control: Aegis 0 -> 13, Midge 20 -> 67, Mantis 7 -> 23 %); but with several drones it is bad: Wasp team set (74 scenarios, 15 seeds) win 30.5 -> 30.5 / **timeout 33.7 -> 43.6** with the dash against **41.4 / 18.9** without, mirror fights 13 % mutual kills
+  (head-on closing speed 180 m/s), 1v3 vs Gnats 73 -> 33 %. Dashing Wasps are hard to lock for the enemy and cannot lock themselves, i.e. stalemates. Left in for experiments.
+- Nothing helps against enemies that lock early and orbit at 40-60 m/s (Harrier, Lancer, Hornet, Aegis, Mantis): unlocked Wasps lose 85-95 % of those fights, locked ones still hit only 4-6 % (rockets, 2 s of flight, 35-40 m/s jinks). The Wasp
+  beats Gnat, Stinger, Watcher (90-100 %) and sometimes Midge / Longbow L (30 / 20 %).
+
+### V4. Lancer: tried and flat (hybrid unless noted, 420 runs, base 67.6 +-2.4)
+Standoff 300 / 550 = 66.9 / 66.0, max fire range 650 = 64.5, burst 3 s / 0.3 s = 67.9, fire window x1.3 = 67.6, jink 50 = 66.9, orbit 25 = 68.8, min range 250 = 67.6; split vs focus fire in 1v2/1v3/2v3/mixed (1,290 ship-runs) 55.7 vs 55.9;
+confirm ray range 1300 / 1800 / 2600: 67.9 / 70.0 / 68.1 (hybrid), 60.7 / 61.9 / 61.4 (default), team proxy 67.8 / 67.5 / 68.7, pirate 73.1 / 66.9 / 70.3 (60 seeds; ctl 75.3): kept 2600 like the Harrier. Patrol radius 1500 / 1800 or speed 90 = 61.2 / 61.4 / 59.8 (default,
+base 60.5), **patrol on the six corners of an octahedron** (+-forward, +-right, +-up; tried for the "enemy is in the plane the square never enters" timeouts) 59.5, timeouts 10.5 -> 11.4 %: the sim AI searches once per 30 s of absolute time,
+so what limits finding is how many search points the patrol visits, not the geometry. Aim point on the outermost hull points (guns, thrusters, turrets sit outside) 69.5 vs 67.9 in 1v1 but **52 vs 66 % against the Pirate**: removed.
+Hull-point aiming matters a lot against a big target: Lancer vs Pirate (3 scenarios, 30 seeds) AUTO/FACING/SPREAD/ENGINES = 66-70 %, `CENTER` = 33 %.
+**Dash (same code as the Wasp) is harmful for the Lancer**: ever-locked 96 -> 58 %, win 68 -> 44 %, collisions 0.10 per ship-run (the AI hands the nose to a lock within seconds; leaving the heading loses it) - not included in the Lancer.
+
+### V5. Measured effect (30 seeds x 14 opponents 1v1, 420 ship-runs; teams 15 seeds)
+| set | model | win % before > after | lose % | timeout % | hit % | ever-locked % | damage dealt / taken per ship |
+|---|---|---|---|---|---|---|---|
+| 1v1 default | Lancer | 49.3 > 61.4 | 21.7 > 28.3 | 28.3 > 9.5 | 35.4 > 36.7 | 68.6 > 91.2 | 6.3k > 8.8k / 1.9k > 2.4k |
+| | Wasp | 23.3 > 31.9 | 47.1 > 53.1 | 28.1 > 12.9 | 7.4 > 12.0 | 29.5 > 48.8 | 2.3k > 3.3k / 4.1k > 4.5k |
+| 1v1 hybrid | Lancer | 67.6 > 67.9 | 29.3 > 29.5 | 1.7 > 1.7 | 36.6 > 37.8 | 95.5 > 96.2 | 9.2k > 9.5k / 2.6k > 2.7k |
+| | Wasp | 33.1 > 34.5 | 63.6 > 61.4 | 2.4 > 2.6 | 8.6 > 10.7 | 41.4 > 48.3 | 3.4k > 3.6k / 5.6k > 5.4k |
+| 1v1 locked | Lancer | 55.0 > 54.0 | 27.4 > 27.6 | 17.6 > 18.3 | 41.0 > 40.0 | 94.8 > 94.8 | 11.5k > 11.1k |
+| | Wasp | 35.5 > 43.6 | 54.3 > 49.5 | 9.5 > 6.4 | 28.2 > 16.3 | 97 > 97 | 3.8k > 4.9k / 5.2k > 4.7k |
+| scripts-only (also `--face 400:900`) | Lancer, Wasp | 0 > 0 | 5-14 > 5-14 | 86-95 | 0 shots (Lancer 92 % of 80 shots in the face set) | 0 | unchanged |
+| teams default (1v2, 1v3, 2v3, mixed, pirate, swarm with the model) | Lancer (1,230) | 52.8 > 66.6 | 18.0 > 23.0 | 29.1 > 10.4 | 37.2 > 36.0 | 71 > 94 | 14.2k > 15.6k / 2.3k > 2.8k |
+| | Wasp (1,905) | 30.5 > 41.4 | 35.2 > 39.5 | 33.7 > 18.9 | | 39 > 53 | 5.0k > 8.0k / 5.7k > 6.3k |
+Per opponent, 1v1 default, win before > after: Lancer vs Aegis 50>57, Basilisk 37>57, Gnat 60>97, Harrier 57>50, Hornet 47>23 (timeouts 0>20: two patrollers miss each other), Lancer 32>43, Longbow L 57>63, Longbow S 23>37, Mantis 30>37, Midge 63>77, Stinger 63>90, Wasp 70>93, Watcher 70>93.
+Wasp vs Aegis 0>3, Basilisk 7>7, Gnat 73>97, Harrier 3>3, Hornet 7>7, Lancer 3>0, Longbow L 7>20, Longbow S 0>10, Mantis 0>7, Midge 20>30, Stinger 80>100, Wasp 33>37, Watcher 60>90.
+Robustness (1v1 default, 30 seeds, win before > after): `--thruster-torque true` Wasp 27.1 > 35.5, Lancer 36.2 > 38.8; `--gyro-pitch-sign 1` Wasp 42.6 > 44.3, Lancer 46.9 > 47.1; `--vanilla-search-range 3500` Wasp 32.6 > 35.2, Lancer 70.2 > 67.1
+(with every start acquirable the patrol is not needed and costs a few timeouts, 0.5 > 2.1 %). Friendly damage and collisions: 0 for both in 1v1; Lancer teams 0.0 % of ship-runs with friendly damage (ctl 0.3 % in the mixed set), Wasp 3 of 820 (see V2). No script exceptions; CPU per `Main` call
+0.0101 > 0.0123 ms (Lancer), 0.0091 > 0.0114 ms (Wasp), peak tick 11.7 / 18.5 ms (sim).
+
+### V6. Still weak
+- **Wasp**: no way found to lock an enemy that orbits at 40-60 m/s from the AI nose (see V3); unlocked it dies in 10-15 s. Needs a target feed (a Watcher / scout with `[AI]` blocks over FLEET, designator turrets), a nose-aligned gatling for the AI to lead or AI Defensive blocks (blueprint, not my files).
+  Rockets stay at 4-6 % hits against jinking 35-40 m/s targets; vs the Pirate 0 % (260 blocks, 3 roof turrets, hit rate 90 % but too little damage on the turrets before it dies).
+- **Lancer**: a sniper that kites at equal speed (Longbow S holds 900 m at 90 m/s, outside the 750 m fire range) is never caught (win 37 %); Lancer mirror 43 %; Hornet 23 % (v2.2 Hornet, patrol mismatch); solo Lancer vs the Pirate 7 % (2x 60 %, 3x 90 %), 12xGnat-vs-Lancer 100 % timeouts
+  (the Lancer disables 8 of 12 in 300 s but spends 2/3 of the time in AI mode between locks, hit rate 20 %). Losses rise where fights now happen (vs Mantis 40 > 63 %, Aegis 20 > 40 %).
+- Scripts-only: unchanged, 0 shots. Ray search cannot find a 5 m ship (7 cameras x 2 km/s of charge over the whole sphere: about 30,000 s per expected hit).
+- Two patrolling ships with the same script still miss each other when each is more than ~2.5 km from the other's square (Hornet-vs-Lancer default timeouts 0 > 20 %); the search is limited by the AI block's search timer, not by the patrol geometry.
+
+### V7. Assumptions about the real game
+- AI Flight speed limit 10 m/s (the wiki default of the block); the sim's AI approach at that speed is what makes the dash and the patrol matter. If the player raises the slider the AI approaches faster and the patrol is less needed (3500 m search-range what-if: -3 points for the Lancer).
+- The AI Offensive block leads rockets with a mean rocket speed (150 m/s) and holds its nose on the target between searches; a block that is switched off and on searches again (R3 of the section above); the AI block's search interval is 30 s.
+- Launchers of a creative-world ship have empty inventories (`_rockets` = -1 = "unlimited": long doctrine); loaded launchers (survival) report a stock and keep the v2.1 doctrine. Unverified: what the inventory of a spawned Wasp reports in a creative world.
+- Camera charge accumulates without a cap (sim); `MyIni` splits keys at "=" (the renamed keys). Saved CustomData wins over code defaults: a `[Wasp]` / `[Lancer]` section from v2.1 keeps `Max Fire Range=420`, `AI Confirm Raycast Range=1300` etc. (Wasp: the new `(unlimited rockets)` keys are added on first run); delete the section after pasting v2.2.
+
+### V8. Reproduce
+Private copy (`tar` of the repo without `.git` and `out/sim`, `SIM_OUT=<dir> bash sim/build.sh`), `python3 -I tools/build_all.py --only Wasp Lancer` after each edit; control copy = same with the original two scripts and its own `SIM_OUT`.
+Sets: 1v1 `^1v1/(M-vs-|.*-vs-M$)` 30 seeds (M = Wasp | Lancer); teams `^(1v2|1v3|2v3|mixed|pirate|swarm)/.*M` 15 seeds; pirate `^pirate/.*Lancer` 30-60 seeds; sweeps with `--custom-data "[Wasp]\nKey=value"`.
+Debugging used: a per-gate counter in `FireGate` printed in the status screen (out of range / not on target / track stale / OPEN ticks), and for the Wasp a pending-rocket log (predicted impact point vs the track at impact time: miss < 1 m for a steady target at 1.2-1.8 s of flight, 3-4 m against a jinking Wasp).
+
+
+## Round 2: longbow-mantis (`scripts/LongbowSniperAI.cs` v2.0, `scripts/MantisAI.cs` v2.2-mantis; `LongbowMothership.cs` unchanged)
+
+Task: railgun duty cycle with the corrected 20 s capacitor, positioning while charging, survive Wasp / Midge swarms. Baseline = the round-2 baseline
+(`docs/sim-r2-base-1v1.md`, `-team.md`, settings hash `86da6f4425ff003e`). All comparisons below are the same scenarios and the same seeds (0..29, team sets 0..39),
+run on a private copy of `out/Blueprints` frozen at the baseline state (so other agents' rebuilds cannot move the opponents), one change at a time.
+Everything below is a sim result unless it is listed under the assumptions at the end.
+
+**Dev setting.** At the default search range (2,500 m, starts 1.5-3 km) about a third of the 1v1 runs of these models are "never in range" (136 / 163 / 134 of 420
+ship-runs of Longbow S / L / Mantis in `r2-base-1v1`) and say nothing about fighting. Almost all tuning was therefore done with `--vanilla-search-range 3500`
+(settings hash `7386a044ade6fa95`: every run is a real fight; timeouts of the three models fall from 40 / 49 / 32 % to 11 / 18 / 2 %), and every final change was
+re-measured at the default range and scripts-only as well.
+
+### P1. What the traces showed (no script change yet)
+- **The railgun cycle is what the data says**: slug to slug 21.2-22.4 s when the ship sits still (capacitor 0.016 MWh, recharge draw 3.6 MW x 0.8 = 20 s, plus the
+  0.5 s trigger delay; `ReloadTime + 0.5` = 20.5 s was a fair estimate of the recharge). The Longbow S has ONE small-grid battery of 4 MW.
+- **Thrust is served before the recharge** (power groups: Thrust 80, DefenseAdative 90, `defs_stats.json`). The recharge only runs at full speed while the thrusters
+  take less than about 0.4 MW. The old `_powerScale` throttle (load > 97 % -> thrust x 0.9 every 1/6 s, floor 10 %) enforces that, and the price is that a
+  recharging Longbow cannot move: in the 2v3 traces most of the 5 s samples of `_powerScale` read the floor of 0.10 (`Thrust cap 10 %` on the PB screen), including the approach to the stand-off after the first slug.
+  If the thrusters are not throttled the capacitor gets what is left (2.4 MW of thrust -> 44 % rate -> 45 s per shot).
+- **A held trigger**: in `2v3/2xLongbow S-vs-3xMidge` seed 1 (an instrumented sim build printed `ShootOn` at every accepted trigger; `2v3/2xLongbow S-vs-3xGnat` seed 5 shows the same as 14 sim shots against 6 shots the script confirmed) the railgun had `ShootOn = true` from t = 86 s to the end (set by the AI stand-in during a hand-over; `Release()`
+  calls `SetFire(false)` but `SetFire` returns when `on == _firing`, and `_firing` is false after every hand-over). A railgun with the trigger held fires by itself the moment
+  it is charged, at whatever the nose points at, and `IsShooting` never ends, so the script never confirms a shot, "refuses" every 3.5 s and never jinks (it believes a shot is due).
+- **The first slug of the fight is spent by the AI.** The AI blocks (sim stand-in: fire when the gun axis is inside 5 deg and the target inside weapon range) shoot the full
+  capacitor at 1.2-1.5 km before the script has any lock; the script's own first trigger is then refused (`2v3/2xLongbow S-vs-3xGnat` seed 5: trigger at t = 23.0 and 26.5 s
+  refused, accepted at 30.7 s). A Longbow gets 2-4 shots in a 1v1, so losing the first one matters.
+- **Why shots miss** (134 slugs of Longbow S vs Hornet / Harrier / Lancer / Aegis, closest approach of slug and target body centre from the trace): hits pass within 0.2-1.5 m
+  (median 0.9 m), misses 0.6-8.7 m (median 3.0 m); the aim error at the trigger is 0.000-0.012 deg (0.2 m at 1 km), far inside the window, so the miss is the target moving
+  during the ~1 s of slug flight. An offline replay of the target tracks (`out` traces, 2,285 sample shots at 500-1,300 m, miss < 1.5 m):
+
+  | lead model | within 1.5 m |
+  | :--- | ---: |
+  | constant velocity | 28.7 % |
+  | the script's acceleration filter (0.8/0.2 per fix, steadiness gate, fixes every 0.25 s) | 36.2 % |
+  | the same without the gate | 40.7 % |
+  | acceleration of the last 0.25 s interval | 55.0 % |
+  | the same x 0.8 / decaying with 1.5 s | 56.9 % / 57.1 % |
+  | last 0.1 s interval, x 0.8 | 58.9 % |
+  | constant-turn-rate arc | 53.9 % |
+
+  So the smoothing (time constant about 1 s) and the gate were worth 20 points against a jinking target. Hit probability does not depend noticeably on |a| or jerk (56-62 % in
+  every bucket), which is why waiting for a "calm" moment did not help in round 1.
+- **Mantis gatling gate**: `GATGATES` counters in three Harrier-vs-Mantis fights: the target was inside the 650 m gatling gate in only 21 % of the ticks (400 of 1,899; 445 of
+  1,688; 408 of 2,202) and when it was, the fix was fresh and the aim inside the window in 75-100 % of them. The ship holds 650 m and the gatling reaches 800 m, so it
+  stood just outside its own gate while the Harrier shot at it from 700 m.
+- **The AI trap** (not fixed, not mine): the stand-in AI picks the closest enemy BODY every 30 s, and a wreck or fragment is a body. `2v3/2xLongbow S-vs-3xGnat` seed 5: both ships
+  sat at 597 m from the wreck of the first Gnat for 120 s (`ai_on_s` 243 of 300) while the nearest intact Gnat stood 11 m farther, at 608 m, the script ignoring the wreck (wreck rule) and the AI
+  flying at nothing else. Most 2v3 timeouts are this and not DPS (see remaining weaknesses).
+
+### P2. Changes (both files unless it says otherwise; every new key is in the `[Longbow]` / `[Mantis]` section and defaults are given)
+1. **Fresh acceleration for the lead** (`Track.AccF`, `Track.EA`, keys `Fresh Acceleration Weight` 0.8, `Fresh Acceleration Scale` 0.9; 0 = old behaviour). `AccF` is the
+   acceleration of the last fix intervals (weight 0.8 per fix, clamped at 30 m/s^2) and replaces the smoothed, steadiness-gated one in `P()`, `V()` and `Lead()`; the smoothed `Acc` stays for
+   `PeakAcc` (stand-off), `QuietSince` (wrecks) and the calm gate. Fixes still come every 0.25 s (`MaintainLock(0.12)` and a scale of 1.0 were not better).
+2. **Full thrust while travelling** (`PowerAndHealth`, `Control`; keys `Full Thrust While Travelling` true, `Travelling Distance m` 200). While the ship is more than 200 m from its
+   stand-off the `_powerScale` throttle is lifted (the recharge takes what is left; the ship is not recharging usefully while it flies 600 m anyway); the throttle is back as soon as it arrives.
+   Lifting it also while under fire changed nothing (tested, removed).
+3. **Held trigger** (`UpdateGuns`, `SetFire`): a railgun that reports `IsShooting` with no shot pending is sent `Shoot_Off` (every 0.1 s, not in the AI phase); `SetFire` re-sends
+   `Shoot_Off` as well as `Shoot_On` twice a second (Mantis: also `SetGat`).
+4. **Shot timing** (`UpdateGuns`): after a confirmed slug `ReadyAt = now + ReloadTime` (was + 0.5 s), and once a shot has been confirmed through `IsShooting` a trigger that did not
+   show `IsShooting` within 0.25 s is judged refused and asked again after 0.5 s (was 1.5 s judgement + 2 s wait). Keys `Retrigger Lead s` 0, `Retrigger After Refusal s` 0.5.
+5. **The first slug is kept** (`AiFriendGuard`, `HoldRail`, `ApplyRail`; key `Railgun Off While AI Searches`, Longbow true, Mantis false): until the script has fired its own first
+   slug, the railgun is disabled (`Enabled = false`) while the AI blocks search and nothing is locked, and enabled again when the script takes over (and after `Railgun Off Longest After First Lock s` = 60 s if the script has still not fired: it cannot aim, let the AI shoot). The limit "until the first slug" matters:
+   with the railgun off whenever nothing is locked, `2v3/2xLongbow S-vs-3xGnat` fell 22 -> 10 % (the AI's shots at stationary targets are good ones); with the limit it is 20 %.
+6. **No thrust around the shot** (`Control`; key `No Thrust Around The Shot` true): translation thrust is zero from the trigger until the slug has left (0.5 s; 2 s for the large railgun) and in a window of
+   0.25 s before the trigger (at most once per 1.25 s). Costs nothing measurable when thrust has no torque and is the largest robustness gain when it has (below). Unbounded versions stall: coasting for as
+   long as the settle counter was up (3 ticks before the trigger, or 1.5 s) kept a ship that was waiting for a shot it was not allowed to take (mate in the line, aim not settled) coasting forever
+   (2xMantis vs 3xGnat 88 -> 40 %, vs 3xStinger 92 -> 42 %); coasting only while pending lost part of the Mantis gain (100 seeds, 6 opponents: 67 -> 60 %).
+7. **Mantis only: gatling fire range 650 -> 760 m** (`Gatling Range`, the data range is 800 m and bullets are randomised 80-100 %).
+
+
+### P3. Measured effect (final scripts; same scenarios and seeds before / after; win / loss / timeout %)
+
+**1v1, search range 3,500 m (dev setting), 30 seeds, 13 opponents (mirrors count both ships)**  (win / loss / timeout %, before -> after)
+
+| opponent | Longbow S | Longbow L | Mantis |
+| :--- | ---: | ---: | ---: |
+| **all 13 opponents** | 65/23/11 -> 73/14/11 | 51/29/18 -> 56/26/16 | 57/39/2 -> 61/35/3 |
+| Aegis | 70/30/0 -> 100/0/0 | 23/67/10 -> 60/33/3 | 67/33/0 -> 60/37/0 |
+| Basilisk | 27/0/73 -> 33/0/67 | 63/0/37 -> 57/0/43 | 7/93/0 -> 17/80/3 |
+| Gnat | 100/0/0 -> 100/0/0 | 97/0/3 -> 93/0/7 | 100/0/0 -> 100/0/0 |
+| Harrier | 60/40/0 -> 83/10/7 | 17/80/3 -> 50/40/3 | 37/60/0 -> 50/47/0 |
+| Hornet | 83/13/3 -> 90/3/7 | 47/47/7 -> 47/50/0 | 67/33/0 -> 73/17/10 |
+| Lancer | 70/27/3 -> 93/3/3 | 20/77/3 -> 47/50/3 | 53/40/0 -> 43/50/3 |
+| Longbow L | 13/87/0 -> 37/43/13 | 38/38/17 -> 43/43/10 | 27/73/0 -> 47/53/0 |
+| Longbow S | 48/48/0 -> 43/43/0 | 87/13/0 -> 43/37/13 | 27/70/0 -> 43/57/0 |
+| Mantis | 70/27/0 -> 57/43/0 | 73/27/0 -> 53/47/0 | 45/45/3 -> 47/47/3 |
+| Midge | 57/0/43 -> 77/0/23 | 37/10/53 -> 33/17/50 | 43/50/7 -> 47/50/0 |
+| Stinger | 97/0/3 -> 100/0/0 | 80/0/20 -> 97/0/3 | 100/0/0 -> 100/0/0 |
+| Wasp | 100/0/0 -> 100/0/0 | 60/10/27 -> 80/7/10 | 97/0/0 -> 97/0/0 |
+| Watcher | 70/0/30 -> 70/0/30 | 40/0/60 -> 37/0/63 | 87/0/13 -> 83/0/17 |
+| hits per shot % | 65 -> 75 | 68 -> 81 | 37 -> 36 |
+
+**1v1, default settings (hash 86da6f4425ff003e, search range 2,500 m, "before" = `out/sim/results/r2-base-1v1`, seeds 0..29)**  (win / loss / timeout %, before -> after)
+
+| opponent | Longbow S | Longbow L | Mantis |
+| :--- | ---: | ---: | ---: |
+| **all 13 opponents** | 44/15/40 -> 51/8/39 | 33/17/49 -> 34/16/48 | 41/25/32 -> 41/23/34 |
+| Aegis | 47/23/30 -> 70/0/30 | 7/33/60 -> 30/13/53 | 50/17/33 -> 33/30/33 |
+| Basilisk | 23/0/77 -> 30/0/70 | 50/0/50 -> 50/0/50 | 7/70/23 -> 13/60/27 |
+| Gnat | 67/0/33 -> 67/0/33 | 50/0/50 -> 50/0/50 | 63/0/37 -> 63/0/37 |
+| Harrier | 33/23/43 -> 53/0/47 | 10/50/40 -> 27/27/40 | 30/43/27 -> 30/40/27 |
+| Hornet | 57/13/30 -> 63/3/33 | 23/23/53 -> 17/33/50 | 47/17/37 -> 43/10/47 |
+| Lancer | 50/23/27 -> 73/3/23 | 7/57/37 -> 27/40/33 | 40/30/30 -> 33/30/33 |
+| Longbow L | 3/53/43 -> 10/33/53 | 23/23/47 -> 27/27/43 | 13/47/40 -> 37/23/40 |
+| Longbow S | 30/30/37 -> 27/27/37 | 53/3/43 -> 33/10/53 | 20/40/40 -> 23/37/40 |
+| Mantis | 40/20/40 -> 37/23/40 | 47/13/40 -> 23/37/40 | 30/30/37 -> 28/28/40 |
+| Midge | 47/0/53 -> 63/0/37 | 33/7/60 -> 23/17/60 | 33/33/33 -> 33/37/27 |
+| Stinger | 70/0/30 -> 70/0/30 | 57/0/43 -> 63/0/37 | 70/0/30 -> 70/0/30 |
+| Wasp | 70/0/30 -> 70/0/30 | 40/7/50 -> 57/0/40 | 83/0/13 -> 83/0/13 |
+| Watcher | 53/0/47 -> 53/0/47 | 37/0/63 -> 27/0/73 | 63/0/37 -> 53/0/47 |
+| hits per shot % | 65 -> 75 | 70 -> 81 | 39 -> 36 |
+
+About a third of these default runs are "never in range" before and after (that is the 40 / 48 % timeouts); the fights that do happen gain what the dev setting shows.
+
+**Locked duels, scripts only (`--face --start-distance 800:950 --commands "0.5:ai off;0.5:lock;0.5:hunt"`, Longbow L cannot lock in this harness)**  (win / loss / timeout %, before -> after)
+
+| opponent | Longbow S | Mantis |
+| :--- | ---: | ---: |
+| **all 13 opponents** | 61/17/21 -> 70/11/17 | 61/28/10 -> 62/27/11 |
+| Aegis | 87/7/7 -> 90/0/10 | 80/7/13 -> 77/10/13 |
+| Basilisk | 17/10/73 -> 27/0/73 | 13/87/0 -> 13/83/3 |
+| Gnat | 63/0/37 -> 63/0/37 | 70/0/30 -> 70/0/30 |
+| Harrier | 47/43/10 -> 97/3/0 | 73/20/7 -> 57/43/0 |
+| Hornet | 80/10/10 -> 93/0/7 | 67/17/17 -> 73/10/17 |
+| Lancer | 70/20/10 -> 93/0/7 | 47/47/7 -> 63/30/7 |
+| Longbow L | 43/0/57 -> 60/0/40 | 100/0/0 -> 100/0/0 |
+| Longbow S | 47/47/3 -> 43/43/3 | 40/57/0 -> 53/47/0 |
+| Mantis | 57/40/0 -> 47/53/0 | 42/42/13 -> 42/42/13 |
+| Midge | 43/13/43 -> 63/17/20 | 33/67/0 -> 37/60/3 |
+| Stinger | 67/0/33 -> 67/0/33 | 67/0/33 -> 67/0/33 |
+| Wasp | 90/0/10 -> 97/0/3 | 90/7/3 -> 87/7/7 |
+| Watcher | 100/0/0 -> 100/0/0 | 93/0/7 -> 87/0/13 |
+| hits per shot % | 72 -> 83 | 49 -> 44 |
+
+**Team sets, search range 3,500 m (62 scenarios; 1v2 / 1v3 / 2v3 / mixed / pirate)**  (my side win / loss / timeout %, before -> after; 40 seeds; 62 scenarios in both runs)
+
+| scenario set | before | after |
+| :--- | ---: | ---: |
+| all |  31/ 38/ 31 |  34/ 38/ 28 |
+| 1v2 |   2/ 76/ 22 |   5/ 76/ 18 |
+| 1v3 |   0/ 66/ 34 |   1/ 70/ 29 |
+| 2v3 |  16/ 27/ 56 |  20/ 25/ 54 |
+| mixed |  85/  8/  6 |  86/  8/  6 |
+| pirate |  48/ 11/ 41 |  55/ 11/ 35 |
+
+Where the sides can win (before -> after):
+
+| scenario | before | after |
+| :--- | ---: | ---: |
+| 2v3/2xMantis-vs-3xGnat |  62/  0/ 38 |  90/  0/ 10 |
+| 2v3/2xMantis-vs-3xStinger |  82/  0/ 18 |  92/  0/  8 |
+| 2v3/2xMantis-vs-3xWasp |  38/ 30/ 32 |  60/ 22/ 15 |
+| 2v3/2xLongbow S-vs-3xGnat |  22/  0/ 78 |  22/  0/ 78 |
+| 2v3/2xLongbow S-vs-3xStinger |  22/  0/ 78 |  18/  0/ 82 |
+| 2v3/2xLongbow S-vs-3xWasp |   8/  8/ 85 |  10/  8/ 82 |
+| 2v3/2xLongbow S-vs-3xMidge |   0/ 15/ 85 |   5/ 12/ 82 |
+| 2v3/2xLongbow L-vs-3xHornet |   0/ 85/ 15 |   0/ 60/ 40 |
+| 1v2/Mantis-vs-2xWasp |  25/ 70/  5 |  38/ 58/  2 |
+| 1v2/Longbow S-vs-2xWasp |   5/ 15/ 80 |  25/ 35/ 40 |
+| 1v2/Longbow L-vs-2xWasp |   0/ 18/ 82 |   2/ 40/ 58 |
+| 1v3/Longbow L-vs-3xWasp |   0/ 22/ 78 |   0/ 60/ 40 |
+| pirate/Longbow S-vs-Pirate |   0/  0/100 |   2/  0/ 98 |
+| pirate/2xLongbow S-vs-Pirate |  35/  0/ 65 |  48/  0/ 52 |
+| pirate/3xLongbow S-vs-Pirate |  80/  0/ 20 |  82/  0/ 18 |
+| pirate/Longbow L-vs-Pirate |  55/  0/ 45 |  50/  0/ 50 |
+| pirate/2xMantis-vs-Pirate |  32/ 25/ 42 |  62/ 20/ 18 |
+| pirate/3xMantis-vs-Pirate |  60/ 12/ 28 |  90/  2/  8 |
+| mixed/Hornet+Longbow S-vs-Hornet+Longbow S |  28/ 42/ 28 |  22/ 42/ 35 |
+| mixed/Hornet+Longbow S-vs-Lancer+Mantis |  30/ 32/ 38 |  48/ 20/ 32 |
+| mixed/Lancer+Mantis-vs-Lancer+Mantis |  52/ 40/  8 |  58/ 35/  8 |
+
+**Team sets, default settings (47 scenarios of the sets that contain these models, "before" = `out/sim/results/r2-base-team`, seeds 0..29)**  (my side win / loss / timeout %, before -> after; 30 seeds; 47 scenarios in both runs)
+
+| scenario set | before | after |
+| :--- | ---: | ---: |
+| all |  30/ 10/ 59 |  33/  9/ 58 |
+| 2v3 |  12/ 19/ 69 |  15/ 17/ 68 |
+| mixed |  58/  6/ 36 |  60/  6/ 35 |
+| pirate |  48/ 13/ 39 |  56/  9/ 35 |
+| swarm |   0/  0/100 |   0/  1/ 99 |
+
+**Robustness** (1v1 set, search range 3,500 m, 30 seeds; win / loss / timeout %):
+
+| engine setting | model | before | after |
+| :--- | :--- | ---: | ---: |
+| `--thruster-torque true` | Longbow S | 35/25/38 | 60/18/22 |
+| `--thruster-torque true` | Longbow L | 45/24/30 | 57/20/21 |
+| `--thruster-torque true` | Mantis | 48/40/12 | 61/32/6 |
+| `--gyro-pitch-sign 1` | Longbow S | 20/56/24 | 23/42/34 |
+| `--gyro-pitch-sign 1` | Longbow L | 42/38/16 | 31/37/30 |
+| `--gyro-pitch-sign 1` | Mantis | 24/55/21 | 26/55/19 |
+
+
+### P4. Tried and not adopted (same seeds; win / loss / timeout % over the 13-opponent 1v1 set at search range 3,500, 30 seeds, Longbow S unless it says otherwise)
+Noise of one such cell is about +-2.5 points (390 ship-runs); differences below 4 points are not claimed.
+| change | result |
+| :--- | :--- |
+| **Close in while nobody damages me** (stand-off x 0.5 over 15 s after the first slug, back at the first damage) | Longbow S 65/23/11 -> 58/39/3 (vs Midge 57/0/43 -> 43/53/3: the Midge shoots back at 500 m); removed |
+| **Ignore fragments** (bounding box half-diagonal < 1.7 m: debris of a shot-up ship is a "small grid", up to every tenth slug of a 2v3 went into one) | 2v3 sets 17 -> 6 % wins, 2xMantis vs 3xGnat 60 -> 0 %: each `IgnoreTarget` blocks the AI for 15 s and turns the nose to the spot (wreck rule), and the stand-in AI is trapped on the fragment anyway (it takes the closest body); removed |
+| `AiStaleTakeover` 3 -> 8 s | L 51/29/19, S 65/22/12, Mantis 55/43/1: no effect (Mantis -2) |
+| `Max Aim Window m (railgun)` 2 -> 1.0 / 0.6 m | S 66/20/13 and 68/20/11 (hit rate 65 %, damage per hit 3.5k unchanged): the aim error at the trigger is already 0.01 deg, the window is not what limits |
+| `Preferred Engage Range` 1000 -> 800 / 1200 (Longbow, after the other changes) | S 76 -> 72 / 70 % wins, hit rate 76 -> 80 / 70 %; 1000 stays |
+| `Mantis` stand-off 650 -> 500 / 800 (cap 900) | Mantis 66/31/1 -> 63/29/7 and 61/28/9; vs Longbow S 43 -> 67 / 60 % but vs Longbow L 37 -> 13 %, Basilisk 43/57/0 -> 17/0/83 (it stays out of the rockets and cannot kill); no net gain |
+| `Aim Point` CENTER / FACING / SPREAD / ENGINES on the Basilisk (30 seeds, identical custom data in both runs) | CENTER is the best against the Basilisk (S 27 -> 37, L 63 -> 77 %; its core sits at the centre of its box) and the worst against the Pirate (S 2x: 33 -> 3 %, L: 50 -> 0 %); AUTO stays |
+| thrust lift while under fire (`Full Thrust While Under Fire`) | identical to travel-only in 1v1 and team sets; removed |
+| `MaintainLock(0.12)` (more fixes) and `Fresh Acceleration Scale` 1.0 | S 72 / 73 % vs 75 %, Mantis 57 / 59 vs 61: no gain |
+| `No Thrust Around The Shot` unbounded: 1.5 s before the shot / 3 settle ticks before the trigger | S 75 -> 62 %, Mantis 61 -> 49 % (the ship coasts while it is out of range or waiting for the aim) / S 75 -> 71 % and 2xMantis vs 3xGnat 88 -> 40 % (stall while a shot is held back); the adopted window is bounded |
+| scripts-only search (`ai off`, starts 500-900 m, no lock) | 82-87 % timeouts before and after: the spiral scan cannot find a 5 m ship in a 25 deg cone; only locked duels measure the fire control |
+
+
+### P5. Remaining weaknesses (sim)
+- **Team and unfair fights moved little** (table above: all scenarios 31 -> 34 % wins, +-3 at 40 seeds; the gains are Mantis vs Wasp / Gnat / Stinger and the Pirate). A Longbow against two or three
+  gatling ships still dies (1v2 / 1v3 vs Hornet, Harrier, Lancer: 90-100 % losses before and after) and against Wasp / Midge / Gnat swarms the fight ends by the clock: 2v3 timeouts
+  are about 54 %. Two reasons that are not DPS: the **AI trap** (P1; any fight in which the last enemy has to be found by the AI blocks after the first kills) and the
+  cadence (one slug per 21 s, 5-8 hits for a 54-block Wasp: 22 shots for three Wasps in 300 s is the whole budget). The fix needs the stand-in AI to ignore wrecks / fragments (engine), or a
+  spotter (Watcher / Hornet over FLEET), or a sensor on the Longbow.
+- **Scripts-only search finds nothing**: `ai off; hunt` from the default start 95 % timeouts, 0 wins, before and after (also 82-87 % at 500-900 m). The fire control itself is better
+  (locked duels above: Longbow S 61 -> 69 %, hit rate 72 -> 82 %).
+- **Cells that got worse** (n = 30 per cell, +-9 points; the dev-setting table above): Mantis vs Aegis 67 -> 60 % (100 seeds: 69 -> 61) and vs Lancer 53 -> 43 (100 seeds: 42 -> 48), Longbow L vs Watcher 40 -> 37
+  (default range 37 -> 27), Mantis vs Watcher 87 -> 83 (default 63 -> 53); Longbow S vs Mantis 70 -> 57 and Longbow L vs Mantis 73 -> 53 are the Mantis meeting a better Longbow, and the Mantis column shows it
+  (Longbow S 27 -> 43). At the default range the Mantis total is unchanged (41 -> 41 %), the gain of the dev setting (57 -> 61 %) is mostly Lancer / Harrier / Longbow / Basilisk.
+- **Longbow L** wins 56 % in the dev setting but loses to every gatling ship it cannot kill with its first slug (Hornet 53 / 40, Lancer 40 / 50, Harrier 53 / 43 win / loss): one slug
+  per 60 s, 2 s trigger delay. **Longbow S vs Longbow L** 30 / 60 (the L has 2,000 m of range and a slug that kills it). **Mantis** vs the two Longbows 33-47 % wins, vs Harrier 47 / 47, vs Basilisk 20 / 77.
+- **Big or hard-to-kill targets**: Longbow S vs Basilisk 20 / 0 / 80, vs Watcher 53 / 0 / 47: the slug does 350-1,500 on a graze and about 3,800 through the middle of a small ship,
+  and the capable-test needs the single PB / RC / all batteries / all guns gone. An aim point that found the PB / RC (or the single gun of the Midge) would need the target's layout, which a script
+  cannot read; CENTER is better against the Basilisk and fatal against the Pirate.
+- **Friendly fire**: none from the Longbows in 40 seeds of the team set, 90 gatling damage in one Lancer + Mantis mirror run; collisions 12 / 3 / 0 events (Longbow L / S / Mantis), as before.
+- **Per-tick cost** is unchanged (sim wall clock per `Main` call 0.0153 / 0.0160 / 0.0137 ms against 0.0151 / 0.0165 / 0.0139; no loop was added to the tick, `HoldRail` / `ApplyRail` touch the gun list once per state change).
+- With **`--gyro-pitch-sign 1`** (the sign convention the in-game test disproved; scripts cannot aim) the hold of the first slug costs: Longbow L 42 -> 31 %, S 20 -> 23, Mantis 24 -> 26 (L was 42 -> 21 before the 60 s limit).
+  This is not a regression in the real game but it shows the hold relies on the script's own aim.
+
+### P6. Assumptions about the real game (unverified; the sim cannot tell)
+- A railgun in a creative world reports `IsShooting` while it charges for an accepted shot (R3 of round 1); the early refusal and the held-trigger release depend on it, and fall back to the old
+  1.5 s / ammo-drop paths when it does not. If `IsShooting` is true for a whole recharge, `Shoot_Off` is sent every 0.1 s while no shot is pending, which is harmless. If it is reported later than 0.25 s
+  after the trigger, an accepted shot is judged refused and the ship asks again every 0.75 s until the capacitor is full again (the cycle model degrades to round 1 behaviour).
+- Thrust is served before the recharge of the railgun (power groups from `ResourceDistributionGroups.sbc`: Thrust 80, DefenseAdative 90). If the game distributes proportionally, change 2 is neutral.
+- A disabled railgun keeps its charge (`Railgun Off While AI Searches`). If disabling drops the charge, set the key to false; the cost is the first slug.
+- Off-centre thrust turns the ship (the sim's default `ThrusterTorque` is false; the real game applies the force at the thruster). `No Thrust Around The Shot` is the answer to that; with torque on in the
+  sim the Longbow S goes 35 -> 60 %, without torque it costs nothing measurable.
+- The AI blocks pull the trigger of fixed guns and leave the toggle on (sim stand-in only); the real behaviour is unknown.
+- Detected-entity velocities are exact (the fresh acceleration is a difference of two of them over 0.1-0.25 s; with noisy velocities lower `Fresh Acceleration Weight` to 0.5 or set it to 0).
+- Gatling bullets reach 800 m (data range); the 80-100 % range randomisation means some shots at 700-760 m fall short.
+- Saved CustomData wins over code defaults: drones pasted from an older package keep their `[Longbow]` / `[Mantis]` keys; the new keys are added with the defaults on the next start, the changed default is
+  Mantis `Gatling Range` (an old section would not contain it unless it was saved by v2.1, which wrote 650).
+
+### P7. Reproduce
+`bash sim/build.sh`, `python3 -I tools/build_all.py --only "Longbow S" "Longbow L" "Mantis" --no-zip`, then (private copy of `out/Blueprints` via `--repo DIR`, DIR holding `defs_stats.json` and `out/Blueprints`):
+`SimHost.exe run --repo DIR --filter '^1v1/.*(Longbow|Mantis)' --seeds 30 --jobs 2 --vanilla-search-range 3500` (dev setting; drop the last flag for the default), locked duels
+`--filter '^1v1/.*(Longbow S|Mantis)' --face --start-distance 800:950 --commands '0.5:ai off;0.5:lock;0.5:hunt'`, team set `--seeds 40 --vanilla-search-range 3500` with the filter
+`^(2v3/2x(Longbow S|Longbow L|Mantis)-vs-3x(Hornet|Wasp|Midge|Gnat|Stinger)|1v2/(Longbow S|Longbow L|Mantis)-vs-2x(Hornet|Wasp|Midge|Harrier|Lancer)|1v3/(Longbow S|Longbow L|Mantis)-vs-3x(Hornet|Wasp|Midge)|pirate/[23]?x?(Longbow S|Longbow L|Mantis)-vs-Pirate|mixed/Hornet\+Longbow S-vs-(Hornet|Lancer|Wasp\+2xGnat|Aegis|Longbow S|Mantis|Hornet\+Longbow S|Lancer\+Mantis)|mixed/Lancer\+Mantis-vs-(Hornet|Aegis|Lancer|Longbow S|Midge|Lancer\+Mantis))$`;
+robustness `--thruster-torque true`, `--gyro-pitch-sign 1`. The offline lead study replays `SimHost.exe one --trace-every 2` CSVs (10 seeds each of Hornet / Harrier / Lancer / Aegis vs Longbow S): the
+predictors are the filter of `Track.Set` with different weights. Debug builds of the sim (extra `Console.Error` lines in `Weapons.cs`: refused triggers, capacitor ratio, slug spawn position) were built from a copy outside the repo.
+
+
+## Round 2: aegis-basilisk (`scripts/AegisAI.cs` v2.2-aegis, `scripts/BasiliskAI.cs` v2.2-basilisk)
+
+Written by the aegis-basilisk agent. Method: a private copy of the repo + sim in which every other script is exactly the round-2 baseline one (settings hash 86da6f4425ff003e; the control
+copy `ctl` reproduces `out/sim/results/r2-base-1v1` and, on `^(2v3|mixed|pirate|swarm)/`, `r2-base-team` number for number), same seeds 0..29, `--jobs 2`. "Before" = the v2.1 scripts of both
+models in `ctl`, "after" = the final files. The opponents are therefore the round-2 baseline ones (v1.8 Hornet, v2.1 Harrier/Lancer/Wasp, old Longbow/Mantis), weaker than the scripts now in `scripts/`. All numbers are pooled over ship-runs of that model (mirror fights count both sides; "win" = that model's side wins). Modes: **default** (shipped 1.5-3 km starts, AI blocks
+as in the baseline), **hybrid** (`--start-distance 1500:2400`, removes the 2.5 km search-range artefact), **locked** (`--face --start-distance 800:950 --commands "0.5:ai off;0.5:lock;0.5:hunt"`, isolates gunnery),
+**scripts-only** (`--commands "0.5:ai off;0.5:hunt"`, also with `--face --start-distance 400:900`).
+
+### X1. Both scripts were still missing the whole tracking/search stack of the other drones (the biggest effect)
+v2.1 of both files carried only the round-1 H1-H6 patches. They lacked the later Harrier/Lancer fixes: `AccHold` (acceleration trusted 1 s), `Raw/RawMax` and the debris rule, the **hull-gap fix** in `MaintainLock`
+(W2 of the Wasp/Lancer/Harrier section: stale-lock rays mostly go back to the predicted point, a share goes to the widening ellipse), `Stickiness/GhostTime/AiStaleTakeover` as settings, `Jink Interval` keys, other fleets'
+`_TGT` feeds, and from the Hornet/Harrier v2.2 work (R2-R5 there): long confirm rays on both cameras that shorten after a fight, `AiRepick`, `AiHeldIgnored`, the HUNT search patrol, and the config keys that contain "=".
+Ported with `patch` from the Hornet v1.8 -> v2.2 diff, the Lancer v2.1 -> v2.2 diff (per-drone patrol direction/radius) and a hand-fixed remainder (the Basilisk has no `AiRays` function, the Aegis has the escort code). Effect:
+
+| set | model | win % before > after | lose % | timeout % | damage dealt / taken per ship |
+|---|---|---|---|---|---|
+| 1v1 default (14 scenarios x 30 seeds = 420 ship-runs) | Aegis | 40.5 > 71.2 | 23.3 > 19.5 | 35.5 > 7.4 | 6.4k > 11.1k / 2.5k > 2.5k |
+| | Basilisk | 42.1 > 55.7 | 20.2 > 26.2 | 36.7 > 16.2 | 6.3k > 9.1k / 20.1k > 25.8k |
+| 1v1 hybrid | Aegis | 61.9 > 75.5 | 33.1 > 22.4 | 1.4 > 0.7 | 10.1k > 12.5k / 3.7k > 2.9k |
+| | Basilisk | 57.4 > 61.9 | 31.4 > 28.1 | 9.0 > 9.5 | 9.1k > 10.2k / 30.4k > 28.1k |
+| 1v1 locked (gunnery only) | Aegis | 47.4 > 67.4 | 29.0 > 21.9 | 23.3 > 10.5 | 11.6k > 14.1k / 3.2k > 2.8k |
+| | Basilisk | 52.1 > 54.8 | 29.8 > 27.6 | 16.7 > 16.4 | 8.3k > 9.2k / 27.9k > 27.2k |
+| 1v2 + 1v3 (solo vs 2-3 enemies, 1,230 ship-runs each) | Aegis | 47.6 > 69.3 | 17.7 > 25.0 | 34.6 > 5.5 | 7.8k > 13.4k / 2.1k > 3.1k |
+| | Basilisk | 44.2 > 64.6 | 16.0 > 21.3 | 39.6 > 13.7 | 4.5k > 6.8k / 15.7k > 23.0k |
+| 2v3 + mixed + swarm (510) | Aegis | 32.0 > 53.9 | 28.0 > 37.3 | 40.0 > 8.0 | 9.7k > 15.8k / 3.7k > 5.1k |
+| | Basilisk | 41.4 > 61.8 | 19.4 > 24.9 | 39.2 > 13.3 | 10.0k > 14.5k / 22.9k > 30.9k |
+| pirate (180) | Aegis | 82.8 > 84.4 | 14.4 > 12.2 | 1.1 > 2.2 | |
+| | Basilisk | 19.4 > 30.6 | 38.9 > 41.7 | 41.7 > 27.8 | |
+Locked mode isolates the tracking port (W2/W3: Aegis +20 points, Basilisk +3: rockets against 35-40 m/s jinkers are limited by the lead, see X5); the default/hybrid difference is the patrol (R4 of the Hornet section) and the confirm-ray work.
+Per opponent, 1v1 default, win % before > after (Aegis): Basilisk 36>66, Gnat 70>93, Harrier 30>56, Hornet 53>86, Lancer 20>53, Longbow L 33>93 (before 60 % timeouts), Longbow S 23>46, Mantis 16>66, Midge 33>76, Stinger 53>86, Wasp 60>86, Watcher 66>96.
+(Basilisk): Aegis 43>23 (the opponent got much stronger), Gnat 66>86, Harrier 33>46, Hornet 40>63, Lancer 20>40, Longbow L 0>0, Longbow S 0>0, Mantis 70>86, Midge 66>73, Stinger 73>96, Wasp 46>83, Watcher 63>96.
+Timeouts split (Basilisk, 154 > 65 of 420 ship-runs): nobody ever fought 121 > 26, I shot but nobody died 3 > 4, enemy shot at me and I never fired (Longbow S/L, X6) 23 > 35.
+Aegis (140 > 28 timeouts): nobody ever fought 135 > 20 (the rest: I shot but nobody died 3 > 3, enemy shot and I never fired 2 > 1, I never shot and nobody did 0 > 4: Midge / Stinger / Mantis starts beyond the AI's reach).
+
+### X2. AI confirm rays: parallax between the camera and the gun axis (new, Basilisk; transferable to every script with confirm rays)
+In default mode the Basilisk sat in AI mode for 117-200 s of 300 against a passive Gnat / Watcher / Stinger at 1.4-2 km with the nose 0.02-0.05 deg on the target (trace) and **zero confirm hits in 178 rays**. The AI turns the
+*guns* (in the sim the first gun's axis) onto the target; the cameras sit 1-3 m beside that axis, so the camera boresight passes 0.1-0.2 deg beside a 3 m target at 1.5 km (parallax 3 m / 1.5 km), and the spiral rings
+(0.16 deg and out) hit only by chance. Fix (`ConvergePoint`, `IsCvgRay`, `AiRays`): 2 of every 8 confirm rays no longer go down the boresight but through a point on a gun axis (or on the centre line of all functional guns)
+600 / 1200 / 2400 m ahead, cycling through the guns; a target anywhere on the AI's line of fire in 0.3 x range ... range is on the ray's path. Same code in the Aegis. Config `AI Confirm Convergence Rays`, `... Per 8` (2; 4 gives 54.2 against 55.0 %, no better).
+Traces: Basilisk vs Gnat seeds 0-2 (timeout, lock never) now win at 190 / 82 / 194 s with 1 hit in 82-142 rays; vs Watcher 22 / 82 / 8 rays. Same build with and without the convergence rays, 1v1 default, Basilisk (non-mirror, 360 ship-runs): win 50.6 > 55.0 %, timeouts 21.7 > 17.2 %,
+vs Gnat 66>86, Stinger 76>96, Watcher 70>96; hybrid unchanged (57.8 > 57.2, the AI is close enough there); the Aegis, which locks in 90 % of its runs anyway, 73.1 > 72.6 (all 420 ship-runs, noise). It is geometry, not budget: the rays cost the same.
+It does not help against the Longbow S: there the rocket-leading AI nose is 2-7 deg off the target (394 rays, 0 hits; X6). Assumption about the real game: the AI blocks aim the weapons / the grid forward, not the camera;
+convergence on the centre line of the guns covers both within a couple of metres.
+
+### X3. Basilisk: the shipped blueprint overrode the tuned standoff (found by accident)
+`tools/designs/extra.py:203` writes `Standoff Range=600` into the Basilisk PB's Custom Data. Saved Custom Data beats code defaults, so **in the game the Basilisk stood off at 600 m, not the 300 m the round-1 sweep chose**. The sim does not see
+it: `BlueprintLoader` reads the `<CustomData>` element, the blueprints store the PB Custom Data in the mod-storage component, and runs with and without `Standoff Range=300` are bit-identical. Fix in the script: the key is now
+`Standoff Range vs Small Grids` (a stale line in an old PB is ignored; `range` command and the other keys unchanged). **Needs (not my file):** delete `extra="Standoff Range=600\n"` in the Basilisk design. All other shipped Custom Data
+lines (Aegis home/cue channels, Harrier `Target Priority Small Bonus=300`, Mantis `Engage Cap=650`, `Min Engage Range=250`) equal the script defaults.
+
+### X4. Basilisk doctrine sweeps (1v1 hybrid, 12 opponents x 30 seeds = 360 ship-runs, +-2.6 points noise, one change at a time)
+Standoff alone (build without convergence rays, base 300 m = 57.8 %): 450 m 55.8, 180 m 62.8; fire-window multiplier alone x2 60.8, x4 60.6. On the final build (base 57.2): window x2 + standoff 250 m 61.1, 180 m 64.7, 150 m (+ Min Range 100) 65.0;
+window x3 + 180 m 65.0; + Salvo Pause 1.2 s 66.1 (not adopted: with a counted rocket stock it would waste them); orbit 25 + jink 10: 61.7, orbit 18 + jink 9: 61.4, orbit 0 + jink 0 (old build): 57.5 (all inside the noise). Adopted: `Standoff` 300 > **180 m**, and a new
+`Fire Window Multiplier (unlimited rockets)` = **2** that applies only while the launchers report no stock (`_rockets < 0`, creative / empty inventories; with a counted stock the window stays 1, as in the Wasp section V2): +7.5 points together
+(hybrid, non-mirror 57.2 > 64.7), locked pooled 52.9 > 54.8. Why the window: the aim error is 1-3 deg for most of a lock (one Basilisk-vs-Lancer duel, 2,484 locked ticks: < 0.3 deg 11 %, 0.3-1 deg 44 %, 1-3 deg 45 %), because the target's
+35-40 m/s jinks move the 1.5 s rocket lead point by ~10 deg per jink; the 0.3 deg window of v2.1 let the gate open in 72 of those ticks ("not on target" 2,175, "target jinking" 177, "track too old" 60). Mean achieved turn rate in those duels was 0.10 of 0.18 rad/s commanded (one large gyro), so part of the error is actuator lag; it was not separated from the lead error.
+
+### X5. Basilisk: wingmate collisions (priority 4)
+Two Basilisks collided in the team set (65 ship-run collision events in 1,920 ship-runs, collision damage 35k). In the traces both are AI-flown (the AI blocks have no wingmate avoidance) and sit 15-30 m apart for 100 s. `Separation` now adds a close push
+(`Wingmate Close Separation Range` 70 m, `... Speed` 22 m/s, on top of the 160 m / 12 m/s one), and `AiStep` takes the ship away from the AI blocks for 3 s whenever a wingmate is closer than **45 m** (`Take Over From AI When A
+Wingmate Is Closer Than`, 0 = off) so the script can fly them apart (the no-target branch of `Control` then flees from the mates instead of flying home). Team set: collision events 65 > 6 (collision damage 35k > 17k; the 6 are two Basilisk-Basilisk contacts in 1v2 seed 21 while the script flew, and two Gnat rams), win in
+the 2x/3x-Basilisk scenarios 69.7 > 69.2 (70 m / 5 s hold: 67.0, so the shorter hold is cheaper; push-only without the takeover: collisions unchanged at 0.04 per ship-run). Friendly fire went the other way: 8 > 22 ship-runs with friendly damage (1,980 > 7,120 hp over 1,920 ship-runs, about 0.02 % of the damage dealt), 90 hp per rocket.
+Checked: a second flight-line test (rocket path along the launcher axis instead of to the aim point) changes nothing (identical runs), the hits come from AI-flown launchers (the sim AI has no friendly check, `ai_on` 30-138 s in those runs) and
+from the wider window; not fixed.
+
+### X6. Basilisk and the snipers; dash tried
+Basilisk vs Longbow S: 80 % timeouts, vs Longbow L 43 %: the sniper holds 1,330 m (railgun standoff), the AI approaches at 10 m/s and its rocket-leading nose is 2-7 deg off the target (394 confirm rays, 0 hits), and with a lock the Longbow
+flies 60-75 m/s, as fast as the Basilisk's 60 m/s cap. A **dash along the AI heading** (the Wasp V3 idea, ported: after 25 s of AI flight without a lock, no wingmate, few hits taken, 12 s at 60 m/s along the smoothed nose heading, AI off, rays keep
+casting) gives Longbow S 0 > 20 % wins and in 1v1 default +3.6 / solo-vs-teams +3.5 points, **but** -3.1 points in hybrid fights and Lancer 43 > 16 %, Harrier 56 > 40 (gating by recent hits did not change that). Left in the file, **off**
+(`Dash Along AI Heading`, default false), like in the Wasp.
+
+### X7. Large and huge targets (Pirate)
+`LargeTargetRadius` (25 m) treated the Longbow L (bounding radius 28-33 m), the Basilisk (24.6 m, so it flickers around the limit) and the Pirate (42 m) alike. Pirate duels (pirate/1x-3x, 180 runs per cell): Aegis stand-off 300 / 450 /
+600 / 720 m: 63 / 78 / 76 / 85 % (fire from 780 m), Basilisk 450 / 600 / 650 / 700 / 750 m (fire from 800 m, 4.3 s of flight): 29 / 24 / 29 / 32 / 41 % (37 % in the final build). But 720 m cost the Aegis 17 points against the Longbow L (93 > 76 %): no turrets there,
+closer is better. So a third class: **huge = Track.RawMax > 38 m** (`HugeTargetRadius`, `Huge()`): Aegis `StandoffHuge` 720 / `MaxFireRangeHuge` 780, Basilisk `StandoffHuge` 750 / `MaxFireRangeHuge` 800 / `MaxLeadTimeHuge` 4.3; the
+large class keeps 600 / 700. Pirate: Aegis 82.8 > 84.4 % (the port alone gave 76.1, the huge class recovers it), Basilisk 19.4 > 30.6 %. Solo vs the Pirate: Aegis 16 > 40 %, Basilisk 10 > 13 %; groups of two: Aegis 90 > 83, Basilisk 13 > 30; three: Aegis 100 > 100, Basilisk 26 > 36 %.
+
+### X8. Aegis: GUARD / escort, decoys, and what was flat
+- **GUARD** (`PickTarget`): the contact filter `Distance(p, home) > GuardRadius` dropped every contact once the AI blocks had flown the ship away from its station (the stand-in has no tether), so a guarding Aegis never locked (8 % of ship-runs,
+  nose on the enemy at 0.01-0.5 deg for 120 s, 452 shots, 4 % hits). A contact within 1.2 x `MaxFireRange` of my own guns now counts as a threat whatever the distance to the carrier. 7 opponents x 30 seeds (non-mirror), `--commands "0.5:guard"`: script lock
+  8 > 43 % of the runs, win 31.4 > 34.8 % (v2.1 29.5), timeouts 36 % either way (81 of 210 ship-runs: nobody comes to a station that holds still). There is no carrier in any scenario, so the escort geometry (`EscortWant`, `Station`) itself is untested.
+- **Decoys**: with `--decoys-functional false` the Aegis scores 79.2 instead of 81.1 % (hybrid, 360 ship-runs): two roof decoys are worth about +2 points in 1v1 because the enemy scripts aim from their own camera hits and ignore them. Only the AI stand-in
+  and the Pirate's turrets pick decoy bodies first. Rolling the roof towards the enemy (the decoys would then be in the line of fire) was therefore not built.
+- Flat inside the noise (hybrid, Aegis, 360 ship-runs, base 80.6): jink 35 + orbit 40 77.2; standoff 300 / 150: 81.7 / 82.2; `AI Takes Over After Stale Lock` 8 s + ghost 15 s: 82.2, 1.5 s: 81.9.
+- Hit rate in lost fights is 2-3 % (136 shots, 3 hits at 540 m): the Aegis sits in AI mode flying 8 m/s while a Lancer shoots from 500 m; the first script lock decides these duels (Lancer 4-12 s, Aegis 18-70 s).
+
+### X9. Robustness (1v1 default, 30 seeds x 14 opponents = 420 ship-runs, win % before > after)
+| engine assumption | Aegis | Basilisk |
+|---|---|---|
+| default | 40.5 > 71.2 | 42.1 > 55.7 |
+| `--thruster-torque true` | 39.0 > 48.1 (timeouts 36.7 > 22.9) | 50.0 > 67.4 |
+| `--gyro-pitch-sign 1` (aim much worse) | 42.9 > 45.7 (timeouts 36.0 > 26.0, losses 18.1 > 25.0) | 36.4 > 40.5 |
+| `--vanilla-search-range 3500` | 63.6 > 75.0 | 57.9 > 60.2 |
+Scripts-only (`ai off; hunt`): Aegis 0 > 0 % wins (97 % timeouts), with `--face --start-distance 400:900` also 0 > 0 (no ray search finds a 5 m ship); Basilisk 4.5 > 4.3 and, near and facing, 78.6 > 79.3 (large target: ray search works).
+No script exceptions in any run. CPU per `Main` call 0.0090 > 0.0111 ms (Aegis), 0.0088 > 0.0098 ms (Basilisk), median peak tick 1.0 / ~1 ms (sim wall clock; outliers up to 60 ms are thread scheduling).
+
+### X10. Still weak
+- Basilisk vs Longbow S/L (0 %), vs Lancer (40 %), Harrier (46 %), Aegis (23 %): rockets against 35-40 m/s jinkers; one large gyro; the sniper outruns it. Needs (blueprint): a second large gyro and more thrust, or a gatling battery that does not depend on rocket lead.
+- Aegis vs Lancer 53 %, Harrier 56 %, Longbow S 46 %: duels decided by who gets the first script lock (Lancer 4-12 s after the start, Aegis 18-70 s with the AI approaching at 10 m/s).
+- Scripts-only: nothing finds a small ship by rays (Aegis 0 wins). Anything that needs the AI blocks stays on the stand-in's assumptions (see X11).
+- Unfair fights: a lone Aegis / Basilisk against 2-3 Hornets / Harriers / Lancers / Mantis / Longbow S still wins 0 % (before: 0 %, but 20-56 % timeouts; now 90-96 % losses because the fights happen), and 2xAegis vs 3xHornet is 0 / 100 (was 3 / 60). No doctrine
+  change was made for focus fire, split or retreat: `Split Targets Across Hive` is flat (R5 of the Hornet section) and a retreat from equal-speed (98 m/s) gun ships does not break contact.
+- Friendly fire of AI-flown Basilisk launchers (X5).
+
+### X11. Assumptions about the real game
+- The AI Offensive block turns the guns / grid forward (not the cameras) onto its target (X2); a block that is switched off and on searches again (R3 Hornet section); AI search every 30 s; AI flight speed limit 10 m/s (the sim exposes no AI-block property: raising it
+  from the script, if the block has a speed-limit property in the game, would be the cheapest lever for the approach phase, not testable here).
+- Saved Custom Data wins over code defaults (X3): old PBs keep their old keys; delete the `[Aegis]` / `[Basilisk]` sections when pasting v2.2 (new keys: `AI Confirm Convergence Rays (Per 8)`, `Wingmate Close Separation Range/Speed`, `Take Over From AI ...`,
+  `Fire Window Multiplier (unlimited rockets)`, `Standoff Range vs Small Grids / Huge Grids`, `Max Fire Range vs Huge Grids`, `Max Flight Time vs Huge Grids`, `Dash ...`).
+- Rocket launchers of a creative-world ship report no stock (`_rockets = -1`), so the x2 fire window applies; with loaded launchers the v2.1 window is kept.
+- The Pirate's turret range is about 800 m (sim) and Longbow L has no turrets; a real turret ship of radius 28-38 m is treated as "large", not "huge".
+
+### X12. Reproduce
+Private copy `ab2-repo` = the baseline-state repo with only `AegisAI.cs` / `BasiliskAI.cs` replaced (`SIM_OUT=<own dir> bash sim/build.sh`, then `python3 -I tools/build_all.py --only Aegis` and `--only Basilisk` after every edit);
+control copy = the v2.1 pair. Sets: 1v1 `^1v1/(Aegis|Basilisk)-vs-|^1v1/.*-vs-(Aegis|Basilisk)$` (default; `--start-distance 1500:2400` hybrid; the locked flags above), teams
+`^(2v3|mixed|pirate|swarm|1v2|1v3)/.*(Aegis|Basilisk)` (2,580 runs), 2x/3x Basilisk collision set `^(2v3|pirate|1v2|1v3)/.*[23]xBasilisk`, Pirate `^pirate/.*(Aegis|Basilisk)-vs-Pirate`, GUARD `--commands "0.5:guard"`, sweeps with
+`--custom-data "[Basilisk]\nIGC Tag=BASILISK\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=IDLE\nKey=value"` (keys must not contain "="), alternative physics `--thruster-torque true`, `--gyro-pitch-sign 1`, `--vanilla-search-range 3500`.
+Pooling and per-opponent tables are 40 lines of Python over `runs.jsonl` (`seed_index < 30`, mirror scenarios counted from both sides). Debug builds (gate counters, confirm-ray counters, gyro command vs rate) lived in a separate copy.

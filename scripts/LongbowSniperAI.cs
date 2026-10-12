@@ -1,5 +1,5 @@
 // =====================================================================
-//  LONGBOW SNIPER AI  v1.9  - long-range railgun drone controller
+//  LONGBOW SNIPER AI  v2.0  - long-range railgun drone controller
 //  Space Engineers (vanilla). Works on small grid (Small Railgun, 1400 m)
 //  and large grid (Large Railgun, 2000 m). Paste into a Programmable Block.
 // ---------------------------------------------------------------------
@@ -22,6 +22,16 @@
 //   * Return to base on low battery / out of sabots. Thrust is power-
 //     limited so recharging the railgun never browns out the drone.
 //
+//  v2.0 (round 2, sim; details and numbers in docs/script-fix-notes.md "Round 2: longbow-mantis")
+//   * Aim: the acceleration used for the lead is the one of the last fix interval (Fresh Acceleration Weight 0.8, scale 0.9), not the
+//     smoothed and steadiness-gated one (offline on 2,285 sample shots at a jinking Hornet-class target: 36 % -> 55-59 % within 1.5 m).
+//   * Power: thrust is served before the railgun recharge, so the thrust throttle (which keeps the recharge at full speed) is lifted while the
+//     ship has to travel more than 200 m to its stand-off (Full Thrust While Travelling).
+//   * Railgun fire control: a held trigger (Shoot_On left by an AI block) is released, the next attempt comes when the capacitor should be
+//     full (ReloadTime after the slug left) and a refused trigger is asked again after 0.5 s; until the script has fired its own first slug the
+//     railgun is switched off while the AI blocks search with nothing locked, so the first (fully charged) slug is not spent at 1+ km by the
+//     AI (Railgun Off While AI Searches); the thrusters are off while the shot is pending and 0.25 s before the trigger (No Thrust Around The Shot: off-centre thrust
+//     turns the ship; with the sim's thruster-torque option a Longbow S goes 35 % -> 63 %).
 //  v1.9 (sim-audit pass; details and numbers in docs/script-fix-notes.md)
 //   * AI hand-over: confirm rays really cover the boresight (1 in 2 exactly down the nose), one long ray (2.6 km) + short
 //     ones (1.3 km); the AI also takes over when the lock has been stale 3 s (1 s beyond 1.4 km).
@@ -40,7 +50,7 @@
 //   range <m>   force an engagement range (0 = automatic)
 // =====================================================================
 
-const string VER = "1.9";
+const string VER = "2.0";
 
 // ---------------- settings (Custom Data) ----------------
 string Tag = "LONGBOW";
@@ -106,12 +116,14 @@ class Gun
 }
 List<Gun> _gunState = new List<Gun>();
 
+static double AccFastW = 0.8, AccFastK = 0.9;   // 0 = the old smoothed, gated acceleration
 class Track
 {
     public long Id; public Vector3D Pos, Vel, Acc; public double AccMag;
     public double Spin, SpinSince = -1, Rad0, DeadAt = -1, DisSince = -1; public Vector3D OF, OU; public bool HasOri;
     public MatrixD O = MatrixD.Identity; public List<Vector3D> Hull = new List<Vector3D>(); public int HullNext;
     public Vector3D Thrust, AimLocal; public double AimT = -99;
+    public Vector3D AccF;   // fresh acceleration: the last intervals only (the smoothed Acc lags a jinking target by about a second)
     public int ShotsAt, NSet; public double LastShotT = -999, QuietSince = -1;   // slugs I have fired at it; since when it has not accelerated
     // how fast it's rotating, from orientation changes between sightings
     public void Ori(MatrixD o, double dt)
@@ -132,11 +144,12 @@ class Track
             Vector3D a = (v - Vel) / dt;
             if (a.LengthSquared() > 10000) a = Vector3D.Normalize(a) * 100;
             Acc = Acc * 0.8 + a * 0.2;
+            AccF = AccF * (1 - AccFastW) + (a.LengthSquared() > 900 ? Vector3D.Normalize(a) * 30 : a) * AccFastW;
             AccMag = AccMag * 0.8 + a.Length() * 0.2;
             // which way (in its own frame) it usually pushes; its main engines sit on the opposite side
             if (HasOri && a.LengthSquared() > 1) Thrust = Thrust * 0.9 + Vector3D.TransformNormal(Vector3D.Normalize(a), MatrixD.Transpose(O)) * 0.1;
         }
-        else if (dt >= 2) { Acc = Vector3D.Zero; AccMag = 0; }
+        else if (dt >= 2) { Acc = Vector3D.Zero; AccMag = 0; AccF = Vector3D.Zero; }
         PeakAcc = Math.Max(Acc.Length(), PeakAcc * 0.98);
         // a ship that has stopped manoeuvring altogether (after being shot at) has lost its engines or its pilot
         if (src != "IGC")   // (an IGC fix is a mate's smoothed extrapolation: it always looks calm)
@@ -150,6 +163,12 @@ class Track
     // direction: the average vector is much smaller than the average size, so it gets faded out.
     public Vector3D EA()
     {
+        if (AccFastW > 0)
+        {   // measured on a jinking Hornet-class target (offline, 2,285 sample shots at 500-1300 m): constant velocity 29 % within 1.5 m, smoothed and
+            // gated acceleration 36 %, the acceleration of the last 0.1-0.25 s 55-59 %
+            if (AccF.LengthSquared() < 0.25) return Vector3D.Zero;
+            return AccF * AccFastK;
+        }
         double m = Acc.Length();
         if (m < 0.5 || AccMag < 1e-3) return Vector3D.Zero;
         double steady = MathHelper.Clamp((m / AccMag - 0.6) / 0.3, 0, 1);
@@ -166,6 +185,12 @@ const double TrackTimeout = 5.0;
 
 Vector3D _prevErr, _prevAim; bool _havePrev = false;
 double _powerScale = 1;
+bool _shootFlag = false;   // a shot has been confirmed through IsShooting at least once: the gun reports it
+bool Coast = true; double _coastOpen = -99;
+double ReadyLead = 0.0, RetryAfter = 0.5;   // next attempt this long before the nominal recharge is over / after a refused trigger
+// Thrust is served before the railgun's recharge (power groups: Thrust 80, DefenseAdative 90), so an unthrottled ship slows the recharge down
+// and a throttled one cannot move. _powerScale throttles while the ship sits still; it is let go while the ship has to travel or dodge.
+bool FreeFar = true; double FreeFarDist = 200, _needMoveUntil = -99;
 bool _firing = false;
 int _settled = 0;
 double _holdFireUntil = 0;
@@ -398,7 +423,7 @@ void LoadConfig()
     DodgeChar = Cfg(S, "Assumed Dodge Accel Character", DodgeChar);
     RangeMargin = Cfg(S, "Range Margin", RangeMargin);
     MinEngage = Cfg(S, "Min Engage Range", MinEngage);
-    ForcedRange = Cfg(S, "Forced Range (0 = auto)", ForcedRange);
+    ForcedRange = Cfg(S, "Forced Range (0: auto)", ForcedRange);
     GuardRadius = Cfg(S, "Guard Radius", GuardRadius);
     MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
     CruiseSpeed = Cfg(S, "Cruise Speed", CruiseSpeed);
@@ -420,16 +445,25 @@ void LoadConfig()
     AimKd = Cfg(S, "Aim Kd", AimKd);
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
     SettleTicks = (int)Cfg(S, "Settle Ticks Before Shot", SettleTicks);
-    LeadScale = Cfg(S, "Lead Scale (1 = calculated)", LeadScale);
+    LeadScale = Cfg(S, "Lead Scale (1: as calculated)", LeadScale);
     PreferRange = Cfg(S, "Preferred Engage Range", PreferRange);
     AimWindowMax = Cfg(S, "Max Aim Window m (railgun)", AimWindowMax);
     AimWindowMaxLarge = Cfg(S, "Max Aim Window m (big target)", AimWindowMaxLarge);
     CalmAccel = Cfg(S, "Calm Target Accel m/s2 (0 off)", CalmAccel);
     CalmWait = Cfg(S, "Max Wait For Calm Target s", CalmWait);
+    AccFastW = Cfg(S, "Fresh Acceleration Weight (0: old smoothing)", AccFastW);
+    AccFastK = Cfg(S, "Fresh Acceleration Scale", AccFastK);
+    FreeFar = Cfg(S, "Full Thrust While Travelling", FreeFar);
+    FreeFarDist = Cfg(S, "Travelling Distance m", FreeFarDist);
+    Coast = Cfg(S, "No Thrust Around The Shot", Coast);
+    ReadyLead = Cfg(S, "Retrigger Lead s", ReadyLead);
+    RetryAfter = Cfg(S, "Retrigger After Refusal s", RetryAfter);
+    HoldRailInSearch = Cfg(S, "Railgun Off While AI Searches", HoldRailInSearch);
+    HoldRailMaxS = Cfg(S, "Railgun Off Longest After First Lock s", HoldRailMaxS);
     FireRangeFactor = Cfg(S, "Fire Range Factor", FireRangeFactor);
     FireRangeSlack = Cfg(S, "Fire Range Slack", FireRangeSlack);
     UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
-    SplitFocus = Cfg(S, "Split Targets Across Hive (false = focus fire)", SplitFocus);
+    SplitFocus = Cfg(S, "Split Targets Across Hive (false: focus fire)", SplitFocus);
     DisabledGrace = Cfg(S, "Seconds Before Dropping Disabled Target", DisabledGrace);
     EvadeSpeed = Cfg(S, "Evade Speed When Hit", EvadeSpeed);
     AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
@@ -801,6 +835,7 @@ void PowerAndHealth()
         double load = cur / max;
         if (load > 0.97) _powerScale = Math.Max(0.1, _powerScale * 0.9);
         else if (load < 0.88) _powerScale = Math.Min(1, _powerScale + 0.03);
+        if (_now < _needMoveUntil) _powerScale = 1;
     }
     long ammo = 0; int working = 0;
     foreach (var g in _guns)
@@ -825,6 +860,10 @@ long Ammo(IMyUserControllableGun g) { var inv = g.GetInventory(0); return inv !=
 void UpdateGuns()
 {
     if (!_slowWeapon) return;
+    // A railgun is fired with ShootOnce only. If the trigger is held (an AI block or an old toggle left Shoot_On set) it fires by itself the
+    // moment it is charged, at whatever the nose points at, and IsShooting never ends so no shot is ever confirmed. Let go of it.
+    if (!_aiOn && _tick % 6 == 2)
+        foreach (var s in _gunState) if (s.PendingAt < 0 && s.B.IsFunctional && s.B.IsShooting) { s.B.ApplyAction("Shoot_Off"); }
     foreach (var s in _gunState)
     {
         if (s.PendingAt < 0) continue;
@@ -836,8 +875,14 @@ void UpdateGuns()
         }
         else if (s.SawShoot && !s.B.IsShooting)
         {   // the gun was busy and is done: the slug is away (no ammo is used in a creative world)
-            s.PendingAt = -1; s.LastShot = _now; s.ReadyAt = _now + ReloadTime + 0.5; _shots++;
+            // (the capacitor is empty from this moment and full again ReloadTime later: try then, not half a second later)
+            _shootFlag = true;
+            s.PendingAt = -1; s.LastShot = _now; s.ReadyAt = _now + ReloadTime - ReadyLead; _shots++;
             _last = "Shot " + _shots + " @ " + _engage.ToString("0") + " m (gun busy)";
+        }
+        else if (_shootFlag && !s.SawShoot && _now - s.PendingAt > 0.25)
+        {   // this gun does report IsShooting for an accepted shot and did not: the capacitor was not full yet - ask again very soon
+            s.PendingAt = -1; s.ReadyAt = _now + RetryAfter;
         }
         else if (_now - s.PendingAt > ShotDelay + 1.0)
         {   // no ammo drop and the gun never reported busy: still charging - retry in 2 s
@@ -964,6 +1009,7 @@ void Control(double dt)
         Vector3D d = tp - me; double dist = d.Length();
         Vector3D dir = dist > 1 ? d / dist : _rc.WorldMatrix.Forward;
         double e = dist - _engage;
+        if (_slowWeapon && FreeFar && Math.Abs(e) > FreeFarDist) { _needMoveUntil = _now + 1.0; _powerScale = 1; }
         double vr = Math.Sign(e) * Math.Min(Math.Min(Math.Abs(e) * 0.4, MaxSpeed), Math.Sqrt(2 * aBrake * Math.Abs(e)));
         Vector3D upRef = up.LengthSquared() > 0 ? up : _rc.WorldMatrix.Up;
         Vector3D tan = Vector3D.Cross(dir, upRef);
@@ -989,6 +1035,15 @@ void Control(double dt)
     if (want.LengthSquared() > cap * cap) want = Vector3D.Normalize(want) * cap;
     // gentler velocity loop while settling a shot, so thrust kicks don't shake the aim
     Vector3D acc = (want - myVel) * (aimingPhase ? 1.0 : 2.0);
+    // thrusters off while the shot is pending and in a short window before the trigger (off-centre thrust turns the ship, a velocity change
+    // moves the slug, which inherits the velocity of the moment it leaves the barrel). The window is bounded (0.25 s, once per 1.25 s): coasting
+    // for as long as a shot is merely wanted (mate in the line, aim not settled) stalls the ship - an unbounded version took 2xMantis vs 3xGnat from 88 % to 40 %
+    if (_slowWeapon && Coast)
+    {   // a window of 0.25 s right before the trigger, at most once per 1.25 s (a shot that is held back for other reasons must not stall the ship)
+        bool pre = !pending && toReady <= 0.05 && _settled >= SettleTicks - 3;
+        if (pre && _now - _coastOpen > 1.25) _coastOpen = _now;
+        if (pending || (pre && _now - _coastOpen <= 0.25)) acc = Vector3D.Zero;
+    }
     if (acc.LengthSquared() > 900) acc = Vector3D.Normalize(acc) * 30;
     ApplyThrust((acc - grav) * mass);
 }
@@ -1165,7 +1220,7 @@ void ApplyThrust(Vector3D forceWorld)
 
 void SetFire(bool on)
 {
-    if (on == _firing && !(on && _tick % 30 == 0)) return;   // re-send "on" twice a second (the AI blocks may have switched the guns off)
+    if (on == _firing && _tick % 30 != 0) return;   // re-send the state twice a second (the AI blocks may have switched the guns on or off)
     _firing = on;
     foreach (var g in _guns) if (g.IsFunctional) g.ApplyAction(on ? "Shoot_On" : "Shoot_Off");
 }
@@ -1174,7 +1229,7 @@ void ReleaseGyros() { foreach (var g in _gyros) { g.GyroOverride = false; g.Pitc
 
 void Release()
 {
-    SetGunsEnabled(true);   // (the friendly-fire guard of the AI phase may have switched them off)
+    SetGunsEnabled(true); HoldRail(false);   // (the friendly-fire guard of the AI phase may have switched them off)
     ReleaseGyros();
     foreach (var t in _thr) t.ThrustOverridePercentage = 0;
     if (_rc != null) _rc.DampenersOverride = true;
@@ -1601,17 +1656,26 @@ void SetGunsEnabled(bool on)
 {
     if (on != _gunsOff) return;
     _gunsOff = !on;
-    foreach (var g in _guns) if (g.IsFunctional) g.Enabled = on;
+    ApplyRail();
 }
+// While the AI blocks search (nothing locked) they pull the trigger at whatever they find, at 1+ km, and the first slug of the fight (the
+// capacitor starts full) is gone before the script has a lock. Until the script has fired its own first slug the railgun is switched off in
+// that phase, back on for the script's aimed shot (later in the fight the AI's shots at what it found are welcome: 2xLongbow S vs 3xGnat 20 %
+// with this limit, 10 % with the railgun off whenever nothing is locked, 22 % without).
+bool HoldRailInSearch = true, _railHeld = false;
+double HoldRailMaxS = 60, _firstLockT = -1;   // give the hold up if the script has not fired its own first slug 60 s after its first lock (it cannot aim: let the AI shoot)
+void ApplyRail() { bool on = !_gunsOff && !_railHeld; foreach (var g in _guns) if (g.IsFunctional && g.Enabled != on) g.Enabled = on; }
+void HoldRail(bool hold) { if (hold == _railHeld) return; _railHeld = hold; ApplyRail(); }
 void AiFriendGuard()
 {
+    HoldRail(HoldRailInSearch && _slowWeapon && _tgt == null && _shots == 0 && (_firstLockT < 0 || _now - _firstLockT < HoldRailMaxS));
     if (!FriendCheck || _aimRef == null) return;
     _myVel = _rc.GetShipVelocities().LinearVelocity;
     SetGunsEnabled(!(MatesInLine(_aimRef.GetPosition(), _aimRef.WorldMatrix.Forward, WeaponRange, ProjSpeed, 0) || _now - _friendRay < 1.5));
 }
 bool AiStep()
 {
-    if (_tgt != null) _lastTgtT = _now;
+    if (_tgt != null) { _lastTgtT = _now; if (_firstLockT < 0) _firstLockT = _now; }
     // The AI also takes over while my lock is stale (nothing seen for AiStaleTakeover s): it keeps the nose on the enemy
     // and the confirm rays below pick it up again, which hands control straight back to the script.
     bool want = AiAssist && _ai.Count > 0 && AiModeOk() &&
@@ -1623,7 +1687,7 @@ bool AiStep()
         if (want) Release();                    // thrusters and gyros go to the AI
         foreach (var b in _ai) b.Enabled = want;
     }
-    if (!_aiOn) { SetGunsEnabled(true); if (_tick % 300 == 7) foreach (var g in _guns) if (g.IsFunctional && !g.Enabled) g.Enabled = true; return false; }   // (also heals guns left disabled by a script restart during the AI phase)
+    if (!_aiOn) { SetGunsEnabled(true); HoldRail(false); if (_tick % 300 == 7) foreach (var g in _guns) if (g.IsFunctional && !g.Enabled) g.Enabled = true; return false; }   // (also heals guns left disabled by a script restart during the AI phase)
     AiFriendGuard();
     // The AI points the guns at what it found (about 0.1 deg off), so the enemy is dead ahead of the nose cameras.
     // Every forward camera casts as soon as it holds AiConfirmRange of charge. Pattern: 1 ray in 2 exactly down the

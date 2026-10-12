@@ -1,5 +1,5 @@
 // =====================================================================
-//  HARRIER DRONE AI  v2.1-harrier  - interceptor: hunts drones, rockets, kamikazes
+//  HARRIER DRONE AI  v2.2-harrier  - interceptor: hunts drones, rockets, kamikazes
 //  For Space Engineers (vanilla, small grid). Paste into a Programmable Block.
 //  Derived from HORNET DRONE AI v1.8 (same tracking, hive over IGC, AI hand-off,
 //  damage sensing, printer join); the engagement doctrine is new:
@@ -35,6 +35,12 @@
 //   * stale tracks are not fired on (Max Track Age To Fire), wingmate separation, evasive jink 35-40 m/s every 1-2 s
 //   * target feeds from other fleets ("Listen To IGC Tags")
 //
+//  v2.2 (round 2, "Round 2: hornet-harrier" in docs/script-fix-notes.md):
+//   * AI confirm rays: both forward cameras fire the long (2.6 km) ray; after a fight they shorten to the last known range (a ray costs its length)
+//   * AI re-pick: an AI block that has held the nose on something for 6 s without a lock is power-cycled once (it may be stuck on a wreck)
+//   * HUNT search patrol: with nothing found for 15 s the drone cruises round a square of 1.2 km radius with listening stops for the AI blocks
+//   * two cameras that can cast in the same tick never aim at the same point; config keys with '=' in their name were renamed (MyIni splits there)
+//
 //  COMMANDS (PB argument, toolbar, or IGC "<Tag>_CMD")
 //   guard    hold home point, engage anything inside GuardRadius
 //   hunt     chase and engage any target, actively scan
@@ -49,7 +55,7 @@
 //  Settings live in the PB's Custom Data (written on first run).
 // =====================================================================
 
-const string VER = "2.1-harrier";
+const string VER = "2.2-harrier";
 
 // ---------------- settings (overwritten from Custom Data) -------------
 string Tag = "HARRIER";
@@ -78,7 +84,7 @@ double LeadScale = 1.0;      // scales the lead offset if shots land consistentl
 bool UseTargetAccel = true;
 bool SplitFocus = true;
 double DisabledGrace = 5, EvadeSpeed = 20;
-bool AiAssist = true; double AiConfirmRange = 1300;   // confirm rays are this long (1.5 casts/s per camera at 2 km/s charge)
+bool AiAssist = true; double AiConfirmRange = 2600;   // confirm rays are this long (0.77 casts/s per camera at 2 km/s charge; both forward cameras reach the full 2.6 km)
 double AiConfirmLong = 2600;   // the first forward camera casts this long instead (0.77 casts/s)
 double RtbBattery = 0.15;    // fraction
 double SepRange = 70, SepSpeed = 25;   // wingmate separation: push away from hive mates closer than this (m) at up to this speed (m/s)
@@ -392,7 +398,7 @@ void Command(string a)
 
 void SetMode(Mode m)
 {
-    _mode = m;
+    _mode = m; _noTgtSince = _now; _patrolLeg = false;
     if (m == Mode.IDLE || m == Mode.ASSIST) Release();
 }
 
@@ -444,15 +450,30 @@ void LoadConfig()
     SepRange = Cfg(S, "Wingmate Separation Range", SepRange);
     SepSpeed = Cfg(S, "Wingmate Separation Speed", SepSpeed);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
-    LeadScale = Cfg(S, "Lead Scale (1 = calculated)", LeadScale);
+    LeadScale = Cfg(S, "Lead Scale (1: as calculated)", LeadScale);
     UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
-    SplitFocus = Cfg(S, "Split Targets Across Hive (false = focus fire)", SplitFocus);
+    SplitFocus = Cfg(S, "Split Targets Across Hive (false: focus fire)", SplitFocus);
     DisabledGrace = Cfg(S, "Seconds Before Dropping Disabled Target", DisabledGrace);
     EvadeSpeed = Cfg(S, "Evade Speed When Hit", EvadeSpeed);
     AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
     AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
     AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
+    AiConfirmAdaptive = Cfg(S, "AI Confirm Rays Shorten After A Fight", AiConfirmAdaptive);
+    AiSpiralMin = Cfg(S, "AI Confirm Spiral Min (deg)", AiSpiralMin);
+    AiSpiralMax = Cfg(S, "AI Confirm Spiral Max (deg)", AiSpiralMax);
+    AiSpiralPow = Cfg(S, "AI Confirm Spiral Exponent", AiSpiralPow);
+    AiStaleTakeover = Cfg(S, "AI Takes Over After Stale Lock (s)", AiStaleTakeover);
+    GhostTime = Cfg(S, "Ghost Target Time (s)", GhostTime);
+    Stickiness = Cfg(S, "Target Stickiness (score bonus for the current target)", Stickiness);
+    AiRepick = Cfg(S, "AI Re-pick Interval (s; 0 off)", AiRepick);
+    PatrolOn = Cfg(S, "Search Patrol When Nothing Found (HUNT)", PatrolOn);
+    PatrolRadius = Cfg(S, "Search Patrol Radius (m)", PatrolRadius);
+    PatrolAfter = Cfg(S, "Search Patrol Starts After (s)", PatrolAfter);
+    PatrolAfterFight = Cfg(S, "Search Patrol Starts After A Fight (s)", PatrolAfterFight);
+    PatrolListen = Cfg(S, "Search Patrol Listening Stop (s)", PatrolListen);
+    PatrolSpeed = Cfg(S, "Search Patrol Speed", PatrolSpeed);
+    AiRepickWindow = Cfg(S, "AI Re-pick Only Within (s) Of Last Target", AiRepickWindow);
     RtbBattery = Cfg(S, "RTB Battery Fraction", RtbBattery);
     AimKp = Cfg(S, "Aim Kp", AimKp);
     AimKd = Cfg(S, "Aim Kd", AimKd);
@@ -641,10 +662,12 @@ void ManualLock()
 //  the scatter around the point grows with the age of the last sighting. If the lock goes stale (>0.6 s) the target
 //  is kept as a "ghost" for GhostTime seconds: the guns stay on its extrapolated position, two rays per tick sweep an
 //  ever wider spiral around it (the uncertainty grows with age squared) and the loss is announced to the hive.
-const double GhostTime = 8.0;       // how long a lost target is kept and searched for
-const double AiStaleTakeover = 3.0; // lock stale for this long: let the AI blocks hold the enemy (if there are any)
+double Stickiness = 400;             // score bonus (m-equivalents) for staying on the current target
+double GhostTime = 8.0;             // how long a lost target is kept and searched for
+double AiStaleTakeover = 3.0;       // lock stale for this long: let the AI blocks hold the enemy (if there are any)
 double FireStaleMax = 2.0;    // never fire at a track older than this (extrapolation is a guess by then)
 int _missRun = 0, _spiralIdx = 0, _staleRay = 0;
+bool Search2nd = true;   // when two cameras can cast in the same tick at a stale lock, the second ray goes to the search ellipse
 int SearchTenths = 1, SearchTenthsLate = 3;   // of 10 rays at a stale (> 0.6 s) lock, how many go to the widening search ellipse instead of the predicted point
 double _lostFlagUntil = -1, _lastStaleShare = -9;
 Vector3D _lostPos, _lostVel; double _lostT = -99, _lostRad = 3;   // last known state of the target that was dropped
@@ -678,7 +701,7 @@ void MaintainLock()
         // the widening search ellipse (the target really changed course)
         // (counted per ray, not per loop pass: the second ray of a tick usually has no camera charge, so the loop index never reached 1)
         bool search = false;
-        if (age > 0.6) { _staleRay++; search = (_staleRay % 10) < (age > 1.5 ? SearchTenthsLate : SearchTenths); }
+        if (age > 0.6) { _staleRay++; search = (_staleRay % 10) < (age > 1.5 ? SearchTenthsLate : SearchTenths); if (k == 1 && Search2nd) search = true; }   // (two rays in one tick: never both at the same point)
         if (search) aim = ReacquirePoint(_tgt, p, dir, age);
         else aim = ProbePoint(_tgt, p, dir, dist, out probingAim);
         var cam = CamFor(aim, 0);
@@ -783,7 +806,7 @@ void PruneAndSelect()
         else if (t.Type == MyDetectedEntityType.LargeGrid) score += LargePenalty;
         if (t.Type == MyDetectedEntityType.Missile && closing > 20) score -= MissileBonus;
         else if (t.Radius < 10 && closing > 40) score -= FastCloser;     // something small and fast coming at us
-        if (t == _tgt) score -= 400;                                   // stickiness
+        if (t == _tgt) score -= Stickiness;                            // stickiness
         score += Math.Max(0, (_now - t.Seen) - 1.0) * 150;             // stale tracks lose to fresh sightings
         if (dist < 150) score -= 350;                                  // something right on top of us comes first
         score += HiveScore(t);
@@ -914,6 +937,11 @@ void Control(double dt)
         Vector3D d = home - me; double dist = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, dist * 0.8), Math.Sqrt(2 * aBrake * dist));
         want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade() + Separation(me);
+        if (_patrolLeg && _mode == Mode.HUNT && _tgt == null)   // search patrol: cruise towards the current waypoint
+        {
+            Vector3D pd = _patrolWp - me; double pl = pd.Length();
+            want = (pl > 1 ? pd / pl * PatrolSpeed : Vector3D.Zero) + Evade() + Separation(me);
+        }
         if (_mode == Mode.RTB && dist < 15 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
     }
     else
@@ -1489,6 +1517,10 @@ void AimMissed(Track t)
 //  which makes this drone and its hive search hard for 15 s.
 List<IMyFunctionalBlock> _ai = new List<IMyFunctionalBlock>();
 bool _aiOn = false; double _lastTgtT = -99, _alertT = -99; int _aiScan = 0;
+double AiSpiralMin = 0.15, AiSpiralMax = 2.5, AiSpiralPow = 1.5;   // confirm-ray spiral (deg off the boresight, every 2nd ray; the others go down the boresight)
+bool AiConfirmAdaptive = true; double _lastTgtDist = -1;
+bool _aiKick = false; double _aiSince = -99, _aiKickAt = -99;
+double AiRepick = 6, AiRepickWindow = 40;   // see AiStep
 bool OwnAlert { get { return _now - _alertT < 15; } }
 // my own lock has gone stale (flag 4 in the swarm status): mates that still see the target answer at once with a fresh fix
 bool LockStale { get { return _tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen > 1.2; } }
@@ -1515,19 +1547,38 @@ void FindAi()
 }
 bool AiStep()
 {
-    if (_tgt != null) _lastTgtT = _now;
+    if (_tgt != null) { _lastTgtT = _now; _lastTgtDist = Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()); }
     // The AI also takes over while my lock is stale (nothing seen for AiStaleTakeover s): it keeps the nose on the enemy
     // and the confirm rays below pick it up again, which hands control straight back to the script.
     bool want = AiAssist && _ai.Count > 0 && AiModeOk() &&
         ((_tgt == null && _now - _lastTgtT > 2) || (_tgt != null && _now - _tgt.Seen > AiStaleTakeover));
+    if (_tgt != null) { _noTgtSince = _now; if (_patrolLeg) { _patrolLeg = false; _patrolPhaseT = _now; } }   // (a target ends the patrol leg at once, not only when the target is gone again)
+    if (_aiOn && PatrolOn)
+    {   // is the AI flying / turning the ship? (the patrol leaves it alone while it is; its own speed jitters, so movement in the last 4 s counts)
+        var vs = _rc.GetShipVelocities();
+        Vector3D refV = _patrolK == 0 ? Vector3D.Zero : _listenV;   // before the first leg the reference is rest
+        if ((vs.LinearVelocity - refV).LengthSquared() > 9 || vs.AngularVelocity.LengthSquared() > 0.0144) _aiMoveT = _now;
+    }
+    if (want && PatrolStep()) want = false;     // on a patrol leg the script flies and the AI blocks stay off until the next listening stop
     if (want != _aiOn)
     {
         _aiOn = want;
         _firing = false;                        // guns' state is unknown after any hand-over: SetFire sends it again
-        if (want) Release();                    // thrusters and gyros go to the AI
+        if (want) { Release(); _aiSince = _now; }   // thrusters and gyros go to the AI
+        _aiKick = false;
         foreach (var b in _ai) b.Enabled = want;
     }
     if (!_aiOn) return false;
+    // Re-pick: the AI holds whatever it chose first (a wreck, a decoy) and may never turn onto the live enemy beside it. If the AI has been
+    // on for AiRepick seconds although I fought within AiRepickWindow seconds (so enemies are about), power-cycle it for one tick: it starts
+    // a fresh search. Never before the first contact, so the opening search is left to the AI block.
+    if (_aiKick) { _aiKick = false; foreach (var b in _ai) b.Enabled = true; return true; }
+    if (AiRepick > 0 && _now - Math.Max(_aiSince, _aiKickAt) > AiRepick && _now - _lastTgtT < AiRepickWindow)
+    {
+        _aiKick = true; _aiKickAt = _now;
+        foreach (var b in _ai) b.Enabled = false;
+        return true;
+    }
     // The AI points the guns at what it found (about 0.1 deg off), so the enemy is dead ahead of the nose cameras.
     // Every forward camera casts a ray as soon as it holds AiConfirmRange of charge (~1.5 casts/s each; charge builds
     // 2 km/s per camera). The pattern puts 1 ray in 2 exactly down the boresight, the rest in a spiral that widens
@@ -1541,14 +1592,60 @@ bool AiStep()
         if (!c.IsWorking || !Forwardish(c)) continue;
         double len = longCam ? AiConfirmLong : AiConfirmRange;
         longCam = false;
+        // fighting this enemy a moment ago: it is probably still about that far away, and a ray costs its length (cheaper rays = more of them);
+        // only for the first 6 s of an AI stint - if nothing is found by then the AI is on something else, farther away, and the full length is needed
+        if (AiConfirmAdaptive && _now - _lastTgtT < 25 && _now - _aiSince < 6 && _lastTgtDist > 0) len = Math.Min(len, Math.Max(500, _lastTgtDist * 1.5 + 200));
         if (c.AvailableScanRange < len) continue;
         _aiScan++;
         double r = 0, th = _aiScan * 2.39996323;
-        if ((_aiScan & 1) == 1) { int j = (_aiScan >> 1) % 16; r = 0.15 + 2.35 * Math.Pow((j + 0.5) / 16.0, 1.5); }
+        if ((_aiScan & 1) == 1) { int j = (_aiScan >> 1) % 16; r = AiSpiralMin + (AiSpiralMax - AiSpiralMin) * Math.Pow((j + 0.5) / 16.0, AiSpiralPow); }
         var e = c.Raycast(len, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
         if (Valid(e)) AddContact(e, "AI");
+        else if (!e.IsEmpty() && e.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies && (e.Type == MyDetectedEntityType.SmallGrid || e.Type == MyDetectedEntityType.LargeGrid)
+                 && Ignored(e.EntityId) && e.BoundingBox.Size.Length() * 0.5 >= 1.6) AiHeldIgnored(e.EntityId);
     }
     return true;
+}
+// ---- SEARCH PATROL ---------------------------------------------------------------------------------------------------
+//  HUNT means "go and find them". The AI blocks only see out to their own search range, so a drone that has had no target for
+//  PatrolAfter seconds stops waiting at home: it flies chords of a square of "radius" PatrolRadius around the home point (cruise speed,
+//  AI blocks off), and stops every leg for PatrolListen seconds with the AI blocks on, which is when they look around. As soon as there is
+//  a target, or the drone takes damage, the patrol ends. Needs AI blocks, HUNT mode and open space (no planet gravity).
+bool PatrolOn = true;
+double PatrolRadius = 1200, PatrolAfter = 15, PatrolAfterFight = 90, PatrolListen = 4, PatrolMaxLeg = 40, PatrolSpeed = 60;
+bool _patrolLeg = false, _patrolFrame = false; double _patrolPhaseT = -99, _noTgtSince = 0, _listenT = -1, _aiMoveT = -99, PatrolHold = 90; int _patrolK = 0; Vector3D _listenV;
+Vector3D _patrolWp, _patrolC, _patrolE1, _patrolE2;
+bool PatrolStep()
+{
+    if (!PatrolOn || _mode != Mode.HUNT || _ai.Count == 0 || _rc == null || UnderFire || _now - _noTgtSince < (_lastTgtT < 0 ? PatrolAfter : PatrolAfterFight) || _rc.GetNaturalGravity().LengthSquared() > 0.25)
+    { _patrolLeg = false; return false; }
+    if (!_patrolLeg)
+    {
+        if (_listenT < 0 || _listenT < _patrolPhaseT) { _listenT = _now; _listenV = _rc.GetShipVelocities().LinearVelocity; }   // a listening stop begins
+        if (_now - _patrolPhaseT < PatrolListen) return false;
+        // The AI blocks need a few seconds to turn onto what they found and for a confirm ray to hit it. If the ship is being flown
+        // (velocity changed by more than 3 m/s, or it is turning) the AI has a target: leave it on, up to PatrolHold seconds.
+        if (_now - _listenT < PatrolHold && _now - _aiMoveT < 4) return false;
+        if (!_patrolFrame)
+        {
+            _patrolC = Home(); _patrolE1 = _rc.WorldMatrix.Forward; _patrolE2 = _rc.WorldMatrix.Right; _patrolFrame = true;
+        }
+        double th = _patrolK++ * 1.5707963;
+        _patrolWp = _patrolC + (_patrolE1 * Math.Cos(th) + _patrolE2 * Math.Sin(th)) * PatrolRadius;
+        _patrolLeg = true; _patrolPhaseT = _now; _listenT = -1;
+    }
+    else if (_now - _patrolPhaseT > PatrolMaxLeg || Vector3D.Distance(_rc.GetPosition(), _patrolWp) < 150) { _patrolLeg = false; _patrolPhaseT = _now; }
+    return _patrolLeg;
+}
+
+// The AI blocks keep their nose on an enemy that I wrote off as finished (tumbling, shrunk): if two confirm rays in 10 s find it there it is
+// still a live target for them (an AI that never lets go would otherwise idle this drone until its next search), so it comes off my ignore list.
+long _heldId = 0; double _heldT = -99; int _heldN = 0;
+void AiHeldIgnored(long id)
+{
+    if (id != _heldId || _now - _heldT > 10) { _heldId = id; _heldN = 0; }
+    _heldT = _now;
+    if (++_heldN >= 2) { _ignore.Remove(id); _heldN = 0; }
 }
 string AiStatus()
 {
