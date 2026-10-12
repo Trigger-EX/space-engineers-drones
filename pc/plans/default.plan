@@ -1,0 +1,26 @@
+# One experiment per line:  name | SimHost arguments        ({OUT} = results/<name>)
+# Run in this order. Every 'run' line resumes if interrupted (re-run run.bat and it continues).
+# To skip a line, put # in front of it. To run only some lines: run.bat -Only name1,name2
+selfcheck | selftest all
+verify | run --filter "^1v1/(Aegis-vs-Hornet|Longbow S-vs-Wasp|Hornet-vs-Hornet|Gnat-vs-Gnat)$" --seeds 20 --out {OUT}
+# --- 1. fresh seeds 100..299 of the whole matrix with the current scripts (independent of the 100 seeds used so far) ---
+full-fresh | run --seeds 200 --seed-start 100 --resume --out {OUT}
+# --- 2. robustness: all 1v1 pairs under alternative engine assumptions (are the script gains real or engine artefacts?) ---
+robust-default | run --filter "^1v1/" --seeds 50 --resume --out {OUT}
+robust-torque | run --filter "^1v1/" --seeds 50 --thruster-torque true --resume --out {OUT}
+robust-pitch | run --filter "^1v1/" --seeds 50 --gyro-pitch-sign 1 --resume --out {OUT}
+robust-search3500 | run --filter "^1v1/" --seeds 50 --vanilla-search-range 3500 --resume --out {OUT}
+robust-speed100 | run --filter "^1v1/" --seeds 50 --vanilla-speed-limit 100 --resume --out {OUT}
+# --- 3. scripts-only fights (AI blocks off, target locked at the start, 500-900 m): measures the scripts' own aim/flight ---
+lock-1v1 | run --filter "^1v1/" --seeds 100 --face --start-distance 500:900 --commands "0.5:ai off;0.5:lock;0.5:hunt" --resume --out {OUT}
+# --- 4. Hornet parameter sweeps against five opponents (custom data only touches the Hornets) ---
+sweep-standoff-300 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nStandoff Range=300" --resume --out {OUT}
+sweep-standoff-450 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nStandoff Range=450" --resume --out {OUT}
+sweep-standoff-600 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nStandoff Range=600" --resume --out {OUT}
+sweep-standoff-800 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nStandoff Range=800" --resume --out {OUT}
+sweep-nojink | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nEvasive Jinking=false" --resume --out {OUT}
+sweep-jinkspeed-40 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nJink Speed=40" --resume --out {OUT}
+# --- 5. trajectories of a few fights (small CSVs I can plot) ---
+trace-aegis-hornet | one --scenario "1v1/Aegis-vs-Hornet" --seed-index 0 --trace {OUT}/t.csv --trace-every 6
+trace-longbow-wasp | one --scenario "1v1/Longbow S-vs-Wasp" --seed-index 0 --trace {OUT}/t.csv --trace-every 6
+trace-harrier-hornet | one --scenario "1v1/Harrier-vs-Hornet" --seed-index 0 --trace {OUT}/t.csv --trace-every 6

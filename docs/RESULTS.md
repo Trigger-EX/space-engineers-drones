@@ -24,3 +24,9 @@ Caveats (read before trusting any number):
 - Gnat, Stinger and Watcher gained nothing from round 2 (their tuning agent was stopped by an automated safeguard); they depend on a spotter/AI-equipped partner.
 - Missing deliverables: standalone Stinger/Tick blueprint module and timer/Event-Controller printers (agents stopped by automated safeguards).
 - Nothing here was run in the real game.
+
+## Running more simulation on your own PC
+`releases/SE_SimPack_<rev>.zip` is a self-contained pack (precompiled simulator, blueprints, data, run plan). Unzip, double-click `run.bat`,
+then `pack_results.bat`, and send `SE_results.zip`; ingest with `python3 -I tools/sim_ingest.py SE_results.zip --name pc1`.
+Rebuild the pack after any script change: `bash sim/build.sh && python3 -I tools/build_all.py && python3 -I tools/make_simpack.py`.
+Details in `pc/README_PC.md`; the experiment list is `pc/plans/default.plan`.
