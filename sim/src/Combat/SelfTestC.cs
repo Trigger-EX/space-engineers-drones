@@ -14,9 +14,9 @@ using SeSim.Blueprint;
 
 namespace SeSim.Combat
 {
-    static class ArrExt { public static BlockData[] Concat1(this BlockData[] a, BlockData b) { var r = new BlockData[a.Length + 1]; Array.Copy(a, r, a.Length); r[a.Length] = b; return r; } }
+    static class ArrExt { public static List<BlockData> Concat1Many(this List<BlockData> l, params BlockData[] more) { l.AddRange(more); return l; } public static BlockData[] Concat1(this BlockData[] a, BlockData b) { var r = new BlockData[a.Length + 1]; Array.Copy(a, r, a.Length); r[a.Length] = b; return r; } }
 
-    public static class SelfTestC
+    public static partial class SelfTestC
     {
         static int _fail, _pass;
         static void Check(bool ok, string what) { Console.WriteLine((ok ? "  ok   " : "  FAIL ") + what); if (ok) _pass++; else _fail++; }
@@ -63,6 +63,9 @@ namespace SeSim.Combat
             Guarded("blueprints: combat units attach to every weapon block", TestBlueprints);
             Guarded("pirate ship", TestPirate);
             Guarded("vanilla AI (Midge)", TestVanilla);
+            Guarded("sim-fix: collision damage and contact episodes", TestCollisionFix);
+            Guarded("sim-fix: decoys", TestDecoys);
+            Guarded("sim-fix: unique hit ids, railgun capacitor data, AI search range", TestSimFixMisc);
             Guarded("determinism", TestDeterminism);
             Guarded("speed", TestSpeed);
             Console.WriteLine(_fail == 0 ? "SelfTestC passed (" + _pass + " checks, " + sw.ElapsedMilliseconds + " ms)" : "SelfTestC FAILED: " + _fail + " of " + (_pass + _fail));
@@ -95,7 +98,7 @@ namespace SeSim.Combat
         }
         static DefDb Defs() { return DefDb.LoadCached(Path.Combine(Root(), "defs_stats.json")); }
 
-        static World NewWorld(ulong seed, bool api, Sink sink, SimSettings s = null)
+        static World NewWorld(ulong seed, bool api, IEventSink sink, SimSettings s = null)
         {
             var w = new World(s ?? new SimSettings(), Defs(), seed, false);
             w.SkipApi = !api;

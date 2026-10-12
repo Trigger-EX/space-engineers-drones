@@ -56,7 +56,7 @@ namespace SeSim.Combat
             // ---- large turret: lead, slew, fire ----
             var s = w.Settings;
             var wp = Weapon;
-            Vector3D aimPoint = TargetBody.Position;
+            Vector3D aimPoint = Decoys.AimPoint(w, TargetBody, muz, b.EntityId);   // nearest working decoy, else the body centre
             Vector3D rel = aimPoint - muz;
             double dist = rel.Length();
             Vector3D tv = TargetBody.LinearVelocity;
@@ -105,7 +105,8 @@ namespace SeSim.Combat
 
         void Acquire(World w, Body body, Vector3D from)
         {
-            Body best = null; double bestD = double.MaxValue;
+            Body best = null; double bestD = double.MaxValue; bool bestHas = false;
+            bool prefer = w.Settings.DecoysFunctional && w.Settings.DecoyPreferTarget;
             var bodies = w.Bodies;
             long owner = Block.OwnerId;
             for (int i = 0; i < bodies.Count; i++)
@@ -118,7 +119,9 @@ namespace SeSim.Combat
                 double dx = o.WorldBoundCenter.X - from.X, dy = o.WorldBoundCenter.Y - from.Y, dz = o.WorldBoundCenter.Z - from.Z;
                 double d = Math.Sqrt(dx * dx + dy * dy + dz * dz);
                 if (d - o.BoundRadius > Range) continue;
-                if (d >= bestD) continue;
+                bool has = prefer && Decoys.HasWorking(w, o);
+                if (bestHas && !has) continue;                       // a body with a working decoy beats any body without
+                if (has == bestHas && d >= bestD) continue;
                 // line of sight: first block hit must belong to an enemy body
                 if (d > 1e-6)
                 {
@@ -130,7 +133,7 @@ namespace SeSim.Combat
                         if (ho == 0 || w.Teams.Relation(owner, ho) != MyRelationsBetweenPlayerAndBlock.Enemies) continue;
                     }
                 }
-                best = o; bestD = d;
+                best = o; bestD = d; bestHas = has;
             }
             if (!ReferenceEquals(best, TargetBody))
             {

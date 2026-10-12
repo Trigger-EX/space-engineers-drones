@@ -7,6 +7,9 @@ WATCHER  (decision: NO fork, it reuses scripts/HornetDroneAI.cs)
   HornetDroneAI.cs already runs unarmed: with no guns it still tracks with the nose cameras, shares contacts over IGC and keeps a
   standoff distance (see "no guns = scout" in the script).  The Watcher is configured purely through the PB custom data (ini section
   [Hornet]): IGC Tag HORNET (so it feeds the Hornet hive), Start Mode HUNT, long standoff, long scan.  Full = + sensor.
+  FLEET (docs/hive-protocol.md): the [Fleet] section makes it ALSO broadcast every contact on the all-types fleet channel
+  (Extra Broadcast Tags=FLEET), which every drone script (Hornet, Gnat, Longbow, Wasp, Lancer, Harrier, Aegis, Mantis, Basilisk,
+  Stinger) listens to.  Set [Fleet] Secret=<word> on all your PBs in multiplayer (IGC reaches every PB in antenna range).
   Lite = no sensor.  Both keep the merge latch (docking face Backward, as the Hornet).
 MIDGE    (scriptless; NO programmable block)
   Full  = EXPERIMENTAL: Small gatling + AI Offensive + AI Flight + AI Defensive, 6-axis ion thrusters, 2 gyros, RC, merge latch.
@@ -42,6 +45,14 @@ All-around Close Scan=true
 Close Scan Range=200
 Share Targets Over IGC=true
 Friendly Fire Check=false
+
+[Fleet]
+Channel=FLEET
+Secret=
+Listen Tags=
+Extra Broadcast Tags=FLEET
+Accept Commands=true
+Accept Home=true
 """
 
 def watcher_frame(name, sensor, tag="HORNET"):

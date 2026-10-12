@@ -336,3 +336,48 @@ three constant values would see torque build up instead of restarting; the PD sc
 effect is small); thrust applied through the COM; yaw sign of `Raycast(d, pitch, yaw)` (sim: +yaw aims LEFT, like
 `CreateRotationY`; scripts use symmetric patterns, so the effect is small); linear explosion falloff; per-axis (not conic) cone
 limit for the pitch/yaw overload; armour/ammo mass not modelled (infinite ammo, no inventory mass).
+
+## Simfix round: simulator artefacts of docs/sim-audit-1.md section 7 (sim only, no script changed)
+
+What changed, per option and with the evidence, is in `docs/sim-design.md` section 15.1. New `SimSettings` options (all CLI flags in kebab
+case, all part of the settings hash): `VanillaSearchRange` (2500, the game value from `SearchEnemyComponent`), `DecoysFunctional`,
+`DecoyPreferTarget`, `DecoyAimProbability`, `DecoyRerollS`, `CollisionDamage` (now true), `CollisionDamagePatchM`, `CollisionEpisodeEvents`,
+`CollisionEpisodeGapTicks`, `HitCountUnique`, `RailgunCapacitorFromData`, `RailgunRechargeDrawSmallMW/LargeMW`, `RailgunChargeMultiplier`,
+`RailgunCapacityLargeMWh`. New JSON fields per ship: `hits_raw`, `collision_damage`. Settings hash: baseline `fbe7bd2075bff0ea` ->
+`86da6f4425ff003e` (defaults of this round) / `7386a044ade6fa95` (same plus `--vanilla-search-range 3500`); the engine computes it from
+`Describe()`, nothing to maintain by hand. Baseline numbers (`docs/sim-baseline.md`, 47,300 runs, hash `fbe7...`) were produced without these
+options and are NOT comparable to runs with the new defaults; re-run the matrix before comparing.
+
+Regression evidence: with `--decoys-functional false --collision-damage false --railgun-capacitor-from-data false --hit-count-unique false
+--collision-episode-events false` the three matrices below reproduce the before numbers exactly (30/30 seeds each).
+
+New selftests (`selftest combat`, `Combat/SelfTestFix.cs`, 24 checks): collision damage equals `scale*0.5*mu*v^2` (22.4 HP for two 1.6 t walls
+at 10 m/s, enemies and teammates with friendly fire off, none with the option off), 1 event for 4 s of sustained contact (legacy: 6), decoy aim
+point/priority 0 when non-functional/inert when disabled, three pirate turrets take the farther body that carries a decoy (and the nearer one with
+decoys off), one slug = 4 Hit events with one projectile id, metrics unique/raw hits, small railgun 20 s and large railgun 59.2 s (+2 s
+delay measured 61.2 s between shots), `VanillaSearchRange` 2500 vs 3500 against a dummy at 3000 m.
+
+### Sanity matrices, 30 seeds, `--jobs 2`, before = binary of the previous commit, after = this build with default options
+(win A / win B / draw / timeout, hits per shot A / B, median time to kill)
+| scenario | before | after (defaults) | after, `--vanilla-search-range 3500` |
+|---|---|---|---|
+| 1v1/Hornet-vs-Hornet | 12/8/4/6, 0.21/0.31, 102 s | identical | 15/10/4/1, 0.22/0.32, 115 s |
+| 1v1/Hornet-vs-Longbow S | 0/19/0/11, 0.07/0.72, 101 s | 4/17/0/9, 0.30/0.61, 125 s | 4/25/0/1, 0.29/0.64, 140 s |
+| 1v1/Aegis-vs-Wasp | 18/1/0/11, 0.34/0.01, 94 s | 18/0/1/11, 0.34/0.01, 96 s | 29/0/1/0, 0.32/0.00, 147 s |
+
+Attribution (single options switched off, same 30 seeds): Hornet-vs-Longbow S moves because of `RailgunCapacitorFromData` (the Longbow's battery
+is power-limited, so storing 0.8 of what is supplied recharges the railgun 25 % slower; with it off the row is 0/19/0/11 again), the hit-rate
+column of the Longbow also by `HitCountUnique` (0.72 raw -> 0.61 unique); Aegis-vs-Wasp moves by one seed through `DecoysFunctional` (the
+Wasp's AI-stand-in aims at an Aegis decoy). Hornet-vs-Hornet has no decoys, no railgun and no wingmates: unchanged. With the search range at 3500
+the timeouts of the 1.5-3 km starts mostly disappear (26 -> 4), which is the "dead on arrival" share of audit section 1, not a change of fight
+quality. 30 seeds per row: differences of 1-4 seeds are within noise (the three rows share seeds, but any change of the event stream diverges
+the whole run).
+
+Wingmate collisions (30 seeds, before/after): `2v3/2xLongbow L-vs-3xGnat` 52 collision events (4 ships) -> 4 events (4 ships, one per
+episode) and 62 HP of collision damage in total; `2v3/2xHornet-vs-3xWasp`, `2v3/2xAegis-vs-3xMidge`, `1v2/Basilisk-vs-2xHornet`,
+`pirate/2xLongbow S-vs-Pirate`: no collisions in 30 seeds before or after. The maximum hits/shot over all ships of the after runs is 1.0
+(`hits_raw` per run is kept; before: `pirate/2xLongbow S-vs-Pirate` counted 684 hits for 628 shots, now 652 unique of 674 shots, 739 raw
+events). The Longbow L / Basilisk steady contact of audit section 4 needs the full 100-seed matrix to be re-measured.
+
+Not settled: all hit-point scales (collision `CollisionDamageScale`), the decoy aim probability, the capacitor charge curve and the AI Flight default
+speed limit are assumptions or unverified in game; see section 15.1 of the design doc.

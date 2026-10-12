@@ -178,10 +178,104 @@ int _shots = 0;
 double _batFrac = 1; int _sabots = 0; bool _hadAmmo = false;
 StringBuilder _sb = new StringBuilder();
 
+// >>> FLEET LINK v1.0 (shared block: identical in every drone script and carrier relay, see docs/hive-protocol.md) >>>
+// A common IGC channel for ALL drone types, used IN ADDITION to the per-type tags (HORNET_TGT, GNAT_CMD, ...), which are untouched.
+//   <ch>_TGT   MyTuple<long id, Vector3D pos, Vector3D vel, double radius, long sender>   same tuple as <TAG>_TGT; radius < 0 = finished
+//   <ch>_HOME  Vector3D (rally point)        <ch>_CMD  string (one command, e.g. "hunt", "rtb", "launch")
+// <ch> = Channel, plus "_" + Secret when a secret is set (IGC reaches every PB in antenna range, so use a secret in multiplayer).
+// Own [Fleet] section in Custom Data (defaults are written on first run, "reload" re-reads them):
+//   Channel=FLEET   Secret=   Listen Tags=   Extra Broadcast Tags=FLEET   Accept Commands=true   Allowed Commands=...   Accept Home=true
+// Script hooks (the only lines a script needs): FleetLoad(true) after LoadConfig(); FleetPump(Command, home setter) in ReadIGC();
+// drain every listener in FleetTgtL with the same handler as _lTgt (skip a message when !FleetOk(d)); FleetSend(tuple) next to each
+// IGC.SendBroadcastMessage(Tag + "_TGT", ...) (shares and radius -1 "finished" messages).
+List<IMyBroadcastListener> FleetTgtL = new List<IMyBroadcastListener>();   // target listeners (fleet channel + Listen Tags)
+IMyBroadcastListener _flCmd, _flHome;
+List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
+List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
+string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
+string _flAllowed = "hunt,attack,guard,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+bool _flCmdOn = true, _flHomeOn = true;
+
+string FleetTag(string t, string ch)
+{
+    t = t.Trim();
+    if (t.Length == 0) return "";
+    if (t.ToUpperInvariant() == "FLEET") return ch == "" ? "" : ch + "_TGT";
+    return t.IndexOf('_') >= 0 ? t : t.ToUpperInvariant() + "_TGT";
+}
+
+void FleetLoad(bool listen)
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "Fleet";
+    if (!ini.ContainsKey(S, "Channel")) ini.Set(S, "Channel", "FLEET");
+    if (!ini.ContainsKey(S, "Secret")) ini.Set(S, "Secret", "");
+    if (!ini.ContainsKey(S, "Listen Tags")) ini.Set(S, "Listen Tags", "");
+    if (!ini.ContainsKey(S, "Extra Broadcast Tags")) ini.Set(S, "Extra Broadcast Tags", "FLEET");
+    if (!ini.ContainsKey(S, "Accept Commands")) ini.Set(S, "Accept Commands", true);
+    if (!ini.ContainsKey(S, "Allowed Commands")) ini.Set(S, "Allowed Commands", _flAllowed);
+    if (!ini.ContainsKey(S, "Accept Home")) ini.Set(S, "Accept Home", true);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    string ch = ini.Get(S, "Channel").ToString("FLEET").Trim().ToUpperInvariant().Replace(" ", "");
+    string sec = ini.Get(S, "Secret").ToString("").Trim().Replace(" ", "");
+    if (ch != "" && sec != "") ch = ch + "_" + sec;
+    _flChan = ch;
+    _flCmdOn = ini.Get(S, "Accept Commands").ToBoolean(true);
+    _flHomeOn = ini.Get(S, "Accept Home").ToBoolean(true);
+    _flAllowed = ini.Get(S, "Allowed Commands").ToString(_flAllowed).ToLowerInvariant();
+    var tin = new List<string>(); var tout = new List<string>();
+    if (ch != "") tin.Add(ch + "_TGT");
+    foreach (var t in ini.Get(S, "Listen Tags").ToString("").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tin.Contains(x)) tin.Add(x); }
+    foreach (var t in ini.Get(S, "Extra Broadcast Tags").ToString("FLEET").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tout.Contains(x)) tout.Add(x); }
+    _flOut = tout;
+    string key = string.Join("|", tin.ToArray()) + "#" + ch + "#" + (listen ? "1" : "0");
+    if (key == _flKey) return;
+    _flKey = key;
+    foreach (var l in _flAll) IGC.DisableBroadcastListener(l);
+    _flAll.Clear(); FleetTgtL.Clear(); _flCmd = null; _flHome = null;
+    if (!listen) return;
+    foreach (var x in tin) { var l = IGC.RegisterBroadcastListener(x); _flAll.Add(l); FleetTgtL.Add(l); }
+    if (ch != "")
+    {
+        _flCmd = IGC.RegisterBroadcastListener(ch + "_CMD"); _flAll.Add(_flCmd);
+        _flHome = IGC.RegisterBroadcastListener(ch + "_HOME"); _flAll.Add(_flHome);
+    }
+}
+
+bool FleetV(Vector3D v) { return Math.Abs(v.X) < 1e9 && Math.Abs(v.Y) < 1e9 && Math.Abs(v.Z) < 1e9; }   // false for NaN and absurd values
+bool FleetOk(MyTuple<long, Vector3D, Vector3D, double, long> d)
+{
+    return d.Item1 != Me.CubeGrid.EntityId && FleetV(d.Item2) && FleetV(d.Item3) && d.Item4 < 1e5 && !double.IsNaN(d.Item4);
+}
+
+void FleetPump(Action<string> onCmd, Action<Vector3D> onHome)
+{
+    while (_flCmd != null && _flCmd.HasPendingMessage)
+    {
+        var m = _flCmd.AcceptMessage();
+        if (!_flCmdOn || !(m.Data is string)) continue;
+        string c = ((string)m.Data).Trim().ToLowerInvariant();
+        int sp = c.IndexOf(' '); string w = sp < 0 ? c : c.Substring(0, sp);
+        if (w.Length > 0 && ("," + _flAllowed + ",").Contains("," + w + ",")) onCmd(c);
+    }
+    while (_flHome != null && _flHome.HasPendingMessage)
+    {
+        var m = _flHome.AcceptMessage();
+        if (_flHomeOn && m.Data is Vector3D && FleetV((Vector3D)m.Data)) onHome((Vector3D)m.Data);
+    }
+}
+
+void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { foreach (var t in _flOut) IGC.SendBroadcastMessage(t, tup); }
+void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_HOME", p); }
+void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
+// <<< FLEET LINK <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
     LoadConfig();
+    FleetLoad(true);
     _mode = ParseMode(StartMode, Mode.IDLE);
     if (!string.IsNullOrEmpty(Storage))
     {
@@ -276,7 +370,7 @@ void Command(string a)
         case "focus": SplitFocus = false; break;
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range": double r; if (w.Length > 1 && double.TryParse(w[1], out r)) ForcedRange = Math.Max(0, r); break;
-        case "reload": LoadConfig(); GetBlocks(); break;
+        case "reload": LoadConfig(); FleetLoad(true); GetBlocks(); break;
     }
 }
 
@@ -474,26 +568,35 @@ void PollDesignators()
 
 void ReadIGC()
 {
-    while (_lTgt.HasPendingMessage)
+    ReadTgt(_lTgt);
+    foreach (var fl in FleetTgtL) ReadTgt(fl);
+    while (_lCmd.HasPendingMessage) { var msg = _lCmd.AcceptMessage(); if (msg.Data is string) Command((string)msg.Data); }
+    while (_lHome.HasPendingMessage) { var msg = _lHome.AcceptMessage(); if (msg.Data is Vector3D) { _dynHome = (Vector3D)msg.Data; _dynHomeT = _now; } }
+    FleetPump(Command, p => { _dynHome = p; _dynHomeT = _now; });
+}
+
+void ReadTgt(IMyBroadcastListener l)
+{
+    while (l.HasPendingMessage)
     {
-        var msg = _lTgt.AcceptMessage();
+        var msg = l.AcceptMessage();
         if (msg.Source == IGC.Me || !(msg.Data is MyTuple<long, Vector3D, Vector3D, double, long>)) continue;
         var d = (MyTuple<long, Vector3D, Vector3D, double, long>)msg.Data;
         if (d.Item4 < 0) { _ignore[d.Item1] = _now + 120; _contacts.Remove(d.Item1); if (_tgt != null && _tgt.Id == d.Item1) _tgt = null; continue; }
-        if (Ignored(d.Item1)) continue;
+        if (Ignored(d.Item1) || !FleetOk(d)) continue;
         Track t;
         if (_contacts.TryGetValue(d.Item1, out t) && t.Src != "IGC" && _now - t.Seen < 0.5) continue;
         if (t == null) { t = new Track { Id = d.Item1, Type = MyDetectedEntityType.LargeGrid }; _contacts[d.Item1] = t; }
         t.Set(d.Item2, d.Item3, d.Item4, _now, "IGC");
     }
-    while (_lCmd.HasPendingMessage) { var msg = _lCmd.AcceptMessage(); if (msg.Data is string) Command((string)msg.Data); }
-    while (_lHome.HasPendingMessage) { var msg = _lHome.AcceptMessage(); if (msg.Data is Vector3D) { _dynHome = (Vector3D)msg.Data; _dynHomeT = _now; } }
 }
 
 void ShareTarget()
 {
     var t = _tgt;
-    IGC.SendBroadcastMessage(Tag + "_TGT", new MyTuple<long, Vector3D, Vector3D, double, long>(t.Id, t.P(_now), t.V(_now), t.Radius, Me.EntityId));
+    var tup = new MyTuple<long, Vector3D, Vector3D, double, long>(t.Id, t.P(_now), t.V(_now), t.Radius, Me.EntityId);
+    IGC.SendBroadcastMessage(Tag + "_TGT", tup);
+    FleetSend(tup);
 }
 
 IMyCameraBlock CamFor(Vector3D pos, double range)
@@ -1231,7 +1334,7 @@ void IgnoreTarget(Track t, double secs, bool tell)
     // at the nearest enemy, i.e. this wreck) take over
     _lostPos = t.Pos; _lostVel = Vector3D.Zero; _lostT = _now; _lostRad = Math.Max(t.Radius, 30); _ignoreNoteT = _now;
     // radius -1 = "this one is finished" for every drone (and stays compatible with the carrier link)
-    if (tell) IGC.SendBroadcastMessage(Tag + "_TGT", new MyTuple<long, Vector3D, Vector3D, double, long>(t.Id, t.Pos, t.Vel, -1, Me.EntityId));
+    if (tell) { var fin = new MyTuple<long, Vector3D, Vector3D, double, long>(t.Id, t.Pos, t.Vel, -1, Me.EntityId); IGC.SendBroadcastMessage(Tag + "_TGT", fin); FleetSend(fin); }
 }
 
 // Finished = no longer an enemy (its owned blocks are gone), blown down to under 45% of the

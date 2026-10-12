@@ -19,6 +19,7 @@ namespace SeSim.Core
         MergeReleased,     // merge connection broken on ShipA
         GridSplit,         // ShipA split (Value = parts)
         TargetLocked,      // optional, from scripts' IGC/script state when observable
+        CollisionDamage,   // ShipB lost Value hit points of block integrity in a collision with ShipA (ShipA may be -1); not a Hit
     }
 
     public struct SimEvent
@@ -29,6 +30,7 @@ namespace SeSim.Core
         public double Value;
         public Vector3D Position;
         public string Text;               // rare (exceptions); null otherwise
+        public long Id;                   // Hit/FriendlyFire: id of the projectile that did it (0 = unknown, each event then counts alone)
     }
 
     public interface IEventSink

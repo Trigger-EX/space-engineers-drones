@@ -39,6 +39,11 @@ namespace SeSim.Core
         public bool SkipApi;
         /// <summary>Rate limiter for Collision events: pair key -> last tick.</summary>
         public readonly Dictionary<long, long> CollisionLastTick = new Dictionary<long, long>();
+        /// <summary>Contact-episode bookkeeping (SimSettings.CollisionEpisodeEvents): pair key -> an episode started and no event was emitted yet.</summary>
+        public readonly Dictionary<long, bool> CollisionEpisodePending = new Dictionary<long, bool>();
+        public readonly List<BlockInst> CollisionScratch = new List<BlockInst>();
+        /// <summary>Id of the projectile whose impact is being resolved (set by ProjectileSystem.Step), 0 outside. Damage.EmitHit stamps it on Hit events.</summary>
+        public long CurrentShotId;
         int _nextBodyId;
 
         public World(SimSettings settings, SeSim.Blueprint.DefDb defs, ulong seed) : this(settings, defs, seed, false) { }

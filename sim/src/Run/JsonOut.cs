@@ -69,7 +69,7 @@ namespace SeSim.Run
                 KN(sb, "ship", s.Ship); KS(sb, "model", s.Model); KN(sb, "team", s.Team);
                 KB(sb, "alive", s.Alive); KB(sb, "capable", s.Capable);
                 KN(sb, "disabled_at_s", Math.Round(s.DisabledAtS, 3)); KN(sb, "destroyed_at_s", Math.Round(s.DestroyedAtS, 3));
-                KN(sb, "shots", s.Shots); KN(sb, "hits", s.Hits);
+                KN(sb, "shots", s.Shots); KN(sb, "hits", s.Hits); KN(sb, "hits_raw", s.HitEvents);
                 KN(sb, "hit_rate", s.Shots > 0 ? Math.Round((double)s.Hits / s.Shots, 4) : 0);
                 KN(sb, "damage_dealt", Math.Round(s.DamageDealt, 1)); KN(sb, "damage_taken", Math.Round(s.DamageTaken, 1));
                 KN(sb, "friendly_damage", Math.Round(s.FriendlyDamageDealt, 1)); KN(sb, "friendly_hits", s.FriendlyHitsDealt);
@@ -81,7 +81,7 @@ namespace SeSim.Run
                 KN(sb, "ai_on_s", Math.Round(s.AiOnS, 2));
                 KN(sb, "min_enemy_dist_m", s.MinDistanceToEnemy == double.MaxValue ? -1 : Math.Round(s.MinDistanceToEnemy, 1));
                 KN(sb, "avg_speed", Math.Round(s.AvgSpeed, 2)); KN(sb, "max_speed", Math.Round(s.MaxSpeed, 2));
-                KN(sb, "collisions", s.Collisions); KN(sb, "detonations", s.Detonations);
+                KN(sb, "collisions", s.Collisions); KN(sb, "collision_damage", Math.Round(s.CollisionDamageTaken, 1)); KN(sb, "detonations", s.Detonations);
                 KS(sb, "script", s.Script); KN(sb, "script_runs", s.ScriptRuns);
                 if (timing) { KN(sb, "script_cpu_ms", Math.Round(s.ScriptCpuMs, 1)); KN(sb, "script_max_tick_ms", Math.Round(s.ScriptMaxTickMs, 3)); }
                 KN(sb, "exceptions", s.ScriptExceptions); KS(sb, "first_exception", s.FirstException);
@@ -113,7 +113,8 @@ namespace SeSim.Run
                     s.Ship = (int)SeSim.Core.MiniJson.Num(so, "ship", i); s.Model = SeSim.Core.MiniJson.Str(so, "model", ""); s.Team = (int)SeSim.Core.MiniJson.Num(so, "team", 0);
                     s.Alive = SeSim.Core.MiniJson.Bool(so, "alive", false); s.Capable = SeSim.Core.MiniJson.Bool(so, "capable", false);
                     s.DisabledAtS = SeSim.Core.MiniJson.Num(so, "disabled_at_s", -1); s.DestroyedAtS = SeSim.Core.MiniJson.Num(so, "destroyed_at_s", -1);
-                    s.Shots = (long)SeSim.Core.MiniJson.Num(so, "shots", 0); s.Hits = (long)SeSim.Core.MiniJson.Num(so, "hits", 0);
+                    s.Shots = (long)SeSim.Core.MiniJson.Num(so, "shots", 0); s.Hits = (long)SeSim.Core.MiniJson.Num(so, "hits", 0); s.HitEvents = (long)SeSim.Core.MiniJson.Num(so, "hits_raw", s.Hits);
+                    s.CollisionDamageTaken = SeSim.Core.MiniJson.Num(so, "collision_damage", 0);
                     s.DamageDealt = SeSim.Core.MiniJson.Num(so, "damage_dealt", 0); s.DamageTaken = SeSim.Core.MiniJson.Num(so, "damage_taken", 0);
                     s.FriendlyDamageDealt = SeSim.Core.MiniJson.Num(so, "friendly_damage", 0); s.FriendlyHitsDealt = (long)SeSim.Core.MiniJson.Num(so, "friendly_hits", 0);
                     s.BlocksStart = (int)SeSim.Core.MiniJson.Num(so, "blocks_start", 0); s.BlocksEnd = (int)SeSim.Core.MiniJson.Num(so, "blocks_end", 0);

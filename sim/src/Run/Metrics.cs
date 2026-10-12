@@ -13,6 +13,8 @@ namespace SeSim.Run
     public sealed class ShipStats
     {
         public int Ship; public string Model; public int Team;
+        public long HitEvents;            // raw Hit events on enemies (a piercing slug / splash counts per tick and body); Hits = unique projectiles when SimSettings.HitCountUnique
+        public double CollisionDamageTaken;
         public long Shots, Hits, HitsTaken, FriendlyHitsDealt, BlocksLost, BlocksKilled, Collisions, ScriptExceptions, Detonations, Splits;
         public double DamageDealt, DamageTaken, FriendlyDamageDealt, TimeOnTargetS, MinDistanceToEnemy = double.MaxValue;
         public double MassLostFraction, TimeAliveS, DisabledAtS = -1, DestroyedAtS = -1, AvgSpeed, MaxSpeed;
@@ -94,6 +96,7 @@ namespace SeSim.Run
         public ScriptHost Host;
         public Termination Term;
         ShipStats[] _st;
+        readonly HashSet<long> _hitShots = new HashSet<long>();    // projectile ids already counted as a hit (membership only, never iterated)
         int _n, _teams;
         bool[] _teamCap, _teamEverArmed, _termFlags;
         // friendly-fire dedupe: tick of the last Hit event per ordered pair
@@ -179,7 +182,11 @@ namespace SeSim.Run
                         {
                             _lastHit[a * _n + b] = e.Tick;
                             if (Friendly(a, b)) { _st[a].FriendlyHitsDealt++; _st[a].FriendlyDamageDealt += e.Value; }
-                            else { _st[a].Hits++; _st[a].DamageDealt += e.Value; }
+                            else
+                            {
+                                _st[a].HitEvents++; _st[a].DamageDealt += e.Value;
+                                if (e.Id == 0 || W == null || !W.Settings.HitCountUnique || _hitShots.Add(e.Id)) _st[a].Hits++;
+                            }
                         }
                     }
                     else if (Valid(a)) { /* hit on debris / unowned: not counted */ }
@@ -194,6 +201,9 @@ namespace SeSim.Run
                 case EventKind.Collision:
                     if (Valid(a)) _st[a].Collisions++;
                     if (Valid(b) && b != a) _st[b].Collisions++;
+                    break;
+                case EventKind.CollisionDamage:
+                    if (Valid(b)) { _st[b].DamageTaken += e.Value; _st[b].CollisionDamageTaken += e.Value; }
                     break;
                 case EventKind.Detonation:
                     if (Valid(a)) _st[a].Detonations++;

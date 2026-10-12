@@ -375,6 +375,16 @@ namespace SeSim.Core
             double wh = invMh / (invMh + invMp), wp = invMp / (invMh + invMp);
             if (!host.IsStatic) { host.Position -= n * (corr * wh); host.UpdateWorldMatrix(); }
             if (!probe.IsStatic) { probe.Position += n * (corr * wp); probe.UpdateWorldMatrix(); }
+            // contact episode bookkeeping (one Collision event per episode, SimSettings.CollisionEpisodeEvents)
+            long key = ((long)Math.Min(host.Id, probe.Id) << 32) | (uint)Math.Max(host.Id, probe.Id);
+            bool newEpisode = false;
+            if (s.CollisionEpisodeEvents)
+            {
+                long lastContact;
+                newEpisode = !w.CollisionLastTick.TryGetValue(key, out lastContact) || w.Tick - lastContact > s.CollisionEpisodeGapTicks;
+                w.CollisionLastTick[key] = w.Tick;                        // every contact tick extends the episode
+                if (newEpisode) w.CollisionEpisodePending[key] = true;
+            }
             if (vn >= 0) return;                                          // already separating
             double jimp = -(1 + s.CollisionRestitution) * vn / denom;
             Vector3D imp = n * jimp;
@@ -389,25 +399,60 @@ namespace SeSim.Core
                 probe.AngularVelocity += probe.ApplyInvInertiaWorld(Vector3D.Cross(rp, imp));
             }
 
-            // event (rate limited per pair)
-            long key = ((long)Math.Min(host.Id, probe.Id) << 32) | (uint)Math.Max(host.Id, probe.Id);
-            long last;
-            if (!w.CollisionLastTick.TryGetValue(key, out last) || w.Tick - last >= s.CollisionEventCooldownTicks)
+            // event: first closing contact of an episode (episode events), or rate limited per pair (legacy)
+            bool emit;
+            if (s.CollisionEpisodeEvents)
             {
-                w.CollisionLastTick[key] = w.Tick;
+                bool pend;
+                emit = w.CollisionEpisodePending.TryGetValue(key, out pend) && pend;
+                if (emit) w.CollisionEpisodePending[key] = false;
+            }
+            else
+            {
+                long last;
+                emit = !w.CollisionLastTick.TryGetValue(key, out last) || w.Tick - last >= s.CollisionEventCooldownTicks;
+                if (emit) w.CollisionLastTick[key] = w.Tick;
+            }
+            if (emit)
+            {
                 var e = new SimEvent { Kind = EventKind.Collision, Tick = w.Tick, ShipA = host.ShipIndex, ShipB = probe.ShipIndex, Value = -vn, Position = bestPointWorld };
                 w.Events.On(ref e);
             }
             if (s.CollisionDamage)
             {
+                // kinetic energy of the closing motion at the contact: 0.5 * reducedMass * vn^2, scaled to hit points, shared by the blocks of
+                // each body within CollisionDamagePatchM of the contact point (the deepest block always included). Not weapon fire: it
+                // also applies between teammates and with FriendlyFire off.
                 double mu = 1.0 / denom;                                  // effective mass at the contact
                 float dmg = (float)(s.CollisionDamageScale * 0.5 * mu * vn * vn);
                 if (dmg > 0)
                 {
-                    SeSim.Combat.Damage.ApplyToBlock(w, bestHostBlock, dmg, probe.ShipIndex, SeSim.Combat.DamageKind.Collision, bestPointWorld);
-                    SeSim.Combat.Damage.ApplyToBlock(w, bestProbeBlock, dmg, host.ShipIndex, SeSim.Combat.DamageKind.Collision, bestPointWorld);
+                    CollisionDamageTo(w, host, bestHostBlock, bestPointWorld, dmg, probe.ShipIndex, s);
+                    CollisionDamageTo(w, probe, bestProbeBlock, bestPointWorld, dmg, host.ShipIndex, s);
                 }
             }
+        }
+
+        static void CollisionDamageTo(World w, Body body, BlockInst deepest, Vector3D at, float total, int attackerShip, SimSettings s)
+        {
+            var list = w.CollisionScratch;
+            list.Clear();
+            double r2 = s.CollisionDamagePatchM * s.CollisionDamagePatchM;
+            var bl = body.Blocks;
+            for (int i = 0; i < bl.Count; i++)
+            {
+                var blk = bl[i];
+                if (ReferenceEquals(blk, deepest)) continue;
+                Vector3D p = body.LocalToWorld(blk.LocalCenter);
+                double dx = p.X - at.X, dy = p.Y - at.Y, dz = p.Z - at.Z;
+                if (dx * dx + dy * dy + dz * dz <= r2) list.Add(blk);
+            }
+            if (deepest != null) list.Add(deepest);
+            if (list.Count == 0) return;
+            float each = total / list.Count;
+            for (int i = 0; i < list.Count; i++)
+                SeSim.Combat.Damage.ApplyToBlock(w, list[i], each, attackerShip, SeSim.Combat.DamageKind.Collision, at);
+            list.Clear();
         }
     }
 }

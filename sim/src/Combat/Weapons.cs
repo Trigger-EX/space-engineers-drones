@@ -181,14 +181,26 @@ namespace SeSim.Combat
             return true;
         }
 
+        /// <summary>Capacity of this railgun's capacitor in MWh (SimSettings.RailgunCapacitorFromData: EntityCapacitorComponent Capacity,
+        /// small 0.016 / large 0.5; else the old 3 x small for large).</summary>
+        public static double CapacityOf(SimSettings s, bool large)
+        {
+            if (!large) return s.RailgunCapacitorMWh;
+            return s.RailgunCapacitorFromData ? s.RailgunCapacityLargeMWh : s.RailgunCapacitorMWh * 3.0;
+        }
+
         void UpdateCapacitor(SimSettings s, double dt, bool operational)
         {
-            if (CapacitorFull <= 0) CapacitorFull = s.RailgunCapacitorMWh * (Block.Def.Large ? 3.0 : 1.0);
+            bool large = Block.Def.Large;
+            if (CapacitorFull <= 0) CapacitorFull = CapacityOf(s, large);
             if (Sink == null) { CapacitorMWh = CapacitorFull; return; }
             if (operational && CapacitorMWh < CapacitorFull)
             {
-                Sink.RequestMW = s.RailgunChargeMW;
-                CapacitorMWh += Sink.SuppliedRatio * s.RailgunChargeMW * dt / 3600.0;       // ratio of the previous power update
+                // data model: the sink requests RechargeDraw and only ChargeMultiplier of what it gets is stored; old model: request = stored rate
+                double draw = s.RailgunCapacitorFromData ? (large ? s.RailgunRechargeDrawLargeMW : s.RailgunRechargeDrawSmallMW) : s.RailgunChargeMW;
+                double mult = s.RailgunCapacitorFromData ? s.RailgunChargeMultiplier : 1.0;
+                Sink.RequestMW = draw;
+                CapacitorMWh += Sink.SuppliedRatio * draw * mult * dt / 3600.0;       // ratio of the previous power update
                 if (CapacitorMWh > CapacitorFull) CapacitorMWh = CapacitorFull;
             }
             else Sink.RequestMW = 0;
@@ -289,7 +301,7 @@ namespace SeSim.Combat
             u.SpreadRad = d.Weapon.DeviateShotAngleDeg * Math.PI / 180.0;
             ulong salt = b.EntityId != 0 ? (ulong)b.EntityId : (ulong)((b.Body != null ? b.Body.Id : 0) * 100003L + b.Index + 17);
             u.Rng = new DetRng(DetRng.Mix(DetRng.Mix(w.Seed, 0xC0DE), salt));
-            u.CapacitorFull = s.RailgunCapacitorMWh * (d.Large ? 3.0 : 1.0);   // [I] large railgun: ~60 s charge vs ~20 s small (wiki)
+            u.CapacitorFull = WeaponUnit.CapacityOf(s, d.Large);   // small 20 s, large 59 s with the data numbers (EntityComponents.sbc)
             if (u.Mode == ProjectileSystem.ModeSlug)
             {
                 double init = b.Src != null ? b.Src.PropNum("StoredPower", double.NaN) : double.NaN;

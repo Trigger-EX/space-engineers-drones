@@ -26,7 +26,16 @@ namespace SeSim.Core
         public int GyroRampFrames = 120;                         // MyGridGyroSystem ACCELARION_RAMP_FRAMES = 60*2
         public double GyroMaxSlowdown = 0.93;                    // MyGridGyroSystem MAX_SLOWDOWN (non-override damping)
         public bool Collisions = true;                           // body-body contact impulses (no damage unless CollisionDamage)
-        public bool CollisionDamage = false;
+        /// <summary>Kinetic-energy collision damage between bodies (sim-audit-1 section 7.7): each body takes
+        /// CollisionDamageScale * 0.5 * reducedMass * vn^2 (vn = closing speed along the contact normal), shared by the blocks within
+        /// CollisionDamagePatchM of the contact point. Applies to teammates too (a collision is not weapon friendly fire, so it ignores
+        /// FriendlyFire=false). false = the old behaviour (impulses only).</summary>
+        public bool CollisionDamage = true;
+        public double CollisionDamagePatchM = 1.5;               // [I] blocks within this distance of the contact point share the damage (at least the deepest block)
+        /// <summary>true (default): one Collision event per contact EPISODE (first closing contact after at least CollisionEpisodeGapTicks
+        /// without contact between the pair); false: the old one event per CollisionEventCooldownTicks of contact.</summary>
+        public bool CollisionEpisodeEvents = true;
+        public int CollisionEpisodeGapTicks = 30;                // contact episode ends after this many ticks without contact (0.5 s)
         public bool GridSplitting = true;                        // disconnected parts become separate bodies
         public int MaxBodies = 300;                              // above this many bodies, split-off parts with < 3 blocks are deleted (performance)
         public double ThrusterDampenerGain = 1.0;                // inertial dampeners (only when DampenersOverride is on)
@@ -44,7 +53,14 @@ namespace SeSim.Core
         // ---- power (slot A) ------------------------------------------------------------------------------
         public bool PowerEnabled = true;
         public double RailgunCapacitorMWh = 0.016;               // blueprint EntityCapacitorComponent StoredPower when full [I]
-        public double RailgunChargeMW = 2.88;                    // [I] full charge in 20 s (wiki "~20 s"); see design doc
+        public double RailgunChargeMW = 2.88;                    // small railgun stored-power rate: RechargeDraw 3.6 MW * ChargeMultiplier 0.8 (EntityComponents.sbc, SmallRailgun) = 20 s for 0.016 MWh
+        /// <summary>true (default): the railgun capacitor uses Data/EntityComponents.sbc numbers: the block REQUESTS RechargeDraw (small 3.6 MW,
+        /// large 38 MW) from the DefenseAdative group and stores supplied * ChargeMultiplier (0.8) until Capacity is full (small 0.016 MWh = 20 s,
+        /// large 0.5 MWh = 59.2 s). false: the old model (request = RailgunChargeMW, store = supplied, large = 3 x small capacity, 60 s).</summary>
+        public bool RailgunCapacitorFromData = true;
+        public double RailgunRechargeDrawSmallMW = 3.6, RailgunRechargeDrawLargeMW = 38;   // EntityCapacitorComponent RechargeDraw
+        public double RailgunChargeMultiplier = 0.8;                                          // EntityCapacitorComponent ChargeMultiplier
+        public double RailgunCapacityLargeMWh = 0.5;                                          // EntityCapacitorComponent Capacity, LargeRailgun
         public double CameraRaycastMWPerKm = 0;                  // camera power is negligible (3e-5 MW), modelled as constant sink
 
         // ---- sensing / comms (slot B) --------------------------------------------------------------------
@@ -72,11 +88,37 @@ namespace SeSim.Core
         public double VanillaSearchIntervalS = 30;               // AI Offensive default search interval (MidgeNotes.md)
         public double VanillaFireConeDeg = 5;                    // vanilla AI fires fixed guns inside this cone
         public bool VanillaSearchOnActivate = true;              // [I] AI Offensive searches as soon as it is enabled (then every interval)
-        public double VanillaSpeedLimit = 10;                    // AI Flight "Speed Limit" default 10 m/s (research.md 3.3; blueprints carry no component data)
+        /// <summary>AI Offensive enemy search radius, metres from the grid. Data/EntityComponents.sbc SearchEnemyComponent "DefaultEnemySearch"
+        /// SearchRadius = 2500 (the container of both OffensiveCombat blocks forces that component; wiki "2500 m"). Every default start
+        /// distance above this (up to 3000 m in ScenarioGen) is therefore dead on arrival for an AI-only ship. Use 3500 to make every spawn acquirable
+        /// (a what-if, not game behaviour).</summary>
+        public double VanillaSearchRange = 2500;
+        /// <summary>AI Flight "Speed Limit" for scriptless/hybrid ships. Data/EntityComponents.sbc AutopilotComponent SmallFlightMovement/LargeFlightMovement
+        /// carries AutopilotSpeedLimit 100, which is the slider MAXIMUM (Environment.sbc ship max 100; the Remote Control definition has the same 100);
+        /// the wiki and scripts/MidgeNotes.md give the block's default as 10 m/s and say to raise it. A blueprint cannot preset it. Kept at 10 (what a
+        /// pasted block does); --vanilla-speed-limit 100 is the what-if for a player who raised the slider.</summary>
+        public double VanillaSpeedLimit = 10;
         public double VanillaStayMin = 300, VanillaStayMax = 600; // [I] AI Offensive engagement band (pattern defaults unknown)
         public bool VanillaAimLead = true;                       // [I] AI aims fixed guns at the intercept point (false: at the target centre)
         public double VanillaTurnAccel = 2.0;                    // [I] AI turn profile: stop-able deceleration (rad/s^2)
         public double VanillaMaxTurnRate = 3.0;                  // [I] AI turn-rate cap (rad/s)
+
+        // ---- decoys (sim-audit-1 section 7.4) ------------------------------------------------------------------
+        /// <summary>Decoy blocks work as in the game (wiki: enemy turrets and homing missiles prefer decoys; Data/CubeBlocks_Weapons.sbc
+        /// Decoy has PriorityModifier 10 and NotWorkingPriorityMultiplier 0, i.e. a switched-off or non-functional decoy has priority 0).
+        /// Model: an enemy shooter whose automatic targeting (large turrets, Custom Turret Controller designation, the AI block stand-in)
+        /// can choose between bodies prefers a body with a working decoy (DecoyPreferTarget), and aims at the nearest working decoy block
+        /// instead of the body centre (DecoyAimProbability). Rockets in the sim are unguided, so a "homing missile" is modelled as the
+        /// AI/turret rocket aim point only. Scripts that aim from their own camera rays are not affected. false: decoys are inert (old).</summary>
+        public bool DecoysFunctional = true;
+        public bool DecoyPreferTarget = true;                    // bodies with a working decoy are chosen before bodies without, if in range
+        public double DecoyAimProbability = 1.0;                 // [I] probability that the aim point is the decoy; rolled per (shooter, target) every DecoyRerollS
+        public double DecoyRerollS = 10;
+
+        // ---- metrics (slot D) -----------------------------------------------------------------------------------
+        /// <summary>true (default): ShipStats.Hits counts projectiles that hit an enemy at least once (a piercing slug or a splash that
+        /// damages several bodies/ticks is one hit), so hit_rate = hits/shots is at most 1. The old event count stays as hits_raw.</summary>
+        public bool HitCountUnique = true;
 
         // ---- scripts (slot D) ----------------------------------------------------------------------------
         public double FakeLastRunTimeMs = 0.05;                  // Runtime.LastRunTimeMs (constant, deterministic)

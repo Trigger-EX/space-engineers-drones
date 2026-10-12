@@ -26,6 +26,8 @@ namespace SeSim.Combat
         public Body[] ShooterBody;
         public float[] HealthPool;              // railgun penetration budget
         public byte[] Mode;
+        public long[] ShotId;                   // unique id per spawned projectile (Hit events carry it: unique-hit metric)
+        long _nextShotId;
         public long TotalSpawned, TotalHits, TotalExpired;
 
         readonly Body[] _accBody = new Body[8];
@@ -47,7 +49,7 @@ namespace SeSim.Combat
         void Alloc(int n)
         {
             Pos = new Vector3D[n]; Vel = new Vector3D[n]; Travelled = new double[n]; Age = new double[n];
-            Ammo = new AmmoDef[n]; ShooterShip = new int[n]; ShooterBody = new Body[n]; HealthPool = new float[n]; Mode = new byte[n];
+            Ammo = new AmmoDef[n]; ShooterShip = new int[n]; ShooterBody = new Body[n]; HealthPool = new float[n]; Mode = new byte[n]; ShotId = new long[n];
         }
 
         void Grow()
@@ -55,7 +57,7 @@ namespace SeSim.Combat
             int n = Pos.Length * 2;
             Array.Resize(ref Pos, n); Array.Resize(ref Vel, n); Array.Resize(ref Travelled, n); Array.Resize(ref Age, n);
             Array.Resize(ref Ammo, n); Array.Resize(ref ShooterShip, n); Array.Resize(ref ShooterBody, n);
-            Array.Resize(ref HealthPool, n); Array.Resize(ref Mode, n);
+            Array.Resize(ref HealthPool, n); Array.Resize(ref Mode, n); Array.Resize(ref ShotId, n);
         }
 
         public static byte ModeOf(AmmoDef a)
@@ -72,6 +74,7 @@ namespace SeSim.Combat
             ShooterShip[i] = shooterShip; ShooterBody[i] = shooter;
             HealthPool[i] = ammo.MissileHealthPool;
             Mode[i] = ModeOf(ammo);
+            ShotId[i] = ++_nextShotId;
             TotalSpawned++;
         }
 
@@ -81,7 +84,7 @@ namespace SeSim.Combat
             if (i != last)
             {
                 Pos[i] = Pos[last]; Vel[i] = Vel[last]; Travelled[i] = Travelled[last]; Age[i] = Age[last]; Ammo[i] = Ammo[last];
-                ShooterShip[i] = ShooterShip[last]; ShooterBody[i] = ShooterBody[last]; HealthPool[i] = HealthPool[last]; Mode[i] = Mode[last];
+                ShooterShip[i] = ShooterShip[last]; ShooterBody[i] = ShooterBody[last]; HealthPool[i] = HealthPool[last]; Mode[i] = Mode[last]; ShotId[i] = ShotId[last];
             }
             Ammo[last] = null; ShooterBody[last] = null;
         }
@@ -118,6 +121,7 @@ namespace SeSim.Combat
                 Body shooter = ShooterBody[i];
                 long owner = shooter != null ? shooter.OwnerId : 0;
                 int ship = ShooterShip[i];
+                w.CurrentShotId = ShotId[i];
 
                 bool consumed = false;
                 if (segLen > 0)
@@ -166,6 +170,7 @@ namespace SeSim.Combat
                         Explosions.Explode(w, p1, ammo.MissileExplosionRadius, ammo.MissileExplosionDamage, ship, owner);
                     }
                 }
+                w.CurrentShotId = 0;
                 if (consumed) { Remove(i); continue; }
                 Pos[i] = p1; Vel[i] = v1; Travelled[i] += segLen; Age[i] += dt;
                 i++;

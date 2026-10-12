@@ -22,7 +22,7 @@ namespace SeSim.Combat
     public sealed class VanillaAiBrain : IShipBrain
     {
         public Body Ship;
-        public double SearchRange = 2500, StayMin = -1, StayMax = -1, SpeedLimit = -1;   // < 0: SimSettings.VanillaStayMin/Max/SpeedLimit
+        public double SearchRange = -1, StayMin = -1, StayMax = -1, SpeedLimit = -1;   // < 0: SimSettings.VanillaSearchRange(2500, Data SearchEnemyComponent)/StayMin/Max/SpeedLimit
         public double SearchIntervalS = -1;        // < 0: SimSettings.VanillaSearchIntervalS
         public double EvasiveSpeed = 30;
         public Body Target;
@@ -90,7 +90,7 @@ namespace SeSim.Combat
             if (now >= _nextSearch)
             {
                 _nextSearch = now + interval;
-                Target = Search(w, b);
+                Target = Search(w, b, s);
             }
             if (Target != null && (!Target.Alive || Target.Blocks.Count == 0 || SeSim.Api.Detection.EffectiveOwner(Target) == 0)) Target = null;
             if (Target == null) { Idle(b, gun, s); return; }
@@ -128,7 +128,8 @@ namespace SeSim.Combat
             {
                 axis = b.DirToWorld(gun.DirLocal);
                 Vector3D muz = b.LocalToWorld(gun.MuzzleLocal);
-                Vector3D r2 = Target.Position - muz;
+                Vector3D aimPt = Decoys.AimPoint(w, Target, muz, b.EntityId);     // working enemy decoy attracts the aim (SimSettings.DecoysFunctional)
+                Vector3D r2 = aimPt - muz;
                 double speed = gun.Mode == ProjectileSystem.ModeRocket ? 0.5 * (gun.Ammo.MissileInitialSpeed + gun.Ammo.Speed) : (gun.Ammo.Speed > 0 ? gun.Ammo.Speed : gun.Ammo.MissileInitialSpeed);
                 Vector3D relV = gun.Mode == ProjectileSystem.ModeRocket ? Target.LinearVelocity : Target.LinearVelocity - b.VelocityAtWorld(muz);
                 double ti;
@@ -172,9 +173,11 @@ namespace SeSim.Combat
             return null;
         }
 
-        Body Search(World w, Body b)
+        Body Search(World w, Body b, SimSettings s)
         {
-            Body best = null; double bd = SearchRange * SearchRange;
+            double range = SearchRange > 0 ? SearchRange : s.VanillaSearchRange;
+            bool prefer = s.DecoysFunctional && s.DecoyPreferTarget, bestHas = false;
+            Body best = null; double bd = range * range;
             var bodies = w.Bodies;
             for (int i = 0; i < bodies.Count; i++)
             {
@@ -184,7 +187,10 @@ namespace SeSim.Combat
                 if (eo == 0 || w.Teams.Relation(b.OwnerId, eo) != VRage.Game.MyRelationsBetweenPlayerAndBlock.Enemies) continue;
                 Vector3D dv = o.WorldBoundCenter - b.Position;
                 double d2 = dv.LengthSquared();
-                if (d2 >= bd) continue;
+                bool has = prefer && Decoys.HasWorking(w, o);
+                if (d2 >= range * range) continue;
+                if (bestHas && !has) continue;                       // a body with a working decoy beats any body without
+                if (has == bestHas && d2 >= bd) continue;
                 double d = Math.Sqrt(d2);
                 RayHit h;
                 if (Raycast.RayWorld(w, b.Position, dv * (1.0 / d), d, b, out h) && !ReferenceEquals(h.Body, o))
@@ -192,7 +198,7 @@ namespace SeSim.Combat
                     long ho = SeSim.Api.Detection.EffectiveOwner(h.Body);
                     if (ho == 0 || w.Teams.Relation(b.OwnerId, ho) != VRage.Game.MyRelationsBetweenPlayerAndBlock.Enemies) continue;
                 }
-                bd = d2; best = o;
+                bd = d2; best = o; bestHas = has;
             }
             return best;
         }

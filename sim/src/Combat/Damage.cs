@@ -86,7 +86,7 @@ namespace SeSim.Combat
 
         public static void EmitHit(World w, int attackerShip, bool friendly, int victimShip, double damage, Vector3D at)
         {
-            var e = new SimEvent { Kind = friendly ? EventKind.FriendlyFire : EventKind.Hit, Tick = w.Tick, ShipA = attackerShip, ShipB = victimShip, Value = damage, Position = at };
+            var e = new SimEvent { Kind = friendly ? EventKind.FriendlyFire : EventKind.Hit, Tick = w.Tick, ShipA = attackerShip, ShipB = victimShip, Value = damage, Position = at, Id = w.CurrentShotId };
             w.Events.On(ref e);
         }
 
@@ -102,10 +102,18 @@ namespace SeSim.Combat
             if (b == null || b.Destroyed || amount <= 0f) return 0f;
             Body body = b.Body;
             bool friendly = IsFriendly(w, attackerOwner, body);
-            if (friendly && !w.Settings.FriendlyFire) return 0f;
+            if (friendly && !w.Settings.FriendlyFire && kind != DamageKind.Collision) return 0f;   // a collision is not weapon fire
             float absorbed = amount < b.Hp ? amount : b.Hp;
             b.Hp -= amount;
-            if (absorbed > 0f && emit) EmitHit(w, attackerShip, friendly, body.ShipIndex, absorbed, at);
+            if (absorbed > 0f && emit)
+            {
+                if (kind == DamageKind.Collision)
+                {
+                    var ce = new SimEvent { Kind = EventKind.CollisionDamage, Tick = w.Tick, ShipA = attackerShip, ShipB = body.ShipIndex, Value = absorbed, Position = at };
+                    w.Events.On(ref ce);
+                }
+                else EmitHit(w, attackerShip, friendly, body.ShipIndex, absorbed, at);
+            }
             if (b.Hp <= 0f)
             {
                 var wh = b.Warhead;
