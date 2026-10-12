@@ -1,5 +1,5 @@
 // =====================================================================
-//  STINGER AI  v1.0  - kamikaze interceptor (small grid, warheads)
+//  STINGER AI  v1.1  - kamikaze interceptor (small grid, warheads)
 // ---------------------------------------------------------------------
 //  Sits passive until launched (from a printer rack or by command), then
 //  flies an intercept course at the nearest enemy, arms its warheads only
@@ -12,9 +12,9 @@
 //  COMMANDS: launch | abort | disarm | reload
 //    launch  only works once it's off the rack (its merge block released)
 // =====================================================================
-const string VER = "1.0";
+const string VER = "1.1";
 
-string ListenTags = "GNAT,HORNET,LONGBOW";
+string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
 string Tag = "STINGER";
 double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 200, SafeDistance = 120, Gain = 2.5;
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false;
@@ -49,7 +49,7 @@ Track _tgt;
 public Program()
 {
     LoadConfig();
-    foreach (var t in ListenTags.Split(',')) if (t.Trim() != "") _lTgt.Add(IGC.RegisterBroadcastListener(t.Trim() + "_TGT"));
+    foreach (var t in ListenTags.Split(',')) if (t.Trim() != "") _lTgt.Add(IGC.RegisterBroadcastListener(t.Trim().Contains("_") ? t.Trim() : t.Trim() + "_TGT"));
     _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
     GetBlocks();
     Runtime.UpdateFrequency = UpdateFrequency.Update1;
@@ -210,7 +210,22 @@ void Hunt(double dt)
     // arm close to the target, never near home; detonate at closest approach
     bool clearOfHome = Vector3D.Distance(me, _launchPos) > SafeDistance;
     if (!_armed && clearOfHome && dist < ArmRange) { foreach (var w in _heads) w.IsArmed = true; _armed = true; }
-    if (_armed && (dist < 3 + _tgt.Radius * 0.3 || (dist < 30 && dist > _prevDist + 0.05)))
+    // The blast reaches only 4.5 m, so detonate on the HULL, not on the target's centre: while armed and close, every
+    // tick a short ray from a forward camera measures the distance to the first block ahead (works for a 60 m ship as
+    // well as a 5 m one). The centre-distance rule stays as the fallback when no camera has charge.
+    bool boom = false;
+    if (_armed && dist < 100)
+    {
+        double clos = Math.Max(20, Vector3D.Dot(myVel - tv, rel / Math.Max(dist, 1)));
+        foreach (var c in _cams)
+        {
+            if (!c.IsWorking || Vector3D.Dot(c.WorldMatrix.Forward, fwd) < 0.97 || !c.CanScan(45)) continue;
+            var he = c.Raycast(45);
+            if (!he.IsEmpty() && he.HitPosition.HasValue && Valid(he) && Vector3D.Distance(he.HitPosition.Value, c.GetPosition()) < Math.Max(5, clos * dt * 2.5)) boom = true;
+            break;
+        }
+    }
+    if (_armed && (boom || dist < 3 + Math.Min(_tgt.Radius * 0.3, 6) || (dist < 30 && dist > _prevDist + 0.05)))
         foreach (var w in _heads) w.Detonate();
     _prevDist = dist;
     _status = "HUNT " + dist.ToString("0") + " m  tgo " + tgo.ToString("0.0") + "s" + (_armed ? "  ARMED" : "");

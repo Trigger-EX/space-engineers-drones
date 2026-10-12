@@ -1,5 +1,5 @@
 // =====================================================================
-//  GNAT SWARM AI  v1.8  - minimal "point-and-burn" swarm drone
+//  GNAT SWARM AI  v1.9  - minimal "point-and-burn" swarm drone
 //  Space Engineers (vanilla, small grid). Paste into a Programmable Block.
 // ---------------------------------------------------------------------
 //  The drone only has thrusters on its nose axis (one forward, one
@@ -26,16 +26,25 @@
 //     mate is near the line of fire
 //   * target format is compatible with the Hornet / Longbow mothership link
 //
+//  FINDING THE ENEMY (v1.9)
+//   * Cameras cannot find a 3 m drone beyond a few hundred metres, and the Gnat has no AI block. Two things were added:
+//   * HIT BEARING: when the swarm is shot at, the blocks that lost integrity give the direction of the shooter (maximum
+//     likelihood over 64 directions, shared over IGC "<Tag>_HIT"). With no target the swarm then flies a FAN of runs along
+//     that bearing, each drone in its own cone slot, sweeping the cone with short camera rays; the sensor and the rays
+//     pick the enemy up and the normal attack takes over. Needs a few hits before it moves.
+//   * FEEDS: it also listens to the target broadcasts of other fleets ("Listen To IGC Tags": HORNET, WASP, WATCHER, ...).
+//   * If the Gnat blueprint has [AI] Offensive + Flight blocks, the v1.8 hybrid search is used as well (it is far better).
+//
 //  COMMANDS (argument, toolbar, or IGC "<Tag>_CMD" to command the swarm)
 //   form | attack | rtb | idle | lock | unlock | home | reload
 // =====================================================================
 
-const string VER = "1.8";
+const string VER = "1.9";
 
 // ---------------- settings (Custom Data) ----------------
 string Tag = "GNAT";
 string StartMode = "IDLE";
-double ProjSpeed = 400, FireRange = 700;
+double ProjSpeed = 800, FireRange = 700;   // gatling 800 m/s (docs/stats.md)
 double ClosingSpeed = 45;    // m/s closing on the target
 double BackoffSpeed = 30;    // m/s backing away from the target
 double OrbitSpeed = 12;      // m/s sideways slide kept during runs (harder to hit)
@@ -60,7 +69,10 @@ double LeadScale = 1.0;      // scales the lead offset if shots land consistentl
 bool UseTargetAccel = true;
 bool SplitFocus = true;
 double DisabledGrace = 5, EvadeSpeed = 20;
-bool AiAssist = true; double AiConfirmRange = 2600;
+bool AiAssist = true; double AiConfirmRange = 1300, AiConfirmLong = 2600;
+double RaidCone = 25, RaidScanCone = 40, RaidRay = 600, RaidSpeed = 80, RaidMaxTravel = 700, RaidLife = 35, RaidMinStart = 2.5, RaidMinHold = 1.2;   // hit-bearing raid (v1.9)
+string ListenTags = "HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER";   // other fleets' target feeds
+double FireStaleMax = 2.0;   // never fire at a track older than this (extrapolation is a guess by then)
 
 // ---------------- state ----------------
 enum Mode { IDLE, FORM, ATTACK, RTB }
@@ -82,7 +94,9 @@ List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>();
 List<IMyTurretControlBlock> _ctcs = new List<IMyTurretControlBlock>();
 IMyTerminalBlock _ref;
 IMyTextSurface _lcd;
-IMyBroadcastListener _lTgt, _lCmd, _lHome, _lSwarm;
+IMyBroadcastListener _lTgt, _lCmd, _lHome, _lSwarm, _lHit, _lHomeR;
+double _homeR = 0, _homeRT = -99;   // radius of the carrier the home point sits in (from GnatMothership)
+List<IMyBroadcastListener> _lFeed = new List<IMyBroadcastListener>();
 
 class Track
 {
@@ -160,6 +174,10 @@ public Program()
     _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
     _lJoin = IGC.RegisterBroadcastListener(Tag + "_JOIN");
     _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
+    _lHit = IGC.RegisterBroadcastListener(Tag + "_HIT");
+    _lHomeR = IGC.RegisterBroadcastListener(Tag + "_HOMER");
+    foreach (var t in ListenTags.Split(','))
+    { string tt = t.Trim().ToUpperInvariant(); if (tt != "" && tt != Tag.ToUpperInvariant()) _lFeed.Add(IGC.RegisterBroadcastListener(tt + "_TGT")); }
     GetBlocks();
     if (!_homeSet && _rc != null) { _home = _rc.GetPosition(); _homeSet = true; }
     Runtime.UpdateFrequency = UpdateFrequency.Update1;
@@ -202,14 +220,18 @@ void Tick(string arg, UpdateType src)
 
     ReadIGC(); ReadJoin();
     StepSlimScan();
-    if (_tick % 20 == 7) CheckDamage();
+    if ((_tick & 1) == 1) CheckDamage();   // every 2nd tick: the drone turns fast, the hit direction must be read in its attitude of the moment
     if (_tick % 6 == 0) { Broadcast(); PollDesignators(); }
     if (_tick % 10 == 5) PollSensors();
     if (_tick % 10 == 0) { Housekeeping(); PowerAndHealth(); }
     MaintainLock();
     if (_mode != Mode.IDLE) OmniScan();
-    if (_tgt == null && !_aiOn && AutoScan && _mode != Mode.IDLE && _mode != Mode.RTB) AutoScanStep();
-    if (_tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0) ShareTarget();
+    bool raid = RaidOn;
+    if (raid && !_raidActive) { _raidMe = _rc.GetPosition(); _raidPass = 0; }
+    _raidActive = raid;
+    if (raid) RaidScan();
+    else if (_tgt == null && !_aiOn && AutoScan && _mode != Mode.IDLE && _mode != Mode.RTB) AutoScanStep();
+    if (_tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen < 1.0 && _tick % 30 == 0) ShareTarget();
     if (!AiStep()) Control(dt);
     _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % 30 == 0) Display();
@@ -279,6 +301,17 @@ void LoadConfig()
     AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
     AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
+    AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
+    FireStaleMax = Cfg(S, "Max Track Age To Fire (s)", FireStaleMax);
+    RaidCone = Cfg(S, "Raid Fan Half-angle Degrees", RaidCone);
+    RaidScanCone = Cfg(S, "Raid Scan Cone Degrees", RaidScanCone);
+    RaidRay = Cfg(S, "Raid Scan Ray Length", RaidRay);
+    RaidSpeed = Cfg(S, "Raid Speed", RaidSpeed);
+    RaidMaxTravel = Cfg(S, "Raid Max Travel", RaidMaxTravel);
+    RaidLife = Cfg(S, "Raid Bearing Memory Seconds", RaidLife);
+    RaidMinStart = Cfg(S, "Raid Start Confidence", RaidMinStart);
+    RaidMinHold = Cfg(S, "Raid Hold Confidence", RaidMinHold);
+    ListenTags = Cfg(S, "Listen To IGC Tags (target feeds)", ListenTags);
     ScanRange = Cfg(S, "Scan Range", ScanRange);
     TargetLarge = Cfg(S, "Target Large Grids", TargetLarge);
     TargetSmall = Cfg(S, "Target Small Grids", TargetSmall);
@@ -380,27 +413,42 @@ void ReadIGC()
         Mate mt;
         if (!_mates.TryGetValue(d.Item1, out mt)) { mt = new Mate { Id = d.Item1 }; _mates[d.Item1] = mt; }
         mt.Pos = d.Item2; mt.Vel = d.Item3; mt.Tgt = d.Item4; mt.Flags = d.Item5; mt.Seen = _now;
+        // a mate lost its lock on the target I can still see: answer at once with a fresh fix
+        if ((d.Item5 & 4) != 0 && _tgt != null && _tgt.Id == d.Item4 && _tgt.Src != "IGC" && _now - _tgt.Seen < 0.4 && _now - _lastStaleShare > 0.3)
+        { _lastStaleShare = _now; ShareTarget(); }
     }
-    while (_lTgt.HasPendingMessage)
+    for (int li = -1; li < _lFeed.Count; li++)
     {
-        var m = _lTgt.AcceptMessage();
-        if (m.Source == IGC.Me || !(m.Data is MyTuple<long, Vector3D, Vector3D, double, long>)) continue;
-        var d = (MyTuple<long, Vector3D, Vector3D, double, long>)m.Data;
-        if (d.Item4 < 0) { _ignore[d.Item1] = _now + 120; _contacts.Remove(d.Item1); if (_tgt != null && _tgt.Id == d.Item1) _tgt = null; continue; }
-        if (Ignored(d.Item1)) continue;
-        Track t;
-        if (_contacts.TryGetValue(d.Item1, out t) && t.Src != "IGC" && _now - t.Seen < 0.3) continue;
-        if (t == null) { t = new Track { Id = d.Item1, Type = MyDetectedEntityType.SmallGrid }; _contacts[d.Item1] = t; }
-        t.Set(d.Item2, d.Item3, d.Item4, _now, "IGC");
+        var lt = li < 0 ? _lTgt : _lFeed[li];
+        while (lt.HasPendingMessage)
+        {
+            var m = lt.AcceptMessage();
+            if (m.Source == IGC.Me || !(m.Data is MyTuple<long, Vector3D, Vector3D, double, long>)) continue;
+            var d = (MyTuple<long, Vector3D, Vector3D, double, long>)m.Data;
+            if (d.Item4 < 0) { _ignore[d.Item1] = _now + 120; _contacts.Remove(d.Item1); if (_tgt != null && _tgt.Id == d.Item1) _tgt = null; continue; }
+            if (Ignored(d.Item1) || _mates.ContainsKey(d.Item1) || d.Item1 == Me.CubeGrid.EntityId) continue;
+            Track t;
+            if (_contacts.TryGetValue(d.Item1, out t) && t.Src != "IGC" && _now - t.Seen < 0.3) continue;
+            if (t == null) { t = new Track { Id = d.Item1, Type = MyDetectedEntityType.SmallGrid }; _contacts[d.Item1] = t; }
+            t.Set(d.Item2, d.Item3, d.Item4, _now, "IGC");
+        }
+    }
+    while (_lHit.HasPendingMessage)
+    {
+        var m = _lHit.AcceptMessage();
+        if (m.Source == IGC.Me || !(m.Data is MyTuple<Vector3D, Vector3D>)) continue;
+        var d = (MyTuple<Vector3D, Vector3D>)m.Data;
+        AddHit(d.Item2, 0.7);
     }
     while (_lCmd.HasPendingMessage) { var m = _lCmd.AcceptMessage(); if (m.Data is string) Command((string)m.Data); }
     while (_lHome.HasPendingMessage) { var m = _lHome.AcceptMessage(); if (m.Data is Vector3D) { _dynHome = (Vector3D)m.Data; _dynHomeT = _now; } }
+    while (_lHomeR.HasPendingMessage) { var m = _lHomeR.AcceptMessage(); if (m.Data is double) { _homeR = (double)m.Data; _homeRT = _now; } }
 }
 
 void Broadcast()
 {
     IGC.SendBroadcastMessage(Tag + "_SWARM", new MyTuple<long, Vector3D, Vector3D, long, int>(
-        Me.CubeGrid.EntityId, _rc.GetPosition(), _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, (UnderFire ? 1 : 0) | (OwnAlert ? 2 : 0)));
+        Me.CubeGrid.EntityId, _rc.GetPosition(), _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, (UnderFire ? 1 : 0) | (OwnAlert ? 2 : 0) | (LockStale ? 4 : 0)));
 }
 
 void ShareTarget()
@@ -414,9 +462,10 @@ IMyCameraBlock CamFor(Vector3D pos, double range)
     IMyCameraBlock best = null;
     foreach (var c in _cams)
     {
-        if (!c.IsWorking || c.AvailableScanRange < range) continue;
+        if (!c.IsWorking) continue;
         Vector3D d = pos - c.GetPosition(); double len = d.Length();
         if (len < 1 || Vector3D.Dot(d / len, c.WorldMatrix.Forward) < 0.72) continue;
+        if (c.AvailableScanRange < Math.Max(range, len)) continue;     // a ray costs its length in charge
         if (best == null || c.AvailableScanRange > best.AvailableScanRange) best = c;
     }
     return best;
@@ -435,21 +484,59 @@ void ManualLock()
     _err = ""; _tgt = AddContact(e, "LOCK"); ShareTarget();
 }
 
+// ---- LOCK MAINTENANCE AND RE-ACQUISITION (same scheme as the Hornet, see docs/script-fix-notes.md H3) ----
+//  A camera banks only 2 km/s of ray range and a miss costs as much as a hit, so rays are cheap (they end just behind the
+//  predicted point) and a stale lock gets two rays per tick on a widening spiral. The lost target stays a "ghost" for GhostTime.
+const double GhostTime = 8.0;
+int _missRun = 0, _spiralIdx = 0, _probeN = 0; double _lastStaleShare = -9;
+Vector3D _lostPos, _lostVel; double _lostT = -99, _lostRad = 3;
+void NoteLost(Track t)
+{
+    if (t.Src == "IGC" || t.DeadAt > 0 || t.DisSince >= 0) return;
+    _lostPos = t.Pos; _lostVel = t.Vel; _lostT = t.Seen; _lostRad = t.Radius;
+}
+double Uncertainty(Track t, double age)
+{
+    return Math.Min(80, t.Radius * 0.35 + 0.5 * Math.Max(t.AccMag, 6.0) * age * age);
+}
+bool LockStale { get { return _tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen > 1.2; } }
 void MaintainLock()
 {
-    if (_tgt == null || _cams.Count == 0 || _now - _tgt.Seen < 0.25) return;
-    if ((_tgt.Src == "SENSOR" || _tgt.Src == "TURRET" || _tgt.Src == "CTC") && _now - _tgt.Seen < 0.5) return;
+    if (_tgt == null || _cams.Count == 0 || _aiOn) return;
+    double age = _now - _tgt.Seen;
+    if (age < 0.2) return;
+    if ((_tgt.Src == "SENSOR" || _tgt.Src == "TURRET" || _tgt.Src == "CTC") && age < 0.5) return;
     Vector3D p = _tgt.P(_now), me = _rc.GetPosition();
     Vector3D dir = p - me; double dist = dir.Length();
     if (dist < 1) return;
-    bool probingAim;
-    Vector3D aim = ProbePoint(_tgt, p, dir / dist, dist, out probingAim);
-    var cam = CamFor(aim, dist + 20);
-    if (cam == null) return;
-    var e = cam.Raycast(aim);
-    if (probingAim && (e.IsEmpty() || e.EntityId != _tgt.Id)) AimMissed(_tgt);
-    if (!e.IsEmpty() && e.EntityId == _tgt.Id) { if (Valid(e)) AddContact(e, "LOCK"); else _tgt.DeadAt = _now; }
-    else if (Valid(e)) AddContact(e, "LOCK");
+    dir /= dist;
+    int rays = age > 0.6 ? 2 : 1;
+    for (int k = 0; k < rays; k++)
+    {
+        bool probingAim = false;
+        Vector3D aim = age > 0.6 ? ReacquirePoint(_tgt, p, dir, age) : ProbePoint(_tgt, p, dir, dist, out probingAim);
+        var cam = CamFor(aim, 0);
+        if (cam == null) return;
+        var e = cam.Raycast(aim);
+        if (probingAim && (e.IsEmpty() || e.EntityId != _tgt.Id)) AimMissed(_tgt);
+        if (!e.IsEmpty() && e.EntityId == _tgt.Id)
+        {
+            _missRun = 0;
+            if (Valid(e)) AddContact(e, _tgt.Src == "IGC" ? "LOCK" : _tgt.Src); else _tgt.DeadAt = _now;
+            return;
+        }
+        _missRun++;
+        if (!e.IsEmpty() && Valid(e)) AddContact(e, "LOCK");
+    }
+}
+Vector3D ReacquirePoint(Track t, Vector3D centre, Vector3D dir, double age)
+{
+    double sigma = Uncertainty(t, age);
+    _spiralIdx++;
+    double rr = sigma * 1.5 * Math.Sqrt(((_spiralIdx % 17) + 0.5) / 17.0), th = _spiralIdx * 2.39996323;
+    Vector3D u = Vector3D.Cross(dir, Math.Abs(dir.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); u.Normalize();
+    Vector3D v = Vector3D.Cross(dir, u);
+    return centre + u * (rr * Math.Cos(th)) + v * (rr * Math.Sin(th)) + dir * Math.Min(t.Radius + sigma * 0.5, 25);
 }
 
 void AutoScanStep()
@@ -458,6 +545,22 @@ void AutoScanStep()
     foreach (var c in _cams) if (c.IsWorking && Forwardish(c) && c.AvailableScanRange >= ScanRange && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
     if (cam == null) return;
     _scanIdx++;
+    double lostAge = _now - _lostT;
+    if (lostAge < 25 && (_scanIdx & 1) == 0)
+    {   // just lost a target: every other ray goes round where it was last seen, widening with time
+        Vector3D lp = _lostPos + _lostVel * Math.Min(lostAge, 10);
+        double rr = Math.Min(250, _lostRad + 6 * lostAge) * Math.Sqrt(((_scanIdx >> 1) % 23 + 0.5) / 23.0), th2 = _scanIdx * 2.39996323;
+        Vector3D dl = lp - cam.GetPosition(); double dd = dl.Length();
+        if (dd > 30 && dd < ScanRange)
+        {
+            dl /= dd;
+            Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
+            Vector3D vv = Vector3D.Cross(dl, uu);
+            var le = cam.Raycast(lp + uu * (rr * Math.Cos(th2)) + vv * (rr * Math.Sin(th2)) + dl * 10);
+            if (Valid(le)) AddContact(le, "SCAN");
+            return;
+        }
+    }
     double r = ScanCone * Math.Sqrt((_scanIdx % 120 + 0.5) / 120), th = _scanIdx * 2.39996323;
     var e = cam.Raycast(ScanRange, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
     if (Valid(e)) AddContact(e, "SCAN");
@@ -467,8 +570,12 @@ void AutoScanStep()
 void Housekeeping()
 {
     _drop.Clear();
-    foreach (var kv in _contacts) if (_now - kv.Value.Seen > 4) _drop.Add(kv.Key);
-    foreach (var id in _drop) _contacts.Remove(id);
+    foreach (var kv in _contacts)
+    {   // the target I am working on stays alive as a ghost while MaintainLock hunts for it
+        double lim = (kv.Value == _tgt && kv.Value.Src != "IGC") ? GhostTime : 4;
+        if (_now - kv.Value.Seen > lim) _drop.Add(kv.Key);
+    }
+    foreach (var id in _drop) { Track gone; if (_contacts.TryGetValue(id, out gone) && gone == _tgt) NoteLost(gone); _contacts.Remove(id); }
     _drop.Clear();
     foreach (var kv in _mates) if (_now - kv.Value.Seen > 3) _drop.Add(kv.Key);
     foreach (var id in _drop) _mates.Remove(id);
@@ -489,6 +596,7 @@ void Housekeeping()
         double score = Vector3D.Distance(p, me);
         score += HiveScore(t);                    // split across targets (or focus fire)
         if (t == _tgt) score -= 400;
+        score += Math.Max(0, (_now - t.Seen) - 1.0) * 150;  // stale tracks lose to fresh sightings
         if (Vector3D.Distance(p, me) < 150) score -= 350;   // something right on top of us comes first
         if (score < bestScore) { bestScore = score; best = t; }
     }
@@ -519,6 +627,7 @@ Vector3D SpherePoint(int i, int n)
     return new Vector3D(Math.Cos(ph) * r, y, Math.Sin(ph) * r);
 }
 
+double HomePad() { return (_now - _homeRT < 5 && _now - _dynHomeT < 5) ? _homeR + 25 : 0; }   // stay outside a carrier's hull
 Vector3D Home()
 {
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
@@ -553,9 +662,20 @@ void Control(double dt)
     Vector3D sep = Separation(me);
     bool fire = false; _aimErrDeg = 0; _latSpd = 0;
 
+    if (_tgt == null && _raidActive && RaidDir().LengthSquared() > 0.5)
+    {   // fan run along the bearing of the incoming fire (see HIT BEARING + RAID)
+        Vector3D rd = RaidDir();
+        double travelled = Vector3D.Distance(me, _raidMe);
+        if (travelled >= RaidMaxTravel && myVel.Length() < 25) { _raidMe = me; _raidPass++; travelled = 0; }   // pass finished without contact: next pass on a new slot
+        Vector3D want = (travelled < RaidMaxTravel ? rd * RaidSpeed : Vector3D.Zero) + sep + Evade();
+        Vector3D accel = (want - myVel) * AccelGain;
+        VectorFly(accel, grav, mass, aMax, rd, dt);
+        SetFire(false);
+        return;
+    }
     if (_tgt == null || _mode == Mode.RTB)
     {   // formation slot around home (or fly home)
-        Vector3D slot = _mode == Mode.RTB ? Home() : Home() + SpherePoint(_idx, _n) * (FormRadius + 6 * Math.Sqrt(_n));
+        Vector3D slot = _mode == Mode.RTB ? Home() + SpherePoint(_idx, _n) * HomePad() : Home() + SpherePoint(_idx, _n) * (FormRadius + 6 * Math.Sqrt(_n) + HomePad());
         Vector3D d = slot - me; double sd = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, sd * 0.4), Math.Sqrt(2 * aMax * 0.4 * sd));
         Vector3D want = (sd > 0.5 ? d / sd * v : Vector3D.Zero) + sep + Evade();
@@ -625,7 +745,7 @@ void Control(double dt)
         Aim(nose, los, dt);
         Axial(Vector3D.Dot(accel, _ref.WorldMatrix.Forward) * mass);
         _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(_ref.WorldMatrix.Forward, aimDir), -1, 1)) * 57.2958;
-        fire = inRange && _aimErrDeg < win && LineClear(gunPos, aimDir, dist);
+        fire = inRange && _aimErrDeg < win && _now - _tgt.Seen < FireStaleMax && LineClear(gunPos, aimDir, dist);
     }
     else
     {
@@ -756,7 +876,7 @@ void Aim(Vector3D desiredFwd, Vector3D ffWorld, double dt)
 
 void SetFire(bool on)
 {
-    if (on == _firing) return;
+    if (on == _firing && !(on && _tick % 30 == 0)) return;   // re-send "on" twice a second (guns can be switched off behind our back)
     _firing = on;
     foreach (var g in _guns) if (g.IsFunctional) g.ApplyAction(on ? "Shoot_On" : "Shoot_Off");
 }
@@ -787,6 +907,7 @@ void Display()
     _sb.Append("Ins  : ").Append(Runtime.CurrentInstructionCount).Append(" / ").Append(Runtime.MaxInstructionCount).Append("  peak ").Append(_peakIns).Append('\n');
     if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
     _sb.Append(HiveStatus());
+    if (_tgt == null && _raidActive) _sb.Append("RAID bearing ").Append(_axisSpread.ToString("0")).Append(" deg spread, pass ").Append(_raidPass + 1).Append('\n');
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner\n");
     if (_err != "") _sb.Append("! ").Append(_err).Append('\n');
     string s = _sb.ToString();
@@ -987,13 +1108,171 @@ void StepSlimScan()
     }
     if (_slimBusy) return;
     _slims.Clear(); _slims.AddRange(_slimsNew); _slimsGrid = g; _integ = -1;   // swap in the finished pass
+    _slimMin.Clear(); _slimMax.Clear();     // cell bounds of every block, kept so a destroyed block can still be located
+    foreach (var sb in _slims)
+    {
+        Vector3I mn = sb.Position, mx = sb.Position;
+        if (sb.FatBlock != null) { mn = sb.FatBlock.Min; mx = sb.FatBlock.Max; }
+        _slimMin.Add(mn); _slimMax.Add(mx);
+    }
 }
 void CheckDamage()
 {
     double sum = 0; var g = Me.CubeGrid;
-    foreach (var s in _slims) if (g.CubeExists(s.Position)) sum += s.BuildIntegrity - s.CurrentDamage;
-    if (_integ >= 0 && sum < _integ - 0.5) { _hitAt = _now; _hits++; }
+    bool cmp = _integ >= 0 && _slimInt.Count == _slims.Count;
+    if (!cmp) { _slimInt.Clear(); for (int i = 0; i < _slims.Count; i++) _slimInt.Add(0f); }
+    _hurt.Clear();
+    for (int i = 0; i < _slims.Count; i++)
+    {
+        var s = _slims[i];
+        float v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0f;
+        sum += v;
+        if (cmp && _slimInt[i] - v > 0.5f) _hurt.Add(i);
+        _slimInt[i] = v;
+    }
+    if (_integ >= 0 && sum < _integ - 0.5)
+    {
+        _hitAt = _now; _hits++;
+        if (_hurt.Count > 0 && cmp && _now - _lastVoteT >= 0.25) { _lastVoteT = _now; HitVotes(g); }   // throttled: one vote costs a few thousand instructions
+    }
     _integ = sum;
+}
+List<float> _slimInt = new List<float>(); List<int> _hurt = new List<int>(); List<Vector3I> _slimMin = new List<Vector3I>(), _slimMax = new List<Vector3I>();
+
+// ---- v1.9: HIT BEARING + RAID ------------------------------------------------------------------------------------
+// A drone with no AI block cannot find a 3 m ship by raycast beyond a few hundred metres (the search cone is far too big),
+// but an enemy that shoots at the swarm tells it where it is. A projectile hits the first block along its path, so the
+// chance that block B is the one hit from direction u is proportional to the area of B the shooter can see: the sum over
+// B's exposed faces of max(0, u.normal). Divided by the same sum over the whole drone (its silhouette from u) this is a
+// likelihood; every damaged block multiplies it in for each of 64 candidate directions (world frame, so tumbling does not
+// matter), with exponential forgetting. The best direction is the bearing of the shooter. It is shared over IGC ("<Tag>_HIT").
+// While there is no target the swarm flies a FAN of runs along it (a cone slot per drone) and sweeps the cone with short
+// camera rays; the 50 m sensor catches whatever the drones fly past.
+const int HN = 64;
+Vector3D[] _hd; float[] _lp = new float[HN]; double _histT = 0, _histMass = 0, _hitLastT = -99, _hitShareT = -9;
+int[] _faces = new int[6 * 40];   // per damaged-block slot: exposed face counts (+x,-x,+y,-y,+z,-z)
+int[] _allFaces = new int[6];
+Vector3D _raidMe; bool _raidActive = false; int _raidScan = 0, _raidPass = 0;
+void InitDirs() { if (_hd == null) { _hd = new Vector3D[HN]; for (int i = 0; i < HN; i++) _hd[i] = SpherePoint(i, HN); } }
+// exposed face counts of the cells [mn..mx] (the block); faces towards cells of the block itself do not count
+void CountFaces(IMyCubeGrid g, Vector3I mn, Vector3I mx, int[] f, int off)
+{
+    for (int i = 0; i < 6; i++) f[off + i] = 0;
+    for (int x = mn.X; x <= mx.X; x++) for (int y = mn.Y; y <= mx.Y; y++) for (int z = mn.Z; z <= mx.Z; z++)
+    {
+        if (x == mn.X && !g.CubeExists(new Vector3I(x - 1, y, z))) f[off + 1]++;
+        if (x == mx.X && !g.CubeExists(new Vector3I(x + 1, y, z))) f[off + 0]++;
+        if (y == mn.Y && !g.CubeExists(new Vector3I(x, y - 1, z))) f[off + 3]++;
+        if (y == mx.Y && !g.CubeExists(new Vector3I(x, y + 1, z))) f[off + 2]++;
+        if (z == mn.Z && !g.CubeExists(new Vector3I(x, y, z - 1))) f[off + 5]++;
+        if (z == mx.Z && !g.CubeExists(new Vector3I(x, y, z + 1))) f[off + 4]++;
+    }
+}
+void HitVotes(IMyCubeGrid g)
+{
+    InitDirs();
+    Vector3D o = g.GridIntegerToWorld(Vector3I.Zero);
+    Vector3D ex = Vector3D.Normalize(g.GridIntegerToWorld(new Vector3I(1, 0, 0)) - o), ey = Vector3D.Normalize(g.GridIntegerToWorld(new Vector3I(0, 1, 0)) - o), ez = Vector3D.Normalize(g.GridIntegerToWorld(new Vector3I(0, 0, 1)) - o);
+    Decay();
+    // silhouette from direction u: exposed faces of the whole drone (every present block that is not part of a hurt block is counted too)
+    for (int i = 0; i < 6; i++) _allFaces[i] = 0;
+    int[] tmp = _faces; int hurtN = Math.Min(_hurt.Count, 4);   // (4: the 64-direction loop costs ~100 instructions per hurt block per direction; 6 could reach the 50k tick limit)
+    for (int i = 0; i < _slims.Count; i++)
+    {
+        int slot = -1;
+        for (int q = 0; q < hurtN; q++) if (_hurt[q] == i) slot = q;
+        if (slot < 0 && !g.CubeExists(_slims[i].Position)) continue;      // a destroyed block that was not just hit is gone
+        Vector3I mn = _slimMin[i], mx = _slimMax[i];
+        if (slot >= 0) { CountFaces(g, mn, mx, tmp, slot * 6); for (int k = 0; k < 6; k++) _allFaces[k] += tmp[slot * 6 + k]; }
+        else { CountFaces(g, mn, mx, _tmpF, 0); for (int k = 0; k < 6; k++) _allFaces[k] += _tmpF[k]; }
+    }
+    float wgt = 1f / hurtN;
+    for (int j = 0; j < HN; j++)
+    {
+        Vector3D u = _hd[j];
+        double ux = Vector3D.Dot(u, ex), uy = Vector3D.Dot(u, ey), uz = Vector3D.Dot(u, ez);
+        double[] c = _cs; c[0] = Math.Max(0, ux); c[1] = Math.Max(0, -ux); c[2] = Math.Max(0, uy); c[3] = Math.Max(0, -uy); c[4] = Math.Max(0, uz); c[5] = Math.Max(0, -uz);
+        double W = 0.3; for (int k = 0; k < 6; k++) W += _allFaces[k] * c[k];
+        double lik = 0;
+        for (int q = 0; q < hurtN; q++)
+        {
+            double wb = 0.05; for (int k = 0; k < 6; k++) wb += _faces[q * 6 + k] * c[k];
+            lik += Math.Log(wb / W);
+        }
+        _lp[j] += (float)(lik * wgt);
+    }
+    _histMass += 1.0; _hitLastT = _now; _axisT = -9;
+    if (_now - _hitShareT > 0.5)
+    {
+        double st; Vector3D ax = HitAxis(out st);
+        if (st >= 1) { _hitShareT = _now; IGC.SendBroadcastMessage(Tag + "_HIT", new MyTuple<Vector3D, Vector3D>(_rc.GetPosition(), ax)); }
+    }
+}
+int[] _tmpF = new int[6]; double[] _cs = new double[6]; double _lastVoteT = -9;
+void Decay()
+{
+    double dec = Math.Exp(-(_now - _histT) / 12.0); _histT = _now;
+    for (int k = 0; k < HN; k++) _lp[k] = (float)(_lp[k] * dec);
+    _histMass *= dec;
+}
+// a mate's axis: a soft vote (von Mises-like) around it
+void AddHit(Vector3D axis, double w)
+{
+    InitDirs(); Decay();
+    for (int k = 0; k < HN; k++) _lp[k] += (float)(2.5 * w * Vector3D.Dot(_hd[k], axis));
+    _histMass += w; _hitLastT = _now; _axisT = -9;
+}
+// best bearing + strength (decayed number of hits x how sharply the likelihood peaks); cached for 0.1 s
+double[] _sp = new double[18];
+Vector3D _axisC; double _axisS, _axisT = -9, _axisSpread = 40;   // spread = half-angle (deg) holding ~80% of the likelihood
+Vector3D HitAxis(out double strength)
+{
+    if (_now - _axisT < 0.1) { strength = _axisS; return _axisC; }
+    _axisT = _now; strength = 0; _axisC = Vector3D.Zero; _axisS = 0;
+    if (_hd == null || _histMass < 0.05) return Vector3D.Zero;
+    int best = 0; for (int k = 1; k < HN; k++) if (_lp[k] > _lp[best]) best = k;
+    Vector3D v = Vector3D.Zero; double near = 0, all = 0;
+    for (int k = 0; k < 18; k++) _sp[k] = 0;
+    for (int j = 0; j < HN; j++)
+    {
+        double w = Math.Exp(_lp[j] - _lp[best]), c = Vector3D.Dot(_hd[best], _hd[j]);
+        all += w; if (c > 0.82) { near += w; v += _hd[j] * w; }
+        _sp[Math.Min(17, (int)(Math.Acos(MathHelper.Clamp(c, -1, 1)) * 11.4592))] += w;     // 5 degree bins around the peak
+    }
+    _axisS = _histMass * Math.Exp(-(_now - _histT) / 12.0) * (near / all);
+    { double cum = 0; _axisSpread = 90; for (int k = 0; k < 18; k++) { cum += _sp[k]; if (cum >= 0.8 * all) { _axisSpread = 5 * (k + 1); break; } } }
+    _axisC = v.LengthSquared() > 1e-12 ? Vector3D.Normalize(v) : _hd[best];
+    strength = _axisS; return _axisC;
+}
+bool RaidOn
+{
+    get
+    {
+        if (_tgt != null || !(_mode == Mode.ATTACK || _mode == Mode.FORM) || _aiOn || _now - _hitLastT >= RaidLife) return false;
+        if (_mode == Mode.FORM && Vector3D.Distance(_rc.GetPosition(), Home()) > EngageRadius * 0.5) return false;   // guard mode: do not wander off
+        double st; HitAxis(out st);
+        return st >= (_raidActive ? RaidMinHold : RaidMinStart);   // wait until the bearing is trustworthy (a few hits)
+    }
+}
+Vector3D RaidDir()
+{
+    double st; Vector3D axis = HitAxis(out st);
+    if (st < 1e-3) return Vector3D.Zero;
+    return _n > 1 ? ConePoint(axis, RaidCone, (_idx + _raidPass * 5) % _n, _n) : axis;
+}
+void RaidScan()
+{   // every drone sweeps the whole bearing cone with its own low-discrepancy offset (no sector bookkeeping needed)
+    double st; Vector3D axis = HitAxis(out st); if (st < 1e-3) return;
+    Vector3D u = Perp(axis), v = Vector3D.Cross(axis, u);
+    foreach (var c in _cams)
+    {
+        if (!c.IsWorking || c.AvailableScanRange < RaidRay || Vector3D.Dot(axis, c.WorldMatrix.Forward) < 0.72) continue;
+        _raidScan++;
+        double i = _raidScan + _idx * 53.0, frac = (i * 0.6180339887) % 1.0;
+        double tr = Math.Tan(Math.Max(8, Math.Min(RaidScanCone, _axisSpread * 1.1)) / 57.2958 * Math.Sqrt(frac)), th = i * 2.39996323;
+        var e = c.Raycast(RaidRay, Vector3D.Normalize(axis + u * (tr * Math.Cos(th)) + v * (tr * Math.Sin(th))));
+        if (Valid(e)) AddContact(e, "SCAN");
+    }
 }
 
 // Random evasive velocity while under fire (new direction every 1-2.5 s and on every new hit).
@@ -1029,7 +1308,6 @@ string HiveStatus()
 //   CENTER   old behaviour      AUTO  ENGINES once it has seen the target thrust, else SPREAD
 string AimMode = "AUTO";
 List<int> _aimIdx = new List<int>();
-bool _probeFlip = false;
 bool AimActive(Track t) { return AimMode != "CENTER" && t.Hull.Count >= 3; }
 string AimLabel(Track t)
 {
@@ -1070,15 +1348,23 @@ void StoreHull(Track t, MyDetectedEntityInfo e)
 // and the current aim point. If a ray at the aim point no longer hits, that part is gone: forget it.
 Vector3D ProbePoint(Track t, Vector3D centre, Vector3D dir, double dist, out bool probingAim)
 {
-    _probeFlip = !_probeFlip; probingAim = false;
-    if (_probeFlip && AimActive(t)) { probingAim = true; return centre + AimOffset(t) + dir * 1.5; }
+    probingAim = false;
+    int k = ++_probeN;
+    if ((k & 3) == 0 && AimActive(t) && _now - t.Seen < 0.5) { probingAim = true; return centre + AimOffset(t) + dir * 1.5; }
+    // half the rays at the bounding-box centre miss a small ship: aim at hull points kept from earlier hits instead
+    if (t.Hull.Count >= 3 && (k % 3) != 0)
+    {
+        Vector3D h = Vector3D.TransformNormal(t.Hull[_evRng.Next(t.Hull.Count)], t.O);
+        Vector3D r = new Vector3D(_evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5);
+        return centre + h + r * 0.8 + dir * 2;
+    }
     if (_now - t.Seen < 0.6 && t.Hull.Count < 48)
     {
         Vector3D r = new Vector3D(_evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5);
         r -= Vector3D.Dot(r, dir) * dir;
-        if (r.LengthSquared() > 1e-6) centre += Vector3D.Normalize(r) * t.Radius * 0.6 * _evRng.NextDouble();
+        if (r.LengthSquared() > 1e-6) centre += Vector3D.Normalize(r) * t.Radius * 0.35 * _evRng.NextDouble();
     }
-    return centre + dir * Math.Min(t.Radius * 0.5, 10);
+    return centre + dir * Math.Min(t.Radius, 12);
 }
 void AimMissed(Track t)
 {
@@ -1122,23 +1408,32 @@ void FindAi()
 bool AiStep()
 {
     if (_tgt != null) _lastTgtT = _now;
-    bool want = AiAssist && _ai.Count > 0 && _tgt == null && AiModeOk() && _now - _lastTgtT > 2;
+    // the AI also takes over while my lock is stale (nothing seen for 3 s): the confirm rays below pick the enemy up again
+    bool want = AiAssist && _ai.Count > 0 && AiModeOk() &&
+        ((_tgt == null && _now - _lastTgtT > 2) || (_tgt != null && _now - _tgt.Seen > 3.0));
     if (want != _aiOn)
     {
         _aiOn = want;
+        _firing = false;                        // guns' state is unknown after any hand-over: SetFire sends it again
         if (want) Release();                    // thrusters and gyros go to the AI
         foreach (var b in _ai) b.Enabled = want;
     }
     if (!_aiOn) return false;
-    // the AI points the guns at what it found: check a tight cone straight ahead, one ray per tick
+    // the AI points the guns at what it found (~0.1 deg off): every second ray goes down the boresight, the rest on a
+    // 0.15-2.5 deg spiral. The first forward camera casts the long ray, the others the short, frequent one.
+    int nFwd = 0; foreach (var c in _cams) if (c.IsWorking && Forwardish(c)) nFwd++;
+    bool longCam = nFwd > 1;          // a drone with a single nose camera only casts the short ray (the long one would starve it)
     foreach (var c in _cams)
     {
-        if (!c.IsWorking || !Forwardish(c) || c.AvailableScanRange < AiConfirmRange) continue;
+        if (!c.IsWorking || !Forwardish(c)) continue;
+        double len = longCam ? AiConfirmLong : AiConfirmRange;
+        longCam = false;
+        if (c.AvailableScanRange < len) continue;
         _aiScan++;
-        double r = 3 * Math.Sqrt((_aiScan % 13 + 0.5) / 13.0), th = _aiScan * 2.39996323;
-        var e = c.Raycast(AiConfirmRange, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
+        double r = 0, th = _aiScan * 2.39996323;
+        if ((_aiScan & 1) == 1) { int j = (_aiScan >> 1) % 16; r = 0.15 + 2.35 * Math.Pow((j + 0.5) / 16.0, 1.5); }
+        var e = c.Raycast(len, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
         if (Valid(e)) AddContact(e, "AI");
-        break;
     }
     return true;
 }

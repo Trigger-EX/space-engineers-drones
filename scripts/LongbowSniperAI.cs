@@ -1,5 +1,5 @@
 // =====================================================================
-//  LONGBOW SNIPER AI  v1.8  - long-range railgun drone controller
+//  LONGBOW SNIPER AI  v1.9  - long-range railgun drone controller
 //  Space Engineers (vanilla). Works on small grid (Small Railgun, 1400 m)
 //  and large grid (Large Railgun, 2000 m). Paste into a Programmable Block.
 // ---------------------------------------------------------------------
@@ -13,7 +13,7 @@
 //   * MAX ACCURATE RANGE: for every target it solves how far away a shot
 //     can be taken and still land inside the target if the target dodges
 //     after the trigger is pulled:  miss = 0.5*a*t^2 + vErr*t <= k*radius.
-//     The drone holds exactly that distance (capped by the weapon's range).
+//     The drone holds that distance, but never closer than Preferred Engage Range (capped by the weapon's range).
 //   * Lead solution includes target acceleration AND gravity drop of the
 //     sabot. Fires only after the aim has settled inside the hit window,
 //     with a fresh pre-shot raycast and a friendly line-of-fire check.
@@ -22,17 +22,32 @@
 //   * Return to base on low battery / out of sabots. Thrust is power-
 //     limited so recharging the railgun never browns out the drone.
 //
+//  v1.9 (sim-audit pass; details and numbers in docs/script-fix-notes.md)
+//   * AI hand-over: confirm rays really cover the boresight (1 in 2 exactly down the nose), one long ray (2.6 km) + short
+//     ones (1.3 km); the AI also takes over when the lock has been stale 3 s (1 s beyond 1.4 km).
+//   * Lock keeping: cheaper rays, hull-point probes, a stale lock becomes a "ghost" (8 s) searched with 2 rays/tick on a
+//     widening spiral; the loss is announced to the hive; after a target is dropped the nose turns to where it was.
+//   * Railgun: the shot delay (0.5 s small / 2 s large) is NOT added to the lead (the gun keeps tracking until the slug leaves, so
+//     the solution of the moment of firing is the right one; adding it over-led and cut the hit rate from 85 % to 5 %); the ship
+//     holds steady while a shot is pending. Accepted shots are confirmed with IsShooting (jinking and the reload timer work
+//     without an ammo drop). Stand-off 1000 m (Preferred Engage Range) instead of the "max accurate range" of 350-500 m,
+//     fire only inside stand-off x1.15 + 50 m, aim window capped at 2 m (6 m on big targets), centre aim for small grids (hull points for large ones).
+//   * Hive: wingmate separation, friendly-fire gate from IGC positions (no camera needed; also while the AI blocks fly),
+//     shot-count based target switching, wrecks (small ship hit, no longer manoeuvring) are dropped.
+//
 //  COMMANDS (argument, toolbar, or IGC "<Tag>_CMD")
 //   guard | hunt | assist | rtb | idle | lock | unlock | home | reload
 //   range <m>   force an engagement range (0 = automatic)
 // =====================================================================
 
-const string VER = "1.8";
+const string VER = "1.9";
 
 // ---------------- settings (Custom Data) ----------------
 string Tag = "LONGBOW";
 string StartMode = "IDLE";
 double ProjSpeed = 1000, WeaponRange = 1400, ReloadTime = 20; // used for unknown weapons
+double ShotDelayCfg = 0;     // trigger -> projectile leaves the barrel, unknown weapons (railgun data: 0.5 s small, 2 s large)
+double ShotDelay = 0;        // the value in use (set by DetectWeapon)
 bool GravityDrop = true, InheritVel = true, AutoWeapon = true;
 double HitFraction = 0.5;    // shot must land within this fraction of target radius
 double VelErr = 0.3;         // m/s assumed velocity estimate error
@@ -46,11 +61,16 @@ double CloseScanRange = 200; // all-around camera scan distance
 bool CloseScan = true;
 double AimKp = 5, AimKd = 0.4, MaxTurn = 2.5;
 int SettleTicks = 8;
+double CalmAccel = 0, CalmWait = 2.5;   // railgun: wait up to CalmWait s for a moment when the target is not accelerating harder than CalmAccel m/s^2 (0 = off)
+double AimWindowMaxLarge = 6.0;   // ... for a big target (large grid / radius over 12 m), where the hull is wide and every hit cripples something
+double AimWindowMax = 2.0;    // railgun: never accept an aim error worth more than this many metres at the target (the whole sphere is far too generous)
+double PreferRange = 1000;   // stand-off the sniper likes against any target (gatling ships cannot reach it, a slug flies 1 s)
+double FireRangeFactor = 1.15, FireRangeSlack = 50; // the railgun only fires inside engage range x factor + slack
 double LeadScale = 1.0;      // scales the lead offset if shots land consistently ahead/behind
 bool UseTargetAccel = true;
 bool SplitFocus = true;
 double DisabledGrace = 5, EvadeSpeed = 20;
-bool AiAssist = true; double AiConfirmRange = 2600;
+bool AiAssist = true; double AiConfirmRange = 1300, AiConfirmLong = 2600;
 double RtbBattery = 0.2;
 bool TargetLarge = true, TargetSmall = true, TargetChars = false, TargetNeutral = false;
 bool AutoScan = true, ShareTargets = true, FriendCheck = true;
@@ -82,7 +102,7 @@ IMyBroadcastListener _lTgt, _lCmd, _lHome;
 class Gun
 {
     public IMyUserControllableGun B;
-    public double ReadyAt = 0, PendingAt = -1, LastShot = -999; public long AmmoAtShot;
+    public double ReadyAt = 0, PendingAt = -1, LastShot = -999; public long AmmoAtShot; public bool SawShoot;
 }
 List<Gun> _gunState = new List<Gun>();
 
@@ -92,6 +112,7 @@ class Track
     public double Spin, SpinSince = -1, Rad0, DeadAt = -1, DisSince = -1; public Vector3D OF, OU; public bool HasOri;
     public MatrixD O = MatrixD.Identity; public List<Vector3D> Hull = new List<Vector3D>(); public int HullNext;
     public Vector3D Thrust, AimLocal; public double AimT = -99;
+    public int ShotsAt, NSet; public double LastShotT = -999, QuietSince = -1;   // slugs I have fired at it; since when it has not accelerated
     // how fast it's rotating, from orientation changes between sightings
     public void Ori(MatrixD o, double dt)
     {
@@ -117,6 +138,12 @@ class Track
         }
         else if (dt >= 2) { Acc = Vector3D.Zero; AccMag = 0; }
         PeakAcc = Math.Max(Acc.Length(), PeakAcc * 0.98);
+        // a ship that has stopped manoeuvring altogether (after being shot at) has lost its engines or its pilot
+        if (src != "IGC")   // (an IGC fix is a mate's smoothed extrapolation: it always looks calm)
+        {
+            NSet++;
+            if (NSet >= 5 && AccMag < 0.4 && PeakAcc < 0.8) { if (QuietSince < 0) QuietSince = now; } else QuietSince = -1;
+        }
         Pos = p; Vel = v; Radius = Math.Max(r, 1.5); Seen = now; Src = src; Rad0 = Math.Max(Rad0, Radius);
     }
     // Acceleration we trust for prediction. A tumbling or jinking target's acceleration keeps changing
@@ -128,8 +155,9 @@ class Track
         double steady = MathHelper.Clamp((m / AccMag - 0.6) / 0.3, 0, 1);
         return Acc * steady;
     }
-    public Vector3D P(double now) { double t = now - Seen; return Pos + Vel * t + 0.5 * EA() * t * t; }
-    public Vector3D V(double now) { return Vel + EA() * (now - Seen); }
+    // acceleration is only trusted for 2 s (a ghost track must not run away on a quadratic)
+    public Vector3D P(double now) { double t = now - Seen, ta = Math.Min(t, 2.0); return Pos + Vel * t + EA() * (ta * (t - 0.5 * ta)); }
+    public Vector3D V(double now) { return Vel + EA() * Math.Min(now - Seen, 2.0); }
 }
 Dictionary<long, Track> _contacts = new Dictionary<long, Track>();
 List<long> _drop = new List<long>();
@@ -219,7 +247,7 @@ void Tick(string arg, UpdateType src)
     MaintainLock(0.25);
     if (_mode != Mode.IDLE) OmniScan();
     if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT)) AutoScanStep();
-    if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0) ShareTarget();
+    if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen < 1.0 && _tick % 30 == 0) ShareTarget();
 
     if (!AiStep()) Control(dt);
     _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
@@ -266,6 +294,7 @@ void LoadConfig()
     ProjSpeed = Cfg(S, "Custom Projectile Speed", ProjSpeed);
     WeaponRange = Cfg(S, "Custom Weapon Range", WeaponRange);
     ReloadTime = Cfg(S, "Custom Reload Seconds", ReloadTime);
+    ShotDelayCfg = Cfg(S, "Custom Shot Delay Seconds", ShotDelayCfg);
     GravityDrop = Cfg(S, "Custom Gravity Drop", GravityDrop);
     InheritVel = Cfg(S, "Projectiles Inherit Ship Velocity", InheritVel);
     HitFraction = Cfg(S, "Hit Fraction Of Target Radius", HitFraction);
@@ -298,6 +327,13 @@ void LoadConfig()
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
     SettleTicks = (int)Cfg(S, "Settle Ticks Before Shot", SettleTicks);
     LeadScale = Cfg(S, "Lead Scale (1 = calculated)", LeadScale);
+    PreferRange = Cfg(S, "Preferred Engage Range", PreferRange);
+    AimWindowMax = Cfg(S, "Max Aim Window m (railgun)", AimWindowMax);
+    AimWindowMaxLarge = Cfg(S, "Max Aim Window m (big target)", AimWindowMaxLarge);
+    CalmAccel = Cfg(S, "Calm Target Accel m/s2 (0 off)", CalmAccel);
+    CalmWait = Cfg(S, "Max Wait For Calm Target s", CalmWait);
+    FireRangeFactor = Cfg(S, "Fire Range Factor", FireRangeFactor);
+    FireRangeSlack = Cfg(S, "Fire Range Slack", FireRangeSlack);
     UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
     SplitFocus = Cfg(S, "Split Targets Across Hive (false = focus fire)", SplitFocus);
     DisabledGrace = Cfg(S, "Seconds Before Dropping Disabled Target", DisabledGrace);
@@ -305,6 +341,10 @@ void LoadConfig()
     AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
     AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
+    AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
+    FireStaleMax = Cfg(S, "Max Track Age To Fire Gatling (s)", FireStaleMax);
+    SepRange = Cfg(S, "Wingmate Separation Range", SepRange);
+    SepSpeed = Cfg(S, "Wingmate Separation Speed", SepSpeed);
     string o = _ini.ToString();
     if (o != Me.CustomData) Me.CustomData = o;
 }
@@ -365,7 +405,7 @@ void GetBlocks()
 
 void DetectWeapon()
 {
-    _wName = "custom"; _slowWeapon = ReloadTime > 2;
+    _wName = "custom"; _slowWeapon = ReloadTime > 2; ShotDelay = ShotDelayCfg;
     if (!AutoWeapon || _guns.Count == 0) return;
     var g0 = _guns[0];
     bool large = g0.CubeGrid.GridSizeEnum == MyCubeSize.Large;
@@ -373,12 +413,12 @@ void DetectWeapon()
     {
         _wName = large ? "Large Railgun" : "Small Railgun";
         ProjSpeed = large ? 2000 : 1000; WeaponRange = large ? 2000 : 1400; ReloadTime = large ? 60 : 20;
-        GravityDrop = true; _slowWeapon = true;
+        GravityDrop = true; _slowWeapon = true; ShotDelay = large ? 2.0 : 0.5;
     }
     else if (g0 is IMySmallGatlingGun)
     {
         _wName = "Gatling/Autocannon";
-        ProjSpeed = 400; WeaponRange = 800 * 0.85; ReloadTime = 0; GravityDrop = false; _slowWeapon = false;
+        ProjSpeed = 800; WeaponRange = 800 * 0.85; ReloadTime = 0; GravityDrop = false; _slowWeapon = false; ShotDelay = 0;
     }
     // artillery / assault cannon: ballistics vary by version - set Custom values and Auto Detect Weapon=false
 }
@@ -464,7 +504,7 @@ IMyCameraBlock CamFor(Vector3D pos, double range)
         if (!c.IsWorking) continue;
         Vector3D d = pos - c.GetPosition(); double len = d.Length();
         if (len < 1 || Vector3D.Dot(d / len, c.WorldMatrix.Forward) < 0.72) continue;
-        if (c.AvailableScanRange < range) continue;
+        if (c.AvailableScanRange < Math.Max(range, len)) continue;   // a ray costs its length in charge; range 0 = "just to the point"
         if (c.AvailableScanRange > bestRange) { best = c; bestRange = c.AvailableScanRange; }
     }
     return best;
@@ -482,26 +522,65 @@ void ManualLock()
     _err = ""; _tgt = AddContact(e, "LOCK");
 }
 
+// ---- LOCK MAINTENANCE AND RE-ACQUISITION (ported from the Hornet, docs/script-fix-notes.md H3) ------------------
+//  A camera banks only 2 km/s of ray range and a miss costs as much as a hit, so the rays are cheap (they stop just behind
+//  the predicted point) and well aimed. When the lock goes stale (>0.6 s) the target is kept as a "ghost" for GhostTime
+//  seconds: two rays per tick sweep a widening spiral round its extrapolated position (uncertainty grows with age squared),
+//  and the loss is announced to the hive. A railgun only fires on a fresh fix, so the ghost never shoots by itself.
+const double GhostTime = 8.0;       // how long a lost target is kept and searched for
+const double AiStaleTakeover = 3.0; // lock stale for this long: let the AI blocks hold the enemy (if there are any)
+const double AiStaleTakeoverFar = 1.0;  // ... and for a target beyond 1.4 km, where a lock-refresh ray (1.4-2.6 km of charge) rarely finds a 5 m ship
+double FireStaleMax = 1.0;          // gatling: never fire at a track older than this
+int _spiralIdx = 0, _probeN = 0; double _lastStaleShare = -9, _ignoreNoteT = -99;
+Vector3D _lostPos, _lostVel; double _lostT = -99, _lostRad = 3;   // last known state of the target that was dropped
+void NoteLost(Track t)
+{
+    if (t.Src == "IGC" || t.DeadAt > 0 || t.DisSince >= 0) return;
+    _lostPos = t.Pos; _lostVel = t.Vel; _lostT = t.Seen; _lostRad = t.Radius;
+}
+double Uncertainty(Track t, double age)
+{
+    return Math.Min(80, t.Radius * 0.35 + 0.5 * Math.Max(t.AccMag, 6.0) * age * age);
+}
 // returns true if the track was refreshed this call
 bool MaintainLock(double maxAge)
 {
-    if (_tgt == null || _cams.Count == 0) return false;
+    if (_tgt == null || _cams.Count == 0 || _aiOn) return false;   // (AI on: the cameras' charge is for the confirm rays)
     double age = _now - _tgt.Seen;
     if (age < maxAge) return false;
     if ((_tgt.Src == "TURRET" || _tgt.Src == "CTC" || _tgt.Src == "SENSOR") && age < 0.5 && maxAge > 0.1) return false;
     Vector3D p = _tgt.P(_now), me = _rc.GetPosition();
     Vector3D dir = p - me; double dist = dir.Length();
     if (dist < 1) return false;
-    bool probingAim;
-    Vector3D aim = ProbePoint(_tgt, p, dir / dist, dist, out probingAim);
-    var cam = CamFor(aim, dist + 30);
-    if (cam == null) return false;
-    var e = cam.Raycast(aim);
-    if (probingAim && (e.IsEmpty() || e.EntityId != _tgt.Id)) AimMissed(_tgt);
-    if (e.IsEmpty()) return false;
-    if (e.EntityId == _tgt.Id) { if (Valid(e)) { AddContact(e, _tgt.Src == "IGC" ? "LOCK" : _tgt.Src); return true; } _tgt.DeadAt = _now; return false; }
-    if (Valid(e)) AddContact(e, "LOCK");
+    dir /= dist;
+    int rays = age > 0.6 ? 2 : 1;                    // stale: spend the charge on finding it again
+    for (int k = 0; k < rays; k++)
+    {
+        bool probingAim = false;
+        Vector3D aim = age > 0.6 ? ReacquirePoint(_tgt, p, dir, age) : ProbePoint(_tgt, p, dir, dist, out probingAim);
+        var cam = CamFor(aim, 0);
+        if (cam == null) return false;
+        var e = cam.Raycast(aim);
+        if (probingAim && (e.IsEmpty() || e.EntityId != _tgt.Id)) AimMissed(_tgt);
+        if (!e.IsEmpty() && e.EntityId == _tgt.Id)
+        {
+            if (Valid(e)) { AddContact(e, _tgt.Src == "IGC" ? "LOCK" : _tgt.Src); return true; }
+            _tgt.DeadAt = _now; return false;
+        }
+        if (!e.IsEmpty() && Valid(e)) AddContact(e, "LOCK");   // something else hostile in the way: track it too
+    }
     return false;
+}
+// Where to cast while the target is stale: a golden-angle spiral in the plane across the line of sight, centred on the
+// predicted point; its radius covers the growing position uncertainty. The ray reaches a little past the point.
+Vector3D ReacquirePoint(Track t, Vector3D centre, Vector3D dir, double age)
+{
+    double sigma = Uncertainty(t, age);
+    _spiralIdx++;
+    double rr = sigma * 1.5 * Math.Sqrt(((_spiralIdx % 17) + 0.5) / 17.0), th = _spiralIdx * 2.39996323;
+    Vector3D u = Vector3D.Cross(dir, Math.Abs(dir.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); u.Normalize();
+    Vector3D v = Vector3D.Cross(dir, u);
+    return centre + u * (rr * Math.Cos(th)) + v * (rr * Math.Sin(th)) + dir * Math.Min(t.Radius + sigma * 0.5, 25);
 }
 
 void AutoScanStep()
@@ -512,6 +591,23 @@ void AutoScanStep()
         if (c.IsWorking && Forwardish(c) && c.AvailableScanRange >= range && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
     if (cam == null) return;
     _scanIdx++;
+    // just lost a target: every other ray goes round where it was last seen, widening with time
+    double lostAge = _now - _lostT;
+    if (lostAge < 25 && (_scanIdx & 1) == 0)
+    {
+        Vector3D lp = _lostPos + _lostVel * Math.Min(lostAge, 10);
+        double rr = Math.Min(250, _lostRad + 6 * lostAge) * Math.Sqrt(((_scanIdx >> 1) % 23 + 0.5) / 23.0), th2 = _scanIdx * 2.39996323;
+        Vector3D dl = lp - cam.GetPosition(); double dd = dl.Length();
+        if (dd > 30 && dd < range)
+        {
+            dl /= dd;
+            Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
+            Vector3D vv = Vector3D.Cross(dl, uu);
+            var le = cam.Raycast(lp + uu * (rr * Math.Cos(th2)) + vv * (rr * Math.Sin(th2)) + dl * 10);
+            if (Valid(le)) AddContact(le, "SCAN");
+            return;
+        }
+    }
     const int N = 150;
     double r = ScanCone * Math.Sqrt((_scanIdx % N + 0.5) / N);
     double th = _scanIdx * 2.39996323;
@@ -522,8 +618,16 @@ void AutoScanStep()
 void PruneAndSelect()
 {
     _drop.Clear();
-    foreach (var kv in _contacts) if (_now - kv.Value.Seen > TrackTimeout) _drop.Add(kv.Key);
-    foreach (var id in _drop) _contacts.Remove(id);
+    foreach (var kv in _contacts)
+    {   // the target I am working on stays alive as a ghost while MaintainLock hunts for it
+        double lim = (kv.Value == _tgt && kv.Value.Src != "IGC") ? GhostTime : TrackTimeout;
+        if (_now - kv.Value.Seen > lim) _drop.Add(kv.Key);
+    }
+    foreach (var id in _drop)
+    {
+        Track gone; if (_contacts.TryGetValue(id, out gone) && gone == _tgt) NoteLost(gone);
+        _contacts.Remove(id);
+    }
     if (_tgt != null && !_contacts.ContainsKey(_tgt.Id)) _tgt = null;
     PruneMates();
     AssessTargets();
@@ -542,6 +646,9 @@ void PruneAndSelect()
         double env = EngageRange(t);
         double score = Math.Abs(dist - env) * 0.5 + ang * 10 - t.Radius * 4;
         if (t == _tgt) score -= 600;
+        score += Math.Max(0, _now - t.Seen - 1) * 150;   // a stale contact loses to a fresh one
+        // enough slugs went into a small ship (a hit there usually cripples it, even when no block count shows it): look at the others
+        if (t.ShotsAt >= (t.Radius < 12 ? 2 : 6) && _now - t.LastShotT < 90) score += 900;
         if (dist < 150) score -= 500;              // something right on top of us comes first
         score += HiveScore(t);
         if (score < bestScore) { bestScore = score; best = t; }
@@ -568,7 +675,10 @@ double EngageRange(Track t)
     double a = Math.Max(floor, t.PeakAcc * 1.2);
     double miss = HitFraction * t.Radius;
     double tt = (-VelErr + Math.Sqrt(VelErr * VelErr + 2 * a * miss)) / a;
-    double r = tt * ProjSpeed;
+    // Measured (sim, both sides locked, 40 seeds x 7 opponents): wins of Longbow S by stand-off 350 m 45 %, 500 m 57 %, 700 m 69 %,
+    // 900 m 75 %, 1100 m 77 %; the old "max accurate range" gave 73 %. A longer stand-off hits less often but takes far less fire.
+    // So the accuracy formula only matters for big targets (it asks for more than PreferRange there).
+    double r = Math.Max(tt * ProjSpeed, _slowWeapon ? PreferRange : 0);
     return MathHelper.Clamp(r, Math.Min(MinEngage, WeaponRange * RangeMargin), WeaponRange * RangeMargin);
 }
 
@@ -615,13 +725,19 @@ void UpdateGuns()
     foreach (var s in _gunState)
     {
         if (s.PendingAt < 0) continue;
+        if (s.B.IsShooting) s.SawShoot = true;
         if (Ammo(s.B) < s.AmmoAtShot)
         {
             s.PendingAt = -1; s.LastShot = _now; s.ReadyAt = _now + ReloadTime * 1.1 + 0.5; _shots++;
             _last = "Shot " + _shots + " @ " + _engage.ToString("0") + " m";
         }
-        else if (_now - s.PendingAt > 1.0)
-        {   // no ammo drop: still charging, or creative mode (no ammo used) - retry in 2 s
+        else if (s.SawShoot && !s.B.IsShooting)
+        {   // the gun was busy and is done: the slug is away (no ammo is used in a creative world)
+            s.PendingAt = -1; s.LastShot = _now; s.ReadyAt = _now + ReloadTime + 0.5; _shots++;
+            _last = "Shot " + _shots + " @ " + _engage.ToString("0") + " m (gun busy)";
+        }
+        else if (_now - s.PendingAt > ShotDelay + 1.0)
+        {   // no ammo drop and the gun never reported busy: still charging - retry in 2 s
             s.PendingAt = -1; s.ReadyAt = _now + 2;
             _last = "Trigger sent (charging or creative)";
         }
@@ -648,12 +764,14 @@ void Control(double dt)
 {
     var vels = _rc.GetShipVelocities();
     Vector3D myVel = vels.LinearVelocity, grav = _rc.GetNaturalGravity(), me = _rc.GetPosition();
+    _myVel = myVel;
     _aimErrDeg = 0; _winDeg = 0;
     if (_mode == Mode.IDLE) { SetFire(false); return; }
     Vector3D up = grav.LengthSquared() > 0.1 ? -Vector3D.Normalize(grav) : Vector3D.Zero;
     if (_tgt != null) _engage = EngageRange(_tgt);
     double toReady = _slowWeapon ? SecondsToReady() : 0;
-    bool aimingPhase = _tgt != null && toReady < 3 && (!UnderFire || toReady < 0.5);   // dodge when hit unless the shot is ready
+    bool pending = false; foreach (var gs in _gunState) if (gs.PendingAt >= 0) pending = true;
+    bool aimingPhase = _tgt != null && (pending || (toReady < 3 && (!UnderFire || toReady < 0.5)));   // dodge when hit unless the shot is ready
 
     // ---------- aiming & fire control ----------
     bool haveAim = false;
@@ -675,26 +793,29 @@ void Control(double dt)
             Vector3D gunFwd = _aimRef.WorldMatrix.Forward;
             double dist = Vector3D.Distance(_tgt.P(_now), gunPos);
             _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gunFwd, aimDir), -1, 1)) * 57.2958;
-            double aimR = AimActive(_tgt) ? Math.Min(HitFraction * _tgt.Radius, 2.5) : HitFraction * _tgt.Radius;
+            double aimR = _slowWeapon ? Math.Min(HitFraction * _tgt.Radius, (_tgt.Type == MyDetectedEntityType.LargeGrid || _tgt.Radius > 12) ? AimWindowMaxLarge : AimWindowMax) : (AimActive(_tgt) ? Math.Min(HitFraction * _tgt.Radius, 2.5) : HitFraction * _tgt.Radius);
             _winDeg = Math.Max(0.02, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958);
-            bool inRange = travel <= WeaponRange * RangeMargin;
+            bool inRange = travel <= WeaponRange * RangeMargin && (!_slowWeapon || travel <= _engage * FireRangeFactor + FireRangeSlack);
             Vector3D w = vels.AngularVelocity - los;
             bool steady = w.Length() < Math.Max(0.015, _winDeg / 57.2958 * 5);
             _settled = (_aimErrDeg < _winDeg && steady) ? _settled + 1 : 0;
 
-            if (!_slowWeapon) SetFire(inRange && _aimErrDeg < _winDeg * 2 && _now > _holdFireUntil);
+            if (!_slowWeapon) SetFire(inRange && _aimErrDeg < _winDeg * 2 && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax);
             else if (inRange && _settled >= SettleTicks && _now > _holdFireUntil)
             {
                 var gun = ReadyGun();
-                if (gun != null)
+                if (gun == null) _calmSince = -1;
+                else if (CalmAccel > 0 && _tgt.AccMag > CalmAccel && (_calmSince < 0 ? (_calmSince = _now) : _calmSince) > _now - CalmWait) { /* target is mid-manoeuvre: a moment later it may be on a straight line */ }
+                else
                 {
                     // pre-shot refresh: get a fresh raycast fix, fire on the next tick with it
                     if (_now - _tgt.Seen >= 0.1) MaintainLock(0);
                     else if (!FriendCheck || LineClear(gunPos, gunFwd, dist))
                     {
-                        gun.AmmoAtShot = Ammo(gun.B); gun.PendingAt = _now;
+                        gun.AmmoAtShot = Ammo(gun.B); gun.PendingAt = _now; gun.SawShoot = false;
                         gun.B.ApplyAction("ShootOnce");
-                        _settled = 0;
+                        _tgt.ShotsAt++; _tgt.LastShotT = _now;
+                        _settled = 0; _calmSince = -1;
                     }
                 }
             }
@@ -713,7 +834,10 @@ void Control(double dt)
             if (_mode == Mode.RTB && toHome.LengthSquared() > 400) fwd = Vector3D.Normalize(toHome);
             else
             {   // radar sweep: yaw round and nod up/down so the camera cone covers all around
-                if (AutoScan) fwd = SweepDir(up);
+                double la = _now - _lostT;
+                Vector3D lp = _lostPos + _lostVel * Math.Min(la, 10), dl = lp - me;
+                if (_lostT > 0 && la < 12 && dl.LengthSquared() > 900) fwd = Vector3D.Normalize(dl);   // turn the nose cameras to where the last target was
+                else if (AutoScan) fwd = SweepDir(up);
             }
             Aim(fwd, up, Vector3D.Zero, dt);
         }
@@ -728,7 +852,7 @@ void Control(double dt)
     {
         Vector3D d = home - me; double dist = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, dist * 0.5), Math.Sqrt(2 * aBrake * dist));
-        want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade();
+        want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade() + Separation(me);
         if (_mode == Mode.RTB && dist < 25 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
     }
     else
@@ -755,7 +879,7 @@ void Control(double dt)
             }
             evade = _jink;
         }
-        want = tv + dir * vr + tan * DriftSpeed * _driftSign + evade + (aimingPhase ? Vector3D.Zero : Evade());
+        want = tv + dir * vr + tan * DriftSpeed * _driftSign + evade + (aimingPhase ? Vector3D.Zero : Evade()) + Separation(me);
         if (_mode == Mode.GUARD && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
     }
     double cap = (_tgt != null && _mode != Mode.RTB) ? MaxSpeed : CruiseSpeed;
@@ -770,6 +894,10 @@ void Control(double dt)
 // Shooter frame: s*t*dir = rp + rv*t + 0.5*(aT - g)*t^2
 bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, Vector3D grav, out Vector3D point, out Vector3D dir, out double travel)
 {
+    // NOTE on the railgun's shot delay (0.5 s small / 2 s large between the trigger and the slug leaving the barrel): the gun
+    // keeps tracking this very solution until the slug is away, so the direction it fires in is the solution of the moment
+    // of firing. Leading the target by the delay on top of that over-leads by exactly the delay (measured: hit rate 85 % -> 5 %).
+    // The delay costs us elsewhere: the target has delay + flight time to change its mind (EngageRange, CalmGate).
     Vector3D tp = t.P(_now) + AimOffset(t), tv = t.V(_now);
     Vector3D tacc = UseTargetAccel ? t.EA() : Vector3D.Zero;
     Vector3D rp = tp - shooter;
@@ -798,14 +926,72 @@ bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, Vector3D grav, out Vec
     return true;
 }
 
-bool LineClear(Vector3D gunPos, Vector3D gunFwd, double dist)
+// Wingmates repel each other (all fly the same orbit at the same speed and would otherwise end up in contact). Uses the
+// positions the hive already broadcasts (_SWARM). Large grids keep a wider berth.
+double SepRange = 80, SepSpeed = 25;
+Vector3D Separation(Vector3D me)
 {
+    Vector3D push = Vector3D.Zero;
+    double rng = SepRange * (Me.CubeGrid.GridSizeEnum == MyCubeSize.Large ? 2.5 : 1.0);
+    foreach (var m in _mates.Values)
+    {
+        double age = _now - m.Seen;
+        if (age > 1.5) continue;
+        Vector3D d = me - (m.Pos + m.Vel * age);
+        double len = d.Length();
+        if (len < rng && len > 0.5) push += d / len * (SepSpeed * (1 - len / rng));
+    }
+    return push;
+}
+
+// Friendly-fire gate from the IGC positions of the hive (works with no camera charge): the projectile leaves the barrel
+// 'delay' s after the trigger with the ship's velocity added, so both it and the mate are extrapolated linearly and the
+// closest approach of the two paths is tested against the mate's size. A piercing slug flies on past the target.
+Vector3D _myVel; double _calmSince = -1;
+bool MatesInLine(Vector3D gunPos, Vector3D gunFwd, double dist, double speed, double delay)
+{
+    double clear = Me.CubeGrid.GridSizeEnum == MyCubeSize.Large ? 22 : 9;
+    double tmax = (dist + 150) / Math.Max(speed, 1);
+    foreach (var m in _mates.Values)
+    {
+        double age = _now - m.Seen;
+        if (age > 1.5) continue;
+        Vector3D r0 = (gunPos + _myVel * delay) - (m.Pos + m.Vel * (age + delay));
+        Vector3D u = _myVel + gunFwd * speed - m.Vel;
+        double uu = u.LengthSquared();
+        double tau = uu > 1e-6 ? MathHelper.Clamp(-Vector3D.Dot(r0, u) / uu, 0, tmax) : 0;
+        if ((r0 + u * tau).LengthSquared() < clear * clear)
+        { _holdFireUntil = _now + 0.4; _err = "Holding fire: wingmate in line"; return true; }
+    }
+    return false;
+}
+
+// One camera ray along the line of fire; a friendly (not in the hive) in the way holds the fire.
+bool FriendOnRay(Vector3D gunPos, Vector3D gunFwd, double dist, out bool looked)
+{
+    looked = false;
     Vector3D probe = gunPos + gunFwd * Math.Max(dist - _tgt.Radius, 10);
     var cam = CamFor(probe, dist + 10);
-    if (cam == null) return true; // no charge to check - don't block the shot
+    if (cam == null) return false;
+    looked = true;
     var e = cam.Raycast(probe);
     if (!e.IsEmpty() && e.EntityId != _tgt.Id && Friendly(e) && e.EntityId != Me.CubeGrid.EntityId)
-    { _holdFireUntil = _now + 1.5; _err = "Holding fire: friendly in line"; return false; }
+    { _holdFireUntil = _now + 1.5; _err = "Holding fire: friendly in line"; return true; }
+    return false;
+}
+
+// Railgun: true = the shot may go. No camera charge for the ray: wait up to 1 s for it (a railgun shot is worth waiting
+// for), then go ahead; the hive check above never fails open.
+double _lineWaitSince = -1;
+bool LineClear(Vector3D gunPos, Vector3D gunFwd, double dist)
+{
+    if (MatesInLine(gunPos, gunFwd, dist, ProjSpeed, _slowWeapon ? ShotDelay : 0)) return false;
+    bool looked;
+    if (FriendOnRay(gunPos, gunFwd, dist, out looked)) { _lineWaitSince = -1; return false; }
+    if (looked) { _lineWaitSince = -1; return true; }
+    if (_lineWaitSince < 0 || _now - _lineWaitSince > 4) _lineWaitSince = _now;
+    if (_now - _lineWaitSince < 1.0) return false;
+    _lineWaitSince = -1;
     return true;
 }
 
@@ -876,7 +1062,7 @@ void ApplyThrust(Vector3D forceWorld)
 
 void SetFire(bool on)
 {
-    if (on == _firing) return;
+    if (on == _firing && !(on && _tick % 30 == 0)) return;   // re-send "on" twice a second (the AI blocks may have switched the guns off)
     _firing = on;
     foreach (var g in _guns) if (g.IsFunctional) g.ApplyAction(on ? "Shoot_On" : "Shoot_Off");
 }
@@ -885,6 +1071,7 @@ void ReleaseGyros() { foreach (var g in _gyros) { g.GyroOverride = false; g.Pitc
 
 void Release()
 {
+    SetGunsEnabled(true);   // (the friendly-fire guard of the AI phase may have switched them off)
     ReleaseGyros();
     foreach (var t in _thr) t.ThrustOverridePercentage = 0;
     if (_rc != null) _rc.DampenersOverride = true;
@@ -1040,6 +1227,9 @@ void IgnoreTarget(Track t, double secs, bool tell)
 {
     _ignore[t.Id] = _now + secs; _contacts.Remove(t.Id);
     if (_tgt == t) _tgt = null;
+    // its neighbours are probably close by: search round the spot with the cameras before the AI blocks (which would point
+    // at the nearest enemy, i.e. this wreck) take over
+    _lostPos = t.Pos; _lostVel = Vector3D.Zero; _lostT = _now; _lostRad = Math.Max(t.Radius, 30); _ignoreNoteT = _now;
     // radius -1 = "this one is finished" for every drone (and stays compatible with the carrier link)
     if (tell) IGC.SendBroadcastMessage(Tag + "_TGT", new MyTuple<long, Vector3D, Vector3D, double, long>(t.Id, t.Pos, t.Vel, -1, Me.EntityId));
 }
@@ -1050,6 +1240,8 @@ bool Disabled(Track t)
 {
     if (t.DeadAt > 0) return true;
     if (t.Spin > 0.8) { if (t.SpinSince < 0) t.SpinSince = _now; } else t.SpinSince = -1;
+    // a small ship I have already put a slug into that no longer accelerates at all is a wreck, even if most of it is still there
+    if (t.ShotsAt >= 1 && t.Type == MyDetectedEntityType.SmallGrid && t.QuietSince > 0 && _now - t.QuietSince > 6 && t.Src != "IGC" && (t.Vel.LengthSquared() > 4 || (t.Rad0 > 3 && t.Radius < 0.9 * t.Rad0))) return true;   // (a ship hovering motionless is not a wreck unless it also lost size)
     return (t.SpinSince > 0 && _now - t.SpinSince > 4) || (t.Rad0 > 3 && t.Radius < 0.45 * t.Rad0);
 }
 
@@ -1166,12 +1358,15 @@ void ReadSwarm()
         Mate mt;
         if (!_mates.TryGetValue(d.Item1, out mt)) { mt = new Mate { Id = d.Item1 }; _mates[d.Item1] = mt; }
         mt.Pos = d.Item2; mt.Vel = d.Item3; mt.Tgt = d.Item4; mt.Flags = d.Item5; mt.Seen = _now;
+        // a mate lost its lock on my target: answer at once with a fresh fix instead of waiting for the next cycle
+        if ((d.Item5 & 4) != 0 && ShareTargets && _tgt != null && _tgt.Id == d.Item4 && _tgt.Src != "IGC" && _now - _tgt.Seen < 0.4 && _now - _lastStaleShare > 0.3)
+        { _lastStaleShare = _now; ShareTarget(); }
     }
 }
 void BroadcastStatus()
 {
     IGC.SendBroadcastMessage(Tag + "_SWARM", new MyTuple<long, Vector3D, Vector3D, long, int>(
-        Me.CubeGrid.EntityId, _rc.GetPosition(), _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, (UnderFire ? 1 : 0) | (OwnAlert ? 2 : 0)));
+        Me.CubeGrid.EntityId, _rc.GetPosition(), _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, (UnderFire ? 1 : 0) | (OwnAlert ? 2 : 0) | (LockStale ? 4 : 0)));
 }
 void PruneMates() { _drop.Clear(); foreach (var kv in _mates) if (_now - kv.Value.Seen > 3) _drop.Add(kv.Key); foreach (var id in _drop) _mates.Remove(id); }
 
@@ -1186,8 +1381,15 @@ void PruneMates() { _drop.Clear(); foreach (var kv in _mates) if (_now - kv.Valu
 //   CENTER   old behaviour      AUTO  ENGINES once it has seen the target thrust, else SPREAD
 string AimMode = "AUTO";
 List<int> _aimIdx = new List<int>();
-bool _probeFlip = false;
-bool AimActive(Track t) { return AimMode != "CENTER" && t.Hull.Count >= 3; }
+// AUTO: a small-grid target is shot at its centre (a piercing slug / burst through the middle of a compact ship crosses its
+// battery, PB, controller and engines; measured in the sim: 52 % -> 82 % wins), a large grid at real hull points (its
+// bounding-box centre is often empty space, in-game finding of v1.6). The other modes always use hull points.
+bool AimActive(Track t)
+{
+    if (AimMode == "CENTER" || t.Hull.Count < 3) return false;
+    if (AimMode == "AUTO" && t.Type == MyDetectedEntityType.SmallGrid) return false;
+    return true;
+}
 string AimLabel(Track t)
 {
     if (!AimActive(t)) return "CENTER";
@@ -1227,15 +1429,25 @@ void StoreHull(Track t, MyDetectedEntityInfo e)
 // and the current aim point. If a ray at the aim point no longer hits, that part is gone: forget it.
 Vector3D ProbePoint(Track t, Vector3D centre, Vector3D dir, double dist, out bool probingAim)
 {
-    _probeFlip = !_probeFlip; probingAim = false;
-    if (_probeFlip && AimActive(t)) { probingAim = true; return centre + AimOffset(t) + dir * 1.5; }
+    probingAim = false;
+    int k = ++_probeN;
+    if ((k & 3) == 0 && AimActive(t) && _now - t.Seen < 0.5) { probingAim = true; return centre + AimOffset(t) + dir * 1.5; }
+    // A ray at the bounding-box centre often passes between the blocks of a small ship (about half of them miss).
+    // Hull points kept from earlier hits are real blocks in the target's own frame: aim at one of those instead
+    // (2 rays in 3), with a little scatter, and let it run 2 m past so a slightly late ray still clips the hull.
+    if (t.Hull.Count >= 3 && (k % 3) != 0)
+    {
+        Vector3D h = Vector3D.TransformNormal(t.Hull[_evRng.Next(t.Hull.Count)], t.O);
+        Vector3D r = new Vector3D(_evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5);
+        return centre + h + r * 0.8 + dir * 2;
+    }
     if (_now - t.Seen < 0.6 && t.Hull.Count < 48)
     {
         Vector3D r = new Vector3D(_evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5, _evRng.NextDouble() - 0.5);
         r -= Vector3D.Dot(r, dir) * dir;
-        if (r.LengthSquared() > 1e-6) centre += Vector3D.Normalize(r) * t.Radius * 0.6 * _evRng.NextDouble();
+        if (r.LengthSquared() > 1e-6) centre += Vector3D.Normalize(r) * t.Radius * 0.35 * _evRng.NextDouble();
     }
-    return centre + dir * Math.Min(t.Radius * 0.5, 10);
+    return centre + dir * Math.Min(t.Radius, 12);
 }
 void AimMissed(Track t)
 {
@@ -1255,6 +1467,8 @@ void AimMissed(Track t)
 List<IMyFunctionalBlock> _ai = new List<IMyFunctionalBlock>();
 bool _aiOn = false; double _lastTgtT = -99, _alertT = -99; int _aiScan = 0;
 bool OwnAlert { get { return _now - _alertT < 15; } }
+// my own lock has gone stale (flag 4 in the swarm status): mates that still see the target answer at once with a fresh fix
+bool LockStale { get { return _tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen > 1.2; } }
 bool Alerted
 {
     get
@@ -1276,26 +1490,56 @@ void FindAi()
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
     foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
 }
+// While the AI blocks have the controls they also pull the trigger at whatever is in front of the nose, wingmates included
+// (found in the sim: 13,000-50,000 damage slugs into the neighbour 70 m away during the first seconds). So: switch the guns
+// off while a hive mate is in the line of fire, back on as soon as it is clear or the script takes over again.
+bool _gunsOff = false; double _friendRay = -99;   // last time an AI confirm ray hit a friendly (not necessarily in my hive)
+void SetGunsEnabled(bool on)
+{
+    if (on != _gunsOff) return;
+    _gunsOff = !on;
+    foreach (var g in _guns) if (g.IsFunctional) g.Enabled = on;
+}
+void AiFriendGuard()
+{
+    if (!FriendCheck || _aimRef == null) return;
+    _myVel = _rc.GetShipVelocities().LinearVelocity;
+    SetGunsEnabled(!(MatesInLine(_aimRef.GetPosition(), _aimRef.WorldMatrix.Forward, WeaponRange, ProjSpeed, 0) || _now - _friendRay < 1.5));
+}
 bool AiStep()
 {
     if (_tgt != null) _lastTgtT = _now;
-    bool want = AiAssist && _ai.Count > 0 && _tgt == null && AiModeOk() && _now - _lastTgtT > 2;
+    // The AI also takes over while my lock is stale (nothing seen for AiStaleTakeover s): it keeps the nose on the enemy
+    // and the confirm rays below pick it up again, which hands control straight back to the script.
+    bool want = AiAssist && _ai.Count > 0 && AiModeOk() &&
+        ((_tgt == null && _now - _lastTgtT > 2 && _now - _ignoreNoteT > 15) || (_tgt != null && _now - _tgt.Seen > (Vector3D.DistanceSquared(_tgt.Pos, _rc.GetPosition()) > 1400.0 * 1400.0 ? AiStaleTakeoverFar : AiStaleTakeover)));
     if (want != _aiOn)
     {
         _aiOn = want;
+        _firing = false;                       // guns' state is unknown after any hand-over: SetFire sends it again
         if (want) Release();                    // thrusters and gyros go to the AI
         foreach (var b in _ai) b.Enabled = want;
     }
-    if (!_aiOn) return false;
-    // the AI points the guns at what it found: check a tight cone straight ahead, one ray per tick
+    if (!_aiOn) { SetGunsEnabled(true); if (_tick % 300 == 7) foreach (var g in _guns) if (g.IsFunctional && !g.Enabled) g.Enabled = true; return false; }   // (also heals guns left disabled by a script restart during the AI phase)
+    AiFriendGuard();
+    // The AI points the guns at what it found (about 0.1 deg off), so the enemy is dead ahead of the nose cameras.
+    // Every forward camera casts as soon as it holds AiConfirmRange of charge. Pattern: 1 ray in 2 exactly down the
+    // boresight, the rest in a spiral widening from 0.15 to 2.5 deg (a small ship is only 0.2-0.8 deg wide at 300-1200 m;
+    // the old pattern never cast closer than 0.59 deg). The first forward camera is the long one (AiConfirmLong): it waits
+    // for the charge to find a target the AI already holds at 1.3-2.6 km.
+    bool longCam = true;
     foreach (var c in _cams)
     {
-        if (!c.IsWorking || !Forwardish(c) || c.AvailableScanRange < AiConfirmRange) continue;
+        if (!c.IsWorking || !Forwardish(c)) continue;
+        double len = longCam ? AiConfirmLong : AiConfirmRange;
+        longCam = false;
+        if (c.AvailableScanRange < len) continue;
         _aiScan++;
-        double r = 3 * Math.Sqrt((_aiScan % 13 + 0.5) / 13.0), th = _aiScan * 2.39996323;
-        var e = c.Raycast(AiConfirmRange, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
+        double r = 0, th = _aiScan * 2.39996323;
+        if ((_aiScan & 1) == 1) { int j = (_aiScan >> 1) % 16; r = 0.15 + 2.35 * Math.Pow((j + 0.5) / 16.0, 1.5); }
+        var e = c.Raycast(len, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
         if (Valid(e)) AddContact(e, "AI");
-        break;
+        else if (!e.IsEmpty() && Friendly(e) && e.EntityId != Me.CubeGrid.EntityId) _friendRay = _now;
     }
     return true;
 }

@@ -1,6 +1,7 @@
 // =====================================================================
-//  GNAT MOTHERSHIP LINK v1.0  (optional - put on your carrier's PB)
-//  * Broadcasts this ship's position as the drones' moving home point.
+//  GNAT MOTHERSHIP LINK v1.1  (optional - put on your carrier's PB)
+//  * Broadcasts this ship's position as the drones' moving home point, plus its radius
+//    ("<Tag>_HOMER") so the drones hold station OUTSIDE the carrier instead of inside its hull.
 //  * Forwards every enemy your turrets / turret controllers are tracking
 //    to all drones, so they attack what the carrier sees.
 //  * Relays commands:  run with argument  form | attack | rtb | idle | unlock
@@ -34,6 +35,7 @@ public void Main(string arg, UpdateType src)
     if (++_tick % 60 == 0) Refresh();
 
     IGC.SendBroadcastMessage(Tag + "_HOME", Me.CubeGrid.WorldVolume.Center);
+    IGC.SendBroadcastMessage(Tag + "_HOMER", Me.CubeGrid.WorldVolume.Radius);
 
     int sent = 0;
     foreach (var t in _turrets)
