@@ -712,7 +712,8 @@ class Blueprint:
         """connector tail of a locked pair (the Venture form): ConnectedEntityId first, then the transform fields"""
         lk = b['lock']; other, obp = lk['other'], lk['other_bp']
         if not other['id']: raise TB.ToolbarError(f'{self.label(b)}: locked partner has no EntityId yet (write through the root Blueprint.build_xml)')
-        mw, sw = (self._world, obp._world) if lk['master'] else (obp._world, self._world)
+        world = lambda g: getattr(g, '_world', g.pose)               # set by build_xml (grids()); the bare pose otherwise
+        mw, sw = (world(self), world(obp)) if lk['master'] else (world(obp), world(self))
         mbp, sbp = (self, obp) if lk['master'] else (obp, self)
         mblk, sblk = (b, other) if lk['master'] else (other, b)
         trans, grid = MU.lock_elements(mw, MU.block_pose(mbp, mblk), sw, MU.block_pose(sbp, sblk), mbp, sbp)

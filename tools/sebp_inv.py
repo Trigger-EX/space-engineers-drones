@@ -183,6 +183,7 @@ def check_fit(label, limits, items, key=None):
         raise InventoryError(f'{label}: this block has no inventory in its shape (see sebp.confidence_table(); unseen subtypes carry no container)')
     vol_m3, mass_kg, stacks = limits
     ok = allowed_items(key) if key else None
+    items = [i for i in items if i.raw is None]          # items of kinds we cannot size (read from a file) are kept as they are
     if ok:
         for it in items:
             if it.kind != ok[0] or it.sub not in ok[1]:
@@ -253,7 +254,8 @@ def apply_state(label, xtype, key, state, items, cc, capacitor_full=None):
         if 'fuel' in state:
             v = cap if state['fuel'] == 'full' else float(state['fuel'])
             if v is None: raise InventoryError(f'{label}: definition has no FuelCapacity')
-            if v < 0 or (cap is not None and v > cap * (1 + 1e-9)): raise InventoryError(f'{label}: fuel {v} L outside 0..{cap}')
+            if v < 0 or (cap is not None and v > cap * 1.01):          # the game's own engines hold up to 1.0026 x FuelCapacity
+                raise InventoryError(f'{label}: fuel {v} L outside 0..{cap}')
             out.append(E('Capacity', v))
     if 'filled' in state:
         v = 1.0 if state['filled'] == 'full' else float(state['filled'])

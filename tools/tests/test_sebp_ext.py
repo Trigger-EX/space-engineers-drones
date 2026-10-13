@@ -154,7 +154,8 @@ class TestInventoryBlocks(unittest.TestCase):
         self.assertEqual(block_element(bp, b).findtext('Capacity'), '100000')
         bp, b = single(T('HydrogenEngine'), 'SmallHydrogenEngine', state={'fuel': 2500})
         self.assertEqual(block_element(bp, b).findtext('Capacity'), '2500')
-        with self.assertRaises(InventoryError): single(T('HydrogenEngine'), 'SmallHydrogenEngine', state={'fuel': 5001})
+        single(T('HydrogenEngine'), 'SmallHydrogenEngine', state={'fuel': 5013.1})                       # the game's own engines hold up to 1.0026 x FuelCapacity
+        with self.assertRaises(InventoryError): single(T('HydrogenEngine'), 'SmallHydrogenEngine', state={'fuel': 5100})
         bp, b = single(T('OxygenTank'), 'LargeHydrogenTank', state={'filled': 'full'})
         self.assertEqual(block_element(bp, b).findtext('FilledRatio'), '1')
         with self.assertRaises(InventoryError): single(T('OxygenTank'), 'LargeHydrogenTank', state={'filled': 1.5})
@@ -230,6 +231,21 @@ class TestInventoryBlocks(unittest.TestCase):
         self.assertGreater(sum(checked.values()), 60)
         for k in ('SmallGatlingGun/', 'LargeMissileTurret/LargeCalibreTurret', 'Reactor/LargeBlockLargeGenerator', 'CargoContainer/LargeBlockLargeContainer'):
             self.assertGreater(checked[k], 0, f'no loaded {k} block was regenerated')
+
+    @needs_samples
+    def test_loaded_game_files_can_be_written_again(self):
+        """Tech Hunter / Red Ship blocks with pre-loaded items (some of kinds we cannot size) survive load -> build_xml -> load"""
+        for name in ('Red Ship', 'Pond Hopper Mk2', 'Tech Hunter'):
+            g = sebp.load_sbc(path_of(name))[0]
+            if len(g.blocks) > 800: g.blocks = g.blocks[:800]
+            g.groups = {}
+            for b in g.blocks: b.pop('toolbars', None)
+            xml = g.build_xml()
+            root = ET.fromstring(xml)
+            self.assertEqual(len(root.findall('.//CubeBlocks/*')), len(g.blocks), name)
+            n_items = sum(len(b.get('items') or []) for b in g.blocks)
+            back = sebp.load_sbc.__globals__['ET'].fromstring(xml)
+            self.assertEqual(len(list(back.iter('MyObjectBuilder_InventoryItem'))), n_items, name)
 
     def test_round_trip_through_load_sbc(self):
         bp = Blueprint('rt', 'Large', seed=7)
