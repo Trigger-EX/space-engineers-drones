@@ -11,28 +11,36 @@
 //   * MOTHERSHIP LINK (HornetMothership v1.1 for a ship): "<Type>_HOME" (the ship's centre of mass, or the grid centre without a controller), "<Type>_HOMER" (hull
 //     radius) and the fleet channel HOME, and the enemies the ship's turrets / turret controllers track, plus the Helm's selected target (.H2S), as "<Type>_TGT"
 //     and on the fleet channel (FLEET block, send side). Types = [Wing] Types (default HORNET).
-//   * COMMANDS (PB argument, toolbar): wing <cmd> (every type's _CMD and the fleet channel), fleet <cmd>, release / recall / doors (STUBS until M5: they answer
+//   * WING (M4): wing hunt | guard | rtb | follow | satellite | lock | roll | any other drone verb. Sent on every type's <TYPE>_CMD (accepted unconditionally, so 'satellite' works
+//     although the FLEET block's default 'Allowed Commands' lacks it) and, for the words that list allows, on the fleet channel. 'wing lock' sends the Helm's target to the wing
+//     at once and then 'hunt'. ROLL CALL: the drones' <TYPE>_SWARM beats (gridId, pos, vel, targetId, flags) are collected; alive = heard in the last 3 s, engaged = has a target.
+//     HUD PAGE 2 = the roll call (order, counts, per-drone range / speed / target) on cockpit surface 'Wing Surface' (default 2) and on LCDs named '...Wing Display...'; 'page' / 'page 2'
+//     flips the PB's own screen between page 1 (status) and 2.
+//   * COMMANDS (PB argument, toolbar): wing <cmd>, fleet <cmd>, release / recall / doors (STUBS until M5: they answer
 //     "not yet"), reload, status; every other word is forwarded to the Helm over IGC (.S2H): hunt, guard, rtb, manual, auto, assist hud, lock, next, unlock, ...
 //     Run with NO argument: menu, each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (cockpit-toolbar fallback, K3).
 //   * DISPLAYS: the PB's own screen, the cockpit surface "Cockpit Surface" (default 1, -1 off) and any LCD named "...Staff Display...": link state, mode, seat,
 //     target, power, trips; "Helm HUD Surface" (default 0) of the cockpit gets the HELM LOST text while the Helm is silent.
 //  CUSTOM DATA  [Staff] Ship Tag (SHIP, the Helm's [Link] Ship Tag), Trip Time (s) 1.5, Watch Helm, Cockpit Surface, Helm HUD Surface, Run Menu, Run Menu Wait,
-//   Display Name; [Wing] Types; [Fleet] as in the drones (send side only).
+//   Display Name, Wing Surface, Wing Display Name; [Wing] Types; [Fleet] as in the drones (send side only).
 //  NOT MEASURED IN THE GAME: IGC latency CurrentConstruct (K8), the number of IGC callback runs a PB survives, Update10 timing of the PB (the trip is checked
 //   every 10 ticks, so it lands up to 0.17 s after the 1.5 s).
 // =====================================================================
 
-const string VER = "1.0";
+const string VER = "1.1";
 MyIni _ini = new MyIni();
-string Ship = "SHIP", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,recall,doors open,doors close", DispName = "staff display";
+string Ship = "SHIP", WingName = "wing display", WingOrder = "-", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,recall,doors open,doors close", DispName = "staff display";
 string[] Types = { "HORNET" };
-double Trip = 1.5, MenuWait = 2; bool Watch = true; int CockSurf = 1, HudSurf = 0;
+double Trip = 1.5, MenuWait = 2; bool Watch = true; int CockSurf = 1, HudSurf = 0, WingSurf = 2, _page = 1;
 
 List<IMyGyro> _gyros = new List<IMyGyro>(); List<IMyThrust> _thr = new List<IMyThrust>();
 List<IMyUserControllableGun> _guns = new List<IMyUserControllableGun>(); List<IMyShipController> _ctl = new List<IMyShipController>();
 List<IMyLargeTurretBase> _turrets = new List<IMyLargeTurretBase>(); List<IMyTurretControlBlock> _ctcs = new List<IMyTurretControlBlock>();
-List<IMyTextPanel> _lcds = new List<IMyTextPanel>(); List<IMyFunctionalBlock> _ai = new List<IMyFunctionalBlock>();
+List<IMyTextPanel> _lcds = new List<IMyTextPanel>(), _wlcds = new List<IMyTextPanel>(); List<IMyFunctionalBlock> _ai = new List<IMyFunctionalBlock>();
 IMyBroadcastListener _hb, _h2s, _pil;
+class Mate { public string Ty; public Vector3D P, V; public long T; public int F; public double Seen; }
+Dictionary<long, Mate> _mates = new Dictionary<long, Mate>(); List<IMyBroadcastListener> _sw = new List<IMyBroadcastListener>(); string _swKey = "";
+List<long> _gone = new List<long>(); List<KeyValuePair<double, long>> _ord = new List<KeyValuePair<double, long>>(); double _wingT = -99;
 double _t, _hbT = -1, _h2sT = -99, _lostAt, _relT = -99, _menuT; int _hbN, _trips, _tick, _menuI, _md, _seat, _fl; bool _lost, _menuOn;
 long _tId; Vector3D _tPos, _tVel; float _tRad, _batt; string _note = "";
 StringBuilder _sb = new StringBuilder();
@@ -151,6 +159,7 @@ void Load()
     Ship = Cfg(S, "Ship Tag", Ship).Trim().ToUpperInvariant(); Trip = Math.Max(0.5, Cfg(S, "Trip Time (s)", Trip)); Watch = Cfg(S, "Watch Helm", Watch);
     CockSurf = (int)Cfg(S, "Cockpit Surface", (double)CockSurf); HudSurf = (int)Cfg(S, "Helm HUD Surface", (double)HudSurf);
     MenuItems = Cfg(S, "Run Menu", MenuItems); MenuWait = Cfg(S, "Run Menu Wait", MenuWait); DispName = Cfg(S, "Display Name", DispName).ToLowerInvariant();
+    WingSurf = (int)Cfg(S, "Wing Surface", (double)WingSurf); WingName = Cfg(S, "Wing Display Name", WingName).ToLowerInvariant();
     Types = Cfg("Wing", "Types", string.Join(",", Types)).ToUpperInvariant().Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
     string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
 }
@@ -163,12 +172,21 @@ void Blocks()
     GridTerminalSystem.GetBlocksOfType(_turrets, b => b.IsSameConstructAs(Me)); GridTerminalSystem.GetBlocksOfType(_ctcs, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_ai, b => b.IsSameConstructAs(Me) && b.CustomName.IndexOf("[AI]", StringComparison.OrdinalIgnoreCase) >= 0);
     GridTerminalSystem.GetBlocksOfType(_lcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(DispName));
+    GridTerminalSystem.GetBlocksOfType(_wlcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(WingName));
 }
 
 void Listen()
 {
     _hb = IGC.RegisterBroadcastListener(Ship + ".HB"); _h2s = IGC.RegisterBroadcastListener(Ship + ".H2S"); _pil = IGC.RegisterBroadcastListener(Ship + ".PILOT");
     _hb.SetMessageCallback("hb");   // the beat is stamped the moment it arrives, not at the next Update10
+    SwarmListen();
+}
+
+void SwarmListen()
+{
+    string key = string.Join(",", Types); if (key == _swKey) return;
+    _swKey = key; foreach (var l in _sw) IGC.DisableBroadcastListener(l);
+    _sw.Clear(); foreach (var ty in Types) _sw.Add(IGC.RegisterBroadcastListener(ty + "_SWARM"));
 }
 
 public void Main(string arg, UpdateType src)
@@ -197,6 +215,16 @@ void Pump()
         var d = (MyTuple<int, long, Vector3D, Vector3D, float, float>)m.Data;
         _fl = d.Item1; _tId = d.Item2; _tPos = d.Item3; _tVel = d.Item4; _tRad = d.Item5; _batt = d.Item6; _h2sT = _t;
     }
+    for (int i = 0; i < _sw.Count; i++)
+        while (_sw[i].HasPendingMessage)
+        {
+            var m = _sw[i].AcceptMessage();
+            if (!(m.Data is MyTuple<long, Vector3D, Vector3D, long, int>)) continue;
+            var d = (MyTuple<long, Vector3D, Vector3D, long, int>)m.Data;
+            if (d.Item1 == Me.CubeGrid.EntityId) continue;
+            Mate mt; if (!_mates.TryGetValue(d.Item1, out mt)) { mt = new Mate(); _mates[d.Item1] = mt; }
+            mt.Ty = Types[i]; mt.P = d.Item2; mt.V = d.Item3; mt.T = d.Item4; mt.F = d.Item5; mt.Seen = _t;
+        }
     while (_pil.HasPendingMessage) { var m = _pil.AcceptMessage(); if (m.Data is MyTuple<int, int>) { var d = (MyTuple<int, int>)m.Data; _md = d.Item1; _seat = d.Item2; } }
 }
 
@@ -210,6 +238,7 @@ void Step()
     if (lost && !_lost) { _lost = true; _lostAt = _t; _trips++; ReleaseAll(true); }
     else if (lost && _t - _relT >= 1) ReleaseAll(false);
     else if (!lost && _lost) { _lost = false; _note = "Helm back after " + (_t - _lostAt).ToString("0.0") + " s"; }
+    if (_tick % 6 == 0) { _gone.Clear(); foreach (var kv in _mates) if (_t - kv.Value.Seen > 6) _gone.Add(kv.Key); foreach (var k in _gone) _mates.Remove(k); }
     Mothership();
     if (_tick % 3 == 0 || _lost) Show();
 }
@@ -239,7 +268,14 @@ void Mothership()
     if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_HOMER", rad);
     foreach (var t in _turrets) if (t.IsFunctional && t.HasTarget) Share(t.GetTargetedEntity());
     foreach (var c in _ctcs) if (c.IsFunctional && c.HasTarget) Share(c.GetTargetedEntity());
-    if (_tId != 0 && _t - _h2sT < 1.0 && _tRad > 0) Send(new MyTuple<long, Vector3D, Vector3D, double, long>(_tId, _tPos, _tVel, _tRad, Me.CubeGrid.EntityId));   // what the Helm shoots, the wing shoots (sender = my grid: the Helm skips it, else it takes its own extrapolated target back as a fresh IGC sighting and a lost target never goes stale)
+    ShareHelmTarget();   // what the Helm shoots, the wing shoots
+}
+
+// sender = my grid: the Helm skips it, else it takes its own extrapolated target back as a fresh IGC sighting and a lost target never goes stale
+bool ShareHelmTarget()
+{
+    if (_tId == 0 || _t - _h2sT >= 1.0 || _tRad <= 0) return false;
+    Send(new MyTuple<long, Vector3D, Vector3D, double, long>(_tId, _tPos, _tVel, _tRad, Me.CubeGrid.EntityId)); return true;
 }
 
 void Share(MyDetectedEntityInfo e)
@@ -256,10 +292,11 @@ void Command(string a)
     int sp = c.IndexOf(' '); string w = sp < 0 ? c : c.Substring(0, sp), rest = sp < 0 ? "" : c.Substring(sp + 1).Trim();
     switch (w)
     {
-        case "wing": Wing(rest); break;   // STUB for M4: the verbs go out; ring, roll call and the satellite allowance of the FLEET block come in M4
+        case "wing": Wing(rest); break;
+        case "page": _page = rest == "2" ? 2 : rest == "1" ? 1 : 3 - _page; _note = "page " + _page; break;
         case "fleet": FleetSendCmd(rest); _note = "fleet " + rest; break;
         case "release": case "recall": case "doors": _note = w + ": bay control comes with the cradle bays (M5)"; break;
-        case "reload": Load(); FleetLoad(false); Blocks(); break;
+        case "reload": Load(); FleetLoad(false); Blocks(); SwarmListen(); break;
         case "status": _note = "status"; Show(); break;
         default: Fwd(c); break;
     }
@@ -267,15 +304,49 @@ void Command(string a)
 
 void Wing(string cmd)
 {
-    if (cmd == "") return;
-    foreach (var ty in Types) IGC.SendBroadcastMessage(ty + "_CMD", cmd);
-    FleetSendCmd(cmd); _note = "wing " + cmd;
+    if (cmd == "") { _note = "wing: " + Alive() + " alive"; return; }
+    if (cmd == "roll" || cmd == "status") { _page = 2; _note = "wing roll call: " + Alive() + " alive"; return; }
+    if (cmd == "lock")
+    {   // the Helm's target goes out now (no waiting for the next step), then the wing hunts it
+        if (!ShareHelmTarget()) { _note = "wing lock: the ship has no target"; return; }
+        cmd = "hunt";
+    }
+    foreach (var ty in Types) IGC.SendBroadcastMessage(ty + "_CMD", cmd);   // the per-type channel accepts every verb, the fleet one only its 'Allowed Commands'
+    FleetSendCmd(cmd); WingOrder = cmd; _wingT = _t; _note = "wing " + cmd;
 }
+
+int Alive() { int n = 0; foreach (var m in _mates.Values) if (_t - m.Seen < 3) n++; return n; }
 
 void Fwd(string cmd) { IGC.SendBroadcastMessage(Ship + ".S2H", new MyTuple<string, Vector3D, double>(cmd, Me.CubeGrid.WorldVolume.Center, Me.CubeGrid.WorldVolume.Radius), TransmissionDistance.CurrentConstruct); _note = "to Helm: " + cmd; }
 
 // ---- display -----------------------------------------------------------------------------------------------------------------------------------
 static readonly string[] ModeNames = { "IDLE", "GUARD", "HUNT", "FOLLOW", "RTB", "MANUAL", "ASSIST" };
+
+// page 2: the wing roll call. alive = heard within 3 s; the list is sorted by range, at most 8 rows
+string WingText()
+{
+    var b = _sb; b.Clear(); int n = 0, eng = 0, fire = 0, tgt = 0;
+    _ord.Clear();
+    foreach (var kv in _mates)
+    {
+        var m = kv.Value; if (_t - m.Seen >= 3) continue;
+        n++; if (m.T != 0) eng++; if ((m.F & 1) != 0) fire++; if (_tId != 0 && m.T == _tId) tgt++;
+        _ord.Add(new KeyValuePair<double, long>(Vector3D.Distance(m.P, Me.GetPosition()), kv.Key));
+    }
+    _ord.Sort((x, y) => x.Key.CompareTo(y.Key));
+    b.Append("WING  ").Append(string.Join(",", Types)).Append("  order ").Append(WingOrder);
+    if (_wingT > -90) b.Append(" (").Append((_t - _wingT).ToString("0")).Append(" s)");
+    b.Append('\n').Append("ROLL  ").Append(n).Append(" alive  ").Append(eng).Append(" engaged  ").Append(tgt).Append(" on ship target  ").Append(fire).Append(" under fire\n");
+    for (int i = 0; i < _ord.Count && i < 8; i++)
+    {
+        var m = _mates[_ord[i].Value];
+        b.Append(m.Ty.Length > 4 ? m.Ty.Substring(0, 4) : m.Ty).Append(' ').Append((_ord[i].Value % 10000).ToString("0000")).Append("  ").Append(_ord[i].Key.ToString("0").PadLeft(5)).Append(" m  ")
+         .Append(m.V.Length().ToString("0").PadLeft(3)).Append(" m/s  ").Append(m.T == 0 ? "-" : m.T == _tId ? "SHIP TGT" : "tgt").Append((m.F & 1) != 0 ? "  HIT" : "").Append('\n');
+    }
+    if (_ord.Count > 8) b.Append("+ ").Append(_ord.Count - 8).Append(" more\n");
+    if (n == 0) b.Append("no drone heard (their ").Append(Types[0]).Append("_SWARM)\n");
+    return b.ToString();
+}
 
 string Text()
 {
@@ -287,7 +358,7 @@ string Text()
     int m = _md; b.Append("MODE  ").Append(m >= 0 && m < ModeNames.Length ? ModeNames[m] : "?").Append(_seat == 1 ? "  pilot aboard" : "").Append((_fl & 16) != 0 ? "  FIRING" : "").Append((_fl & 128) != 0 ? "  DEGRADED" : "").Append('\n');
     if (_tId != 0 && _t - _h2sT < 2) b.Append("TGT   ").Append(Vector3D.Distance(_tPos, Me.GetPosition()).ToString("0")).Append(" m  v ").Append(_tVel.Length().ToString("0")).Append('\n');
     else b.Append("TGT   none\n");
-    b.Append("PWR ").Append((_batt * 100).ToString("0")).Append("%  DEADMAN ").Append((_fl & 64) != 0 ? "armed" : "-").Append("  WING ").Append(string.Join(",", Types)).Append('\n');
+    b.Append("PWR ").Append((_batt * 100).ToString("0")).Append("%  DEADMAN ").Append((_fl & 64) != 0 ? "armed" : "-").Append("  WING ").Append(string.Join(",", Types)).Append(' ').Append(Alive()).Append(" up\n");
     if (_menuOn) { var it = MenuItems.Split(','); b.Append("MENU > ").Append(it[_menuI % it.Length].Trim()).Append(' ').Append(_menuI % it.Length + 1).Append('/').Append(it.Length).Append('\n'); }
     if (_note != "") b.Append(_note).Append('\n');
     return b.ToString();
@@ -295,16 +366,18 @@ string Text()
 
 void Show()
 {
-    string s = Text();
-    Echo(s);
-    try { Me.GetSurface(0).WriteText(s); } catch (Exception) { }
+    string s = Text(), w = WingText();
+    Echo(_page == 2 ? w : s);
+    try { Me.GetSurface(0).WriteText(_page == 2 ? w : s); } catch (Exception) { }
     foreach (var l in _lcds) try { l.WriteText(s); } catch (Exception) { }
+    foreach (var l in _wlcds) try { l.WriteText(w); } catch (Exception) { }
     foreach (var c in _ctl)
     {
         var sp = c as IMyTextSurfaceProvider; if (sp == null) continue;
         try
         {
             if (CockSurf >= 0 && CockSurf < sp.SurfaceCount && CockSurf != HudSurf) sp.GetSurface(CockSurf).WriteText(s);
+            if (WingSurf >= 0 && WingSurf < sp.SurfaceCount && WingSurf != HudSurf && WingSurf != CockSurf) sp.GetSurface(WingSurf).WriteText(w);
             if (_lost && HudSurf >= 0 && HudSurf < sp.SurfaceCount) sp.GetSurface(HudSurf).WriteText("HELM LOST\n" + (_t - _hbT).ToString("0.0") + " s without heartbeat\nOverrides released by STAFF\n");
         }
         catch (Exception) { }

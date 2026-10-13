@@ -18,13 +18,15 @@ import sebp_toolbar as TB
 from core import hornet_frame
 
 MODELS = {}
-NO_LITE = ('Shrike Test', 'Shrike Test Rocket', 'Shrike Staff Test', 'Shrike Multi Test', 'Shrike Basilisk Test')
+NO_LITE = ('Shrike Test', 'Shrike Test Rocket', 'Shrike Staff Test', 'Shrike Wing Test', 'Shrike Multi Test', 'Shrike Basilisk Test')
 DOCS = {
     'Shrike Test': 'TEST SHIP (not for the game): Hornet hull with a cockpit and a Remote Control, one Programmable Block [Helm] running ShrikeAI (MANUAL mode, assist, '
                    'dead-man heartbeat), a Deadman timer and the groups it switches off. For the simulator\'s scripted pilot.',
     'Shrike Staff Test': 'TEST SHIP (not for the game): Shrike Test split in two Programmable Blocks, [Helm] (ShrikeAI) and [Staff] (StaffAI, control_arch M2): IGC heartbeat watch '
                          '(the Staff releases every override when the Helm falls silent), mothership link, displays; plus an Event Controller (cockpit occupied, PLACEHOLDER event id) that stops / starts '
                          'the Deadman timer and a cockpit toolbar that Runs both PBs (argument-less menus).',
+    'Shrike Wing Test': 'TEST SHIP (not for the game; control_arch M4): Shrike Staff Test with its Radio Antenna kept (IGC between grids needs one; the drones have theirs), for the '
+                        'Staff wing tests: follow-test --owner ship, wing hunt / rtb / satellite (selftest m4). Throwaway.',
     'Shrike Multi Test': 'TEST SHIP (not for the game; control_arch M3): Shrike Test with THREE fixed batteries: gatling [B1] (left flank), SmallMissileLauncher [B2] (right flank) and a SmallRailgun [B3] on the roof, '
                          'to exercise BATTERY v1.0 (primary choice, standoff, rail confirm state machine). Throwaway.',
     'Shrike Basilisk Test': 'TEST SHIP (not for the game; control_arch M3): the Basilisk hull (large grid, 4 LargeMissileLauncher tagged [B2], gatling turret on the roof) running ShrikeAI instead of BasiliskAI: '
@@ -38,11 +40,12 @@ def _drop(bp, pred):
         bp.blocks.remove(b)
         for c in [c for c, why in bp.reserve.items() if why.endswith(' of ' + (b['name'] or b['sub']))]: del bp.reserve[c]
 
-def _shrike_test(name, weapon_b2=None, staff=False, rail=False):
+def _shrike_test(name, weapon_b2=None, staff=False, rail=False, antenna=False):
     bp = hornet_frame(name, '', 'MyObjectBuilder_SmallGatlingGun', script_text('ShrikeAI.cs'), ai=True, sensor=True, merge=False)
     bp.legacy_shapes = False                       # sample-derived shapes: cockpit / timer / PB (enabled)
     # the cockpit stands on the rear deck (the antenna's place); the Hornet's cameras, dive thrusters, PB and 4 batteries stay where they are
     _drop(bp, lambda b: 'Antenna' in (b['name'] or ''))
+    if antenna: ant(bp, (2, 2, 0), 'Up', 'Backward', f'{name} Antenna', 2500)    # beside the seat (IGC between grids needs an antenna)
     pb = [b for b in bp.blocks if b['name'] == f'{name} PB'][0]
     pb['name'] = f'[Helm] {name} PB'
     seat = bp.add('MyObjectBuilder_Cockpit', 'OpenCockpitSmall', (-1, 2, 0), 'Forward', 'Up', f'{name} Seat', kind='ctrl')
@@ -82,6 +85,9 @@ def shrike_test(lite=False):
 def shrike_staff_test(lite=False):
     return _shrike_test('Shrike Staff Test', staff=True)
 
+def shrike_wing_test(lite=False):
+    return _shrike_test('Shrike Wing Test', staff=True, antenna=True)
+
 def shrike_multi_test(lite=False):
     return _shrike_test('Shrike Multi Test', ('MyObjectBuilder_SmallMissileLauncher', ''), rail=True)
 
@@ -105,6 +111,7 @@ def shrike_test_rocket(lite=False):
 MODELS['Shrike Test'] = shrike_test
 MODELS['Shrike Test Rocket'] = shrike_test_rocket
 MODELS['Shrike Staff Test'] = shrike_staff_test
+MODELS['Shrike Wing Test'] = shrike_wing_test
 MODELS['Shrike Multi Test'] = shrike_multi_test
 MODELS['Shrike Basilisk Test'] = shrike_basilisk_test
 

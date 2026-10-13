@@ -3,6 +3,10 @@
 // ("FLEET_HOME" position + "FLEET_HOMER" radius, every 10 ticks like the Mothership link), or, with --path foot, is a character that
 // the drones' sensors report (Relationship Owner) while it is within 50 m of a sensor, with no link at all.
 //
+//   --owner ship [--ship "Shrike Wing Test"]   (control_arch S12 / M4) the owner is a SPAWNED SHIP (a blueprint with a [Helm] and a [Staff] PB) instead of a virtual point: the
+//        drones get HOME / HOMER from its StaffAI (<TYPE>_HOME + FLEET_HOME at the ship's centre of mass, hull radius), nothing is injected. The ship's Helm is told 'idle' (it holds
+//        still, dampeners on); paths other than park / fight tow it: its velocity is forced to the path's every tick (position integrates), so the Staff sees a moving ship.
+//        Ring checks tighten to ring sd <= --sd-max (1.0 m), plane deviation <= 3 m, orbit rate within 0.1 deg/s of the expected one, nobody inside radius + 5 m.
 //   mono SimHost.exe follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight|park] [--speed 40] [--radius 20]
 //        [--no-radius] [--stress] [--cmd follow] [--seconds 140] [--seed 1] [--echo] [--trace FILE] [--repo DIR]
 //   cruise  0-10 s parked, 10-30 s speeds up along +X, cruise, 60-80 s 90 deg turn, 80-100 s slows to a stop, then parked
@@ -108,6 +112,9 @@ namespace SeSim.Run
             ulong seed = (ulong)Dbl(args, "--seed", 1);
             WeaveDeg = Dbl(args, "--weave-deg", 30); WeavePeriod = Dbl(args, "--weave-period", 30);
             string tracePath = Arg(args, "--trace", null);
+            bool shipOwner = Arg(args, "--owner", "point") == "ship";
+            string shipName = Arg(args, "--ship", "Shrike Wing Test");
+            double sdMax = Dbl(args, "--sd-max", 1.0);
             string cmd = Arg(args, "--cmd", "follow");   // e.g. guard / form, to compare with the other modes; satellite = the vertical ring
             bool satellite = cmd == "satellite" || cmd == "sat" || cmd == "orbit";
             var settings = new SimSettings(); settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
@@ -137,6 +144,25 @@ namespace SeSim.Run
                     }
             foreach (var d in drones) if (d.Pb == null || d.Pb.Runner == null) { Console.Error.WriteLine("test setup failed: no scripted PB in " + model); return 2; }
             Drone enemy = null;
+            Drone ship = null; SimProgrammableBlock shipHelm = null, shipStaff = null;
+            if (shipOwner)
+            {
+                var sbp = BlueprintLoader.Get(Path.Combine(Path.Combine(repo, "out"), "Blueprints"), shipName);
+                var at = new SpawnPlacement { Origin = Vector3D.Zero, Forward = Vector3D.Right, Up = Vector3D.Up, LinearVelocity = Vector3D.Zero, AngularVelocity = Vector3D.Zero };
+                ship = new Drone { Bodies = GridFactory.Spawn(w, sbp, 0, count, at, new Dictionary<long, long>()) };
+                BlockApiFactory.FlushPending(w);
+                foreach (var b in ship.Bodies) foreach (var bi in b.Blocks)
+                {
+                    var pbb = bi.Api as SimProgrammableBlock; if (pbb == null || pbb.Runner == null) continue;
+                    if (pbb.CustomNameValue.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase)) shipStaff = pbb;
+                    else if (pbb.CustomNameValue.StartsWith("[Helm]", StringComparison.OrdinalIgnoreCase)) shipHelm = pbb;
+                }
+                if (shipStaff == null || shipHelm == null) { Console.Error.WriteLine("test setup failed: " + shipName + " has no [Helm] + [Staff] PB pair"); return 2; }
+                ship.Pb = shipStaff;
+                radius = ship.Bodies[0].BoundRadius;
+                string tagU = model.Split(' ')[0].ToUpperInvariant();
+                shipStaff.CustomData = shipStaff.CustomData.Replace("Types=HORNET", "Types=" + tagU);
+            }
             StreamWriter tw = null;
             if (tracePath != null) { tw = new StreamWriter(tracePath, false, new UTF8Encoding(false)); tw.WriteLine("t,owner_x,owner_y,owner_z,owner_speed,drone,dist,speed,mode"); }
             long ticks = (long)(secs * SimSettings.TicksPerSecond);
@@ -148,9 +174,17 @@ namespace SeSim.Run
             for (long t = 0; t < ticks; t++)
             {
                 double now = t / (double)SimSettings.TicksPerSecond;
+                if (shipOwner && t == 0) host.RunArgument(shipStaff, "reload", UpdateType.Terminal);
+                if (shipOwner && t == 90) host.RunArgument(shipHelm, "idle", UpdateType.Terminal);   // the Helm starts in HUNT: 'idle' after its first runs, then it holds heading and place
                 if (t == 60) foreach (var d in drones) host.RunArgument(d.Pb, cmd, UpdateType.Terminal);
                 Vector3D op, ov; Owner(path, now, spd, out op, out ov);
-                bool link = path != "foot" && (lostAt < 0 || now < lostAt);
+                if (shipOwner)
+                {
+                    var sb0 = ship.Bodies[0];
+                    if (path != "park" && path != "fight") sb0.LinearVelocity = ov;   // towed along the path
+                    op = sb0.Position; ov = sb0.LinearVelocity;
+                }
+                bool link = !shipOwner && path != "foot" && (lostAt < 0 || now < lostAt);
                 if (lostAt >= 0 && now >= lostAt && !coastSet) { coastSet = true; coast = op + ov * 3; }
                 if (link && t % 10 == 0)
                 {
@@ -214,6 +248,7 @@ namespace SeSim.Run
             Console.WriteLine("follow-test " + model + " x" + count + ", path " + path + (path != "foot" && path != "fight" ? ", " + spd.ToString("F0", Inv) + " m/s" : "") + ", owner radius " + (sendR ? radius.ToString("F0", Inv) + " m (sent)" : "not sent"));
             Console.Write(sb.ToString());
             Vector3D opEnd, ovEnd; Owner(path, secs, spd, out opEnd, out ovEnd);
+            if (shipOwner) { opEnd = ship.Bodies[0].Position; ovEnd = ship.Bodies[0].LinearVelocity; Console.WriteLine("  owner ship " + shipName + ": hull radius " + radius.ToString("F1", Inv) + " m, Staff: " + Line(shipStaff.Runner.EchoText, "WING").Replace("\n", " ")); }
             // slot distance the block aims for (FoDist 60, FoFootDist 20, radius + 30, ring spacing for n drones: see FollowSlot)
             slot = Math.Max(path == "foot" ? 20 : 60, (path == "foot" ? 1 : (sendR ? radius : 25)) + 30);
             double sep = 70;   // the drone's own "Wingmate Separation Range" (Custom Data), which sizes the ring for several drones
@@ -252,6 +287,7 @@ namespace SeSim.Run
                     double rate = d.AngSum / Math.Max(1, secs - settle) * 180 / Math.PI;
                     Console.WriteLine(string.Format(Inv, "    ring: radius {0:F0} +/- {1:F1} m, plane deviation max {2:F0} m, orbit {3:F2} deg/s (expected {4:F2}), closest mate {5:F0} m",
                         rm, sd, d.PlaneMax, rate, SatPeriodDeg(drones[0]), d.MinMateSettled == double.MaxValue ? -1 : d.MinMateSettled));
+                    if (shipOwner) good &= sd <= sdMax && d.PlaneMax <= 3 && Math.Abs(Math.Abs(rate) - SatPeriodDeg(drones[0])) <= 0.1;
                     good &= sd < 0.12 * rm && d.PlaneMax < 0.2 * rm && Math.Abs(Math.Abs(rate) - SatPeriodDeg(drones[0])) < 0.5 * SatPeriodDeg(drones[0]) + 0.3
                          && (d.MinMateSettled > 0.5 * 2 * rm * Math.Sin(Math.PI / Math.Max(count, 2)) || count < 2);
                 }

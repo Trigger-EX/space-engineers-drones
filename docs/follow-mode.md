@@ -90,3 +90,21 @@ Verification (sim `follow-test --cmd satellite`, owner parked at the origin = `-
 Not covered: the real game's handling of a moving, rotating slot (the drones track it within 1 m in the sim), mixed drone types sharing a ring (each type ranks and
 phases its own ring; different types can cross), and the ring in a real gravity well.
 Reproduce: `python3 -I tools/build_all.py --only Hornet --no-zip && bash sim/build.sh && (cd out/sim && mono SimHost.exe follow-test --model Hornet --count 6 --path park --cmd satellite --seconds 200)`.
+
+## Ship as the owner (control_arch M4, `follow-test --owner ship`)
+The owner is a spawned warship blueprint (`Shrike Wing Test`: [Helm] ShrikeAI + [Staff] StaffAI + antenna) instead of a virtual point. Nothing is injected: the drones get
+`HORNET_HOME` / `FLEET_HOME` (the ship's centre of mass, from the cockpit's `CenterOfMass`) and `_HOMER` (hull radius, 2.7 m here) from the real `StaffAI.cs` over IGC, six
+times a second. The Helm is told `idle` (holds place, dampeners on); for paths other than `park` / `fight` the ship is towed (its velocity is forced to the path's every tick).
+Checks per drone, 200 s, 25 s settle, `--sd-max` 1.0 m (2.5 for the Basilisk): ring radius sd, plane deviation <= 3 m, orbit rate within 0.1 deg/s of 2.00, nobody inside hull + 5 m.
+
+| case (3 seeds each) | ring radius | plane deviation | orbit rate | inside hull + 5 m | result |
+|---|---|---|---|---|---|
+| Hornet x6 `satellite`, parked ship | 100 +/- 0.4 m | 1 m | 1.99 deg/s | 0.0 s | ok x3 |
+| Basilisk x4 `satellite`, parked ship | 124-125 +/- 1.3-2.0 m | 2-3 m | 1.98-1.99 deg/s | 0.0 s | ok x3 |
+| Hornet x4 `follow`, towed (cruise 40 m/s, 90 deg turn, stop) | p95 64-67 m | | | 0.0 s | ok (seed 1) |
+| Hornet x4 `satellite`, towed (cruise) | 100-103 m (p95 up to 107) | | | 0.0 s | ok (seed 1) |
+
+These are the same numbers as the point-owner rows above, so the Staff link (COM, HOMER, 6 Hz) costs nothing against the virtual owner.
+Not covered: a ship that is steered by its own Helm (the tow is kinematic), a rotating hull (the ring follows the velocity heading, not the hull's), and the real game's IGC latency / the
+antenna range between the grids (the sim delivers on the next tick; the test ship's antenna and the drones' reach each other).
+Reproduce: `python3 -I tools/build_all.py --only "Shrike Wing Test" Hornet Basilisk --no-zip && bash sim/build.sh && (cd out/sim && mono SimHost.exe follow-test --model Hornet --count 6 --path park --cmd satellite --seconds 200 --owner ship --seed 1)`.
