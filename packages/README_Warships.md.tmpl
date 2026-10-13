@@ -84,7 +84,9 @@ toolbar slots use (a `Run` slot may not be able to carry a typed argument: step 
 **Helm PB**: `guard` (hold the home point, engage within Guard Radius), `hunt` (chase and engage), `rtb`, `idle` (release everything: thrusters and gyros off, dampeners on), `lock` (raycast-lock
 what the front camera points at), `unlock`, `next` (ignore this target for 60 s), `range <m>` (stand-off), `home` (set home here), `aim AUTO|BREACH|ENGINES|FACING|SPREAD|CENTER`,
 `breach on|off`, `ai on|off` (use the AI blocks to search), `reload`, and the manual-flight words `manual`, `auto`, `pilot` (toggle), `assist hud|fbw|off`.
-The Helm starts in `GUARD` (it saves its mode). The first fight of a ship that has nothing to shoot at yet: `hunt`.
+The Helm starts in `REACT` (it saves its mode): weapons, turrets and target tracking are live, but the ship does not yaw round, scan with its cameras or hand itself to the AI blocks
+until something wakes it: an AI Defensive block running the Helm with `aialert`, a mate's alarm, damage taken, or a target a turret already holds. Then it behaves like `guard`; when the
+alarm and the damage are over (about 10 s) it goes quiet again. `guard` = always sweep, `hunt` = sweep and chase, `react` = back to the default. The first fight of a ship that has nothing to shoot at: `hunt`.
 
 **Bay / Pod PB**: `release`, `recall`, `hold`, `unhold`, `status`, `reload` (the same words as the Staff).
 
@@ -116,7 +118,9 @@ The Helm starts in `GUARD` (it saves its mode). The first fight of a ship that h
 * **Launch**: `launch all` on the Staff PB (or `launch 1`, `launch 1-2`). The ship parks (idle), the doors open, each drone's batteries are put on recharge if they are below 90 %, the
   drone is armed and the cradle lets go; the drone burns clear of the ship along the bay's `Away` direction and starts in `GUARD`. Then give the wing its job: `wing satellite` (ring),
   `wing hunt`, `wing follow`. Bay numbers are global: the Leviathan's second pod starts at 5.
-* **Recall**: `recall`. Docking the drones back into the cradles is not scripted (phase 2): fly them next to the cradle and paste/merge by hand, or let them be.
+* **Cockpit buttons** (Warden, Leviathan: slots 9-10 of the first toolbar page; Corsair: slots 8-9): `deploy` = open the hangar doors, `launch all`, and once the bays have let go send
+  `wing satellite` (the drones form the ring round the ship); `dock` = `wing rtb`, bays cancelled, hangar doors open. Docked drones have their thrusters switched off by the bay PB (they come on at release).
+* **Recall**: `recall`. Docking the drones back into the cradles is not scripted (phase 2): `dock` only calls them home; fly them next to the cradle and paste/merge by hand, or let them be.
 * If nobody answers (`NO BAY ANSWERED` on the Staff screen) the pod PB cannot be reached across the docked connectors: run `release n` on the pod PB itself, or use its Timer `[POD] Timer R(n)`.
 
 ## Custom Data (what you can change)

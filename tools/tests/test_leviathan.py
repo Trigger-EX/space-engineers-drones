@@ -57,7 +57,7 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(sum(1 for b in lite.blocks if b['xtype'].endswith('LargeMissileTurret') and not b['sub']), 0)
         full = ship(False).shape_summary()
         unseen = {k for k, (n, c) in full.items() if c in ('guess', 'from-source')}
-        self.assertEqual(unseen, {'SensorBlock/LargeBlockSensor', 'OffensiveCombatBlock/LargeOffensiveCombat', 'FlightMovementBlock/LargeFlightMovement'})
+        self.assertEqual(unseen, {'SensorBlock/LargeBlockSensor', 'OffensiveCombatBlock/LargeOffensiveCombat', 'FlightMovementBlock/LargeFlightMovement', 'GravityGenerator/'})
 
     def test_validates_every_grid(self):
         for lite in (False, True):
@@ -226,7 +226,7 @@ class LoadoutTests(unittest.TestCase):
         a = sorted((b['sub'] or b['xtype']) for b in full.blocks if b['kind'] not in ('conv', 'turret', 'cradle', 'armor', 'plate', 'accent', 'dark', 'glass'))
         b = sorted((b['sub'] or b['xtype']) for b in lite.blocks if b['kind'] not in ('conv', 'turret', 'cradle', 'armor', 'plate', 'accent', 'dark', 'glass'))
         extra = [x for x in a if x not in b or a.count(x) != b.count(x)]
-        self.assertEqual(sorted(set(extra)), ['LargeBlockSensor', 'LargeFlightMovement', 'LargeOffensiveCombat'])
+        self.assertEqual(sorted(set(extra)), ['LargeBlockSensor', 'LargeFlightMovement', 'LargeOffensiveCombat', 'MyObjectBuilder_GravityGenerator'])
 
     def test_pcu_table_adds_up(self):
         bp = ship(False)

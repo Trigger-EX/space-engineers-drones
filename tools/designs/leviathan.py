@@ -721,6 +721,16 @@ def _dock_upright(bp, pod, conns, nose, lock=False):
     raise AssertionError('no upright docking pose: ' + '; '.join(errs))
 
 
+def _dress(S, res, vol, full=True):
+    """artificial gravity for the crew spaces (bridge, stem shaft, central compartment, hangar walls) and round slopes / corners in the concave edges of the big rooms"""
+    env = vol['solid'].cells
+    if full: C.place_gravity(S, res, env, (0, 5, 55), (60.0, 60.0, 70.0), nm('Gravity Generator'))
+    n = 0
+    for box in (((-3, 13, 53), (3, 13, 61)), ((-7, 5, 51), (7, 9, 59)), ((-5, 1, 41), (5, 3, 48)), ((-3, 5, 38), (3, 9, 49))):
+        n += C.chamfer_room(S, res, env, box)
+    S.chamfered = n
+    res.check()                                   # the new slopes meet the walls with their mount faces
+
 def _walkways(S, res, vol):
     """entry + walkways: a slide door in each wall of the bridge stem (x = +-2, y 11, reached from the citadel top at (+-3, 11, 57)) opens on the stem shaft
     (x -1..1, z 55..59), which climbs through a hole in the bridge floor to the bridge and drops through the citadel cavity and the bulkhead gap at x = 0 to the
@@ -756,6 +766,7 @@ def leviathan(lite=False, with_pods=True, lock=False, name=None, wing=0):
     _conveyors(S)
     _greebles(res)
     res.check()
+    _dress(S, res, vol, full)
     C.link_conveyors(bp, [(c, n) for c, r, n in _terminals(S)])
     _groups_and_toolbars(S)
     bp.ship = S
