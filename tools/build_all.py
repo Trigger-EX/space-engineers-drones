@@ -40,7 +40,7 @@ MIDGE_NOTES = 'MidgeNotes.md'
 # descriptions (the printers bring their own: printers.DOCS)
 # ---------------------------------------------------------------------------------------------
 DRONE_DOCS = {
-    'Gnat': 'Minimal swarm drone: one gatling, two axial ion thrusters (it steers by turning the whole ship), belly merge latch. Flies yo-yo attack runs inside a leaderless IGC swarm.',
+    'Gnat': 'Compact swarm drone: one gatling, two axial ion thrusters (it steers by turning the whole ship), sensor, AI Offensive + AI Flight blocks on a 2-cell tail (Lite: none), belly merge latch. Flies yo-yo attack runs inside a leaderless IGC swarm.',
     'Hornet': 'The standard fighter: two gatlings, 12 ion thrusters (2 per axis), 7 cameras, 4 batteries, rear merge latch. Holds a standoff, orbits and jinks; guard / hunt / assist.',
     'Longbow S': 'Small-grid railgun sniper (1400 m). Computes the longest range at which a dodging target is still hit, takes one settled shot, jinks while reloading.',
     'Longbow L': 'Large-grid railgun sniper (2000 m). Same logic as Longbow S; not printable (no merge block).',

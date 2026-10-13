@@ -78,8 +78,8 @@ def hornet(lite=False):
                         ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE)
 
 # ---------------------------------------------------------------------------------------------
-def gnat_frame(script, merge=True, sensor=True, name="Gnat"):
-    """Minimal point-and-burn drone: two axial ion thrusters back-to-back, gyro steering, belly merge latch."""
+def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
+    """Point-and-burn drone: two axial ion thrusters back-to-back, gyro steering, AI Offensive + Flight blocks on the tail, belly merge latch."""
     bp = Blueprint(name, "Small", seed=7, legacy_shapes=True)
     bp.add("MyObjectBuilder_RemoteControl", "SmallBlockRemoteControl", (1, 0, -2), name=f"{name} Remote Control", kind="ctrl", color=RED)
     bat(bp, (1, 0, -1), f"{name} Battery")
@@ -98,7 +98,13 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat"):
     cam(bp, (1, 0, -3), "Forward", "Up", f"{name} Camera")
     cam(bp, (2, 0, -2), "Right", "Up", f"{name} Camera Right")
     cam(bp, (1, -1, -2), "Down", "Forward", f"{name} Camera Down")
-    cam(bp, (1, 0, 1), "Backward", "Up", f"{name} Camera Rear")
+    if ai:
+        # tail section (2 cells longer than v2.7): AI blocks, rear camera on the new tail end
+        bp.add("MyObjectBuilder_OffensiveCombatBlock", "SmallOffensiveCombat", (1, 0, 1), name=f"{name} AI Offensive [AI]", kind="ai")
+        bp.add("MyObjectBuilder_FlightMovementBlock", "SmallFlightMovement", (1, 0, 2), name=f"{name} AI Flight [AI]", kind="ai")
+        cam(bp, (1, 0, 3), "Backward", "Up", f"{name} Camera Rear")
+    else:
+        cam(bp, (1, 0, 1), "Backward", "Up", f"{name} Camera Rear")
     cam(bp, (-1, 0, 0), "Left", "Up", f"{name} Camera Left")
     cam(bp, (1, 2, -1), "Up", "Backward", f"{name} Camera Up")
     if sensor:
@@ -111,7 +117,7 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat"):
 
 def gnat(lite=False):
     name = "Gnat Lite" if lite else "Gnat"
-    return gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name)
+    return gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite)
 
 # ---------------------------------------------------------------------------------------------
 def longbow_frame(grid, script, lite=False, seeker=False):
