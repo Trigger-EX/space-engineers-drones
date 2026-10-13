@@ -18,10 +18,13 @@ import sebp_toolbar as TB
 from core import hornet_frame
 
 MODELS = {}
-NO_LITE = ('Shrike Test', 'Shrike Test Rocket')
+NO_LITE = ('Shrike Test', 'Shrike Test Rocket', 'Shrike Staff Test')
 DOCS = {
     'Shrike Test': 'TEST SHIP (not for the game): Hornet hull with a cockpit and a Remote Control, one Programmable Block [Helm] running ShrikeAI (MANUAL mode, assist, '
                    'dead-man heartbeat), a Deadman timer and the groups it switches off. For the simulator\'s scripted pilot.',
+    'Shrike Staff Test': 'TEST SHIP (not for the game): Shrike Test split in two Programmable Blocks, [Helm] (ShrikeAI) and [Staff] (StaffAI, control_arch M2): IGC heartbeat watch '
+                         '(the Staff releases every override when the Helm falls silent), mothership link, displays; plus an Event Controller (cockpit occupied, PLACEHOLDER event id) that stops / starts '
+                         'the Deadman timer and a cockpit toolbar that Runs both PBs (argument-less menus).',
     'Shrike Test Rocket': 'TEST SHIP (not for the game): Shrike Test with a gatling [B1] and a SmallMissileLauncher [B2] (BATTERY-lite: two classes).',
 }
 
@@ -31,7 +34,7 @@ def _drop(bp, pred):
         bp.blocks.remove(b)
         for c in [c for c, why in bp.reserve.items() if why.endswith(' of ' + (b['name'] or b['sub']))]: del bp.reserve[c]
 
-def _shrike_test(name, weapon_b2=None):
+def _shrike_test(name, weapon_b2=None, staff=False):
     bp = hornet_frame(name, '', 'MyObjectBuilder_SmallGatlingGun', script_text('ShrikeAI.cs'), ai=True, sensor=True, merge=False)
     bp.legacy_shapes = False                       # sample-derived shapes: cockpit / timer / PB (enabled)
     # the cockpit stands on the rear deck (the antenna's place); the Hornet's cameras, dive thrusters, PB and 4 batteries stay where they are
@@ -51,18 +54,25 @@ def _shrike_test(name, weapon_b2=None):
         guns = [guns[0], g]
     guns[0]['name'] = guns[0]['name'] + ' [B1]'
     bp.group('Weapons', guns)
-    timer['settings'] = {'Delay': 5000, 'Silent': True}
-    bp.set_toolbars(timer, toolbar=[TB.group('Thrusters', 'OnOff_Off'), TB.group('Weapons', 'OnOff_Off')])
+    deadman_kit(bp, name, seat, timer=timer, ec_cell=(1, 1, 1) if staff else None, experimental=staff)     # Timer D (5 s, Silent, cuts the groups) [+ the cockpit EC on the split ship]
+    if staff:
+        # the second PB in the free cell behind the core (its front face goes into the armour at z = 0)
+        sp = bp.add('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', (-1, 1, 1), 'Forward', 'Up', f'[Staff] {name} PB', extra=pb_extra(script_text('StaffAI.cs')), kind='ctrl')
+        bp.set_toolbars(seat, toolbar=[TB.run(pb), TB.run(sp)])                              # Run (no argument) = the menus of the two PBs
     return finalize(bp)
 
 def shrike_test(lite=False):
     return _shrike_test('Shrike Test')
+
+def shrike_staff_test(lite=False):
+    return _shrike_test('Shrike Staff Test', staff=True)
 
 def shrike_test_rocket(lite=False):
     return _shrike_test('Shrike Test Rocket', ('MyObjectBuilder_SmallMissileLauncher', ''))
 
 MODELS['Shrike Test'] = shrike_test
 MODELS['Shrike Test Rocket'] = shrike_test_rocket
+MODELS['Shrike Staff Test'] = shrike_staff_test
 
 if __name__ == '__main__':
     for n, f in MODELS.items():

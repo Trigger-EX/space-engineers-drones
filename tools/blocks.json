@@ -23,6 +23,12 @@
         "ShrikeAI"
       ]
     },
+    "HELMLINK": {
+      "file": "tools/helmlink_block.cs",
+      "scripts": [
+        "ShrikeAI"
+      ]
+    },
     "BATTERY": {
       "file": "tools/battery_block.cs",
       "scripts": [

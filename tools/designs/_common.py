@@ -81,6 +81,30 @@ def script_text(filename):
     return t
 
 # ---- block helpers ----
+def deadman_kit(bp, name, seat, timer=None, timer_cell=None, groups=('Thrusters', 'Weapons'), ec_cell=None, experimental=False):
+    """The dead-man hardware of a Helm ship (control_arch s2.6, M2): Timer D + (optional) Event Controller 'cockpit occupied'.
+
+    Timer D   custom name '<name> Deadman' (ShrikeAI re-arms it once a second while it flies, stops it while a pilot sits), Delay 5000 ms, Silent,
+              toolbar = one OnOff_Off per block group of 'groups' (the groups must exist: bp.group(...) first, e.g. 'Thrusters' and 'Weapons').
+              Pass an existing 'timer' block to only (re)set its settings and toolbar, or 'timer_cell' to add a TimerBlockSmall there.
+    EC        only with ec_cell: slot 0 (cockpit occupied) = Stop timer, slot 1 (cockpit empty) = Start timer, selected block = the seat. Its SelectedEvent is
+              the sim's PLACEHOLDER 101 because the game's number is unknown (test K4): needs experimental=True, which also notes it in bp.notes. NEVER ship a
+              blueprint built with it; without ec_cell the kit is the Timer alone (the Helm's own heartbeat is then the only arming).
+    Returns (timer, ec or None)."""
+    import sebp_toolbar as TB
+    if timer is None:
+        timer = bp.add('MyObjectBuilder_TimerBlock', 'TimerBlockSmall', timer_cell, 'Forward', 'Up', f'{name} Deadman', kind='ctrl')
+    timer['settings'] = {'Delay': 5000, 'Silent': True}
+    bp.set_toolbars(timer, toolbar=[TB.group(g, 'OnOff_Off') for g in groups])
+    ec = None
+    if ec_cell is not None:
+        if not experimental: raise ValueError('deadman_kit: the Event Controller event id for "cockpit occupied" is a placeholder (K4 open): pass experimental=True or ec_cell=None')
+        ec = bp.add('MyObjectBuilder_EventControllerBlock', 'EventControllerSmall', ec_cell, 'Forward', 'Up', f'{name} EC Cockpit', kind='ctrl')
+        bp.set_toolbars(ec, toolbar=[TB.block(timer, 'Stop'), TB.block(timer, 'Start')])
+        ec['settings'] = TB.event_settings('cockpit', threshold=0, experimental=True)
+        ec['links'] = {'selected': [seat]}
+    return timer, ec
+
 def thr(bp, mn, fwd, up, name, sub=None):
     b = bp.add("MyObjectBuilder_Thrust", sub or ("SmallBlockSmallThrust" if bp.grid == "Small" else "LargeBlockSmallThrust"),
                mn, fwd, up, name, DARK, kind="thr")

@@ -23,6 +23,13 @@
 //  CUSTOM DATA  [Shrike] = the Hornet keys (IGC Tag default SHRIKE, Start Mode default GUARD); [Manual] Seat Debounce, Release Delay, Assist (OFF/HUD/FBW),
 //   Assist Max Rate, Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale, Pilot Priority Rate, Auto Fire In Manual, Scan In Manual, Run Menu, Run Menu Wait,
 //   Deadman Timer Name, HUD Surface (cockpit text surface, -1 off); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
+//  STAFF LINK (HELMLINK block, optional)   with a second PB "[Staff] ..." on the construct (StaffAI.cs) the Helm sends a heartbeat (2 Hz), its mode / target / battery
+//   (5 Hz) and seat changes over IGC (CurrentConstruct) and obeys the verbs the Staff forwards; the Staff releases every override when the heartbeat stops for 1.5 s.
+//   [Link] Enable (AUTO/ON/OFF) (AUTO = on while a [Staff] PB exists, so the single-PB ship is untouched), Ship Tag (SHIP, same in the Staff), Heartbeat (s).
+//   To fit 80,000 characters the rarely used keys Jink Interval (+ Random), Seconds Before Dropping Disabled Target, Ghost Target Time, Wingmate Separation Range / Speed,
+//   Lead Scale, AI Confirm Raycast Range / Long Raycast Range / Rays Shorten, Target Stickiness, AI Re-pick Interval / Only Within, AI Takes Over After Stale Lock,
+//   Search Patrol Radius / Own Start Corner / After A Fight / Listening Stop / Speed, Breach Min Target Radius, Breach Stall, Evade Speed When Hit, Close Scan Range and
+//   Scan Cone Degrees were removed from Custom Data; their variables keep the Hornet defaults.
 //  NOT MEASURED IN THE GAME: stick scale / sign / gyro feel (Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale: control_arch tests K1/K2), the Run-with-argument
 //   toolbar item (K3, hence the menu), Timer re-arm by Stop + Start (does Start restart a counting timer?), DampenersOverride per controller (K7).
 // =====================================================================
@@ -948,6 +955,52 @@ void BatFire(bool allow, Vector3D myVel)
 string BatStatus() { return "Batt " + _bat[0].Cls + "x" + _bat[0].G.Count + " " + _bat[1].Cls + "x" + _bat[1].G.Count + " prim B" + (_prim + 1) + "\n"; }
 // <<< BATTERY v0.1 <<<
 
+// >>> HELMLINK v1.0 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
+// The Helm sends, with TransmissionDistance.CurrentConstruct (never leaves the ship, no secret needed), on "<Ship Tag>.<suffix>" (Ship Tag default SHIP, [Link] in Custom Data):
+//   .HB     long tick                                                   heartbeat every "Heartbeat (s)" (0.5): the Staff releases every override when it stays silent for 1.5 s
+//   .H2S    MyTuple<int flags, long tgtId, Vector3D tgtPos, Vector3D tgtVel, float tgtRadius, float batt>   5 Hz: flags bit0-2 mode (0 IDLE 1 GUARD 2 HUNT 4 RTB 5 MANUAL 6 ASSIST),
+//           bit3 pilot seated, bit4 firing, bit6 dead-man timer armed, bit7 degraded (no thruster or no gyro)
+//   .PILOT  MyTuple<int mode, int seated>                               on change
+// and listens on .S2H  MyTuple<string cmd, Vector3D rally, double radius>   (cmd = any Command() verb; rally / radius are for the wing, unused here).
+// The link is optional: [Link] Enable (AUTO/ON/OFF) = AUTO switches it on while a PB named "[Staff] ..." is on the construct, so the single-PB ships are untouched.
+// Script hooks: HlkCfg() at the end of LoadConfig; HlkBlocks() at the end of GetBlocks; HlkTick() once per Update1 tick after ManTick().
+// Uses from the script: Cfg(), Command(), Man, _occ, _mode (Mode.IDLE/GUARD/HUNT/ASSIST/RTB), _tgt (Track), _now, _tick, _firing, _dm, _thr, _gyros, _batFrac.
+bool HlkOn; string HlkShip = "SHIP", HlkEn = "AUTO", _hlkKey = ""; double HlkHb = 0.5; int _hlkMd = -9, _hlkSeat = -9; IMyBroadcastListener _hlkIn;
+void HlkCfg()
+{
+    HlkEn = Cfg("Link", "Enable (AUTO/ON/OFF)", HlkEn).Trim().ToUpperInvariant(); HlkShip = Cfg("Link", "Ship Tag", HlkShip).Trim().ToUpperInvariant(); HlkHb = Math.Max(0.1, Cfg("Link", "Heartbeat (s)", HlkHb));
+}
+void HlkBlocks()
+{
+    var l = new List<IMyProgrammableBlock>();
+    GridTerminalSystem.GetBlocksOfType(l, b => b != Me && b.IsSameConstructAs(Me) && b.CustomName.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase));
+    HlkOn = HlkEn == "ON" || (HlkEn != "OFF" && l.Count > 0);
+    string k = HlkOn ? HlkShip : "";
+    if (k == _hlkKey) return;
+    if (_hlkIn != null) IGC.DisableBroadcastListener(_hlkIn);
+    _hlkIn = k == "" ? null : IGC.RegisterBroadcastListener(k + ".S2H"); _hlkKey = k;
+}
+void HlkTick()
+{
+    if (!HlkOn || _hlkIn == null) return;
+    while (_hlkIn.HasPendingMessage)
+    {
+        var m = _hlkIn.AcceptMessage();
+        if (m.Data is MyTuple<string, Vector3D, double>) { string c = ((MyTuple<string, Vector3D, double>)m.Data).Item1; if (!string.IsNullOrEmpty(c)) Command(c); }
+    }
+    var cc = TransmissionDistance.CurrentConstruct;
+    if (_tick % Math.Max(1, (int)(HlkHb * 60)) == 3) IGC.SendBroadcastMessage(HlkShip + ".HB", (long)_tick, cc);
+    int md = Man ? 5 : _mode == Mode.ASSIST ? 6 : (int)_mode, seat = _occ ? 1 : 0;
+    if (md != _hlkMd || seat != _hlkSeat) { _hlkMd = md; _hlkSeat = seat; IGC.SendBroadcastMessage(HlkShip + ".PILOT", new MyTuple<int, int>(md, seat), cc); }
+    if (_tick % 12 == 5)
+    {
+        int f = md | seat << 3 | (_firing ? 16 : 0) | (_dm.Count > 0 && !Man ? 64 : 0) | (_thr.Count == 0 || _gyros.Count == 0 ? 128 : 0);
+        var t = _tgt;
+        IGC.SendBroadcastMessage(HlkShip + ".H2S", new MyTuple<int, long, Vector3D, Vector3D, float, float>(f, t != null ? t.Id : 0, t != null ? t.P(_now) : Vector3D.Zero, t != null ? t.V(_now) : Vector3D.Zero, t != null ? (float)t.Radius : 0, (float)_batFrac), cc);
+    }
+}
+// <<< HELMLINK v1.0 <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
@@ -1056,7 +1109,7 @@ void Tick(string arg, UpdateType src)
     if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT) && (!Man || ManScan) && !Hot()) AutoScanStep();
     if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0 && !Hot()) ShareTarget();
 
-    ManTick();
+    ManTick(); HlkTick();
     if (Man) ManFly(dt); else if (!AiStep()) Control(dt);
     _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % (Man ? 10 : 30) == 0) Display();
@@ -1120,9 +1173,7 @@ void LoadConfig()
     LockRange = Cfg(S, "Manual Lock Range", LockRange);
     AutoScan = Cfg(S, "Auto Camera Scan", AutoScan);
     CloseScan = Cfg(S, "All-around Close Scan", CloseScan);
-    CloseScanRange = Cfg(S, "Close Scan Range", CloseScanRange);
     ScanRange = Cfg(S, "Scan Range", ScanRange);
-    ScanCone = Cfg(S, "Scan Cone Degrees", ScanCone);
     TargetLarge = Cfg(S, "Target Large Grids", TargetLarge);
     TargetSmall = Cfg(S, "Target Small Grids", TargetSmall);
     TargetChars = Cfg(S, "Target Characters", TargetChars);
@@ -1130,43 +1181,21 @@ void LoadConfig()
     ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
     FriendCheck = Cfg(S, "Friendly Fire Check", FriendCheck);
     FireStaleMax = Cfg(S, "Max Track Age To Fire (s)", FireStaleMax);
-    SepRange = Cfg(S, "Wingmate Separation Range", SepRange);
-    SepSpeed = Cfg(S, "Wingmate Separation Speed", SepSpeed);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
-    LeadScale = Cfg(S, "Lead Scale (1: as calculated)", LeadScale);
     LeadMargin = Cfg(S, "Aim Margin (predicted misses)", LeadMargin);
     UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
     SplitFocus = Cfg(S, "Split Targets Across Hive (false: focus fire)", SplitFocus);
-    DisabledGrace = Cfg(S, "Seconds Before Dropping Disabled Target", DisabledGrace);
-    EvadeSpeed = Cfg(S, "Evade Speed When Hit", EvadeSpeed);
-    JinkEvery = Cfg(S, "Jink Interval (s)", JinkEvery);
-    JinkEveryRand = Cfg(S, "Jink Interval Random (s)", JinkEveryRand);
     ListenTags = Cfg(S, "Listen To IGC Tags (target feeds)", ListenTags);
     AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
     BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);
-    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);
-    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
-    AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
-    AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
-    AiConfirmAdaptive = Cfg(S, "AI Confirm Rays Shorten After A Fight", AiConfirmAdaptive);
-    AiStaleTakeover = Cfg(S, "AI Takes Over After Stale Lock (s)", AiStaleTakeover);
-    GhostTime = Cfg(S, "Ghost Target Time (s)", GhostTime);
-    Stickiness = Cfg(S, "Target Stickiness (score bonus for the current target)", Stickiness);
-    AiRepick = Cfg(S, "AI Re-pick Interval (s; 0 off)", AiRepick);
     PatrolOn = Cfg(S, "Search Patrol When Nothing Found (HUNT)", PatrolOn);
-    PatrolRandom = Cfg(S, "Search Patrol Own Start Corner And Direction", PatrolRandom);
-    PatrolRadius = Cfg(S, "Search Patrol Radius (m)", PatrolRadius);
     PatrolAfter = Cfg(S, "Search Patrol Starts After (s)", PatrolAfter);
-    PatrolAfterFight = Cfg(S, "Search Patrol Starts After A Fight (s)", PatrolAfterFight);
-    PatrolListen = Cfg(S, "Search Patrol Listening Stop (s)", PatrolListen);
-    PatrolSpeed = Cfg(S, "Search Patrol Speed", PatrolSpeed);
-    AiRepickWindow = Cfg(S, "AI Re-pick Only Within (s) Of Last Target", AiRepickWindow);
     RtbBattery = Cfg(S, "RTB Battery Fraction", RtbBattery);
     AimKp = Cfg(S, "Aim Kp", AimKp);
     AimKd = Cfg(S, "Aim Kd", AimKd);
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
-    ManCfg();
+    ManCfg(); HlkCfg();
     string out1 = _ini.ToString();
     if (out1 != Me.CustomData) Me.CustomData = out1;
 }
@@ -1210,7 +1239,7 @@ void GetBlocks()
             for (int i = 0; i < 6; i++) if (Vector3D.Dot(push, dirs[i]) > 0.9) { _thrDir[i].Add(t); break; }
         }
     }
-    BatSort(); ManBlocks();   // BATTERY / MANUAL blocks: batteries, _aimRef, seats, dead-man timer, cockpit surface
+    BatSort(); ManBlocks(); HlkBlocks();   // BATTERY / MANUAL / HELMLINK blocks: batteries, _aimRef, seats, dead-man timer, cockpit surface, Staff link
     _lcd = Me.GetSurface(0);
     _lcd.ContentType = ContentType.TEXT_AND_IMAGE;
     _lcd.FontSize = 0.75f;
@@ -1856,7 +1885,7 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("SHRIKE AI v").Append(VER).Append('\n').Append(ManHud()).Append(BatStatus());
-    _sb.Append("Cams ").Append(_cams.Count).Append(" Gyro ").Append(_gyros.Count).Append(" Thr ").Append(_thr.Count).Append(" Desig ").Append(_turrets.Count + _ctcs.Count).Append(" Sens ").Append(_sensors.Count).Append(" Run ").Append(_avgMs.ToString("0.000")).Append(" ms Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append(" peak ").Append(_peakIns).Append('\n');
+    _sb.Append("Cam ").Append(_cams.Count).Append(" Gyr ").Append(_gyros.Count).Append(" Thr ").Append(_thr.Count).Append(" Run ").Append(_avgMs.ToString("0.000")).Append(" ms Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append(" peak ").Append(_peakIns).Append('\n');
     if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
     _sb.Append(HiveStatus()); _sb.Append(KzStatus());
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner: set ownership\n");
@@ -2380,6 +2409,7 @@ bool AiStep()
         foreach (var b in _ai) b.Enabled = want;
     }
     if (!_aiOn) return false;
+    if (!_aiKick) foreach (var b in _ai) if (!b.Enabled) b.Enabled = true;   // somebody else (the Staff's dead-man release) switched them off while I believe they fly the ship
     // Re-pick: the AI holds whatever it chose first (a wreck, a decoy) and may never turn onto the live enemy beside it. If the AI has been
     // on for AiRepick seconds although I fought within AiRepickWindow seconds (so enemies are about), power-cycle it for one tick: it starts
     // a fresh search. Never before the first contact, so the opening search is left to the AI block.

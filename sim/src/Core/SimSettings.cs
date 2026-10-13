@@ -292,6 +292,9 @@ namespace SeSim.Core
         /// blueprint has such a pair, so older results do not change; false = one body per CubeGrid as before.</summary>
         [OptInSetting] public bool FuseMergedGrids = true;
 
+        /// <summary>IGC delivery latency in ticks: 1 (default) = a message sent in tick T is readable in T+1; 2 = in T+2 (the game's 1-2 ticks, control_arch S10 / M2 test d).</summary>
+        [OptInSetting] public int IgcLatencyTicks = 1;
+
         public SimSettings Clone() { return (SimSettings)MemberwiseClone(); }
 
         static System.Reflection.FieldInfo[] _fields;

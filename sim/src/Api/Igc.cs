@@ -53,7 +53,7 @@ namespace SeSim.Api
         public readonly List<SimRadioAntenna> Antennas = new List<SimRadioAntenna>();
         public readonly List<SimProgrammableBlock> PendingScripts = new List<SimProgrammableBlock>();   // see BlockApiFactory.FlushPending
 
-        struct Msg { public SimIgc From; public string Tag; public object Data; public TransmissionDistance Dist; public long To; public bool Unicast; }
+        struct Msg { public SimIgc From; public string Tag; public object Data; public TransmissionDistance Dist; public long To; public bool Unicast; public long Tick; }
         Msg[] _out = new Msg[64]; int _outN;
         readonly List<SimMessageQueue> _callbacks = new List<SimMessageQueue>();
         public long Sent, Delivered, Dropped;   // statistics
@@ -126,6 +126,7 @@ namespace SeSim.Api
         void Push(Msg m)
         {
             if (_outN == _out.Length) Array.Resize(ref _out, _out.Length * 2);
+            m.Tick = World.Tick;
             _out[_outN++] = m; Sent++;
         }
 
@@ -145,9 +146,11 @@ namespace SeSim.Api
             if (PendingScripts.Count > 0) BlockApiFactory.FlushPending(World);
             if (_outN == 0) return;
             int n = _outN;   // callbacks run later and may send more: those stay for the next Deliver
+            int lat = Math.Max(1, World.Settings.IgcLatencyTicks), keep = 0;   // latency 1 (default): readable on the next tick; 2: one tick later (SimSettings.IgcLatencyTicks)
             for (int i = 0; i < n; i++)
             {
                 Msg m = _out[i];
+                if (lat > 1 && m.Tick + lat - 1 > World.Tick) { _out[keep++] = m; continue; }
                 if (m.Unicast)
                 {
                     SimIgc t = Find(m.To);
@@ -165,8 +168,10 @@ namespace SeSim.Api
                     l.Push(new MyIGCMessage(m.Data, m.Tag, m.From.Me)); Delivered++;
                 }
             }
-            if (n == _outN) { Array.Clear(_out, 0, n); _outN = 0; }
-            else { Array.Copy(_out, n, _out, 0, _outN - n); Array.Clear(_out, _outN - n, n); _outN -= n; }
+            if (n < _outN) Array.Copy(_out, n, _out, keep, _outN - n);
+            int newN = keep + (_outN - n);
+            if (newN < _outN) Array.Clear(_out, newN, _outN - newN);
+            _outN = newN;
 
             if (_callbacks.Count > 0)
             {
