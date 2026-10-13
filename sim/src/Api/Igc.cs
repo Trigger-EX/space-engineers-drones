@@ -78,6 +78,18 @@ namespace SeSim.Api
             Push(new Msg { From = from, Tag = tag, Data = data, Dist = d });
         }
 
+        /// <summary>Test hook (dock-launch): delivers a broadcast to every listener of the tag at once, as if sent by a script-less source.</summary>
+        public void InjectBroadcast(string tag, object data)
+        {
+            for (int k = 0; k < Endpoints.Count; k++)
+            {
+                SimIgc e = Endpoints[k];
+                if (e.Pb.Inst.Destroyed) continue;
+                SimBroadcastListener l = e.ListenerFor(tag);
+                if (l != null) { l.Push(new MyIGCMessage(data, tag, 0)); Delivered++; }
+            }
+        }
+
         public bool EnqueueUnicast(SimIgc from, long to, string tag, object data)
         {
             if (from.Pb.Inst.Destroyed) return false;

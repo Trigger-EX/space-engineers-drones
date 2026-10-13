@@ -164,3 +164,31 @@ No other behaviour of the scripts was changed. Printers (`HiveMotherAI`) are not
 * A command sent on FLEET reaches every type; a type that does not know a word ignores it. `lock` is deliberately not allowed.
 * Message load: each sharing drone now sends its two target messages per second on two tags instead of one; listeners hold at most the game's queue
   length and drop the oldest first.
+
+## 9. Launch protocol (HiveMotherAI v2.1 -> freshly printed drone)
+
+Take-off must not depend on one message. The printer uses three independent paths; any one of them is enough.
+
+1. **Arming (printer grid, before separation).** In the `ARM` state the printer still shares a grid with the drone, so it can see the drone PB
+   through `GridTerminalSystem`. It merges this into the drone PB's Custom Data (other sections untouched) and then calls `DPb.TryRun("armed")`
+   (retried each tick for up to `Arm Max Seconds`, 3 s, because the PB may still be recompiling):
+
+   ```
+   [Launch]
+   Auto=true              ; false in Rack Mode: the drone waits for the "launch" command instead
+   Burst Seconds=4        ; how long to burn away from the printer (bay key "Launch Burst Seconds")
+   Away X=...             ; world vector away from the printer, written at release (zero = unknown)
+   Away Y=...
+   Away Z=...
+   Exit Direction=Left    ; printer axis the drone leaves along (bay key "Exit Direction"), blank = straight away
+   Armed=true             ; set by the printer; the drone clears it when it takes off
+   ```
+   The drone script reads `[Launch]` on the argument `armed`, and also in its constructor (after a recompile). Armed + Auto means: as soon as
+   the grid is no longer the printer's (merge off), burn along Away for Burst Seconds, then start the normal AI.
+2. **`<TAG>_JOIN`** (string `"join"`) on the per-type tag **and** `<ch>_CMD` string `"join"` on the FLEET channel (`Fleet Channel`, `Fleet Secret`
+   in the printer's `[Hive Mother]` section). Sent every 2 s for `Join Seconds` (default 40, minimum 30) after the separation is confirmed, and
+   again (one more send, window extended to now+6 s) whenever a `_SWARM` message from a not yet known drone id arrives on that tag.
+   Drones must accept `join` over FLEET (add it to `Allowed Commands`, the default list does not contain it).
+3. Rack mode: the `<Launch Tag>_CMD` string `"launch"` is sent 3 times (every 2 s) after the separation instead of once at release.
+
+Also done by the printer at separation: drone batteries are set to `Auto` charge mode, the drone PB is `Enabled`.

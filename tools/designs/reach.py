@@ -1,27 +1,39 @@
-"""Welder reach and bay-contact verification for printer ships (owned by the scripted-printer agent).
+"""Welder reach, build-order support and bay-contact verification for printer ships.
 
-WELDER MODEL (SmallShipWelder, 3x3x6 cells = 1.5 x 1.5 x 3.0 m, definition SensorRadius 1.3 m):
-  * the welder works toward its block Forward; the sensor sphere is centred on the middle of the TIP face
-    (the outer face of the first layer of cells along Forward) and has radius 1.3 m = 2.6 cells.
-  * a block is "reachable" when its cell box (cell i spans [i, i+1) in cell units) intersects that sphere.
-    Multi-cell blocks count as reachable as soon as ONE of their cells is, which is the conservative reading of the game's
-    slim-block bound test (the block's whole box is at least as close as any one cell).
-  * a SAFETY MARGIN (default 0.2 m) is subtracted from the radius so that rounding, a tip dummy that sits a bit
-    inside the model, or a slightly smaller real radius do not decide the build.
-  UNVERIFIED IN GAME: the exact sphere centre (the definition has no SensorOffset for this welder, drills have one), see
-  TIP_BACKOFF_CELLS.  A positive value moves the sphere centre back into the welder; run `reach.py --sweep` to see how many
-  bays would lose blocks for a given back-off.
+WELDER GEOMETRY: WHAT IS KNOWN AND WHAT IS ASSUMED  (details and sources in docs/welder-reach.md)
+  KNOWN (ref/CubeBlocks/CubeBlocks_Tools.sbc, game definitions):
+    * SmallShipWelder is 3x3x6 cells (1.5 x 1.5 x 3.0 m), SensorRadius 1.3 m, NO SensorOffset element (the drills have one, 0.8 / 2.8).
+    * Mount points exist on Left/Right/Top/Bottom (partial, mostly the rear half) and Back; none on Front.  So the tool end (tip) is Forward.
+  KNOWN (wiki https://spaceengineers.wiki.gg/wiki/Modding/Reference/Blocks/ShipWelder): the model needs a dummy whose name contains
+    "detector_shiptool" (first match wins) and that dummy "defines the center of the work sphere".
+  KNOWN (Keen forum, "ship tool SensorOffset is not in meters"): SensorOffset is scaled by the dummy size (a welder with offset 1 gave about 2.5 m).
+    Irrelevant for the small welder (no offset) except that the dummy matrix may be scaled too.
+  NOT KNOWN: where the detector_shiptool dummy sits inside Welder.mwm (no source states it; the .mwm is not in the repo), the exact radius
+    behaviour (the game tests the sphere against each projected block's cell box, which is what this module does).
+  The user's in-game tests of the foundries show blocks left unwelded that the old model (centre = tip face, r = 1.3 - 0.2 m) called reachable,
+  so the old single guess was wrong or too tight.
+
+ROBUST MODEL: instead of one guess every drone block must be reached by at least one welder under EVERY hypothesis of a family
+  (FAMILY): sphere centre on the welder axis at the tip face, 1, 2 and 3 cells (0.5 m each) inside the welder (3 cells = middle of the body),
+  radius 1.3 m with no margin and with a 0.3 m margin (r = 1.0 m).  A block is reached when its cell box intersects the sphere (multi-cell blocks:
+  any cell).  RED_HYP (tip centre, 0.3 m margin) must additionally be reached by TWO different welders (redundancy against a welder that is
+  switched off early).  Blocks no legal welder position can reach under a hypothesis are recorded as `design.infeasible` and listed.
+
+BUILD ORDER: a projected block can only be welded when it is supported, i.e. attached through mount points (sebp.attachment, the game's
+  CheckMountPointsForSide rule) to a block that already exists.  `support_report` starts from the printer (merge pair) and propagates through
+  the drone; a drone block that is never supported fails the design.
 
 BAY CONTACT MODEL (merge-block printing, docs/research.md 1.2): the drone may touch the printer ONLY through the merge pair.
   * no printer cell inside or next to any drone cell (26-neighbourhood) except the printer merge block next to the drone merge block;
   * no printer cell inside the drone's exhaust / muzzle / camera clear zones (bp.reserve of the drone blueprint);
   * the two merge blocks have opposite clamp normals and sit in neighbouring cells;
-  * welders of one bay must not reach another bay's drone (they would weld a foreign projection).
+  * welders of one bay must not reach another bay's drone under ANY hypothesis (they would weld a foreign projection).
 
 A printer Blueprint carries `bp.bays`, a list of dicts written by printer_lib (n, drone, T, merge, projector, welders ...).
-`verify_printer(bp)` checks everything and returns a report; `python3 -I tools/designs/reach.py` runs it on every printer.
+`verify_printer(bp)` checks everything and returns a report; `python3 -I tools/designs/reach.py [--table]` runs it on every printer.
 """
 import sys, os, math
+from collections import namedtuple
 HERE_ = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE_)
 sys.path.insert(0, os.path.normpath(os.path.join(HERE_, '..')))
@@ -30,8 +42,19 @@ from sebp import DIR
 CELL_M = 0.5                      # small grid
 WELDER_SUB = "SmallShipWelder"
 WELD_RADIUS_M = 1.3
-SAFETY_MARGIN_M = 0.2
-TIP_BACKOFF_CELLS = float(os.environ.get('SE_WELDER_BACKOFF', '0.0'))   # sphere centre moved this far back from the tip plane (into the welder); rebuild with SE_WELDER_BACKOFF=1 to test a different guess
+SAFETY_MARGIN_M = 0.2             # legacy single-hypothesis margin (still the default of eff_radius_cells / verify_printer(margin_m=...))
+
+# ---------------------------------------------------------------------------------------------
+# hypothesis family
+# ---------------------------------------------------------------------------------------------
+Hyp = namedtuple('Hyp', 'name backoff margin')           # backoff: cells the sphere centre sits inside the welder behind the tip face
+def _mk(pos, backoff, margin): return Hyp(f'{pos} r{WELD_RADIUS_M - margin:.1f}', backoff, margin)
+FAMILY = tuple(_mk(pos, bo, mg) for pos, bo in (('tip', 0), ('tip-1', 1), ('tip-2', 2), ('mid', 3)) for mg in (0.0, 0.3))
+RED_HYP = FAMILY[1]                                      # tip centre, r = 1.0 m: needs TWO welders per block
+LEGACY_HYP = Hyp('legacy', 0, SAFETY_MARGIN_M)
+HYP_NAMES = [h.name for h in FAMILY]
+
+def radius_cells(h): return (WELD_RADIUS_M - h.margin) / CELL_M
 
 def eff_radius_cells(margin_m=None):
     return (WELD_RADIUS_M - (SAFETY_MARGIN_M if margin_m is None else margin_m)) / CELL_M
@@ -46,17 +69,18 @@ def neighbours26(c):
                 if dx or dy or dz: yield (x + dx, y + dy, z + dz)
 
 # ---------------------------------------------------------------------------------------------
-def tip_point_from_cells(cells, f, backoff=None):
-    """centre of the tip face of a welder occupying `cells`, working along unit vector f (cell units)"""
+def tip_point_from_cells(cells, f, backoff=0.0):
+    """sphere centre for a welder occupying `cells`, working along unit vector f (cell units): the middle of the tip face, moved `backoff`
+    cells back into the welder"""
     ax = [abs(v) for v in f].index(1); sg = f[ax]
     plane = (max(c[ax] for c in cells) + 1) if sg > 0 else min(c[ax] for c in cells)
     n = len(cells)
     p = [sum(c[k] for c in cells) / n + 0.5 for k in range(3)]
-    p[ax] = plane - (TIP_BACKOFF_CELLS if backoff is None else backoff) * sg
+    p[ax] = plane - backoff * sg
     return tuple(p)
 
-def welder_tip(bp, b, backoff=None):
-    """(tip point, forward vector) of welder block b of Blueprint bp"""
+def welder_tip(bp, b, backoff=0.0):
+    """(sphere centre, forward vector) of welder block b of Blueprint bp"""
     f = DIR[b['fwd']]
     return tip_point_from_cells(bp.cells(b), f, backoff), f
 
@@ -84,25 +108,35 @@ def bay_welders(bp, n):
     tag = f'[Bay {n}]'
     return [b for b in bp.blocks if b['sub'] == WELDER_SUB and tag in (b['name'] or '')]
 
-def coverage(bp, bay, margin_m=None, backoff=None):
-    """per drone block: list of welder names (of this bay) that reach it"""
-    r = eff_radius_cells(margin_m)
-    welders = [(w, welder_tip(bp, w, backoff)[0]) for w in bay_welders(bp, bay['n'])]
+def coverage(bp, bay, margin_m=None, backoff=None, hyp=None):
+    """per drone block: list of welder names (of this bay) that reach it.  hyp (a Hyp) wins over margin_m / backoff."""
+    if hyp is None: hyp = Hyp('x', backoff or 0.0, SAFETY_MARGIN_M if margin_m is None else margin_m)
+    r = radius_cells(hyp)
+    welders = [(w, welder_tip(bp, w, hyp.backoff)[0]) for w in bay_welders(bp, bay['n'])]
     res = []
     for b, cells in drone_world(bay['drone'], bay['T']):
         res.append((b, [w['name'] for w, p in welders if reaches(p, cells, r)]))
     return res
 
+def family_report(bp, bay):
+    """{hyp name: [uncovered block names]} for FAMILY plus 'redundancy': blocks that fewer than two welders reach under RED_HYP"""
+    out = {}
+    for h in FAMILY:
+        out[h.name] = [b['name'] or b['sub'] for b, ws in coverage(bp, bay, hyp=h) if not ws]
+    out['redundancy'] = [b['name'] or b['sub'] for b, ws in coverage(bp, bay, hyp=RED_HYP) if len(ws) < 2]
+    return out
+
 def foreign_reach(bp, bays, margin_m=None):
-    """welders reaching a drone of another bay: [(welder name, bay n, other bay n, block name)]"""
-    r = eff_radius_cells(margin_m); bad = []
+    """welders reaching a drone of another bay under ANY hypothesis without margin: [(welder name, bay n, other bay n, block name)]"""
+    bad = []
+    hyps = [h for h in FAMILY if h.margin == 0.0]
     for bay in bays:
-        ws = [(w, welder_tip(bp, w)[0]) for w in bay_welders(bp, bay['n'])]
+        ws = [(w, [welder_tip(bp, w, h.backoff)[0] for h in hyps]) for w in bay_welders(bp, bay['n'])]
         for other in bays:
             if other is bay: continue
             for b, cells in drone_world(other['drone'], other['T']):
-                for w, p in ws:
-                    if reaches(p, cells, r): bad.append((w['name'], bay['n'], other['n'], b['name'] or b['sub']))
+                for w, pts in ws:
+                    if any(reaches(p, cells, radius_cells(h)) for p, h in zip(pts, hyps)): bad.append((w['name'], bay['n'], other['n'], b['name'] or b['sub']))
     return bad
 
 # ---------------------------------------------------------------------------------------------
@@ -113,7 +147,40 @@ def printer_cells(bp):
         for c in bp.cells(b): occ[c] = b
     return occ
 
-def verify_bay(bp, bay, margin_m=None, backoff=None, strict_camera=False):
+def combined_graph(bp):
+    """printer + all drones (translated) in one Blueprint; returns (chk, owner, adj) with owner[id(copy)] = ('P'|'D', bay n or None, original block)"""
+    import copy
+    from sebp import Blueprint
+    chk = Blueprint('chk', 'Small')
+    owner = {}
+    for b in bp.blocks:
+        nb = copy.copy(b); chk.blocks.append(nb); owner[id(nb)] = ('P', None, b)
+    for bay in bp.bays:
+        T = bay['T']
+        for b in bay['drone'].blocks:
+            nb = copy.copy(b); nb['min'] = tuple(b['min'][k] + T[k] for k in range(3)); chk.blocks.append(nb); owner[id(nb)] = ('D', bay['n'], b)
+    return chk, owner, chk.attachment()
+
+def support_report(bp, graph=None):
+    """BUILD ORDER: simulate support propagation.  Every printer block exists; a projected drone block can be welded once it is attached by mount
+    points to an existing block.  Returns {bay n: (unsupported block names, rounds)}; a drone block that is never supported cannot be welded."""
+    chk, owner, adj = graph or combined_graph(bp)
+    have = {i for i, o in owner.items() if o[0] == 'P'}
+    layer = {i: 0 for i in have}
+    frontier = set(have); rnd = 0
+    while frontier:
+        rnd += 1; nxt = set()
+        for i in frontier:
+            for j in adj[i]:
+                if j not in layer and owner[j][0] == 'D': layer[j] = rnd; nxt.add(j)
+        frontier = nxt
+    res = {}
+    for bay in bp.bays:
+        ids = [i for i, o in owner.items() if o[0] == 'D' and o[1] == bay['n']]
+        res[bay['n']] = ([owner[i][2]['name'] or owner[i][2]['sub'] for i in ids if i not in layer], max([layer[i] for i in ids if i in layer] or [0]))
+    return res
+
+def verify_bay(bp, bay, margin_m=None, backoff=None, strict_camera=False, family=True, support=None):
     """returns (problems list, stats dict)"""
     from _common import merge_clamp_dir
     prob = []; st = {}
@@ -136,7 +203,6 @@ def verify_bay(bp, bay, margin_m=None, backoff=None, strict_camera=False):
         d1 = DIR[merge_clamp_dir(drone, dm)]; d2 = DIR[merge_clamp_dir(bp, pm)]
         if tuple(a + b for a, b in zip(d1, d2)) != (0, 0, 0): prob.append(f'bay {bay["n"]}: merge clamp faces do not oppose ({d1} vs {d2})')
         if tuple(pc[k] - dc[k] for k in range(3)) != d1: prob.append(f'bay {bay["n"]}: printer merge {pc} is not the cell the drone merge {dc} clamps toward {d1}')
-        pair = {id(pm)}
         # 3. contact: printer blocks other than welders must keep out of the drone's 26-neighbourhood; welder tips may touch
         #    (their tip face has no mount point) but see verify_connections() for the real mount-point test
         touch = []; weld_touch = 0
@@ -179,30 +245,36 @@ def verify_bay(bp, bay, margin_m=None, backoff=None, strict_camera=False):
                 if o is not None: blockers[o['name'] or o['sub']] = k
         if blockers: prob.append(f'bay {bay["n"]}: exit lane {e} blocked by ' + ', '.join(f'{n} (step {k})' for n, k in list(blockers.items())[:4]))
     # 5. weld coverage
-    cov = coverage(bp, bay, margin_m, backoff)
-    miss = [b['name'] or b['sub'] for b, ws in cov if not ws]
-    st['welders'] = len(bay_welders(bp, bay['n'])); st['drone_blocks'] = len(cov)
-    st['min_cover'] = min((len(ws) for b, ws in cov), default=0)
-    if miss: prob.append(f'bay {bay["n"]}: {len(miss)} drone blocks out of weld reach: ' + ', '.join(miss[:6]) + (' ...' if len(miss) > 6 else ''))
+    st['welders'] = len(bay_welders(bp, bay['n'])); st['drone_blocks'] = len(drone.blocks)
+    if family and margin_m is None and backoff is None:
+        fr = family_report(bp, bay)
+        waived = getattr(des, 'infeasible', None) or {}            # {hyp name: set(block names)} that NO legal welder position can reach (reported, not failed)
+        st['family'] = {k: len(v) for k, v in fr.items()}
+        st['waived'] = {k: sorted(set(v) & set(waived.get(k, ()))) for k, v in fr.items() if set(v) & set(waived.get(k, ()))}
+        for k, v in fr.items():
+            real = [n for n in v if n not in set(waived.get(k, ()))]
+            if real: prob.append(f'bay {bay["n"]}: {len(real)} drone blocks not covered ({"by two welders " if k == "redundancy" else "under " }{RED_HYP.name if k == "redundancy" else k}): ' + ', '.join(real[:5]) + (' ...' if len(real) > 5 else ''))
+        cov = coverage(bp, bay, hyp=RED_HYP)
+        st['min_cover'] = min((len(ws) for b, ws in cov), default=0)
+    else:
+        cov = coverage(bp, bay, margin_m, backoff)
+        miss = [b['name'] or b['sub'] for b, ws in cov if not ws]
+        st['min_cover'] = min((len(ws) for b, ws in cov), default=0)
+        st['family'] = {'single': len(miss)}
+        if miss: prob.append(f'bay {bay["n"]}: {len(miss)} drone blocks out of weld reach: ' + ', '.join(miss[:6]) + (' ...' if len(miss) > 6 else ''))
+    # 6. build order
+    if support is not None and bay['n'] in support:
+        miss, rounds = support[bay['n']]
+        st['support_rounds'] = rounds; st['unsupported'] = len(miss)
+        if miss: prob.append(f'bay {bay["n"]}: {len(miss)} drone blocks are never supported (no mount-point chain from the merge pair): ' + ', '.join(miss[:6]))
     return prob, st
 
-def verify_connections(bp):
+def verify_connections(bp, graph=None):
     """mount-point test on printer + all drones in one frame: the only printer<->drone connections allowed are the merge pairs, and no
     two drones may connect.  Returns problems."""
-    import copy
-    from sebp import Blueprint
-    chk = Blueprint('chk', 'Small')
-    owner = {}
-    for b in bp.blocks:
-        nb = copy.copy(b); chk.blocks.append(nb); owner[id(nb)] = ('P', None, b)
-    for bay in bp.bays:
-        T = bay['T']
-        for b in bay['drone'].blocks:
-            nb = copy.copy(b); nb['min'] = tuple(b['min'][k] + T[k] for k in range(3)); chk.blocks.append(nb); owner[id(nb)] = ('D', bay['n'], b)
-    adj = chk.attachment()
+    chk, owner, adj = graph or combined_graph(bp)
     prob = []
     merges = {bay['n']: bay['merge'] for bay in bp.bays}
-    byid = {id(b): b for b in chk.blocks}
     seen = set()
     for i, nbrs in adj.items():
         for j in nbrs:
@@ -230,13 +302,17 @@ def verify_printer(bp, margin_m=None, backoff=None):
     for need in ('bays',):
         if not hasattr(bp, need): return False, ['not a printer blueprint (no .bays)']
     if bp.dlc_used(): ok = False; lines.append(f'DLC blocks {bp.dlc_used()}')
-    xml = None
+    graph = combined_graph(bp)
+    sup = support_report(bp, graph)
     for bay in bp.bays:
-        prob, st = verify_bay(bp, bay, margin_m, backoff)
+        prob, st = verify_bay(bp, bay, margin_m, backoff, support=sup)
+        fam = st.get('family', {})
         lines.append(f'  bay {bay["n"]} ({bay["drone"].name}): {st.get("welders")} welders, {st.get("drone_blocks")} drone blocks, '
-                     f'min welders/block {st.get("min_cover")}, welders touching the drone {st.get("weld_touching")}' + (f', camera-zone cells blocked {st["camera_zone_blocked"]}' if st.get('camera_zone_blocked') else ''))
+                     f'min welders/block {st.get("min_cover")}, welders touching the drone {st.get("weld_touching")}, support rounds {st.get("support_rounds")}'
+                     + (f', camera-zone cells blocked {st["camera_zone_blocked"]}' if st.get('camera_zone_blocked') else '')
+                     + (f', WAIVED (no legal welder position reaches them): {st["waived"]}' if st.get('waived') else ''))
         if prob: ok = False; lines += ['    ' + p for p in prob]
-    cp = verify_connections(bp)
+    cp = verify_connections(bp, graph)
     if cp: ok = False; lines += ['  ' + p for p in cp[:8]]
     fr = foreign_reach(bp, bp.bays, margin_m)
     if fr:
@@ -245,24 +321,41 @@ def verify_printer(bp, margin_m=None, backoff=None):
     if len(names) != len(set(names)): ok = False; lines.append('  duplicate block names')
     return ok, lines
 
+def table_rows(bp, label):
+    """one row per bay: [printer, bay, drone, welders, blocks, uncovered per FAMILY hypothesis..., redundancy shortfall, unsupported]"""
+    sup = support_report(bp)
+    rows = []
+    for bay in bp.bays:
+        fr = family_report(bp, bay)
+        rows.append([label, bay['n'], bay['drone'].name, len(bay_welders(bp, bay['n'])), len(bay['drone'].blocks)]
+                    + [len(fr[h]) for h in HYP_NAMES] + [len(fr['redundancy']), len(sup[bay['n']][0])])
+    return rows
+
+def print_table(rows):
+    hdr = ['printer', 'bay', 'drone', 'weld', 'blocks'] + HYP_NAMES + ['<2 welders', 'unsupp']
+    w = [max(len(str(r[i])) for r in rows + [hdr]) for i in range(len(hdr))]
+    print('uncovered drone blocks under each sphere-centre hypothesis (0 everywhere = robust):')
+    print(' '.join(str(h).ljust(w[i]) for i, h in enumerate(hdr)))
+    for r in rows: print(' '.join(str(v).ljust(w[i]) for i, v in enumerate(r)))
+
 def main():
-    import importlib, printers
-    margin = None; backoff = None; sweep = '--sweep' in sys.argv
-    bad = 0
+    import printers
+    names = [a for a in sys.argv[1:] if not a.startswith('--')]
+    table = '--table' in sys.argv
+    bad = 0; rows = []
     for name, fn in printers.MODELS.items():
+        if names and name not in names: continue
         for lite in (False, True):
             label = name + (' Lite' if lite else '')
             try:
                 bp = fn(lite)
             except AssertionError as e:
                 print(f'FAIL {label}: {e}'); bad += 1; continue
-            ok, lines = verify_printer(bp, margin, backoff)
+            ok, lines = verify_printer(bp)
             print(('PASS ' if ok else 'FAIL ') + label); bad += (not ok)
             for l in lines: print(l)
-            if sweep:
-                for bo in (0.0, 0.5, 1.0, 1.5):
-                    ok2, l2 = verify_printer(bp, margin, bo)
-                    print(f'    sweep backoff {bo}: {"ok" if ok2 else "MISS"}')
+            if table: rows += table_rows(bp, label)
+    if table: print_table(rows)
     return 1 if bad else 0
 
 if __name__ == '__main__':
