@@ -38,6 +38,10 @@ namespace SeSim.Run
         /// <summary>After placement, turn every ship so its controller's Forward points at the nearest enemy team centroid
         /// (keeps the random roll). Used for the "pilot points the drone and presses lock" validation runs (`--face`).</summary>
         public bool FaceEnemies;
+        /// <summary>M6: PBs start with the Custom Data stored in the blueprint (ModStorage), as a pasted ship does. Off for the drone scenarios (their results predate it); on for "ship/" scenarios.</summary>
+        public bool BlueprintCustomData;
+        /// <summary>M6: a body of a ship that is not fused to its main body (a connector-docked pod) is held rigidly in its spawn pose (RigidLink). "ship/" scenarios only.</summary>
+        public bool RigidSubgrids;
         public int MaxTicks = 5 * 60 * 60;
         /// <summary>&gt;= 0: overrides SimSettings.SwarmCueSeconds for this scenario (the "kamikaze" kind cues its Stinger swarm every 0.5 s).</summary>
         public double SwarmCueSeconds = -1;
@@ -260,6 +264,7 @@ namespace SeSim.Run
                         if (b.Def.Weapon != null && b.Def.Weapon.Ammo != null && b.Def.Weapon.Ammo.MaxTrajectory > sh.WeaponRange) sh.WeaponRange = b.Def.Weapon.Ammo.MaxTrajectory;
                     }
                 }
+                if (sc.RigidSubgrids) for (int k = 1; k < bodies.Count; k++) w.Brains.Add(new RigidLink(bodies[k], sh.Main));
                 if (spec.Model == "Midge") w.Brains.Add(new VanillaAiBrain(sh.Main));
                 else if (spec.Model == "Pirate") w.Brains.Add(new PirateBrain(sh.Main));
                 else if (ScenarioGen.IsEnemy(spec.Model)) { if (w.Settings.EnemyScripted) { if (HasAiBlocks(sh.Main)) w.Brains.Add(new VanillaAiBrain(sh.Main) { ScriptShip = true }); } else if (ScenarioGen.EnemyBrain == "pirate") w.Brains.Add(new PirateBrain(sh.Main)); else sh.Main.DampenersOn = true; }
@@ -328,7 +333,7 @@ namespace SeSim.Run
             for (int i = 0; i < n; i++)
             {
                 var sh = ships[i];
-                if (sh.Spec.CustomDataOverride == null && sh.Spec.PbCustomData.Count == 0) continue;
+                if (sh.Spec.CustomDataOverride == null && sh.Spec.PbCustomData.Count == 0 && !sc.BlueprintCustomData) continue;
                 for (int k = 0; k < sh.Bodies.Count; k++)
                 {
                     var bl = sh.Bodies[k].Blocks;
@@ -336,6 +341,7 @@ namespace SeSim.Run
                     {
                         var pb = bl[q].Api as SeSim.Api.SimProgrammableBlock;
                         if (pb == null) continue;
+                        if (sc.BlueprintCustomData && sh.Spec.CustomDataOverride == null && !string.IsNullOrEmpty(bl[q].Src.StoredCustomData) && (!ScenarioGen.IsEnemy(sh.Spec.Model) || ScenarioGen.EnemyScripted)) pb.CustomData = bl[q].Src.StoredCustomData.Replace("\r", "");
                         if (sh.Spec.CustomDataOverride != null) pb.CustomData = sh.Spec.CustomDataOverride;
                         foreach (var kv in sh.Spec.PbCustomData)      // M0: per PB tag, wins over the all-PB override
                             if (pb.CustomNameValue.StartsWith("[" + kv.Key + "]", StringComparison.OrdinalIgnoreCase)) pb.CustomData = kv.Value;

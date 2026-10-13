@@ -300,6 +300,14 @@ def attach_drone(pod, k, drone_bp, check=True):
     if check: check_clearance(pod)
     return pose
 
+def load_hornets(pod, n):
+    """test ships (control_arch M6): clamp `n` real Hornets (HornetDroneAI) into the first n slots of `pod`"""
+    from core import hornet
+    for k in range(n):
+        d = hornet(False)
+        d.display = 'Hornet'
+        attach_drone(pod, k, d)
+
 # ----------------------------------------------------------------------------------------------------------
 # docking to a host
 # ----------------------------------------------------------------------------------------------------------

@@ -33,7 +33,7 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(pods.MODELS['Cradle Pod'](False).name, 'Cradle Pod')
         self.assertEqual(pods.MODELS['Cradle Pod'](True).name, 'Cradle Pod Lite')
         self.assertIn('Warden', W.DOCS); self.assertIn('Cradle Pod', pods.DOCS)
-        self.assertTrue(set(W.SCRIPTS) >= {'HelmAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'})
+        self.assertTrue(set(W.SCRIPTS) >= {'ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'})
 
     def test_no_dlc_no_prototech(self):
         for lite in (False, True):

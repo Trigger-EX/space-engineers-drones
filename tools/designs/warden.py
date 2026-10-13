@@ -39,10 +39,30 @@ def _pb(name):
     t = _script(name)
     return pb_extra(t) if t else ''
 
-HELM_SCRIPT, STAFF_SCRIPT = 'HelmAI.cs', 'StaffAI.cs'
+HELM_SCRIPT, STAFF_SCRIPT = 'ShrikeAI.cs', 'StaffAI.cs'
 SCRIPTS = [HELM_SCRIPT, STAFF_SCRIPT, 'CradleBayAI.cs']
 
 TAG = 'WARDEN'
+
+# Helm Custom Data of the large ships (ShrikeAI.cs is the Helm of every ship class; these keys are the class tuning, measured in the sim: docs/design/ships)
+HELM_DATA = """
+[Link]
+Block Prefix=[SH]
+
+[Shrike]
+AI Block Search Assist=false
+Standoff Range=700
+Min Range=150
+Evasive Jinking=false
+Orbit Speed=10
+Combat Speed=40
+
+[Manual]
+HUD Surface=0
+
+[Battery]
+Standoff By Weapons=false
+"""
 # spare magazines in each of the two ammo lockers (no conveyor line: the crew or a conveyor added by hand moves them into the guns)
 LOCKER_RESERVE = [Item.ammo('LargeRailgunAmmo', 10), Item.ammo('LargeCalibreAmmo', 20), Item.ammo('MediumCalibreAmmo', 30), Item.ammo('NATO_25x184mm', 100)]
 GUN = H.hsv_mask(215, .13, .36)
@@ -258,9 +278,8 @@ def _bridge(S, full):
     """bridge level (y 9, x -1..1, z 20..24): cockpit, gunnery seat, Remote Control, Helm + Staff PB, timers, event controllers"""
     bp = S.bp
     cd = f'[Ship]\nTag={TAG}\n'
-    helm_cd = (cd + '\n[Battery 1]\nTag=B1\nClass=RAIL\nRole=PRIMARY_CANDIDATE\nMin Range=200\nMax Range=0\nWindow Scale=1.0\nSalvo=1\n'
-               '\n[Link]\nBlock Prefix=[SH]\n\n[Cockpit]\nHelm Surface=0\nStaff Surface=1\n')
-    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB\n')
+    helm_cd = cd + HELM_DATA
+    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\nCockpit Surface=1\nHelm HUD Surface=0\nWing Surface=2\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB\n')
     S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 9, 20), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.add('gunner', 'MyObjectBuilder_Cockpit', 'CockpitOpen', (1, 9, 20), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
     S.add('rc', 'MyObjectBuilder_RemoteControl', 'LargeBlockRemoteControl', (-1, 9, 20), 'Forward', 'Up', nm('Remote Control'), toward='Down', kind='ctrl')
@@ -268,7 +287,7 @@ def _bridge(S, full):
                    custom_data=helm_cd, extra=_pb(HELM_SCRIPT))
     S.staff = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (1, 9, 24), 'Backward', 'Up', '[Staff][SH] Warden Staff', toward='Backward', kind='ctrl',
                     custom_data=staff_cd, extra=_pb(STAFF_SCRIPT))
-    S.timer = S.add('timer', 'MyObjectBuilder_TimerBlock', 'TimerBlockLarge', (0, 9, 24), 'Forward', 'Up', nm('Timer D'), toward='Down', kind='timer', settings={'Delay': 5000, 'Silent': True})
+    S.timer = S.add('timer', 'MyObjectBuilder_TimerBlock', 'TimerBlockLarge', (0, 9, 24), 'Forward', 'Up', nm('Timer D (deadman)'), toward='Down', kind='timer', settings={'Delay': 5000, 'Silent': True})
     S.ec_cockpit = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (-1, 9, 22), 'Forward', 'Up', nm('EC Cockpit'), toward='Down', kind='timer')
     S.ec_power = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (1, 9, 22), 'Forward', 'Up', nm('EC Power'), toward='Down', kind='timer')
     S.ec_core = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (0, 9, 22), 'Forward', 'Up', nm('EC Core'), toward='Down', kind='timer')
@@ -494,7 +513,7 @@ def check_hangar(bp, min_gap=0.3):
     assert MU._dot(nose, (0, -1, 0)) > 0.99, 'the pod nose does not point down the lane'
     return True
 
-def warden(lite=False, with_pod=True, lock=False, name=None):
+def warden(lite=False, with_pod=True, lock=False, name=None, wing=0):
     full = not lite
     name = name or ('Warden Lite' if lite else 'Warden')
     bp = Blueprint(name, 'Large', seed=seed_for(name))
@@ -515,6 +534,7 @@ def warden(lite=False, with_pod=True, lock=False, name=None):
     if with_pod:
         pod = pods.cradle_pod(4, lite=lite, name=f'{name} Cradle Pod', ship_tag=TAG)
         pod.display = 'Warden Cradle Pod'
+        if wing: pods.load_hornets(pod, wing)         # test ship 'Warden Wing Test' only
         pods.dock_pod(bp, pod, S.conns, lock=lock)
         bp.pod = pod
         check_hangar(bp)

@@ -34,7 +34,7 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(list(L.MODELS), ['Leviathan'])
         self.assertIn('Leviathan', L.DOCS)
         self.assertGreater(len(L.DOCS['Leviathan']), 200)
-        self.assertEqual(set(L.SCRIPTS), {'HelmAI.cs', 'GunneryAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'})
+        self.assertEqual(set(L.SCRIPTS), {'ShrikeAI.cs', 'GunneryAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'})
         self.assertIn('Leviathan', L.MODEL_NOTES)
 
     def test_no_dlc_no_prototech(self):

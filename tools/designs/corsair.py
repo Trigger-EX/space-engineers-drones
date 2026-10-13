@@ -29,7 +29,7 @@ import sebp_multi as MU
 from sebp_inv import Item
 
 NAME = 'Corsair'
-SCRIPTS = ['CorsairHelmAI.cs', 'CorsairStaffAI.cs', 'CradleBayAI.cs']
+SCRIPTS = ['ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs']
 SCRIPT_MAP = {}                   # test models (designs/cradle_test.py) swap the Helm / Staff program files here
 TAG = '[SH] '                     # host-ship prefix (control_arch 3.6 / grids_bays 6.3): Helm / Staff collect blocks by prefix AND grid
 
@@ -37,28 +37,15 @@ HELM_DATA = """[Ship]
 Tag=SH
 Class=CORVETTE
 
-[Battery 1]
-Tag=B1
-Class=RAIL
-Role=PRIMARY_CANDIDATE
-
-[Battery 2]
-Tag=B2
-Class=SHELL
-Role=SECONDARY
-
-[Battery 3]
-Tag=B3
-Class=BALLISTIC
-Role=SECONDARY
-
 [Link]
 Ship Tag=SH
 Block Prefix=[SH]
 
-[Cockpit]
-Helm Surface=0
-Staff Surface=1
+[Manual]
+HUD Surface=0
+
+[Battery]
+Standoff By Weapons=true
 """
 
 STAFF_DATA = """[Ship]
@@ -68,12 +55,12 @@ Class=CORVETTE
 [Staff]
 Ship Tag=SH
 Block Prefix=[SH]
+Cockpit Surface=1
+Helm HUD Surface=0
+Wing Surface=2
 
 [Wing]
 Types=HORNET,WASP,WATCHER,HARRIER,LANCER,AEGIS
-
-[Cockpit]
-Staff Surface=1
 """
 
 # the bay manager (scripts/CradleBayAI.cs) is its own PB, as on the pods: the Staff sends it "<Tag>.S2P release n" over IGC (control_arch 4.2)
@@ -546,9 +533,9 @@ def add_systems(bp, res, env, lite):
     # ---- bridge: cockpit on the tower top; avionics in the centre corridor between the mid tanks ----
     cockpit = reg(bp.add('MyObjectBuilder_Cockpit', 'SmallBlockCockpit', (-1, 16, 41), 'Forward', 'Up', TAG + 'Cockpit [Helm Seat]', kind='cockpit'))
     pb_h = place(bp, occ, 'MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', (0, 3, 29), '[Helm] Corsair', kind='ctrl',
-                 extra=pb_extra(_script('CorsairHelmAI.cs')) if _script('CorsairHelmAI.cs') else '', custom_data=HELM_DATA)
+                 extra=pb_extra(_script('ShrikeAI.cs')) if _script('ShrikeAI.cs') else '', custom_data=HELM_DATA)
     pb_s = place(bp, occ, 'MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', (0, 3, 31), '[Staff] Corsair', kind='ctrl',
-                 extra=pb_extra(_script('CorsairStaffAI.cs')) if _script('CorsairStaffAI.cs') else '', custom_data=STAFF_DATA)
+                 extra=pb_extra(_script('StaffAI.cs')) if _script('StaffAI.cs') else '', custom_data=STAFF_DATA)
     pb_b = place_any(bp, occ, 'MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', [(0, 4, 30), (0, 5, 31), (0, 5, 30), (0, 3, 30), (0, 3, 27), (0, 3, 33)],
                      '[Bay] Corsair', kind='ctrl', extra=pb_extra(_script('CradleBayAI.cs')) if _script('CradleBayAI.cs') else '', custom_data=BAY_DATA)
     rc = place(bp, occ, 'MyObjectBuilder_RemoteControl', 'SmallBlockRemoteControl', (0, 4, 29), TAG + 'Remote Control', kind='ctrl')

@@ -44,10 +44,30 @@ def _pb(name):
     return pb_extra(t) if t else ''
 
 
-HELM_SCRIPT, GUNNERY_SCRIPT, STAFF_SCRIPT, POD_SCRIPT = 'HelmAI.cs', 'GunneryAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'
+HELM_SCRIPT, GUNNERY_SCRIPT, STAFF_SCRIPT, POD_SCRIPT = 'ShrikeAI.cs', 'GunneryAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'
 SCRIPTS = [HELM_SCRIPT, GUNNERY_SCRIPT, STAFF_SCRIPT, POD_SCRIPT]
 
 TAG = 'LEVIATHAN'
+
+# Helm Custom Data of the large ships (ShrikeAI.cs is the Helm of every ship class; these keys are the class tuning, measured in the sim: docs/design/ships)
+HELM_DATA = """
+[Link]
+Block Prefix=[SH]
+
+[Shrike]
+AI Block Search Assist=false
+Standoff Range=800
+Min Range=150
+Evasive Jinking=false
+Orbit Speed=10
+Combat Speed=40
+
+[Manual]
+HUD Surface=0
+
+[Battery]
+Standoff By Weapons=false
+"""
 # spare magazines in each of the four ammunition lockers (the conveyor network feeds the artillery / assault / rocket turrets from them; the railguns are not fed)
 LOCKER_RESERVE = [Item.ammo('LargeRailgunAmmo', 20), Item.ammo('LargeCalibreAmmo', 100), Item.ammo('MediumCalibreAmmo', 150),
                   Item.ammo('NATO_25x184mm', 300), Item.ammo('Missile200mm', 60)]
@@ -409,11 +429,10 @@ def _bridge(S, full):
     """bridge level (interior y 13, x -3..3, z 53..61): two seats, Remote Control, Helm + Gunnery + Staff PB, timer, event controllers"""
     bp = S.bp
     cd = f'[Ship]\nTag={TAG}\n'
-    helm_cd = (cd + '\n[Battery 1]\nTag=B1\nClass=RAIL\nRole=PRIMARY_CANDIDATE\nMin Range=200\nMax Range=0\nWindow Scale=1.0\nSalvo=1\n'
-               '\n[Link]\nBlock Prefix=[SH]\n\n[Cockpit]\nHelm Surface=0\nStaff Surface=1\nGunnery Surface=2\n')
+    helm_cd = cd + HELM_DATA
     gun_cd = (cd + '\n[Turrets]\nGroups=Artillery,Assault,Rockets,PD\nPD Group=PD\nMain Group=Main Turrets\n'
               '\n[Ammo]\nLockers=[SH] Ammo Locker\nFeed=conveyor\n')
-    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n'
+    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\nCockpit Surface=1\nHelm HUD Surface=0\nWing Surface=2\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n'
                 '\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB 1\n\n[Hangar 2]\nGroup=[Hangar 2]\nPod=[Pod] Pod PB 2\n')
     S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 13, 53), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.gunner = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (2, 13, 54), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
@@ -424,7 +443,7 @@ def _bridge(S, full):
                       custom_data=gun_cd, extra=_pb(GUNNERY_SCRIPT))
     S.staff = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (2, 13, 59), 'Backward', 'Up', '[Staff][SH] Leviathan Staff', toward='Down', kind='ctrl',
                     custom_data=staff_cd, extra=_pb(STAFF_SCRIPT))
-    S.timer = S.add('timer', 'MyObjectBuilder_TimerBlock', 'TimerBlockLarge', (0, 13, 57), 'Forward', 'Up', nm('Timer D'), toward='Down', kind='timer', settings={'Delay': 5000, 'Silent': True})
+    S.timer = S.add('timer', 'MyObjectBuilder_TimerBlock', 'TimerBlockLarge', (0, 13, 57), 'Forward', 'Up', nm('Timer D (deadman)'), toward='Down', kind='timer', settings={'Delay': 5000, 'Silent': True})
     S.ec_cockpit = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (-2, 13, 61), 'Forward', 'Up', nm('EC Cockpit'), toward='Down', kind='timer')
     S.ec_power = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (0, 13, 61), 'Forward', 'Up', nm('EC Power'), toward='Down', kind='timer')
     S.ec_core = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (2, 13, 61), 'Forward', 'Up', nm('EC Core'), toward='Down', kind='timer')
@@ -699,7 +718,7 @@ def _dock_upright(bp, pod, conns, nose, lock=False):
     raise AssertionError('no upright docking pose: ' + '; '.join(errs))
 
 
-def leviathan(lite=False, with_pods=True, lock=False, name=None):
+def leviathan(lite=False, with_pods=True, lock=False, name=None, wing=0):
     full = not lite
     name = name or ('Leviathan Lite' if lite else 'Leviathan')
     bp = Blueprint(name, 'Large', seed=seed_for(name))
@@ -724,6 +743,7 @@ def leviathan(lite=False, with_pods=True, lock=False, name=None):
             pod = pods.cradle_pod(4, lite=lite, name=f'{name} {pname} Cradle Pod', tag=tag, ship_tag=TAG, first_bay=1 if s < 0 else 5)
             pod.display = f'Leviathan {pname} Cradle Pod'
             pod.pod.pb['name'] = f'[Pod] Pod PB {1 if s < 0 else 2}'
+            if wing: pods.load_hornets(pod, wing)         # test ship 'Leviathan Wing Test' only
             _dock_upright(bp, pod, S.conns[s], nose, lock)
             check_hangar(bp, pod, s)
             bp.pods_.append(pod)

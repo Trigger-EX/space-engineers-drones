@@ -32,7 +32,7 @@ def cradle_pod_test(lite=False):
 
 def cradle_test(lite=False):
     old = dict(corsair.SCRIPT_MAP)
-    corsair.SCRIPT_MAP.update({'CorsairHelmAI.cs': 'ShrikeAI.cs', 'CorsairStaffAI.cs': 'StaffAI.cs'})
+    corsair.SCRIPT_MAP.update({'ShrikeAI.cs': 'ShrikeAI.cs', 'StaffAI.cs': 'StaffAI.cs'})
     try:
         bp = corsair.corsair_wing(True)
     finally:

@@ -23,7 +23,10 @@
 //     'release all' with several pods is cut into one 'release a-b' per pod, 20 s apart ("Pod Gap"). If [Hangar n] Group= names doors, release opens them first (waits "Door Open Wait"
 //     for Status Open) and closes them "Door Close After" s after the last bay left; 'doors open|close' does it by hand. 'recall' = 'wing rtb', after "Recall Satellite After" s
 //     'wing satellite', and the bays cancel their pending releases and switch the cradle merge blocks on (docking back is phase 2).
-//   * COMMANDS (PB argument, toolbar): wing <cmd>, fleet <cmd>, release / hold / unhold / recall / doors, reload, status; every other word is forwarded to the Helm over IGC (.S2H): hunt, guard, rtb, manual, auto, assist hud, lock, next, unlock, ...
+//   * LAUNCH (M6): 'launch [n|a-b|all] [force]' = the Helm goes IDLE (overrides off, dampeners on: the ship comes to rest, which the bays' gates need - an AUTO Helm that hunts or sweeps
+//     for targets keeps the ship turning and accelerating, so a plain 'release' waits for ever), then 'release', and when those bays have left (or after 90 s) the Helm gets its old
+//     mode back (guard / hunt / rtb; nothing is sent when a pilot flies or the mode changed meanwhile).
+//   * COMMANDS (PB argument, toolbar): wing <cmd>, fleet <cmd>, release / launch / hold / unhold / recall / doors, reload, status; every other word is forwarded to the Helm over IGC (.S2H): hunt, guard, rtb, manual, auto, assist hud, lock, next, unlock, ...
 //     Run with NO argument: menu, each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (cockpit-toolbar fallback, K3).
 //   * DISPLAYS: the PB's own screen, the cockpit surface "Cockpit Surface" (default 1, -1 off) and any LCD named "...Staff Display...": link state, mode, seat,
 //     target, power, trips; "Helm HUD Surface" (default 0) of the cockpit gets the HELM LOST text while the Helm is silent.
@@ -35,9 +38,9 @@
 //   every 10 ticks, so it lands up to 0.17 s after the 1.5 s).
 // =====================================================================
 
-const string VER = "1.2";
+const string VER = "1.3";
 MyIni _ini = new MyIni();
-string Ship = "SHIP", BlkPre = "", WingName = "wing display", WingOrder = "-", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,recall,doors open,doors close", DispName = "staff display";
+string Ship = "SHIP", BlkPre = "", WingName = "wing display", WingOrder = "-", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,launch,recall,doors open,doors close", DispName = "staff display";
 string[] Types = { "HORNET" };
 double Trip = 1.5, MenuWait = 2, PodGap = 20, DoorWait = 15, DoorClose = 10, RecallWait = 12; bool Watch = true; int CockSurf = 1, HudSurf = 0, WingSurf = 2, _page = 1;
 
@@ -338,6 +341,7 @@ void Command(string a)
         case "page": _page = rest == "2" ? 2 : rest == "1" ? 1 : 3 - _page; _note = "page " + _page; break;
         case "fleet": FleetSendCmd(rest); _note = "fleet " + rest; break;
         case "release": _note = "release " + rest; Release(rest); break;
+        case "launch": Launch(rest); break;
         case "hold": case "unhold": Bays(c); break;
         case "recall": Bays("recall"); Wing("rtb"); _recallAt = _t + RecallWait; _note = "recall: wing rtb, satellite in " + RecallWait.ToString("0") + " s, bays cancelled"; break;
         case "doors": Doors(rest); break;
@@ -370,6 +374,18 @@ void Doors(string a)
     if (p[0] != "open" && p[0] != "close") { _note = "doors open|close"; return; }
     foreach (var d in _doors) { if (open) d.OpenDoor(); else d.CloseDoor(); }
     _doorsAuto = false; _note = "doors " + p[0] + " (" + _doors.Count + ")";
+}
+
+// launch: park the Helm (IDLE) while the bays let go, then give it its mode back
+string _lchBack = ""; double _lchT; List<int> _lchSet = new List<int>(); bool _lchOn;
+void Launch(string rest)
+{
+    if (rest == "") rest = "all";
+    string[] p = rest.Split(' ')[0].Split('-'); int a, b = -1; _lchSet.Clear();
+    foreach (var k in _bay.Keys) if (p[0] == "all" || (int.TryParse(p[0], out a) && k >= a && k <= (p.Length > 1 && int.TryParse(p[1], out b) ? b : a))) _lchSet.Add(k);
+    _lchBack = _md == 1 || _md == 2 || _md == 4 ? ModeNames[_md].ToLowerInvariant() : "";
+    if (_lchBack != "") Fwd("idle");
+    Release(rest); _lchT = _t; _lchOn = true; _note = "launch " + rest + (_lchBack != "" ? ": Helm idle until the bays have let go" : "");
 }
 
 void Release(string rest)
@@ -423,6 +439,12 @@ void BayStep()
             if (_rqN >= 6) { _rqNote = _rq[0] + ": NO BAY ANSWERED after 6 tries (pod PB running? C3/C4: IGC across the connector) - hand launch: its Timer R(n) / cockpit slot"; _rq.Clear(); }
             else SendBays();
         }
+    }
+    if (_lchOn)
+    {
+        bool left = _t - _lchT > 3 && _pendRel == "" && _rq.Count == 0;
+        foreach (var n in _lchSet) { BayRec r; if (left && _bay.TryGetValue(n, out r) && _t - r.Seen < 6 && r.St != "EMPTY" && r.St != "COOLDOWN" && r.St != "FAULT") left = false; }
+        if (left || _t - _lchT > 90) { _lchOn = false; if (_lchBack != "" && _md == 0) Fwd(_lchBack); _rqNote = "launch over: Helm " + (_lchBack != "" && _md == 0 ? _lchBack : "unchanged"); }
     }
     if (_pendRel != "" && (DoorsOpen() || _t - _pendT > DoorWait))
     {

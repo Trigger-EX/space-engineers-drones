@@ -9,8 +9,9 @@
    defs_stats.json, the written XML (well formed, no <DLC>, no <IsStatic>, block count, unique block ids and names, Program present for
    scripted ships) and a reload of the written file through sebp.load_sbc (every CubeGrid, projected ones included, must validate),
    plus cross-checks (unique folder names and blueprint ids),
-4. writes out/dist/MODELS.md and the zips  Drones_v<VERSION>_Full / Drones_v<VERSION>_Lite / Printers_v<VERSION>_Full / Printers_v<VERSION>_Lite /
-   SpaceEngineers_Drones_v<VERSION>_All  (Blueprints/, Scripts/, README.md).  README text comes from packages/*.md and *.tmpl.
+4. writes out/dist/MODELS.md and the zips  Drones_v<VERSION>_Full / Drones_v<VERSION>_Lite / Warships_v<VERSION>_Full / Warships_v<VERSION>_Lite /
+   Printers_v<VERSION>_Full / Printers_v<VERSION>_Lite / SpaceEngineers_Drones_v<VERSION>_All  (Blueprints/, Scripts/, README.md).  README text comes from
+   packages/*.md and *.tmpl.  Model kinds: drone, ship (the warships and the Cradle Pod: designs.SHIP_MODULES), printer, test (never packaged).
 
 Exit code 1 if any model fails or any check fails.  The printers dominate the run time (bay solver), so models are built in parallel
 (fork pool; --jobs, default = CPU count).
@@ -27,7 +28,7 @@ import sebp                                      # noqa: E402
 import _common as C                              # noqa: E402
 from minify_cs import minify                     # noqa: E402  (PB limit: 100,000 characters)
 
-VERSION = '2.6'
+VERSION = '2.7'
 PKG_DIR = os.path.join(ROOT, 'packages')
 SCRIPTS_DIR = os.path.join(ROOT, 'scripts')
 AXES = ('Forward', 'Backward', 'Up', 'Down', 'Left', 'Right')
@@ -80,7 +81,7 @@ COMMAND_DOC = {
 }
 HIVE_DOC = {'stop': 'stop printing, all welders off'}
 PAL_ALL = dict(C.PAL, welder=(70, 190, 90), proj=(150, 90, 40), cargo=(120, 100, 70))
-CPU_HEAVY_FIRST = {'printer': 0, 'drone': 1, 'test': 1}
+CPU_HEAVY_FIRST = {'printer': 0, 'ship': 0, 'drone': 1, 'test': 1}
 
 # ---------------------------------------------------------------------------------------------
 # build + validate one model (runs in a pool worker)
@@ -171,7 +172,7 @@ def build_one(task):
             scripts=scripts_in(xml), merges=sum(1 for b in bp.blocks if b['kind'] == 'merge'), size_kb=len(xml) // 1024,
             bays=len(bays) if bays else 0, welders=sum(len(b['welders']) for b in bays) if bays else 0,
             has_thumb=os.path.exists(os.path.join(folder, 'thumb.png')))
-        if kind == 'drone' and row['merges']:
+        if kind in ('drone', 'ship') and row['merges']:
             try:
                 for b in bp.blocks:
                     if b['kind'] == 'merge': row['dock'] = C.check_docking(bp, b)
@@ -207,7 +208,7 @@ def models_md(rows, failed):
            '`force_n` of ion thrusters per direction, no gravity or planet effects). Accel = thrust / mass in m/s2 along F(orward) B(ack) '
            'U(p) D(own) L(eft) R(ight) of the ship; Gnat-class ships thrust on F/B only by design, a Static Nest has no thrusters. '
            'PCU = sum of block PCU. Cost = ingots needed (Iron, Nickel, Cobalt, Silicon, Gold, Platinum). No ship uses DLC blocks (asserted).', '']
-    for kind, title in (('drone', 'Drones'), ('printer', 'Printers')):
+    for kind, title in (('drone', 'Drones'), ('ship', 'Warships and pods'), ('printer', 'Printers')):
         rs = [r for r in rows if r['kind'] == kind and r['ok']]
         if not rs: continue
         out += [f'## {title}', '']
@@ -275,10 +276,10 @@ def read_pkg(name):
     return open(os.path.join(PKG_DIR, name), encoding='utf-8').read()
 
 def scoped(name, kinds, number=False):
-    """lines of packages/<name> whose [scope] tag fits `kinds` (set of 'drone'/'printer'); optionally renumbered"""
+    """lines of packages/<name> whose [scope] tag fits `kinds` (set of 'drone'/'ship'/'printer'); optionally renumbered"""
     out, n = [], 0
     for line in read_pkg(name).splitlines():
-        m = re.match(r'^(?:\d+\.|-)\s+\[(drone|printer|both)\]\s+(.*)$', line)
+        m = re.match(r'^(?:\d+\.|-)\s+\[(drone|printer|ship|both)\]\s+(.*)$', line)
         if not m: continue
         scope, text = m.groups()
         if scope != 'both' and scope not in kinds: continue
@@ -338,8 +339,12 @@ PACKAGES = [   # (zip base name, kinds, variants, template, intro)
      'Drone printers in their **Full** design. Each projector holds the **Full** drone; Full printers also carry two component-stock cargo containers.'),
     ('Printers_v%s_Lite' % VERSION, ('printer',), (True,), 'README_Printers.md.tmpl',
      'Drone printers in their **Lite** design. Each projector holds the **Lite** drone; no cargo containers.'),
-    ('SpaceEngineers_Drones_v%s_All' % VERSION, ('drone', 'printer'), (False, True), 'README_All.md.tmpl',
-     'Every drone and every printer, Full and Lite, in one zip.'),
+    ('Warships_v%s_Full' % VERSION, ('ship',), (False,), 'README_Warships.md.tmpl',
+     'The warships Shrike, Corsair, Warden and Leviathan in their **Full** design, with the Cradle Pod. Paste-ready scripts for the Helm, Staff and bay Programmable Blocks are in Scripts/.'),
+    ('Warships_v%s_Lite' % VERSION, ('ship',), (True,), 'README_Warships.md.tmpl',
+     'The warships Shrike, Corsair, Warden and Leviathan in their **Lite** design (only block shapes seen in a game-written blueprint: no turrets, sensors or decoys), with the Cradle Pod.'),
+    ('SpaceEngineers_Drones_v%s_All' % VERSION, ('drone', 'ship', 'printer'), (False, True), 'README_All.md.tmpl',
+     'Every drone, every warship and every printer, Full and Lite, in one zip.'),
 ]
 
 def render_readme(tmpl, intro, variant, rows, kinds):

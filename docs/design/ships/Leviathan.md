@@ -127,7 +127,7 @@ the pod PBs `[Pod] Pod PB 1` and `[Pod] Pod PB 2`; nothing in a pod carries `[SH
 | stores | 4 x `LargeBlockLargeContainer`: spare 20 railgun slugs, 100 artillery, 150 assault shells, 300 gatling boxes, 60 rockets (Full) each | `[SH] Ammo Locker 1..4` | compartments A, B |
 | network | 271 x `LargeBlockConveyor` | `[SH] Junction 1..271` | section 8 |
 | hangars | 16 x `AirtightHangarDoor`, 4 x `Connector` | `[SH] Hangar P/S Door 1..8`, `[SH] Hangar P/S Connector A/B` | |x| = 11, y 1..3, z 41..48; |x| = 6, y 2, z 42 / 47 |
-| timers / events | `TimerBlockLarge`, 3 x `EventControllerLarge` | `[SH] Timer D` (5 s, silent; toolbar: groups Thrusters and Weapons Off), `[SH] EC Cockpit`, `[SH] EC Power`, `[SH] EC Core` (integrity of the 9 reactors, threshold 0.4, inverted, toolbar: Run Staff) | bridge |
+| timers / events | `TimerBlockLarge`, 3 x `EventControllerLarge` | `[SH] Timer D (deadman)` (5 s, silent; toolbar: groups Thrusters and Weapons Off), `[SH] EC Cockpit`, `[SH] EC Power`, `[SH] EC Core` (integrity of the 9 reactors, threshold 0.4, inverted, toolbar: Run Staff) | bridge |
 | sensing | 5 x `LargeCameraBlock`, `LargeBlockCompactRadioAntenna` (20 km), 2 x `LargeBlockSensor` (Full) | `[SH] Camera Front/Rear/Port/Starboard/Belly`, `[SH] Antenna`, `[SH] Sensor Lane P/S` | bow, stern face, flanks, belly; antenna boom behind the bridge; sensors under the lanes |
 | AI (Full) | `LargeOffensiveCombat`, `LargeFlightMovement` | `[SH] AI Offensive [AI]`, `[SH] AI Flight [AI]` | bridge |
 

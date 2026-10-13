@@ -258,7 +258,7 @@ Every ship block is named `[SH] ...`; the PBs `[Helm][SH] Warden Helm` and `[Sta
 | stores | 2 x `LargeBlockLargeContainer` with spare 10 slugs, 20 artillery, 30 assault shells, 100 gatling boxes each | `[SH] Ammo Locker P/S` | fore compartment |
 | network | 101 x `LargeBlockConveyor` | `[SH] Junction 1..101` | section 7 |
 | hangar | 8 x `AirtightHangarDoor`, 2 x `Connector` | `[SH] Hangar Door 1..8`, `[SH] Hangar Connector A/B` | y = 0, z 17..24; (0, 5, 18), (0, 5, 23) |
-| timers / events | `TimerBlockLarge`, 3 x `EventControllerLarge` | `[SH] Timer D` (5 s, silent; toolbar: groups Thrusters and Weapons Off), `[SH] EC Cockpit`, `[SH] EC Power`, `[SH] EC Core` (integrity of the 6 reactors, threshold 0.4, inverted, toolbar: Run Staff) | bridge |
+| timers / events | `TimerBlockLarge`, 3 x `EventControllerLarge` | `[SH] Timer D (deadman)` (5 s, silent; toolbar: groups Thrusters and Weapons Off), `[SH] EC Cockpit`, `[SH] EC Power`, `[SH] EC Core` (integrity of the 6 reactors, threshold 0.4, inverted, toolbar: Run Staff) | bridge |
 | sensing | 5 x `LargeCameraBlock`, compact antenna (10 km), 2 x `LargeBlockSensor` (Full) | `[SH] Camera Front/Rear/Port/Starboard/Belly`, `[SH] Antenna`, `[SH] Sensor Lane P/S` | conn platform, belly, keel |
 | AI (Full) | `LargeOffensiveCombat`, `LargeFlightMovement` | `[SH] AI Offensive [AI]`, `[SH] AI Flight [AI]` | bridge |
 

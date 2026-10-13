@@ -136,6 +136,7 @@ namespace SeSim.Run
             if (a == null || b == null) return null;
             var sc = Build(kind, a, b);
             if (sc.Name != name) sc.Name = name;
+            sc.BlueprintCustomData = sc.RigidSubgrids = kind == "ship";      // M6: warship scenarios start with the Custom Data the blueprint carries
             return sc;
         }
 
