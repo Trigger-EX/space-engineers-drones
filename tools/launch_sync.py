@@ -15,6 +15,16 @@ REQUIRED = ["HornetDroneAI", "HarrierAI"]
 EXCLUDE = ["BasiliskAI"]        # no merge block on this ship and no room: the block is deliberately NOT carried (never added, never required)
 BEGIN, END = "// >>> LAUNCH", "// <<< LAUNCH <<<"
 
+def unlisted():
+    """Scripts that carry this block's marker but are not in SCRIPTS (or are on EXCLUDE): a new script would otherwise silently skip the sync."""
+    d = os.path.join(ROOT, "scripts"); skip = globals().get("EXCLUDE", [])
+    out = []
+    for f in sorted(os.listdir(d)):
+        if f.endswith(".cs") and (f[:-3] not in SCRIPTS or f[:-3] in skip):
+            with open(os.path.join(d, f), encoding="utf-8") as h:
+                if BEGIN in h.read(): out.append(f[:-3])
+    return out
+
 def block():
     with open(os.path.join(ROOT, "tools", "launch_block.cs"), encoding="utf-8", newline="") as f:
         return f.read().replace("\r\n", "\n").rstrip("\n") + "\n"
@@ -26,6 +36,7 @@ def main():
         i = sys.argv.index("--add")
         if i + 1 < len(sys.argv): add = [x for x in sys.argv[i + 1].split(",") if x]
     b = block(); bad = 0
+    for n in unlisted(): print("UNLISTED ", n, "carries the block but is not in SCRIPTS (add it, or remove the block)"); bad += 1
     for n in SCRIPTS:
         p = os.path.join(ROOT, "scripts", n + ".cs")
         if not os.path.exists(p): print("MISSING  ", n); continue

@@ -12,6 +12,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI"]
 BEGIN, END = "// >>> BREACH + SEEKER", "// <<< BREACH + SEEKER <<<"
 
+def unlisted():
+    """Scripts that carry this block's marker but are not in SCRIPTS (or are on EXCLUDE): a new script would otherwise silently skip the sync."""
+    d = os.path.join(ROOT, "scripts"); skip = globals().get("EXCLUDE", [])
+    out = []
+    for f in sorted(os.listdir(d)):
+        if f.endswith(".cs") and (f[:-3] not in SCRIPTS or f[:-3] in skip):
+            with open(os.path.join(d, f), encoding="utf-8") as h:
+                if BEGIN in h.read(): out.append(f[:-3])
+    return out
+
 # (anchor text, replacement text). The replacement contains the anchor's meaning plus the hook; applied only when the
 # replacement is not present yet.
 HOOKS = [
@@ -85,6 +95,7 @@ def wire(t, name):
 def main():
     apply_ = "--apply" in sys.argv
     b = block(); bad = 0
+    for n in unlisted(): print("UNLISTED ", n, "carries the block but is not in SCRIPTS (add it, or remove the block)"); bad += 1
     for n in SCRIPTS:
         p = os.path.join(ROOT, "scripts", n + ".cs")
         with open(p, encoding="utf-8", newline="") as f: raw = f.read()
