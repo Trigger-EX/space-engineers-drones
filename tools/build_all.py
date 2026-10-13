@@ -292,6 +292,9 @@ def model_docs(kind, model):
             d = getattr(_MODS.get(m), 'DOCS', {}) if _MODS.get(m) else {}
             if model in d: return d[model]
         return ''
+    for m in designs.DRONE_MODULES:                                   # warship modules bring their own DOCS
+        d = getattr(_MODS.get(m), 'DOCS', {}) if _MODS.get(m) else {}
+        if model in d: return d[model]
     return DRONE_DOCS.get(model, '')
 
 def model_sections(rows):
