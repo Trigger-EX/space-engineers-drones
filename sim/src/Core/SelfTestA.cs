@@ -844,9 +844,11 @@ namespace SeSim.Core
                 var sw2 = Stopwatch.StartNew();
                 var bl = GridFactory.Spawn(wx, data, 1, 0, Place(Vector3D.Zero), null);
                 totalMs += sw2.Elapsed.TotalMilliseconds;
-                bool ok = bl.Count == data.Grids.Count && bl[0].Mass > 0 && bl[0].Blocks.Count == data.Grids[0].Blocks.Count;
+                // M0 merge fuse: grids whose merge blocks touch (Corsair Wing) spawn as ONE body, so bodies <= grids; the block total must match
+                int gb = 0, bb = 0; foreach (var g in data.Grids) gb += g.Blocks.Count; foreach (var bo in bl) bb += bo.Blocks.Count;
+                bool ok = bl.Count >= 1 && bl.Count <= data.Grids.Count && bl[0].Mass > 0 && gb == bb;
                 // cells: every block occupies its cells
-                foreach (var blk in bl[0].Blocks) { if (bl[0].BlockAtCell(blk.Min) != blk || bl[0].BlockAtCell(blk.Max) != blk) { ok = false; break; } }
+                foreach (var bo in bl) { foreach (var blk in bo.Blocks) { if (bo.BlockAtCell(blk.Min) != blk || bo.BlockAtCell(blk.Max) != blk) { ok = false; break; } } }
                 if (!ok) Check(false, "blueprint '" + name + "' spawns consistently");
                 count++;
             }
