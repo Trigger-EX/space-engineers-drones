@@ -151,16 +151,27 @@ namespace SeSim.Combat
             return Range;
         }
 
-        /// <summary>A functional, enabled AI Offensive / Defensive block on the turret's grid (refreshed with the target).</summary>
+        /// <summary>A functional, enabled AI Offensive / Defensive block on the turret's grid (refreshed with the target).
+        /// The AI blocks are listed once per Body.Version (a big warship has ~14,000 blocks and ~80 turrets).</summary>
         bool Extended(World w, Body body)
         {
             if (IsController || !w.Settings.TurretAiBlockExtendsRange) return false;
-            var bl = body.Blocks;
-            for (int i = 0; i < bl.Count; i++)
+            var ai = body.AiCombatBlocks;
+            if (body.AiCombatVersion != body.Version)
             {
-                var g = bl[i].Api as SimGenericFunctional;
-                if (g == null || bl[i].Destroyed || !bl[i].IsFunctional) continue;
-                if ((g.AiKind == "OffensiveCombat" || g.AiKind == "DefensiveCombat") && g.EnabledValue) return true;
+                body.AiCombatVersion = body.Version;
+                ai.Clear();
+                var bl = body.Blocks;
+                for (int i = 0; i < bl.Count; i++)
+                {
+                    var g = bl[i].Api as SimGenericFunctional;
+                    if (g != null && (g.AiKind == "OffensiveCombat" || g.AiKind == "DefensiveCombat")) ai.Add(bl[i]);
+                }
+            }
+            for (int i = 0; i < ai.Count; i++)
+            {
+                var b = ai[i];
+                if (!b.Destroyed && b.IsFunctional && ((SimGenericFunctional)b.Api).EnabledValue) return true;
             }
             return false;
         }

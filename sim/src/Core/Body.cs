@@ -36,6 +36,8 @@ namespace SeSim.Core
         public int Version;                    // ++ whenever the block set changes (API caches rebuild on change)
         public int DecoyVersion = -1;          // Version at which DecoyBlocks was built (SeSim.Combat.Decoys cache)
         public readonly List<BlockInst> DecoyBlocks = new List<BlockInst>();
+        public int AiCombatVersion = -1;       // Version at which AiCombatBlocks was built (TurretUnit.Extended cache)
+        public readonly List<BlockInst> AiCombatBlocks = new List<BlockInst>();   // AI Offensive / Defensive blocks
         public Vector3I CellMin, CellMax;      // occupancy bounds
         public int[] Cells;                    // dense occupancy: cell -> block Index, -1 empty; see CellIndex()
         public Vector3I CellsOrigin;           // min cell of the Cells array box

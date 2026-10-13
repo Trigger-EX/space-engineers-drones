@@ -9,24 +9,27 @@
 #   3. a stability check about every 30 minutes: the 336 fights of results/recheck run again and compared fight by fight
 #      (the sim is deterministic, so any difference = the PC computed something wrong), plus the kernel's hardware-error count.
 #   results/overnight/summary.txt says STABLE or UNSTABLE and why. The PC is kept awake while it runs.
-# If the PC crashes or reboots: start it again, it continues where it stopped (finished fights are kept).
+# If the PC crashes or reboots: start it again, it continues where it stopped (finished fights are kept). After a reboot you did
+# yourself (not a crash), start it with --manual-reboot so the interruption is not counted against stability.
+# The simulator runs at low priority (nice 10): it still takes all idle CPU, but the desktop and lock screen come first.
 # Ctrl+C stops it early (fights in progress are dropped or finished), then it still writes the summary and SE_results.zip.
 set -u
 cd "$(dirname "$0")"
 chmod +x ./*.sh 2>/dev/null
-HOURS=8; JOBS=$(nproc 2>/dev/null || echo 4); SLICE_MIN=30
+HOURS=8; JOBS=$(nproc 2>/dev/null || echo 4); SLICE_MIN=30; MANUAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --hours) HOURS="$2"; shift 2;;
     --jobs) JOBS="$2"; shift 2;;
     --slice-min) SLICE_MIN="$2"; shift 2;;
-    *) echo "unknown option $1 (use --hours H, --jobs N)"; exit 1;;
+    --manual-reboot) MANUAL=1; shift;;
+    *) echo "unknown option $1 (use --hours H, --jobs N, --manual-reboot)"; exit 1;;
   esac
 done
 # keep the PC from sleeping or suspending while this runs
 if [ -z "${SE_INHIBITED:-}" ] && command -v systemd-inhibit >/dev/null 2>&1 && systemd-inhibit --what=idle:sleep true >/dev/null 2>&1; then
   export SE_INHIBITED=1
-  exec systemd-inhibit --what=idle:sleep --who="SE overnight" --why="simulation stress test" "$0" --hours "$HOURS" --jobs "$JOBS" --slice-min "$SLICE_MIN"
+  exec systemd-inhibit --what=idle:sleep --who="SE overnight" --why="simulation stress test" "$0" --hours "$HOURS" --jobs "$JOBS" --slice-min "$SLICE_MIN" $([ $MANUAL = 1 ] && echo --manual-reboot)
 fi
 . ./ensure_mono.sh
 
@@ -34,6 +37,7 @@ PLAN="${SE_PLAN:-plans/enemy.plan}"                                     # SE_* o
 SEL=(--enemies enemies --kind enemy --enemy-counts "${SE_COUNTS:-1,2,3,4,6,8,12,16,24}")
 CHECK_SEEDS="${SE_CHECK_SEEDS:-3}"
 EXE=out/sim/SimHost.exe
+MONO="nice -n 10 mono"
 OV=results/overnight; LOG=$OV/status.log; mkdir -p "$OV"
 START=$(date +%s); END=$(( START + $(awk -v h="$HOURS" 'BEGIN { printf "%d", h * 3600 }') ))
 say() { echo "[$(date '+%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; sync "$LOG" 2>/dev/null; }
@@ -48,7 +52,10 @@ if [ ! -f "$OV/state" ]; then
   done
   echo "first start $(date)" > "$OV/state"
 else
-  if grep -q "^running" "$OV/state"; then
+  if grep -q "^running" "$OV/state" && [ $MANUAL = 1 ]; then
+    say "NOTE: the previous overnight run was stopped by a reboot you did yourself (--manual-reboot): not counted"
+    sed -i 's/^running since/interrupted (manual reboot), was running since/' "$OV/state"
+  elif grep -q "^running" "$OV/state"; then
     say "NOTE: the previous overnight run did not finish (PC crash/reset, or the terminal was closed)."
     journalctl -k -b 0 --no-pager 2>/dev/null | grep -a -i -E "BERT|Hardware Error" | head -n 5 | while IFS= read -r l; do say "  this boot: $l"; done
     echo "pc-reset" >> "$OV/events"
@@ -75,16 +82,16 @@ mce_count() { journalctl -k --since "@$START" --no-pager 2>/dev/null | grep -a -
 # run one experiment; a crash of a resumable one restarts it (like run_plan.sh). $1 = name, $2 = SimHost arguments; sets RC
 run_exp() {
   local name="$1" args="$2" out="results/$1" rc tries=0 mark=0 why
-  mkdir -p "$out"; echo "mono $EXE $args" > "$out/command.txt"
+  mkdir -p "$out"; echo "$MONO $EXE $args" > "$out/command.txt"
   say "start $name"
-  eval "mono $EXE $args" >> "$out/log.txt" 2>&1; rc=$?
+  eval "$MONO $EXE $args" >> "$out/log.txt" 2>&1; rc=$?
   while [ $STOP = 0 ] && [ $rc -ge 128 ] && [ $tries -lt 50 ] && echo "$args" | grep -q -- "--resume"; do
     tries=$((tries + 1))
     why=$(tail -n +$((mark + 1)) "$out/log.txt" | grep -a -m 1 -E "^Got a SIG|Assertion at|Out of memory|could not allocate")
     say "CRASH in $name (rc=$rc): ${why:-no reason printed}; restart $tries"
     echo "crash $name rc=$rc ${why:-}" >> "$OV/events"
     echo "=== restart $tries after rc=$rc ===" >> "$out/log.txt"; mark=$(wc -l < "$out/log.txt")
-    eval "mono $EXE $args" >> "$out/log.txt" 2>&1; rc=$?
+    eval "$MONO $EXE $args" >> "$out/log.txt" 2>&1; rc=$?
   done
   if [ $STOP = 1 ]; then
     say "stopped by Ctrl+C during $name"
@@ -102,7 +109,7 @@ check() {
   local c=$OV/check rc res
   [ $STOP = 1 ] && return
   rm -rf "$c"
-  mono $EXE run "${SEL[@]}" --seeds "$CHECK_SEEDS" --jobs "$JOBS" --out "$c" > "$OV/check.log" 2>&1; rc=$?
+  $MONO $EXE run "${SEL[@]}" --seeds "$CHECK_SEEDS" --jobs "$JOBS" --out "$c" > "$OV/check.log" 2>&1; rc=$?
   if [ ! -f "$REF" ]; then
     if [ $rc -eq 0 ]; then cp "$c/runs.jsonl" "$REF"; say "check: no results/recheck found, this pass is the reference from now on"; fi
     return
@@ -144,7 +151,7 @@ while [ $STOP = 0 ] && [ "$(left)" -gt 300 ]; do
   mkdir -p "$MORE"; mark=$(cnt "" "$MORE/log.txt")
   # stdin is a pipe: Enter at the end of the slice = SimHost's own "finish the fights in progress, save, stop"
   rm -f "$OV/stdin"; mkfifo "$OV/stdin"
-  mono $EXE run --endless "${SEL[@]}" --seed-start 100 --jobs "$JOBS" --out "$MORE" >> "$MORE/log.txt" 2>&1 < "$OV/stdin" &
+  $MONO $EXE run --endless "${SEL[@]}" --seed-start 100 --jobs "$JOBS" --out "$MORE" >> "$MORE/log.txt" 2>&1 < "$OV/stdin" &
   CHILD=$!; exec 3> "$OV/stdin"
   t_end=$(( $(date +%s) + s ))
   while [ $STOP = 0 ] && [ "$(date +%s)" -lt $t_end ] && kill -0 $CHILD 2>/dev/null; do sleep 5; done
