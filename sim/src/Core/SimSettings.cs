@@ -88,6 +88,13 @@ namespace SeSim.Core
         public double VanillaSearchIntervalS = 30;               // AI Offensive default search interval (MidgeNotes.md)
         public double VanillaFireConeDeg = 5;                    // vanilla AI fires fixed guns inside this cone
         public bool VanillaSearchOnActivate = true;              // [I] AI Offensive searches as soon as it is enabled (then every interval)
+        /// <summary>The AI blocks on SCRIPT ships never act, although the script switches them on (in-game report 2026-10-13: the blocks come
+        /// out of a blueprint with "AI Behavior" off and default settings, so a pasted Full drone's AI does nothing). Worst case for the
+        /// scripts' hybrid search; scriptless Midges are not affected.</summary>
+        public bool ScriptAiBlocksInert = false;
+        /// <summary>AI blocks act only while their "AI Behavior" switch (terminal bool "ActivateBehavior") is on; blueprints load it off,
+        /// so a script has to switch it on (the AI GATE block in the drone scripts does). False: Enabled alone is enough (old model).</summary>
+        public bool AiBehaviorNeedsSwitch = false;
         /// <summary>AI Offensive enemy search radius, metres from the grid. Data/EntityComponents.sbc SearchEnemyComponent "DefaultEnemySearch"
         /// SearchRadius = 2500 (the container of both OffensiveCombat blocks forces that component; wiki "2500 m"). Every default start
         /// distance above this (up to 3000 m in ScenarioGen) is therefore dead on arrival for an AI-only ship. Use 3500 to make every spawn acquirable

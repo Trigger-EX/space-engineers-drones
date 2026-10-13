@@ -1,4 +1,20 @@
-### v2.0 (this package)
+### v2.1 (this package): first in-game report fixes
+In-game report (2026-10-13): Full drones set to `guard` stood still; `hunt` drones waited about 20 s, then all flew off the same way
+and never saw a pirate ship 700 m away. Cause: the AI blocks paste with **AI Behavior off**, so they do nothing, but the scripts handed
+them the ship and switched their own camera search off while waiting for them. Reproduced in the simulator (AI blocks inert:
+3 Hornets vs pirate at 700 m won 0 of 40, found the pirate in 1 of 40 runs).
+- **AI GATE** (shared block in every scripted drone, `tools/ai_gate_block.cs`): the script tries to switch AI Behavior on itself
+  (the PB screen says whether it could), and never leaves the AI blocks in charge unless they visibly fly the ship: 6 s AI window,
+  then 8 s of the script's own camera search, and so on. Under fire the script searches. New `[AI Gate]` section in Custom Data.
+- Side cameras scan out to 900 m whenever there is no target (was 120 m); short close-scan rays no longer drain the nose cameras
+  below the long scan's range while under fire.
+- Hit direction: the blocks that lose integrity tell which side was hit; the nose sweep and the side cameras search that side.
+- HUNT search patrol: drones fan out (each starts its square at a different corner), keep sweeping their cameras on a leg instead of
+  looking along the flight path, hold position at listening stops, and Lite drones (no AI blocks) patrol too.
+- Simulator: `--script-ai-blocks-inert` (AI blocks never act) and `--ai-behavior-needs-switch` (AI blocks act only once a script
+  switches "ActivateBehavior" on); `GetProperties`/`GetActions` on terminal blocks.
+
+### v2.0
 - Every model exists as Full and **Lite** (Lite: only block XML shapes seen in a game-written ship, plus the merge block). Both variants build, validate and ship from one generator (`tools/build_all.py`).
 - Blueprint generator rewritten around real data: mount-point validation (checked against the Starburst ship), real masses and costs from `defs_stats.json`, `<Toolbar>` written for Sensor/Timer/Turret Controller/Event Controller (probable paste-failure fix), Custom Data stored in ModStorage (the old `<CustomData>` element was ignored by the game), unique blueprint ids, stable (crc32) seeds, no `.sbcB5`.
 - Weapon data corrected from the local game files: gatling 700 rpm, 800 m/s (was 400).

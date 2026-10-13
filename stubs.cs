@@ -467,6 +467,8 @@ namespace Sandbox.ModAPI.Ingame {
   using Sandbox.ModAPI.Interfaces;
   public interface IMyTerminalBlock : IMyCubeBlock {
     ITerminalProperty GetProperty(string id); ITerminalAction GetActionWithName(string name);
+    void GetProperties(List<ITerminalProperty> resultList, Func<ITerminalProperty, bool> collect = null);
+    void GetActions(List<ITerminalAction> resultList, Func<ITerminalAction, bool> collect = null);
     string CustomName {get;set;} string CustomData {get;set;} string DetailedInfo {get;} string CustomInfo {get;}
     bool ShowOnHUD {get;set;} bool ShowInTerminal {get;set;} bool IsSameConstructAs(IMyTerminalBlock o);
   }

@@ -55,7 +55,7 @@
 //   range <m>   force an engagement range (0 = automatic)
 // =====================================================================
 
-const string VER = "2.2-mantis";
+const string VER = "2.3-mantis";
 
 // ---------------- settings (Custom Data) ----------------
 string Tag = "MANTIS";
@@ -305,11 +305,101 @@ void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_fl
 void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
 // <<< FLEET LINK <<<
 
+// >>> AI GATE v1.0 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
+// The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
+// default, so switching them on (Enabled) may do nothing at all. In-game report 2026-10-13: Full drones in GUARD stood still and
+// HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
+// The gate:
+//  * tries to switch "AI Behavior" on (a bool terminal property whose id contains "Behavior"; the exact id is not documented);
+//  * gives the AI blocks the ship for AI Window seconds, then runs the script's own search (camera sweep + scan rays) for
+//    Script Search Window seconds, and so on. While the AI visibly flies the ship (speeds it up or turns it) it keeps it, up to
+//    Max AI Hold seconds. Under fire the script searches unless the AI is already flying.
+// Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
+// Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
+// "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
+bool AiGateOn = true, AiBehaviorSwitch = true;
+double AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
+bool _agAi = true; double _agT0 = -1, _agMoveT = -99, _agMinV = 0;
+int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
+List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
+
+void AiGateLoad()
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "AI Gate";
+    if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
+    if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
+    if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
+    if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
+    if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
+    AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
+    AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
+    ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
+    AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
+}
+
+void AiGateFind(List<IMyFunctionalBlock> ai)
+{
+    if (!AiBehaviorSwitch || ai.Count == 0) return;
+    int n = 0;
+    foreach (var b in ai)
+    {
+        _agProps.Clear(); b.GetProperties(_agProps);
+        ITerminalProperty<bool> sw = null;
+        foreach (var p in _agProps)
+        {
+            string id = p.Id.ToLowerInvariant();
+            if (!id.Contains("behavio")) continue;
+            var bp = p.As<bool>();
+            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
+        }
+        if (sw == null) continue;
+        n++;
+        if (!sw.GetValue(b)) sw.SetValue(b, true);
+    }
+    _agFound = n;
+}
+
+bool AiGate(bool want)
+{
+    if (!want || !AiGateOn) { _agT0 = -1; return want; }
+    var vs = _rc.GetShipVelocities();
+    double v = vs.LinearVelocity.Length();
+    if (_agT0 < 0) { _agT0 = _now; _agAi = !UnderFire; _agMoveT = -99; _agMinV = v; }
+    double age = _now - _agT0;
+    if (_agAi)
+    {
+        // The AI flies if it speeds the ship up again (the dampeners alone only slow it) or turns it. The first 1.5 s are
+        // ignored: the ship is still coasting and turning from the script's own control.
+        if (age < 1.5) _agMinV = v;
+        else
+        {
+            _agMinV = Math.Min(_agMinV, v);
+            if (v > _agMinV + 3 || vs.AngularVelocity.LengthSquared() > 0.0144) _agMoveT = _now;
+        }
+        bool busy = _now - _agMoveT < 4 && age < AiHoldMax;
+        if (!busy && (age >= AiWin || (UnderFire && age >= 1.5))) { _agAi = false; _agT0 = _now; }
+    }
+    else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; }
+    return _agAi;
+}
+
+string AiGateStatus()
+{
+    if (_agFound < 0) return "";
+    if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
+    return AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)\n" : "";
+}
+// <<< AI GATE <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
     LoadConfig();
-    FleetLoad(true);
+    FleetLoad(true); AiGateLoad();
     _mode = ParseMode(StartMode, Mode.IDLE);
     if (!string.IsNullOrEmpty(Storage))
     {
@@ -404,7 +494,7 @@ void Command(string a)
         case "focus": SplitFocus = false; break;
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range": double r; if (w.Length > 1 && double.TryParse(w[1], out r)) ForcedRange = Math.Max(0, r); break;
-        case "reload": LoadConfig(); FleetLoad(true); GetBlocks(); break;
+        case "reload": LoadConfig(); FleetLoad(true); AiGateLoad(); GetBlocks(); break;
     }
 }
 
@@ -1405,6 +1495,13 @@ void PollSensors()
 // so the camera scan cone covers above and below as well as the horizon.
 Vector3D SweepDir(Vector3D gravUp)
 {
+    if (_now - _hitDirT < 10)
+    {   // just hit: circle the nose cameras 15-45 deg round the side that was hit, where the shooter is
+        Vector3D a = Vector3D.Cross(_hitDir, Math.Abs(_hitDir.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); a.Normalize();
+        Vector3D b = Vector3D.Cross(_hitDir, a);
+        double ph = _now * 1.3, rr = 0.27 + 0.5 * (0.5 + 0.5 * Math.Sin(_now * 0.37));
+        return Vector3D.Normalize(_hitDir + (a * Math.Cos(ph) + b * Math.Sin(ph)) * rr);
+    }
     if (!_sweepUpSet) { _sweepUp = _rc.WorldMatrix.Up; _sweepUpSet = true; }
     Vector3D upRef = gravUp.LengthSquared() > 0.5 ? gravUp : _sweepUp;
     Vector3D h = _rc.WorldMatrix.Forward;
@@ -1423,6 +1520,10 @@ Vector3D SweepDir(Vector3D gravUp)
 //  below, beside or behind are found without the drone turning to look.
 int _omniCam = 0, _omniIdx = 0;
 bool Forwardish(IMyCameraBlock c) { return Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.9; }
+// Under fire (or on a hive alarm) the side cameras reach HardScanRange: the shooter is usually a turret or gatling at up to 800 m.
+// The forward cameras stay out of it while the long auto-scan, the AI confirm rays or a lock need them: short close-scan rays used to
+// drain them below the auto-scan's range, so a drone under fire from 700 m never cast a long ray (in-game report 2026-10-13).
+double HardScanRange = 900;
 void OmniScan()
 {
     if (!CloseScan || _cams.Count == 0) return;
@@ -1430,14 +1531,36 @@ void OmniScan()
     {
         var c = _cams[_omniCam++ % _cams.Count];
         bool hard = UnderFire || Alerted;
-        double rng = hard ? CloseScanRange * 4 : CloseScanRange;
-        if (!c.IsWorking || (Forwardish(c) && !(hard && _tgt == null && !_aiOn)) || c.AvailableScanRange < rng * 2) continue; // keep charge for tracking
+        // nothing to track: the side cameras look far too (a 120 m close scan never finds the ship that is shooting from 700 m)
+        double rng = hard || _tgt == null ? Math.Max(CloseScanRange * 4, HardScanRange) : CloseScanRange;
+        if (!c.IsWorking || (Forwardish(c) && !(hard && _tgt == null && !_aiOn && !AutoScan)) || c.AvailableScanRange < rng * 2) continue; // keep charge for tracking
         _omniIdx++;
-        double r = 40 * Math.Sqrt((_omniIdx % 89 + 0.5) / 89.0), th = _omniIdx * 2.39996323;
-        var e = c.Raycast(rng, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
+        MyDetectedEntityInfo e; Vector3D hp;
+        if (hard && _tgt == null && _now - _hitDirT < 10 && HitPoint(c, rng, out hp)) e = c.Raycast(hp);   // just hit: look where the shots came from
+        else
+        {
+            double r = 40 * Math.Sqrt((_omniIdx % 89 + 0.5) / 89.0), th = _omniIdx * 2.39996323;
+            e = c.Raycast(rng, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
+        }
         if (Valid(e)) AddContact(e, "SCAN");
         shots++;
     }
+}
+// A point rng metres out, inside 35 deg of the side that was hit (golden-angle spiral), that camera c can see; false if none of 4 tries is in its cone.
+int _hitIdx = 0;
+bool HitPoint(IMyCameraBlock c, double rng, out Vector3D pt)
+{
+    Vector3D a = Vector3D.Cross(_hitDir, Math.Abs(_hitDir.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); a.Normalize();
+    Vector3D b = Vector3D.Cross(_hitDir, a), cp = c.GetPosition();
+    for (int k = 0; k < 4; k++)
+    {
+        _hitIdx++;
+        double r = Math.Tan(0.61 * Math.Sqrt((_hitIdx % 97 + 0.5) / 97.0)), th = _hitIdx * 2.39996323;
+        Vector3D d = Vector3D.Normalize(_hitDir + (a * Math.Cos(th) + b * Math.Sin(th)) * r);
+        pt = cp + d * rng;
+        if (Vector3D.Dot(d, c.WorldMatrix.Forward) > 0.72) return true;
+    }
+    pt = Vector3D.Zero; return false;
 }
 
 // =====================================================================
@@ -1446,6 +1569,7 @@ Dictionary<long, double> _ignore = new Dictionary<long, double>();
 Dictionary<long, int> _share = new Dictionary<long, int>(), _count = new Dictionary<long, int>();
 List<Track> _live = new List<Track>();
 List<IMySlimBlock> _slims = new List<IMySlimBlock>();
+List<double> _slimHp = new List<double>(); Vector3D _hitDir; double _hitDirT = -99;
 double _integ = -1, _hitAt = -99; int _hits = 0;
 Vector3D _assist; double _assistT = -99;
 Vector3D _evade; double _evadeNext = 0; int _evadeHits = 0; Random _evRng = new Random();
@@ -1547,7 +1671,24 @@ void StepSlimScan()
 void CheckDamage()
 {
     double sum = 0; var g = Me.CubeGrid;
-    foreach (var s in _slims) if (g.CubeExists(s.Position)) sum += s.BuildIntegrity - s.CurrentDamage;
+    // which side was hit: blocks that lost integrity since the last check, as directions from the grid centre (the shooter is out that way)
+    bool cmp = _integ >= 0 && _slimHp.Count == _slims.Count;
+    if (!cmp) { _slimHp.Clear(); for (int i = 0; i < _slims.Count; i++) _slimHp.Add(0); }
+    Vector3D hd = Vector3D.Zero, gc = g.WorldVolume.Center;
+    for (int i = 0; i < _slims.Count; i++)
+    {
+        var s = _slims[i];
+        double v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0;
+        sum += v;
+        if (cmp && _slimHp[i] - v > 0.5) { Vector3D d = g.GridIntegerToWorld(s.Position) - gc; double l = d.Length(); if (l > 0.3) hd += d / l; }
+        _slimHp[i] = v;
+    }
+    if (hd.LengthSquared() > 0.01)
+    {
+        hd.Normalize();
+        Vector3D m = _now - _hitDirT < 3 ? _hitDir * 0.6 + hd * 0.4 : hd;
+        if (m.LengthSquared() > 0.01) { _hitDir = Vector3D.Normalize(m); _hitDirT = _now; }
+    }
     if (_integ >= 0 && sum < _integ - 0.5) { _hitAt = _now; _hits++; }
     _integ = sum;
 }
@@ -1719,6 +1860,7 @@ void FindAi()
 {
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
     foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
+    AiGateFind(_ai);
 }
 // While the AI blocks have the controls they also pull the trigger at whatever is in front of the nose, wingmates included
 // (found in the sim: 13,000-50,000 damage slugs into the neighbour 70 m away during the first seconds). So: switch the guns
@@ -1753,6 +1895,7 @@ bool AiStep()
     // and the confirm rays below pick it up again, which hands control straight back to the script.
     bool want = AiAssist && _ai.Count > 0 && AiModeOk() &&
         ((_tgt == null && _now - _lastTgtT > 2 && _now - _ignoreNoteT > 15) || (_tgt != null && _now - _tgt.Seen > (Vector3D.DistanceSquared(_tgt.Pos, _rc.GetPosition()) > 1400.0 * 1400.0 ? AiStaleTakeoverFar : AiStaleTakeover)));
+    want = AiGate(want);   // AI GATE: the AI blocks may do nothing (AI Behavior off): time-share with the script's own search
     if (want != _aiOn)
     {
         _aiOn = want;
@@ -1786,7 +1929,7 @@ bool AiStep()
 string AiStatus()
 {
     if (_ai.Count == 0) return OwnAlert ? "AI alarm: searching\n" : "";
-    return "AI: " + (_aiOn ? "searching" : "standby") + " (" + _ai.Count + " blocks)" + (OwnAlert ? "  ALARM" : "") + "\n";
+    return AiGateStatus() + "AI: " + (_aiOn ? "searching" : _agT0 >= 0 ? "own search" : "standby") + " (" + _ai.Count + " blocks)" + (OwnAlert ? "  ALARM" : "") + "\n";
 }
 bool AiModeOk() { return _mode == Mode.GUARD || _mode == Mode.HUNT; }
 
