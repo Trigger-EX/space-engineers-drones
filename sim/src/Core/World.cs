@@ -71,6 +71,8 @@ namespace SeSim.Core
             // 1-2 scripts, IGC
             if (Scripts != null) Scripts.RunDue();
             if (Igc != null) Igc.Deliver();
+            if (Igc != null && Settings.SwarmCueSeconds > 0 && Tick % Math.Max(1, (long)Math.Round(Settings.SwarmCueSeconds * SimSettings.TicksPerSecond)) == 0)
+                Igc.InjectTeamCue("DRONE_CUE", Settings.SwarmCueTeam);
             // 3 brains + turret AI
             for (int i = 0; i < Brains.Count; i++) Brains[i].Tick(this);
             if (Combat != null) Combat.UpdateTurrets(dt);

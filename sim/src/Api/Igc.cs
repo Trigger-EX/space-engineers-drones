@@ -90,6 +90,30 @@ namespace SeSim.Api
             }
         }
 
+        /// <summary>Swarm cue (SimSettings.SwarmCueSeconds): every PB of 'team' listening to 'tag' gets one target tuple per live enemy ship
+        /// (id, bounding centre, velocity, bounding radius, sender 0), the same tuple as the scripts' &lt;TAG&gt;_TGT.</summary>
+        public void InjectTeamCue(string tag, int team)
+        {
+            var bodies = World.Bodies;
+            for (int k = 0; k < Endpoints.Count; k++)
+            {
+                SimIgc e = Endpoints[k];
+                if (e.Pb.Inst.Destroyed) continue;
+                Body eb = e.Pb.Inst.Body;
+                if (eb == null || eb.Team != team) continue;
+                SimBroadcastListener l = e.ListenerFor(tag);
+                if (l == null) continue;
+                for (int i = 0; i < bodies.Count; i++)
+                {
+                    Body b = bodies[i];
+                    if (!b.Alive || b.ShipIndex < 0 || b.Blocks.Count == 0 || b.Team == team) continue;
+                    if (World.Teams.Relation(eb.OwnerId, b.OwnerId) != VRage.Game.MyRelationsBetweenPlayerAndBlock.Enemies) continue;
+                    var tup = new VRage.MyTuple<long, Vector3D, Vector3D, double, long>(b.EntityId, b.WorldBoundCenter, b.LinearVelocity, b.BoundRadius, 0);
+                    l.Push(new MyIGCMessage(tup, tag, 0)); Delivered++;
+                }
+            }
+        }
+
         public bool EnqueueUnicast(SimIgc from, long to, string tag, object data)
         {
             if (from.Pb.Inst.Destroyed) return false;

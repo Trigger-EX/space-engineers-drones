@@ -1,4 +1,4 @@
-### v2.4 (this package): foundry fixes (finish-welding, robust reach, automatic take-off, owner ids)
+### v2.5 (this package): foundry fixes (finish-welding, robust reach, automatic take-off, owner ids)
 - **Finish-welding verification.** `HiveMotherAI.cs` 2.1 no longer leaves BUILD when the projector reports 0 blocks left (that only means "all placed", not "all welded"). A new FINISH state keeps every welder on until a full scan of the bay's drone box finds each block at full integrity and functional. Welders can no longer be switched off in BUILD/FINISH (the old stall "kick" that turned all welders off is gone; it now toggles one welder at a time). The LCD lists unfinished blocks (name, cell, integrity, distance to the nearest welder), reports off/damaged/unpowered welders and an empty `[Stock]`, and FINISH has a timeout that FAULTs with the list.
 - **Robust welder reach.** The welder sphere centre is unknown (model dummy), so `reach.py` now checks 8 hypotheses (centre at the tip, 1, 2 or 3 cells inside the welder; radius 1.3 m and 1.0 m), a build-order support check and a foreign-bay check. Hornet-class bays now carry 10-12 welders (was 5-8), Gnat bays 7 (was 5). Exit directions were re-chosen per drone. Costs about +900 PCU and +2.7 t per Hornet-class bay. Per-bay Custom Data gains `Drone Box Min/Max`, `Drone Cell Count`, `Drone Occupied Cells`, `Ignore Cells`, an explicit `Exit Direction`, and a `[Launch]` section.
 - **Automatic take-off.** A shared LAUNCH block (`tools/launch_block.cs`, synced by `tools/launch_sync.py`) is in the Hornet, Gnat, Longbow, Mantis, Wasp, Lancer, Harrier, Aegis and Basilisk scripts. A printed drone launches when its own PB sees the merge pair open, or on `[Launch] Armed=true`, `_JOIN`, FLEET `join`, or the arguments `armed` / `launch` / `disarm`. No single message is needed. It burns away from the printer for `Burst Seconds`, then goes home and into its start mode (default GUARD). The printer writes `[Launch]` into the drone PB before release, repeats `_JOIN` for 40 s and recompiles the drone PB.
@@ -6,7 +6,23 @@
 - Docs: `docs/foundry-notes.md`, `docs/welder-reach.md`, `docs/launch-protocol.md`, `docs/hive-protocol.md` section 9.
 - **Owner / built-by ids.** Blueprints now carry Owner and BuiltBy (the in-game PB showed `Owner: Nobody` because none were written). Already-pasted v2.x ships: select all blocks in the terminal and Transfer to yourself.
 
-### v2.3 : lead aiming against manoeuvring targets
+### v2.4 : kamikaze defence
+Simulated attacks by swarms of small warhead drones (4 and 8 Stingers cued by a carrier's radar, against every combat drone model) showed the
+scripts writing the kamikazes off as wrecks. A Stinger correcting its course at the speed cap spins 1-2 rad/s, so the "tumbling for 4 s" rule
+dropped it, ignored it for 120 s and told the whole hive it was finished, usually just before it arrived.
+- **KAMIKAZE DEFENCE** (shared block in every combat drone script, `tools/kz_block.cs`, synced by `tools/kz_sync.py`; scripts 2.6 / Gnat 1.13
+  / Longbow 2.4; details in `docs/kamikaze-defence.md`):
+  - small contacts on a collision course with the drone or a hive mate are never written off as wrecks, and are dropped once spent;
+  - they become the priority target;
+  - the drone backs away along the threat axis while its guns stay on target, and breaks sideways inside 2 s of impact;
+  - spare camera charge tracks the rest of the swarm and searches round known kamikazes for their pack;
+  - the threats are shared with the hive, and Gnats skip their run-in against a kamikaze.
+  New `[Kamikaze Defence]` section in Custom Data; PB screen line `!! KAMIKAZE x3 (2 at me) next 4.2 s 380 m`.
+- Simulator, 620 kamikaze fights (20 seeds): defenders still fighting at the end 57% -> 70%, damage taken -41%. Against 4 Stingers, a lone
+  Hornet goes 50 -> 80%, Lancer 45 -> 85%, Mantis 35 -> 75%, Longbow S 55 -> 80%. Fights without kamikazes are unchanged (1v1 regression in the doc).
+- Simulator: scenario kind `kamikaze`, settings `SwarmCueSeconds` / `SwarmCueTeam`, `one --echo-every S`, report tool `tools/kz_report.py`.
+
+### v2.3: lead aiming against manoeuvring targets
 In-game report (2026-10-13): the Basilisk's rockets kept missing an enormous target that was doing basic evasive manoeuvres. A rocket
 needs about 4 s to fly 800 m; an AI ship on "evasive" flips its strafe every 2-5 s. Full write-up and measurements: `docs/lead-v1.md`.
 - **LEAD v1.0** (shared block in every armed drone script, `tools/lead_block.cs`, scripts v2.5 / Gnat 1.12 / Longbow 2.3):

@@ -153,6 +153,11 @@ namespace SeSim.Core
         public int FakeInstructionCount = 0;                     // Runtime.CurrentInstructionCount
         public int MaxInstructionCount = 50000;                  // wiki value
         public int MaxCallChainDepth = 1000;                     // [I]
+        /// <summary>Swarm cue (test harness for the kamikaze scenarios, docs/kamikaze-defence.md): every SwarmCueSeconds (0 = off) each PB of
+        /// team SwarmCueTeam that listens to "DRONE_CUE" receives the true position / velocity / bounding radius of every enemy ship, as a
+        /// carrier's radar or turret designators would feed a Stinger swarm (Stingers only see 50 m by sensor on their own).</summary>
+        public double SwarmCueSeconds = 0;
+        public int SwarmCueTeam = 1;
 
         public SimSettings Clone() { return (SimSettings)MemberwiseClone(); }
 

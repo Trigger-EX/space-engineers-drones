@@ -57,6 +57,14 @@ The status line `AI: searching` means the AI blocks have the ship, `AI: own sear
 working AI blocks (and on Lite variants) a drone searches with camera rays only: it reliably finds enemies within about 100 m, and farther
 ones slowly, mostly once they shoot at it.
 
+## Kamikaze defence (incoming swarms of small warhead drones)
+
+Every combat drone recognises small contacts flying at it (or at a hive mate) on a collision course, shoots the most urgent one first,
+backs away from it while firing, and breaks sideways just before impact (a small warhead reaches only 4.5 m). The threats are shared with
+the hive. The PB screen shows `!! KAMIKAZE x3 (2 at me) next 4.2 s 380 m`. Settings: `[Kamikaze Defence]` in Custom Data
+(`Enabled=false` turns it off). Tiny drones are hard to see: the drones find them through their AI blocks, a turret / Custom Turret
+Controller, or hive mates. A fleet that expects kamikazes should carry a turret designator or a Watcher / Aegis spotter.
+
 {{SCRIPT_REFERENCE}}
 
 ## Known unknowns

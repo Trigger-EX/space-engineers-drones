@@ -34,6 +34,14 @@ foreach ($line in Get-Content $Plan) {
   $sw = [Diagnostics.Stopwatch]::StartNew()
   & $exe @tokens *> "$out\log.txt"
   $rc = $LASTEXITCODE
+  # a crash of a resumable run (exit code other than 0..5): restart it, finished fights are kept (up to 50 times)
+  $tries = 0
+  while (($rc -lt 0 -or $rc -gt 5) -and $tries -lt 50 -and ($tokens -contains "--resume")) {
+    $tries++; Write-Host "  crashed (rc=$rc), restart $tries (finished fights are kept)"
+    "=== restart $tries after rc=$rc ===" | Add-Content "$out\log.txt"
+    & $exe @tokens *>> "$out\log.txt"
+    $rc = $LASTEXITCODE
+  }
   "rc=$rc seconds=$([int]$sw.Elapsed.TotalSeconds)" | Tee-Object "$out\status.txt"
   Get-Content "$out\log.txt" -Tail 2
 }

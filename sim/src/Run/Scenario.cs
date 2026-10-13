@@ -25,7 +25,7 @@ namespace SeSim.Run
     public sealed class Scenario
     {
         public string Name;               // "1v1/Hornet-vs-Gnat", "2v3/..." (stable; used as group key in the CSV)
-        public string Kind;               // "1v1", "1v2", "1v3", "2v3", "mixed", "swarm", "pirate"
+        public string Kind;               // "1v1", "1v2", "1v3", "2v3", "mixed", "swarm", "pirate", "kamikaze"
         public readonly List<TeamSpec> Teams = new List<TeamSpec>();
         public readonly List<ShipSpec> Ships = new List<ShipSpec>();
         public double StartDistanceMin = 1500, StartDistanceMax = 3000;   // between team centroids (HANDOFF 9)
@@ -35,6 +35,8 @@ namespace SeSim.Run
         /// (keeps the random roll). Used for the "pilot points the drone and presses lock" validation runs (`--face`).</summary>
         public bool FaceEnemies;
         public int MaxTicks = 5 * 60 * 60;
+        /// <summary>&gt;= 0: overrides SimSettings.SwarmCueSeconds for this scenario (the "kamikaze" kind cues its Stinger swarm every 0.5 s).</summary>
+        public double SwarmCueSeconds = -1;
         public double DecisiveHoldSeconds = 5;   // a side must stay beaten this long before early termination
     }
 
@@ -102,6 +104,7 @@ namespace SeSim.Run
             if (opt == null) opt = new RunOptions();
             string simDir = opt.SimDir ?? DefaultSimDir();
             var s = settings.Clone();
+            if (sc.SwarmCueSeconds >= 0) s.SwarmCueSeconds = sc.SwarmCueSeconds;
             ulong seed = ScenarioSeed(baseSeed, sc.Name, seedIndex);
             long maxTicks = Math.Min(sc.MaxTicks, s.MaxTicks);
             var ships = new List<ShipInstance>();

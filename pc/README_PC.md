@@ -26,3 +26,14 @@ an 800 m turret-range robustness run, and three traces. Roughly 2-5 hours on a 1
 - Another ship: copy its blueprint folder (with `bp.sbc`) from `%AppData%\SpaceEngineers\Blueprints\local` into `enemies\`. Every folder there is used.
 - Limits: only the largest grid is simulated (rotor/hinge/piston subgrids, e.g. custom turret pods, are dropped); hydrogen and reactor fuel never run out;
   no PB scripts run on the enemy ship; its turrets aim by themselves.
+
+## Endless mode (run until you press Enter)
+- Linux Mint: `./run_endless.sh`   Windows: double-click `run_endless.bat`.
+- Fights every matchup round after round (by default your ships in `enemies/` vs 1..24 of every drone) and shows a live line:
+  fights done, fights per second, elapsed time and "every matchup >= N" (the number of complete rounds).
+- Press **Enter** once: no new fights start, the ones in progress finish, everything is saved and `SE_results.zip` is written.
+  Press Enter again to drop the fights in progress and stop at once. Ctrl+C does the same as Enter.
+- Every finished fight is saved immediately to `results/endless/runs.jsonl`; running it again continues with new seeds.
+- Other selections: `./run_endless.sh --kind 1v1`, `./run_endless.sh --filter "Hornet"`, fewer threads: `--jobs 12`.
+- Linux: Mono's concurrent garbage collector crashed (SIGSEGV) with 19 threads, so the scripts use `MONO_GC_PARAMS=major=marksweep`;
+  if the simulator still crashes, the scripts restart it automatically and no finished fight is lost (plans resume the same way).
