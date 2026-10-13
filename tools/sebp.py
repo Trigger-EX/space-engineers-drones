@@ -134,6 +134,9 @@ def confidence_table():
     return {n: shape_for(n, '')[1] for n in names}
 
 # =============================================================================================
+# identity id written as Owner/BuiltBy (same value Starburst, saved by the user's game, carries); the game replaces it with the pasting player
+DEFAULT_OWNER = 144115188075855915
+
 class Blueprint:
     # side-local (u, v) -> block-local corner-space point; verified against MyCubeBlockDefinition.m_mountPointTransforms
     FACE_MAP = {
@@ -144,12 +147,12 @@ class Blueprint:
         'Top':    lambda u, v, X, Y, Z: (u, Y, Z - v),
         'Bottom': lambda u, v, X, Y, Z: (u, 0, v),
     }
-    def __init__(self, name, grid='Small', seed=1, owner=0, allow_dlc=False, containers=True):
+    def __init__(self, name, grid='Small', seed=1, owner=DEFAULT_OWNER, allow_dlc=False, containers=True):
         self.name, self.grid, self.blocks = name, grid, []
         self.rng = random.Random(seed)
         self.reserve = {}       # cell -> reason (must stay empty: exhaust, camera view, muzzle)
         self.groups = {}
-        self.owner = owner          # 0 = leave ownership to the game (it assigns the pasting player)
+        self.owner = owner          # nonzero: blocks carry Owner/BuiltBy and the game re-owns them to the pasting player. 0 leaves them 'Nobody' (seen in game: user's PB showed Owner: Nobody)
         self.allow_dlc = allow_dlc
         self.containers = containers   # False: strip every <ComponentContainer> (A/B test for in-game paste)
         self.skipped = []           # blocks from a loaded file that could not be validated: (xtype, sub, why)
