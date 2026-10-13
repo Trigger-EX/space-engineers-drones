@@ -257,6 +257,10 @@ namespace SeSim.Core
         public string InstructionCountMode = "blocks";
         /// <summary>With CountInstructions: a Main/constructor run that exceeds MaxInstructionCount dies ("Script too complex", the PB stops) like in the game.</summary>
         public bool EnforceInstructionLimit = false;
+        /// <summary>false (default): the PB terminal action "Recompile" does nothing. The sim's Recompile (new Program instance, Storage kept) is
+        /// optimistic: the game also re-parses and re-compiles, which can fail or take seconds. Tests that need it (dock-launch --recompile-at)
+        /// switch it on and are labelled optimistic.</summary>
+        public bool AllowRecompileAction = false;
         public int MaxInstructionCount = 50000;                  // wiki value
         public int MaxCallChainDepth = 1000;                     // source-confirmed: IlInjector.m_maxCallChainDepth = 1000 (Keen VRage.Library, il_profiler audit)
         /// <summary>Swarm cue (test harness for the kamikaze scenarios, docs/kamikaze-defence.md): every SwarmCueSeconds (0 = off) each PB of

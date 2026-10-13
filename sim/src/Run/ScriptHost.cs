@@ -147,6 +147,20 @@ namespace SeSim.Run
             World.Events.On(ref ev);
         }
 
+        /// <summary>PB.TryRun: runs Main now (nested inside the caller's Main), true if it ran. False when the PB is dead, off, destroyed or already
+        /// running (no re-entrancy). The caller's RNG stream and instruction counter are saved and restored around the inner run.</summary>
+        public bool RunNow(SimProgrammableBlock pb, string argument, UpdateType type)
+        {
+            var r = pb.Runner;
+            if (r == null || r.Program == null || r.Dead || pb.InMain || pb.Inst.Destroyed || !pb.IsWorking) return false;
+            ulong outerRng = DetRandomSeed.Get();
+            int total = 0, limit = 0, depth = 0, maxDepth = 0; bool dead = false; int[] sites = null;
+            if (r.Il != null) sites = IlCounter.Push(out total, out limit, out depth, out maxDepth, out dead);
+            try { RunMain(r, argument ?? "", type); }
+            finally { if (r.Il != null) IlCounter.Pop(sites, total, limit, depth, maxDepth, dead); DetRandomSeed.Set(outerRng); }
+            return true;
+        }
+
         void RunMain(PbRunner r, string argument, UpdateType type)
         {
             var pb = r.Pb;

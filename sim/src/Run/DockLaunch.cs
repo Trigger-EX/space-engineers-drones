@@ -5,7 +5,8 @@
 //   mono SimHost.exe dock-launch [--model Hornet] [--seconds 30] [--release-at 3] [--both-merges] [--join-at T] [--arm-at T]
 //        [--custom-data "INI with \n"] [--seed 1] [--repo DIR] [--trace FILE]
 //   --join-at T   also broadcast "<TAG>_JOIN" ("join") from a helper PB-less sender at T s (default: never, the bug scenario)
-//   --recompile-at T   terminal action "Recompile" on the drone PB at T s (Custom Data survives, the script state does not)
+//   --recompile-at T   terminal action "Recompile" on the drone PB at T s (Custom Data survives, the script state does not). Switches
+//        SimSettings.AllowRecompileAction on; the sim recompile is instant and cannot fail, so the result is labelled OPTIMISTIC
 //   --arm-at T    run the argument "armed" on the drone PB at T s (what HiveMotherAI does through DPb.TryRun)
 //
 // The dummy printer is code-built: the blueprint's own merge block gets a partner (opposite face, centres one cell apart), a one-cell stalk of
@@ -124,6 +125,7 @@ namespace SeSim.Run
             string cd = Arg(args, "--custom-data", null);
             string tracePath = Arg(args, "--trace", null);
             var settings = new SimSettings(); settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
+            if (recAt >= 0) settings.AllowRecompileAction = true;
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
             SizeOf = b => { var d = defs.Get(b.TypeId, b.Subtype); return d.SizeCells; };
             var bp = BlueprintLoader.Get(Path.Combine(Path.Combine(repo, "out"), "Blueprints"), model);
@@ -209,7 +211,8 @@ namespace SeSim.Run
             if (tw != null) tw.Dispose();
             bool ok = leftAt >= 0 && modeNow != "IDLE" && modeNow != "?";
             if (settings.CountInstructions) IlReport.Dump(host, "dock-launch " + model + " " + string.Join(" ", args), args);
-            Console.WriteLine(ok ? "LAUNCH OK" : "LAUNCH FAILED (drone did not leave and start working)");
+            string optimistic = recAt >= 0 ? " (optimistic: sim Recompile is instant)" : "";
+            Console.WriteLine(ok ? "LAUNCH OK" + optimistic : "LAUNCH FAILED (drone did not leave and start working)" + optimistic);
             return ok ? 0 : 1;
         }
 

@@ -36,6 +36,20 @@ namespace SimShim
             else Array.Clear(s, 0, s.Length);
         }
 
+        /// <summary>Nested run (PB.TryRun from inside another PB's Main): the inner script gets its own counter, depth and site array and the outer
+        /// run's state is restored afterwards. Inner instructions are not charged to the outer run (conservative; how the game charges a nested
+        /// run is unverified).</summary>
+        public static int[] Push(out int total, out int limit, out int depth, out int maxDepth, out bool dead)
+        {
+            total = Total; limit = Limit; depth = Depth; maxDepth = MaxDepth; dead = Dead;
+            var s = Sites; Sites = null; return s;
+        }
+
+        public static void Pop(int[] sites, int total, int limit, int depth, int maxDepth, bool dead)
+        {
+            Sites = sites; Total = total; Limit = limit; Depth = depth; MaxDepth = maxDepth; Dead = dead;
+        }
+
         public static void C(int site)
         {
             Sites[site]++;

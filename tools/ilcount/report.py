@@ -39,6 +39,7 @@ def main(a):
                 x['n'] += w['n']; x['sum'] += w['mean'] * w['n']; x['p99'] = max(x['p99'], w['p99']); x['max'] = max(x['max'], w['max'])
             for s in il['mean_sites']:
                 g['mean_sites'][(s['kind'], s['method'], s['line'])] += s['n'] * il['runs']
+    print('(site line numbers refer to the minified Program text, not scripts/*.cs)')
     print('| script | PBs | runs | peak | mean | worst p99 | ctor | depth | peak/limit | where the peak happened |')
     print('|---|---|---|---|---|---|---|---|---|---|')
     for name, g in sorted(agg.items(), key=lambda kv: -kv[1]['peak']):
