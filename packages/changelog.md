@@ -1,4 +1,20 @@
-### v2.2 (this package): FOLLOW mode
+### v2.3 (this package): lead aiming against manoeuvring targets
+In-game report (2026-10-13): the Basilisk's rockets kept missing an enormous target that was doing basic evasive manoeuvres. A rocket
+needs about 4 s to fly 800 m; an AI ship on "evasive" flips its strafe every 2-5 s. Full write-up and measurements: `docs/lead-v1.md`.
+- **LEAD v1.0** (shared block in every armed drone script, `tools/lead_block.cs`, scripts v2.5 / Gnat 1.12 / Longbow 2.3):
+  - the target's freshest acceleration, held only for as long as its manoeuvres usually last, then constant velocity (the old
+    solver extrapolated a lagging, smoothed acceleration over the whole flight);
+  - the hull aim point counts only across the line of fire, turns with the target's spin for up to 1 s, and keeps
+    `Aim Margin (predicted misses)` x the predicted miss of known hull round it, so long, uncertain shots go to the middle of the
+    known hull instead of its edge.
+- Basilisk / Wasp: rockets modelled as leaving with the ship's velocity + launch speed and curving onto the barrel line
+  (`Rocket Velocity Model` CAPPED / NONE / FULL; NONE is the v2.2 model). Closed-form rocket path, Newton solve on the flight time.
+- Offline bench (`tools/lead_bench`), hits on manoeuvring targets: rockets 50 % -> 62 % (strafing 120 m ship 43 -> 66 %, strafing
+  30 m ship 14 -> 39 %), gatling 70 % -> 90 %, railgun 77 % -> 90 %.
+- Simulator: rockets inherit the shooter's velocity with the speed cap (`--rocket-inherit`, default 1), evasive Pirate
+  (`--pirate-evasive true`).
+
+### v2.2: FOLLOW mode
 Question from the user: does `guard` follow the owner? Only as a side effect: a Mothership link's position replaces the guard spot, but
 the drones fly to the ship's centre (into its hull for most drone types), lag behind a moving ship, and fall back to the old spot when
 the link stops. Nothing followed a player on foot.

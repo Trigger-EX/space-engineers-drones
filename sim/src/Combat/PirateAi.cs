@@ -279,6 +279,7 @@ namespace SeSim.Combat
         public double Kp = 0.8;               // attitude gain (1/s)
         int _orbitDir = 1;
         long _nextAcquire;
+        int _strafe = 1; double _flipAt = -1; uint _rs = 0;
         public PirateBrain(Body ship) { Ship = ship; }
 
         public void Tick(World w)
@@ -320,6 +321,13 @@ namespace SeSim.Combat
                 double radial = (d - s.PirateOrbitRange) * 0.1; if (radial > 10) radial = 10; if (radial < -10) radial = -10;
                 vdes = tang * s.PirateOrbitSpeed + dirT * radial;
                 fwd = tang;
+            }
+            if (s.PirateEvasive)
+            {   // evasive: strafe across the line of sight, flip every 2-5 s (deterministic per ship and seed)
+                if (_rs == 0) _rs = (uint)(b.EntityId * 2654435761L ^ (long)w.Seed) | 1u;
+                if (w.Time >= _flipAt) { _rs ^= _rs << 13; _rs ^= _rs >> 17; _rs ^= _rs << 5; _strafe = -_strafe; _flipAt = w.Time + 2 + 3 * (_rs % 1000) / 1000.0; }
+                Vector3D side = up - Vector3D.Dot(up, dirT) * dirT; double sl = side.Length();   // (vertical: the orbit already moves it sideways)
+                if (sl > 1e-6) vdes += side * (_strafe * s.PirateEvasiveSpeed / sl);
             }
             ShipPilot.SetAcceleration(b, ShipPilot.Clamp((vdes - v) * 0.5, 50));
             double fu = Math.Abs(fwd.Y);

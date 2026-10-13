@@ -26,7 +26,7 @@ import designs                                   # noqa: E402  (puts tools/desig
 import sebp                                      # noqa: E402
 import _common as C                              # noqa: E402
 
-VERSION = '2.2'
+VERSION = '2.3'
 PKG_DIR = os.path.join(ROOT, 'packages')
 SCRIPTS_DIR = os.path.join(ROOT, 'scripts')
 AXES = ('Forward', 'Backward', 'Up', 'Down', 'Left', 'Right')

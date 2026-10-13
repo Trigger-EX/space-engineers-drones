@@ -413,7 +413,23 @@ namespace SeSim.Combat
             u.Update(w, SimSettings.Dt);
             Check(w.Projectiles.Count == 1, "rocket spawned");
             Vector3D v = w.Projectiles.Vel[0];
-            Check(Math.Abs(v.Z + 100) < 1e-6 && Math.Abs(v.X) < 1e-9 && Math.Abs(v.Y) < 1e-9, "rocket starts at 100 m/s along the muzzle WITHOUT the 50 m/s ship velocity: " + v);
+            Check(Math.Abs(v.Z + 150) < 1e-6 && Math.Abs(v.X) < 1e-9 && Math.Abs(v.Y) < 1e-9, "rocket starts at 100 m/s along the muzzle PLUS the 50 m/s ship velocity (RocketInherit 1): " + v);
+            {
+                // RocketInherit 1, ship moving sideways at 60 m/s: the rocket bends onto the barrel line; drift after 2 s about 29 m
+                // (closed form of the scripts' RktPath: V0 = 100, A = 600, cap 200)
+                var wc = NewWorld(11, false, new Sink());
+                var lc = Spawn(wc, 0, 0, Vector3D.Zero, new Vector3D(60, 0, 0), Bd("SmallMissileLauncher", "", 0, 0, 0));
+                var uc = lc.Weapons[0]; uc.SpreadRad = 0; uc.ShootOnceRequests = 1; uc.Update(wc, SimSettings.Dt);
+                Vector3D p0 = wc.Projectiles.Pos[0];
+                for (int k = 0; k < 120; k++) wc.Projectiles.Step(SimSettings.Dt);
+                Vector3D dp = wc.Projectiles.Pos[0] - p0, vc = wc.Projectiles.Vel[0];
+                Check(Math.Abs(dp.X - 29.3) < 1.5 && Math.Abs(vc.Length() - 200) < 1e-6 && vc.X < 1, "sideways launch curves onto the barrel: drift " + dp.X.ToString("F1") + " m, along " + (-dp.Z).ToString("F1") + " m, v " + vc);
+                var w0 = NewWorld(11, false, new Sink()); w0.Settings.RocketInherit = 0;
+                var l0 = Spawn(w0, 0, 0, Vector3D.Zero, new Vector3D(0, 0, -50), Bd("SmallMissileLauncher", "", 0, 0, 0));
+                var u0 = l0.Weapons[0]; u0.SpreadRad = 0; u0.ShootOnceRequests = 1; u0.Update(w0, SimSettings.Dt);
+                Vector3D v0 = w0.Projectiles.Vel[0];
+                Check(Math.Abs(v0.Z + 100) < 1e-6 && Math.Abs(v0.X) < 1e-9, "RocketInherit 0: rocket starts at 100 m/s along the muzzle WITHOUT the ship velocity: " + v0);
+            }
             // bullets inherit
             var gun = Spawn(w, 0, 0, new Vector3D(100, 0, 0), new Vector3D(0, 0, -50), Bd("SmallGatlingGun", "", 0, 0, 0));
             var gu = gun.Weapons[0]; gu.SpreadRad = 0; gu.ShootOnceRequests = 1;

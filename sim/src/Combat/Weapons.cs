@@ -123,8 +123,8 @@ namespace SeSim.Combat
 
         /// <summary>Fire if commanded and ready; spawns projectiles through World.Projectiles with muzzle position/velocity:
         /// direction = DirLocal rotated to world + spread (uniform in a cone of DeviateShotAngleDeg); velocity =
-        /// shooter velocity at muzzle + dir*speed for Projectile ammo; Missile ammo (rockets): dir*MissileInitialSpeed WITHOUT
-        /// ship velocity (HANDOFF/Keen thread: rockets do not inherit); railgun slug (Missile, acceleration 0, speed 1000):
+        /// shooter velocity at muzzle + dir*speed for Projectile ammo; Missile ammo (rockets): see SimSettings.RocketInherit (default:
+        /// ship velocity + dir*MissileInitialSpeed, accelerating along dir with the total speed capped); railgun slug (Missile, acceleration 0, speed 1000):
         /// inherits ship velocity [I]. Emits EventKind.Shot.</summary>
         public void Update(World w, double dt)
         {
@@ -224,10 +224,15 @@ namespace SeSim.Combat
             Vector3D pos, dir;
             MuzzleWorld(out pos, out dir);
             dir = CombatUtil.Deviate(Rng, dir, SpreadRad, w.Settings.SpreadUniformInAngle);
-            Vector3D vel;
-            if (Mode == ProjectileSystem.ModeRocket) vel = dir * Ammo.MissileInitialSpeed;
+            Vector3D vel, head = default(Vector3D), inh = default(Vector3D);
+            if (Mode == ProjectileSystem.ModeRocket)
+            {
+                int m = w.Settings.RocketInherit;
+                if (m == 1 || m == 2) { Vector3D sv = body.VelocityAtWorld(pos); vel = sv + dir * Ammo.MissileInitialSpeed; head = dir; if (m == 2) inh = sv; }
+                else vel = dir * Ammo.MissileInitialSpeed;
+            }
             else vel = body.VelocityAtWorld(pos) + dir * (Ammo.Speed > 0 ? Ammo.Speed : Ammo.MissileInitialSpeed);
-            w.Projectiles.Spawn(pos, vel, Ammo, body, body.ShipIndex);
+            w.Projectiles.Spawn(pos, vel, Ammo, body, body.ShipIndex, head, inh);
             ShotsFired++;
             var e = new SimEvent { Kind = EventKind.Shot, Tick = w.Tick, ShipA = body.ShipIndex, ShipB = -1, Value = Mode, Position = pos };
             w.Events.On(ref e);
