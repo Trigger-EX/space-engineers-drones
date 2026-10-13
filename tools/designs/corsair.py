@@ -138,11 +138,11 @@ def mirror_box(mn, size):
 # ---- hydrogen: ten tanks (right side listed; the left is the mirror) and the thrusters that touch them ----
 # (name, min cell of the 5x5x5 tank)
 TANKS_R = [('Stern Stbd Low', (1, 2, 63)), ('Stern Stbd High', (1, 7, 63)),
-           ('Mid Stbd Low', (2, 2, 28)), ('Mid Stbd High', (2, 7, 28)),
+           ('Mid Stbd Low', (2, 2, 40)), ('Mid Stbd High', (2, 7, 40)),
            ('Pylon Stbd', (7, 4, 56))]
 # (name, min cell of the 3x3x3 large hydrogen thruster, exhaust direction)
 THR_R = [('Main Stbd Low', (2, 3, 68), 'Backward'), ('Main Stbd High', (2, 8, 68), 'Backward'),
-         ('Strafe Stbd Low', (7, 3, 29), 'Right'), ('Strafe Stbd High', (7, 8, 29), 'Right'),
+         ('Strafe Stbd Low', (7, 3, 41), 'Right'), ('Strafe Stbd High', (7, 8, 41), 'Right'),
          ('Brake Stbd', (8, 5, 53), 'Forward'), ('Lift Stbd', (8, 1, 57), 'Down'), ('Dive Stbd', (8, 9, 57), 'Up')]
 
 

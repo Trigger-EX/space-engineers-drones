@@ -16,13 +16,13 @@ nose, belly, tower front, stern; light elsewhere; hollow with bulkheads. Hand-fl
 
 | | Corsair (Full) | Corsair Lite |
 |---|---|---|
-| blocks | 6,578 | 6,570 |
+| blocks | 6,566 | 6,558 |
 | dimensions W x H x L | 26.5 x 12.0 x 33.0 m (53 x 24 x 66 cells; H includes the belly turrets) | 25.5 x 10.0 x 33.0 m |
-| mass, blocks / loaded (magazines, uranium) | 268.2 t / 269.8 t | 259.9 t / 260.6 t |
+| mass, blocks / loaded (magazines, uranium) | 266.5 t / 268.1 t | 258.1 t / 258.9 t |
 | acceleration F / B / U / D / L / R (`twr`) | 7.2 / 3.6 / 3.6 / 3.6 / 3.6 / 3.6 m/s2 | 7.4 / 3.7 x5 |
-| PCU | 10,633 | 9,463 |
-| HP (sum of integrity) | 1.27 M | 1.25 M |
-| centre of mass (loaded) | 0.3 m right of the plane, 3.0 m above the keel, 22.5 m from the nose-tip plane (cell edge z 6) | same |
+| PCU | 10,621 | 9,451 |
+| HP (sum of integrity) | 1.26 M | 1.24 M |
+| centre of mass (loaded) | on the centre plane, 2.6 m above the keel, 19.7 m from the nose-tip plane (cell z 45.5; recomputed in review, the earlier 22.5 m was wrong) | same |
 
 Catalogue targets (4.1 / 4.3): 257 t, 8.2 m/s2 forward, 4.1 other axes, 12.1 k PCU, 8.1 k DPS. Result: mass +4 %, forward -12 %, other axes -12 %, PCU -12 %, sustained data DPS
 about 8.1 k (2 rails 780 + 2 assault 1,333 + 2 autocannon 2,500 + 4 gatling turrets 2,813 + assault turret 667). All inside the 20 % band. Why lower thrust: one large thruster per
@@ -74,7 +74,7 @@ y -4 .......................................................................
 |---|---|
 | 6-18 | nose tip, hammer crossbar (x -11..11, z 10-18) with 2 assault cannons (x +-9), 2 autocannons (x +-4) on its top, orange heavy bow |
 | 22-36 | dorsal ridge (x -1..1) and the two railguns `[B1]` (x +-2, z 26-33, Back faces on the tower front) |
-| 28-32 | two stacked mid tanks per side (flush with the flank) with a strafe thruster each (x +-7..9); centre corridor x = 0: Helm PB, Staff PB, Remote Control, Timer D, Event Controller |
+| 40-44 | two stacked mid tanks per side (flush with the flank) with a strafe thruster each (x +-7..9, moved here in review so the strafe thrust line passes 1.5 m from the centre of mass); centre corridor x = 0: Helm PB, Staff PB, Remote Control, Timer D, Event Controller |
 | 33-47 | lower deck on the centre line: reactor (z 33-35), four batteries (z 36-47), 20 gyros on the battery tops (y 4) |
 | 34-55 | bridge tower (3 steps, cockpit `SmallBlockCockpit` at x -1..1, y 16-18, z 41-43, glass slopes on the front), antenna, cameras |
 | 53-67 | outrigger pylons x +-7..12: tank + brake thruster in front (z 53-55), dive thruster above, lift thruster below |
@@ -151,9 +151,11 @@ Nothing to load: tanks, batteries, magazines, uranium are in the file. Check the
 
 ## 7. Known limits and in-game checks
 
+0. Thrust-line offsets from the centre of mass (review, [calc], 0.5 m cells): forward thrust line is 0.5 m above the COM (0.9 MNm pitch moment at full burn); strafe 1.5 m ahead of it (1.4 MNm yaw); brake 4.5 m, lift and dive 6.5 m behind it (about 6.2 MNm pitch, lift pitches the nose down, dive up). The 20 small gyros give 8.96 MNm, so pure lift or dive uses about 70 % of gyro authority and the scripts must counter-rotate; a hand-flown ship will pitch when lifting. Not rebalanced: the pylon thrusters need the pylon tank.
+
 1. C1 (drones merge at paste), T1 (which merge face clamps), C5 (launch burn vs wall), C10 (Helm ignores merged drone blocks).
 2. Thruster fuel by direct tank contact on a small grid (5). Strafe thrusters protrude 1.5 m from the flank; they and the dive thruster stand in the pylon gap.
 3. K3/K4: toolbar PB Run with argument; Event Controller cockpit event.
 4. Guns run dry quickly (3-6 rounds), no feed.
 5. Renders (`/tmp/.../ship_renders/Corsair/it0..it2`, `python3 -I tools/designs/corsair.py --render DIR`) use the repo thumbnail code: slopes look like stairs. Lite has no point defence.
-6. Mass is a hull-factor outcome of voxel hollowing; 6,578 blocks, 10.6 k PCU (21 % of a 50 k world).
+6. Mass is a hull-factor outcome of voxel hollowing; 6,566 blocks, 10.6 k PCU (21 % of a 50 k world).
