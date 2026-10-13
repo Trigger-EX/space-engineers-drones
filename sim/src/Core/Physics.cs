@@ -3,6 +3,7 @@
 // Torques and forces are accumulated in grid-local axes inside a step and rotated to the world once.
 using System;
 using VRageMath;
+using VRage.Game;
 
 namespace SeSim.Core
 {
@@ -22,7 +23,9 @@ namespace SeSim.Core
             int n = th.Count;
             if (n == 0) return;
             bool damp = b.DampenersOn && !b.IsStatic;
+            bool game = s.GameDampenerLaw;
             double[] sum = b.DirScratch;
+            bool ovX = false, ovY = false, ovZ = false;      // GameDampenerLaw: an override on an axis switches its dampening off
             Vector3D vl = default(Vector3D);
             if (damp)
             {
@@ -31,6 +34,7 @@ namespace SeSim.Core
                 {
                     var t = th[i];
                     if (t.OverrideN <= 0f && t.Working) sum[t.DirIndex] += t.MaxForce;
+                    if (game && t.OverrideN > 0f) { int ax = t.DirIndex >> 1; if (ax == 0) ovX = true; else if (ax == 1) ovY = true; else ovZ = true; }
                 }
                 vl = Vector3D.TransformNormal(b.LinearVelocity, b.InvWorldRot);
             }
@@ -46,9 +50,10 @@ namespace SeSim.Core
                     {
                         // component of the velocity along this thruster's push direction; push only when it opposes the motion
                         double vd = vl.X * t.ForceDirLocal.X + vl.Y * t.ForceDirLocal.Y + vl.Z * t.ForceDirLocal.Z;
-                        if (vd < 0 && sum[t.DirIndex] > 0)
+                        int dax = t.DirIndex >> 1;
+                        if (vd < 0 && sum[t.DirIndex] > 0 && !(game && (dax == 0 ? ovX : dax == 1 ? ovY : ovZ)))
                         {
-                            double need = -vd * m / dt * gain;                         // total force along this direction
+                            double need = game ? -vd * m / 0.5 * gain : -vd * m / dt * gain;   // total force along this direction
                             f = need * (t.MaxForce / sum[t.DirIndex]);
                             if (f > t.MaxForce) f = t.MaxForce;
                         }
@@ -109,7 +114,7 @@ namespace SeSim.Core
         /// MaxForce*Power-weighted mean of GyroUnit.TargetGridLocal; velocityDiff = target - localAngularVelocity; ramp frames (120 max,
         /// counted down); desiredTorque = (diff*60/ramp) / invInertiaDiagonal; clamp to sphere radius sum(MaxForce*Power) of
         /// overridden gyros (+ non-overridden gyros' force); times Gyro supplied ratio. Without override: slowdown torque
-        /// -localAngularVelocity / invInertia clamped per axis to sum(MaxForce) (gyros damp rotation like the game).</summary>
+        /// -localAngularVelocity * mult / invInertia clamped per axis to sum(MaxForce) * mult (mult 5 small / 2 large grid, MAX_SLOWDOWN 0.8; gyros damp rotation like the game).</summary>
         public static void ApplyGyros(Body b, SimSettings s)
         {
             var gy = b.Gyros;
@@ -172,12 +177,14 @@ namespace SeSim.Core
             }
             else
             {
-                // idle slowdown: -w / invI, clamped per axis, scaled by MAX_SLOWDOWN (+ (1-MAX_SLOWDOWN)*(1-supply))
+                // idle slowdown: -w * mult / invI, clamped per axis to sum(MaxForce) * mult, scaled by MAX_SLOWDOWN (+ (1-MAX_SLOWDOWN)*(1-supply))
                 double f = s.GyroMaxSlowdown + (1 - s.GyroMaxSlowdown) * (1 - ratio);
-                ux = -wl.X / ix; uy = -wl.Y / iy; uz = -wl.Z / iz;
-                if (ux > sumAll) ux = sumAll; else if (ux < -sumAll) ux = -sumAll;
-                if (uy > sumAll) uy = sumAll; else if (uy < -sumAll) uy = -sumAll;
-                if (uz > sumAll) uz = sumAll; else if (uz < -sumAll) uz = -sumAll;
+                double mult = b.GridSize == MyCubeSize.Large ? s.GyroSlowdownMultiplierLarge : s.GyroSlowdownMultiplierSmall;
+                double cap = sumAll * mult;
+                ux = -wl.X * mult / ix; uy = -wl.Y * mult / iy; uz = -wl.Z * mult / iz;
+                if (ux > cap) ux = cap; else if (ux < -cap) ux = -cap;
+                if (uy > cap) uy = cap; else if (uy < -cap) uy = -cap;
+                if (uz > cap) uz = cap; else if (uz < -cap) uz = -cap;
                 ux *= f * ratio; uy *= f * ratio; uz *= f * ratio;
             }
             b.GyroDirty = false;
@@ -212,6 +219,7 @@ namespace SeSim.Core
                 // drifted the rotational energy of a tumbling asymmetric body by ~10 % in 20 s, audit SelfTestAudit.TestGyroscopic).
                 Vector3D wl0 = Vector3D.TransformNormal(b.AngularVelocity, b.InvWorldRot);
                 Vector3D L = Vector3D.TransformNormal(Vector3D.TransformNormal(wl0, b.InertiaLocal), b.RotMatrix) + b.Torque * dt;
+                if (s.AngularDamping > 0) L *= 1 - s.AngularDamping * dt;
                 Vector3D w0 = OmegaFromL(b, L, b.RotMatrix, maxW);
                 QuaternionD qh = RotateQ(b.Rotation, w0, dt * 0.5);
                 Vector3D wm = OmegaFromL(b, L, MatrixD.CreateFromQuaternion(qh), maxW);
@@ -226,6 +234,7 @@ namespace SeSim.Core
             Vector3D tl = Vector3D.TransformNormal(b.Torque, b.InvWorldRot);
             Vector3D al = Vector3D.TransformNormal(tl, b.InvInertiaLocal);
             w = b.AngularVelocity + Vector3D.TransformNormal(al, b.RotMatrix) * dt;
+            if (s.AngularDamping > 0) w *= 1 - s.AngularDamping * dt;
             double w2 = w.X * w.X + w.Y * w.Y + w.Z * w.Z;
             if (w2 > maxW * maxW) w *= maxW / Math.Sqrt(w2);
             b.AngularVelocity = w;

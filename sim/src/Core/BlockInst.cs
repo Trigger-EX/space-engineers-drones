@@ -18,6 +18,7 @@ namespace SeSim.Core
         public MatrixD LocalMatrix;       // rotation + translation of block center, grid-local metres (OrientMath.LocalMatrix)
         public Vector3D LocalCenter;      // = LocalMatrix.Translation
         public Vector3D HalfExtents;      // half size in grid axes, metres (for ray/explosion tests)
+        public MountRect[] MountRects;    // Connectivity cache: grid-space mount rectangles (computed lazily, grid frame never changes)
         public double Radius;             // |HalfExtents| (bounding sphere radius of the block box)
 
         public float Mass;                // kg (Def.MassKg; + inventory mass later)

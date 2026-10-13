@@ -38,6 +38,8 @@ namespace SeSim.Core
             Guarded("weapon muzzle position and shot direction for all 24 mountings", TestWeaponMounts);
             Guarded("world AABB and bounding sphere of a rotated body", TestBounds);
             Guarded("gyroscopic term conserves energy and momentum", TestGyroscopic);
+            Guarded("idle gyro slowdown time constant (physics_power-04)", TestIdleSlowdown);
+            Guarded("grid split by mount points and block count (physics_power-08)", TestMountSplit);
             Console.WriteLine(_fail == 0 ? "SelfTestAudit passed (" + _pass + " checks)" : "SelfTestAudit FAILED: " + _fail + " of " + (_pass + _fail));
             return _fail;
         }
@@ -584,6 +586,44 @@ namespace SeSim.Core
         }
 
         // =====================================================================================================
+        static void TestIdleSlowdown()
+        {
+            // a 2x1x1 small ship with one gyro (not in override) and a battery, spinning at 1 rad/s about Y: the inertia is small enough that the
+            // torque cap never binds, so w decays as exp(-t*mult*MAX_SLOWDOWN): 0.25 s on a small grid (mult 5, 0.8), 0.625 s on a large grid (2, 0.8)
+            foreach (bool large in new[] { false, true })
+            {
+                var w = NewWorld(true);
+                var b = large
+                    ? Spawn(w, 0, 0, Vector3D.Zero, null, null, null, new Vector3D(0, 1, 0), true, Bd("Gyro", "LargeBlockGyro", 0, 0, 0), Bd("BatteryBlock", "LargeBlockBatteryBlock", 1, 0, 0))
+                    : Spawn(w, 0, 0, Vector3D.Zero, null, null, null, new Vector3D(0, 1, 0), false, Bd("Gyro", "SmallBlockGyro", 0, 0, 0), Battery(1, 0, 0), Armor(0, 1, 0));
+                if (large) foreach (var bt in b.Batteries) bt.StoredMWh = bt.MaxStoredMWh;
+                int ticks = 0;
+                while (b.AngularVelocity.Length() > Math.Exp(-1) && ticks < 600) { w.Step(); ticks++; }
+                double tc = ticks / 60.0, expect = 1.0 / ((large ? 2 : 5) * 0.8);
+                Check(Math.Abs(tc - expect) < 0.04 + 0.1 * expect, (large ? "large" : "small") + " grid idle gyro slowdown time constant " + tc.ToString("F3") + " s vs " + expect.ToString("F3") + " s");
+            }
+        }
+
+        static void TestMountSplit()
+        {
+            // SmallBlockGyro has a single mount point (Bottom): an armour block on its Top touches it but is not attached (gun/thruster flank case)
+            Func<bool, int> comps = mount =>
+            {
+                var s = new SimSettings { SplitByMountPoints = mount };
+                var w = NewWorld(true, null, s);
+                var b = Spawn(w, 0, 0, Vector3D.Zero, null, null, null, null, false, Bd("Gyro", "SmallBlockGyro", 0, 0, 0), Armor(0, 1, 0), Armor(1, 1, 0), Armor(2, 1, 0));
+                return Connectivity.Components(b, new List<List<BlockInst>>());
+            };
+            Check(comps(false) == 1, "face contact rule: gyro under an armour row is one structure");
+            Check(comps(true) == 2, "mount-point rule: the same gyro (Bottom mount only, armour on its Top) is a separate piece");
+            // main body = most blocks (3 armour) even though the gyro is the heaviest single block
+            var w2 = NewWorld(true);
+            var b2 = Spawn(w2, 0, 0, Vector3D.Zero, null, null, null, null, false, Bd("Gyro", "SmallBlockGyro", 0, 0, 0), Armor(0, 1, 0), Armor(1, 1, 0), Armor(2, 1, 0));
+            b2.ConnectivityDirty = true;
+            int created = Connectivity.SplitIfNeeded(w2, b2);
+            Check(created == 1 && b2.Blocks.Count == 3, "split keeps the group with the most blocks (" + b2.Blocks.Count + " blocks stay, " + created + " new body)");
+        }
+
         static void TestGyroscopic()
         {
             var s = new SimSettings { GyroscopicTerm = true };

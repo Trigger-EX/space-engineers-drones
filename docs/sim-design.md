@@ -250,8 +250,8 @@ over overridden gyros; `diff = target - localAngVel`; ramp frames (`Body.GyroRam
 written since last tick (`Body.GyroDirty`, set by every SimGyro setter, like Keen's `SetGyroTorque -> MarkDirty`) it is recomputed
 as 120 if |diff|^2 > (pi/2)^2 else `(int)(|diff|^2 * 119/(pi/2)^2) + 1`; otherwise it counts down by 1 per tick to 1 (Keen); `desiredTorque = diff * 60 / ramp / invInertiaDiag` (component-wise, grid axes);
 clamp to sphere radius `sum(MaxForce*Power of overridden) + sum(MaxForce of others)`; times Gyro-group SuppliedRatio. Without
-override: slowdown torque `-localAngVel / invInertiaDiag` clamped per axis to sum(MaxForce), times
-`MAX_SLOWDOWN + (1-MAX_SLOWDOWN)*(1-ratio)` (0.93) - gyros damp rotation when idle, like the game. Override values are clamped to
+override: slowdown torque `-localAngVel * mult / invInertiaDiag` clamped per axis to sum(MaxForce)*mult (mult 5 small grid, 2 large; MyFakes), times
+`MAX_SLOWDOWN + (1-MAX_SLOWDOWN)*(1-ratio)` (0.8; time constant about 0.25 s small, 0.6 s large) - gyros damp rotation when idle, like the game. Override values are clamped to
 the max angular speed (2*pi rad/s small grid, pi large; Environment.sbc 360/180 deg/s).
 
 ### 6.4 Rigid body
@@ -259,9 +259,9 @@ Mass = sum of block `mass_kg` (+ inventory later). Inertia about the COM: each b
 (`m/12*(b^2+c^2)` ...) + parallel axis term; stored as 3x3 in grid axes, inverted once per mass change; world inverse inertia
 = R * I^-1 * R^T. Semi-implicit Euler: `v += F/m*dt`, `w += Iw^-1 * T * dt`, clamp |v| <= 100 m/s (SmallShipMaxSpeed) and
 |w| <= max angular speed, `x += v*dt`, `q += 0.5*dt*(w,0)*q`, normalize. No gyroscopic term, no gravity, no drag.
-Thrusters: force `min(OverrideN, MaxForce) * SuppliedRatio(Thrust)` at the thruster position (torque from offset). Inertial
+Thrusters: force `min(OverrideN, MaxForce) * SuppliedRatio(Thrust)` through the centre of mass (SimSettings.ThrusterTorque=false, like the game; true = torque from the thruster offset). Inertial
 dampeners when `Body.DampenersOn` (RC `DampenersOverride` true) and a thruster has no override: thrust against the velocity
-component along its push direction, `min(MaxForce, m*|v_along|/dt*gain)`. Scripts switch dampeners off; the pirate/vanilla AI use them.
+component along its push direction, `min(MaxForce, m*|v_along|/dt*gain)`. Scripts switch dampeners off; the pirate/vanilla AI use them. Opt-in `GameDampenerLaw`: demand `m*|v|/0.5 s`, an override on an axis switches that whole axis off. Opt-in `AngularDamping` (game 0.1/s), `CreativeBatteries`, `PowerCascade`, `PowerBatteriesFirst`. Grid splitting uses defs.json mount points and keeps the fragment with the most blocks (`SplitByMountPoints`, `SplitMainByBlockCount`).
 Collisions: sphere broadphase, then block AABB overlap in one body's frame; separating impulse (restitution 0.2) at the
 deepest pair; `EventKind.Collision`; damage only with `--collision-damage`.
 

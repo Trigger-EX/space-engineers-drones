@@ -80,6 +80,7 @@ namespace SeSim.Core
                 else if (adapt && remaining > 0) ratio = remaining / demand;
                 else ratio = 0;
                 for (int i = idx; i < end; i++) sinks[i].SuppliedRatio = ratio;
+                if (s.PowerCascade && !adapt && demand > 1e-15 && ratio == 0) remaining = 0;     // unserved non-adaptible group starves the lower groups
                 double got = demand * ratio;
                 remaining -= got; if (remaining < 0) remaining = 0;
                 used += got; demandTotal += demand;
@@ -88,7 +89,8 @@ namespace SeSim.Core
             LastDemandMW = demandTotal; LastSuppliedMW = used;
 
             // ---- drain ----
-            double fromBat = used - gen;                  // generators carry the load first, batteries the rest
+            double fromBat = s.PowerBatteriesFirst ? (used < batSupply ? used : batSupply) : used - gen;   // default: generators carry the load first, batteries the rest
+            if (s.CreativeBatteries) fromBat = 0;         // creative mode: batteries never discharge
             if (fromBat > 0 && batSupply > 0)
             {
                 double scale = fromBat / batSupply; if (scale > 1) scale = 1;

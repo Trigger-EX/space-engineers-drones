@@ -24,7 +24,24 @@ namespace SeSim.Core
         // Yaw and Roll (stored.Y = -Yaw, stored.Z = -Roll) and disagrees on Pitch (stored.X = +Pitch): --gyro-pitch-sign +1 tests that.
         public int GyroPitchSign = -1, GyroYawSign = -1, GyroRollSign = -1;
         public int GyroRampFrames = 120;                         // MyGridGyroSystem ACCELARION_RAMP_FRAMES = 60*2
-        public double GyroMaxSlowdown = 0.93;                    // MyGridGyroSystem MAX_SLOWDOWN (non-override damping)
+        public double GyroMaxSlowdown = 0.8;                     // MyGridGyroSystem MAX_SLOWDOWN = 0.8 (MyFakes.WELD_LANDING_GEARS is true; 0.93 otherwise). physics_power-04
+        /// <summary>Idle gyro slowdown (no gyro in override): torque = -w * multiplier / invI, clamped to sum(MaxForce) * multiplier.
+        /// MyFakes.SLOWDOWN_FACTOR_TORQUE_MULTIPLIER = 5 (small grid), ..._LARGE_SHIP = 2 (large). 1 = the old model (physics_power-04).</summary>
+        public double GyroSlowdownMultiplierSmall = 5, GyroSlowdownMultiplierLarge = 2;
+        /// <summary>Opt-in (default 0 = none, the old model): Havok angular damping, w *= 1 - AngularDamping*dt every tick. The game uses
+        /// MyPerGameSettings.DefaultAngularDamping = 0.1 on every ship (linear damping 0). physics_power-05, [src] 2019 snapshot.</summary>
+        public double AngularDamping = 0;
+        /// <summary>Opt-in (default false = old model: dead-beat stop m*|v|/dt, per direction): game-style inertial dampener
+        /// (MyEntityThrustComponent.ComputeBaseThrust): demand m * |v| / 0.5 s along each opposing direction (exponential approach, time constant
+        /// 0.5 s) clamped to the available thrust, and dampening is off for a whole axis (both directions, every thruster) while any thruster on
+        /// that axis has an override. physics_power-06.</summary>
+        public bool GameDampenerLaw = false;
+        /// <summary>Connectivity/splitting (physics_power-08): true (default) = two blocks are attached through overlapping mount-point rectangles
+        /// (defs.json "mounts", like MyCubeGrid.CheckMountPointsForSide); false = any face-adjacent cells (the old approximation). Needs defs.json
+        /// next to defs_stats.json; without it the face rule is used.</summary>
+        public bool SplitByMountPoints = true;
+        /// <summary>true (default): the fragment with the most BLOCKS keeps the original body (MyDisconnectHelper); false = the heaviest.</summary>
+        public bool SplitMainByBlockCount = true;
         public bool Collisions = true;                           // body-body contact impulses (no damage unless CollisionDamage)
         /// <summary>Kinetic-energy collision damage between bodies (sim-audit-1 section 7.7): each body takes
         /// CollisionDamageScale * 0.5 * reducedMass * vn^2 (vn = closing speed along the contact normal), shared by the blocks within
@@ -62,6 +79,15 @@ namespace SeSim.Core
 
         // ---- power (slot A) ------------------------------------------------------------------------------
         public bool PowerEnabled = true;
+        /// <summary>Opt-in (default false): creative-mode batteries never discharge (MyBatteryBlock never calls ConsumePower in creative mode and an
+        /// Auto battery refills in about 10 s), so capacity is never limiting, only the MW output cap. physics_power-02; the owner's world mode is unknown.</summary>
+        public bool CreativeBatteries = false;
+        /// <summary>Opt-in (default false): a non-adaptible power group that cannot be served in full starves ALL lower-priority groups
+        /// (MyResourceDistributorComponent.RecomputeResourceDistributionPartial); false = only that group gets 0. physics_power-09.</summary>
+        public bool PowerCascade = false;
+        /// <summary>Opt-in (default false): loads are served from batteries first, generators carry the rest (game source order); false = generators
+        /// carry the load first, batteries the rest. physics_power-09.</summary>
+        public bool PowerBatteriesFirst = false;
         public double RailgunCapacitorMWh = 0.016;               // blueprint EntityCapacitorComponent StoredPower when full [I]
         public double RailgunChargeMW = 2.88;                    // small railgun stored-power rate: RechargeDraw 3.6 MW * ChargeMultiplier 0.8 (EntityComponents.sbc, SmallRailgun) = 20 s for 0.016 MWh
         /// <summary>true (default): the railgun capacitor uses Data/EntityComponents.sbc numbers: the block REQUESTS RechargeDraw (small 3.6 MW,
@@ -105,7 +131,7 @@ namespace SeSim.Core
         /// MyLargeTurretBase) instead of the body centre. Default off (matrix results so far use the centre).</summary>
         public bool TurretBlockTargeting = false;
         public double RailgunInitialCharge = 1.0;                // [I] capacitor fraction at spawn (drones sit charged before a fight)
-        public bool SpreadUniformInAngle = false;                // [I] false: shots uniform in solid angle inside the cone; true: uniform in elevation angle
+        public bool SpreadUniformInAngle = false;                // opt-in true = the game (MyUtilRandomVector3ByDeviatingVector: theta uniform in angle, weapons-05); default false keeps the tuned results. false: shots uniform in solid angle inside the cone; true: uniform in elevation angle
         public double ProjectileShooterIgnoreS = 0.2;            // projectiles pass through the shooter's own body for this long
         public bool ProjectileSweepBodies = true;                // test the segment in the target's pose at tick start..end (no tick-quantised lag)
         public double TurretSlewRadPerSec = 1.0;                 // [I] large turret azimuth/elevation speed
@@ -133,6 +159,9 @@ namespace SeSim.Core
         public double VanillaSearchIntervalS = 30;               // AI Offensive default search interval (MidgeNotes.md)
         public double VanillaFireConeDeg = 5;                    // vanilla AI fires fixed guns inside this cone
         public bool VanillaSearchOnActivate = true;              // [I] AI Offensive searches as soon as it is enabled (then every interval)
+        // AiBlocksBaseline (sim_methodology-01): the DEFAULT sim lets the pasted AI blocks fly and aim (VanillaAiBrain stand-in). The user's in-game
+        // report (2026-10-13) says they do nothing, so every published matrix is conditional on AI blocks working. The pessimistic baseline is
+        // --script-ai-blocks-inert true (and/or --ai-behavior-needs-switch true). Both defaults stay false here: flipping them is the owner's call.
         /// <summary>The AI blocks on SCRIPT ships never act, although the script switches them on (in-game report 2026-10-13: the blocks come
         /// out of a blueprint with "AI Behavior" off and default settings, so a pasted Full drone's AI does nothing). Worst case for the
         /// scripts' hybrid search; scriptless Midges are not affected.</summary>
@@ -186,7 +215,7 @@ namespace SeSim.Core
         /// <summary>With CountInstructions: a Main/constructor run that exceeds MaxInstructionCount dies ("Script too complex", the PB stops) like in the game.</summary>
         public bool EnforceInstructionLimit = false;
         public int MaxInstructionCount = 50000;                  // wiki value
-        public int MaxCallChainDepth = 1000;                     // [I]
+        public int MaxCallChainDepth = 1000;                     // source-confirmed: IlInjector.m_maxCallChainDepth = 1000 (Keen VRage.Library, il_profiler audit)
         /// <summary>Swarm cue (test harness for the kamikaze scenarios, docs/kamikaze-defence.md): every SwarmCueSeconds (0 = off) each PB of
         /// team SwarmCueTeam that listens to "DRONE_CUE" receives the true position / velocity / bounding radius of every enemy ship, as a
         /// carrier's radar or turret designators would feed a Stinger swarm (Stingers only see 50 m by sensor on their own).</summary>
