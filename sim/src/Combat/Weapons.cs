@@ -262,7 +262,9 @@ namespace SeSim.Combat
                     b.Weapon = u; Weapons.Add(u);
                     if (d.Kind == "LargeTurretBase")
                     {
-                        var t = new TurretUnit(b, u, 800f);
+                        float range = 800f;
+                        if (w.Settings.TurretRangeFromAmmo && d.Weapon.Ammo != null && d.Weapon.Ammo.MaxTrajectory > 0) range = d.Weapon.Ammo.MaxTrajectory;
+                        var t = new TurretUnit(b, u, range);
                         b.Turret = t; Turrets.Add(t);
                     }
                     break;

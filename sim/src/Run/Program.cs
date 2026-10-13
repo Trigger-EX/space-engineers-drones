@@ -49,7 +49,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -129,7 +129,7 @@ namespace SeSim.Run
                 case "list":
                 {
                     var o = Parse(args, 1, settings);
-                    if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+                    ApplyGenOptions(o);
                     var l = ScenarioGen.Select(o.Get("filter", null), o.Get("kind", null));
                     int seeds = o.Int("seeds", 100);
                     var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
@@ -166,6 +166,33 @@ namespace SeSim.Run
                     return CmdRun(args, simDir, settings);
                 default:
                     throw new ArgumentException("unknown command '" + args[0] + "'");
+            }
+        }
+
+        /// <summary>Scenario generator switches: --unfair curated|full; --enemies DIR (blueprint folders fought "1vX" by every armed
+        /// model), --enemy-counts 1,2,3 (team sizes against each enemy), --enemy-brain pirate|hold.</summary>
+        static void ApplyGenOptions(Opts o)
+        {
+            if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+            if (o.Has("enemies")) ScenarioGen.EnemyDir = Path.GetFullPath(o.Get("enemies", "enemies"));
+            if (o.Has("enemy-counts"))
+            {
+                var l = new List<int>();
+                foreach (string p in o.Get("enemy-counts", "").Split(','))
+                {
+                    int c;
+                    if (p.Trim().Length == 0) continue;
+                    if (!int.TryParse(p.Trim(), NumberStyles.Integer, Inv, out c) || c < 1 || c > 64) throw new ArgumentException("--enemy-counts needs numbers 1..64 separated by commas");
+                    l.Add(c);
+                }
+                if (l.Count == 0) throw new ArgumentException("--enemy-counts is empty");
+                ScenarioGen.EnemyCounts = l.ToArray();
+            }
+            if (o.Has("enemy-brain"))
+            {
+                string b = o.Get("enemy-brain", "pirate");
+                if (b != "pirate" && b != "hold") throw new ArgumentException("--enemy-brain must be pirate or hold");
+                ScenarioGen.EnemyBrain = b;
             }
         }
 
@@ -235,7 +262,7 @@ namespace SeSim.Run
             var o = Parse(args, 1, settings);
             string repo = FindRepoRoot(o.Get("repo", null));
             if (!CheckBlueprints(repo)) return 4;
-            if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+            ApplyGenOptions(o);
             string name = o.Get("scenario", o.Positional.Count > 0 ? o.Positional[0] : null);
             if (name == null) throw new ArgumentException("one needs --scenario NAME (see `list`)");
             Scenario sc = null;
@@ -295,7 +322,7 @@ namespace SeSim.Run
             var o = Parse(args, 1, settings);
             string repo = FindRepoRoot(o.Get("repo", null));
             if (!CheckBlueprints(repo)) return 4;
-            if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+            ApplyGenOptions(o);
             var scenarios = ScenarioGen.Select(o.Get("filter", null), o.Get("kind", null));
             if (scenarios.Count == 0) { Console.Error.WriteLine("no scenario matches the filter"); return 1; }
             if (o.Has("cap-seconds"))

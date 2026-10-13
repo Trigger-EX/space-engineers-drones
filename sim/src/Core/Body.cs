@@ -42,6 +42,7 @@ namespace SeSim.Core
         public readonly List<ThrusterUnit> Thrusters = new List<ThrusterUnit>();
         public readonly List<GyroUnit> Gyros = new List<GyroUnit>();
         public readonly List<BatteryUnit> Batteries = new List<BatteryUnit>();
+        public readonly List<BlockInst> Generators = new List<BlockInst>();   // reactors / hydrogen engines (large enemy ships; drones have none)
         public readonly List<SeSim.Combat.WeaponUnit> Weapons = new List<SeSim.Combat.WeaponUnit>();
         public PowerSystem Power;
         public SeSim.Api.SimCubeGrid ApiGrid;  // slot B, one per body
@@ -129,13 +130,14 @@ namespace SeSim.Core
         /// <summary>Clears and re-fills the unit lists (Thrusters, Gyros, Batteries, Weapons) from Blocks.</summary>
         public void RebuildUnitLists()
         {
-            Thrusters.Clear(); Gyros.Clear(); Batteries.Clear(); Weapons.Clear();
+            Thrusters.Clear(); Gyros.Clear(); Batteries.Clear(); Weapons.Clear(); Generators.Clear();
             for (int i = 0; i < Blocks.Count; i++)
             {
                 var b = Blocks[i];
                 if (b.Thruster != null) Thrusters.Add(b.Thruster);
                 if (b.Gyro != null) Gyros.Add(b.Gyro);
                 if (b.Battery != null) Batteries.Add(b.Battery);
+                if (b.Def.GeneratorMW > 0) Generators.Add(b);
                 if (b.Weapon != null) Weapons.Add(b.Weapon);
             }
         }
@@ -307,6 +309,7 @@ namespace SeSim.Core
             if (b.Thruster != null) Thrusters.Remove(b.Thruster);
             if (b.Gyro != null) Gyros.Remove(b.Gyro);
             if (b.Battery != null) Batteries.Remove(b.Battery);
+            if (b.Def.GeneratorMW > 0) Generators.Remove(b);
             if (b.Weapon != null) Weapons.Remove(b.Weapon);
             if (b.Merge != null)
             {

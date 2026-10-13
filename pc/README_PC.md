@@ -16,3 +16,13 @@ GPUs are not used: the simulator is a CPU program (thousands of independent figh
 runs the plan on all CPUs minus one, and writes `SE_results.zip`). Options: `./run_mint.sh --only verify,full-fresh`, `./run_mint.sh --jobs 12`.
 `results\verify` is a small check: I compare it to the same fights run on my machine to see whether your CPU/.NET gives identical numbers.
 If a line fails, send `results\machine.txt` and the failing `results\<name>\log.txt`.
+
+## Your own ship vs the drones ("1vX", `plans/enemy.plan`)
+`enemies\Tech Hunter\bp.sbc` is shipped. The plan pits it alone against 1, 2, 3, 4, 6, 8, 12, 16 and 24 of every armed drone model and the 4 mixed teams:
+main run (ship flown like the pirate: closes in, circles at 700 m), a "holds position" run, 15-minute fights against the Longbow snipers,
+an 800 m turret-range robustness run, and three traces. Roughly 2-5 hours on a 14-core PC; resumable like the default plan.
+- Windows: open a command prompt in the pack folder and run `run.bat -Plan plans\enemy.plan`, then `pack_results.bat`.
+- Linux Mint: `./run_mint.sh plans/enemy.plan` (packs `SE_results.zip` at the end).
+- Another ship: copy its blueprint folder (with `bp.sbc`) from `%AppData%\SpaceEngineers\Blueprints\local` into `enemies\`. Every folder there is used.
+- Limits: only the largest grid is simulated (rotor/hinge/piston subgrids, e.g. custom turret pods, are dropped); hydrogen and reactor fuel never run out;
+  no PB scripts run on the enemy ship; its turrets aim by themselves.

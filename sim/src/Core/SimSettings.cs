@@ -42,6 +42,9 @@ namespace SeSim.Core
         /// <summary>false (default): thrust acts through the centre of mass like the game (MyEntityThrustComponent applies the summed
         /// thrust at CenterOfMassWorld, so thruster placement never turns a ship). true: per-thruster r x F torque.</summary>
         public bool ThrusterTorque = false;
+        /// <summary>[I] Large turret engagement range = its ammo's max range (artillery 2000 m, assault cannon 1400 m) when true;
+        /// a flat 800 m (the turret blocks' MaxRangeMeters) when false. Gatling/rocket turrets are 800 m either way.</summary>
+        public bool TurretRangeFromAmmo = true;
         public bool GyroscopicTerm = false;                      // add -w x (I w) to the angular acceleration (design: off, Havok-like approximation not needed)
         public double CollisionRestitution = 0.2;                // body-body contact impulse restitution
         public int CollisionMinBlocks = 4;                       // bodies with fewer live blocks (debris) do not collide
