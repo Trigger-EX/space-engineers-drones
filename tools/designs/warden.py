@@ -536,7 +536,7 @@ def check_hangar(bp, min_gap=0.3):
     assert MU._dot(nose, (0, -1, 0)) > 0.99, 'the pod nose does not point down the lane'
     return True
 
-def warden(lite=False, with_pod=True, lock=False, name=None, wing=0):
+def warden(lite=False, with_pod=True, lock=True, name=None, wing=0):
     full = not lite
     name = name or ('Warden Lite' if lite else 'Warden')
     bp = Blueprint(name, 'Large', seed=seed_for(name))

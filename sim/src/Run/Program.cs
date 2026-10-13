@@ -58,8 +58,8 @@ namespace SeSim.Run
             public double Dbl(string k, double d) { string v; if (!Kv.TryGetValue(k, out v)) return d; double r; if (!double.TryParse(v, NumberStyles.Float, Inv, out r)) throw new ArgumentException("--" + k + " needs a number"); return r; }
         }
 
-        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless", "allow-mismatch" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data" };
+        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "face-away", "endless", "allow-mismatch" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "face-away", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -294,6 +294,7 @@ namespace SeSim.Run
                 }
             }
             if (o.Has("face") && o.Get("face", "true") != "false") foreach (var sc in scs) sc.FaceEnemies = true;
+            if (o.Has("face-away") && o.Get("face-away", "true") != "false") foreach (var sc in scs) sc.FaceAway = true;
             if (o.Has("start-distance"))
             {
                 string[] p = o.Get("start-distance", "").Split(':');
