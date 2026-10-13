@@ -48,8 +48,8 @@ namespace SeSim.Run
             public double Dbl(string k, double d) { string v; if (!Kv.TryGetValue(k, out v)) return d; double r; if (!double.TryParse(v, NumberStyles.Float, Inv, out r)) throw new ArgumentException("--" + k + " needs a number"); return r; }
         }
 
-        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain" };
+        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "endless" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -335,6 +335,7 @@ namespace SeSim.Run
             int seeds = o.Int("seeds", 100), seedStart = o.Int("seed-start", 0);
             ulong baseSeed = (ulong)o.Int("seed", 1);
             int threads = o.Int("jobs", Environment.ProcessorCount);
+            if (o.Has("endless") && o.Get("endless", "true") != "false") return CmdRunEndless(o, args, simDir, settings, repo, scenarios, seedStart, baseSeed, threads);
             var jobs = ParallelRunner.MakeJobs(scenarios, seeds, seedStart);
             string shard = o.Get("shard", null);
             if (shard != null)
@@ -370,6 +371,26 @@ namespace SeSim.Run
             Console.WriteLine("done: " + all.Count + " runs in file (" + wins + " decisive, " + timeouts + " timeouts, " + other + " draws, " + errors + " errors), wall " + sw.Elapsed.TotalSeconds.ToString("F1", Inv) + " s");
             Console.WriteLine("results: " + outDir);
             return errors > 0 ? 5 : 0;
+        }
+
+        /// <summary>run --endless: fights every selected scenario round after round until Enter (see ParallelRunner.RunEndless), then
+        /// writes summary.csv over everything in runs.jsonl. Always resumes: running it again continues with new seeds.</summary>
+        static int CmdRunEndless(Opts o, string[] args, string simDir, SimSettings settings, string repo, List<Scenario> scenarios, int seedStart, ulong baseSeed, int threads)
+        {
+            if (o.Has("shard")) throw new ArgumentException("--endless cannot be combined with --shard");
+            string outDir = o.Get("out", null) ?? Path.Combine(Path.Combine(Path.Combine(Path.Combine(repo, "out"), "sim"), "results"), "endless");
+            Directory.CreateDirectory(outDir);
+            string runsPath = Path.Combine(outDir, "runs.jsonl");
+            var skip = new HashSet<string>();
+            if (File.Exists(runsPath)) foreach (var r in LoadRuns(runsPath)) skip.Add(ParallelRunner.RunKey(r.Scenario, r.SeedIndex));
+            WriteMeta(Path.Combine(outDir, "meta.json"), args, settings, repo, simDir, scenarios.Count, -1, -1, baseSeed, threads, null);
+            Console.Error.WriteLine(scenarios.Count + " matchups, endless, " + threads + " threads -> " + outDir + (skip.Count > 0 ? " (continuing after " + skip.Count + " earlier fights)" : ""));
+            Console.Error.WriteLine("Press Enter to stop: fights in progress finish and everything is saved. Press Enter twice to stop at once.");
+            ParallelRunner.RunEndless(scenarios, seedStart, threads, baseSeed, settings, repo, outDir, skip);
+            var all = LoadRuns(runsPath);
+            JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
+            Console.WriteLine("saved: " + all.Count + " fights in " + runsPath + " (summary.csv updated)");
+            return 0;
         }
 
         static void WriteMeta(string path, string[] args, SimSettings s, string repo, string simDir, int scenarios, int jobs, int seeds, ulong baseSeed, int threads, string shard)
