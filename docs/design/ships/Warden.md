@@ -10,20 +10,20 @@ Nothing of this has been pasted in the game yet (section 11 lists what to look a
 | | catalogue 4.4 | Warden (Full) | note |
 |---|---|---|---|
 | size | 75 x 25 x 15 m (30 x 10 x 6 cells) | **85.0 x 27.5 x 40.0 m** (34 x 11 x 16 cells; hull 22.5 m wide, 12.5 m high deck; the 40 m is keel turrets to the mast) | longer and taller than the model hull: the hangar blister, the tower and the engines |
-| mass | 2,147 t | **2,595 t blocks + 26.5 t ammunition = 2,621 t** (+22 %) | hangar blister and 8 doors (63 t), tower stem, flank armour belt, 98 junctions (51 t), 8 gyros; Lite 2,619 t |
-| forward accel | 3.4 m/s2 (7.2 MN) | **3.98 m/s2** (10.44 MN = 1 large + 3 small hydrogen thrusters) (+17 %) | four engines at the stern as briefed |
-| other axes | 1.5 m/s2 (3 small per axis) | **1.65 m/s2** (4 small per axis, 4.32 MN) (+10 %) | |
-| angular accel | 0.15 rad/s2 (5 gyros) | about 0.15 rad/s2 yaw, 0.14 pitch (8 gyros, 269 MN m, box inertia 1.7e9 / 1.9e9 kg m2) | 3 more gyros than the catalogue for the longer, heavier hull |
-| PCU | 9,664 | **8,632 ship + 1,643 pod = 10,275** (+6 %); Lite 8,532 + 1,643 | doors 920, junctions 980, connectors 250 |
-| armour HP | 8.8 M | 12.6 M (all blocks, 643 heavy + 351 light armour blocks, 20 windows) | |
+| mass | 2,147 t | **2,563 t blocks + 26.5 t ammunition = 2,589 t** (+21 %) | hangar blister and 8 doors (63 t), tower stem, flank armour belt, 101 junctions (53 t), 8 gyros; Lite 2,587 t |
+| forward accel | 3.4 m/s2 (7.2 MN) | **4.03 m/s2** (10.44 MN = 1 large + 3 small hydrogen thrusters) (+19 %) | four engines at the stern as briefed |
+| other axes | 1.5 m/s2 (3 small per axis) | **1.67 m/s2** (4 small per axis, 4.32 MN) (+11 %) | |
+| angular accel | 0.15 rad/s2 (5 gyros) | about 0.16 rad/s2 yaw, 0.14 pitch (8 gyros, 269 MN m, box inertia 1.7e9 / 1.9e9 kg m2) | 3 more gyros than the catalogue for the longer, heavier hull |
+| PCU | 9,664 | **8,654 ship + 1,643 pod = 10,297** (+7 %); Lite 8,554 + 1,643 | doors 920, junctions 1,010, connectors 250 |
+| armour HP | 8.8 M | 12.4 M (all blocks, 632 heavy + 354 light armour blocks, 20 windows) | |
 | weapons | 2 rail, 2 artillery, 4 assault, 8 gatling, 6 decoys | the same | sustained data DPS 18,354 (catalogue 18.4 k) |
 | generation / batteries | 6 x 15 MW / 8 x 3 MWh | the same: 90 MW, 24 MWh (96 MW) | |
 | hydrogen | 2 tanks, 30 ML | the same, both full | full forward burn 7,230 L/s = **69 min**; at 25 % duty 277 min (catalogue need: 4.3 ML per 30 min of combat) |
 | docks | 4 | 4 (one pod) | |
 | thrusters | 16 | 24 (4 main + 20 small) | the catalogue's 3 per axis became 4 per axis for the heavier hull |
-| junctions | 40 | 98 | 24 thrusters, 14 turrets, 2 tanks, 2 lockers on one network |
+| junctions | 40 | 101 | 24 thrusters, 14 turrets, 2 tanks, 2 lockers on one network |
 
-Deviations explained: mass +22 % (the hangar, the tower and the belt; a thinner skin would put the forward acceleration at 4.3, outside the +20 % band, so the mass is kept) and the thrust that
+Deviations explained: mass +21 % (the hangar, the tower and the belt; a thinner skin would push the forward acceleration beyond the +20 % band, so the mass is kept) and the thrust that
 comes from the four-engine stern. Everything else is within 20 %.
 
 ## 2. Silhouette and style
@@ -36,7 +36,7 @@ comes from the four-engine stern. Everything else is within 20 %.
 * Family resemblance: charcoal gunmetal hull (`hsv 215 deg, .13, .36`), lighter plates on the tower, darker belly (`.24`), orange accent (`28 deg, .85, .95`) on bow, forecastle, flank stripe,
   sponson belt, mouth frame and engine plate, cyan bridge glass, thruster nozzles glow orange in the renders.
 * Heavy armour (16.5 k HP, 3.3 t per block) on the bow shell, the whole belly and blister, the flank belt (y 3..4), the forecastle wall and the tower stem; light (2.5 k HP, 0.5 t) elsewhere:
-  643 heavy, 351 light armour blocks. Slopes, corners and 2:1 ramps come from `hulls.build_hull` (mount faces checked); the hull is hollow with bulkheads at z = 16 and 25 and a floor over the blister.
+  632 heavy, 354 light armour blocks. Slopes, corners and 2:1 ramps come from `hulls.build_hull` (mount faces checked); the hull is hollow with bulkheads at z = 16 and 25 and a floor over the blister.
 * Symmetric about the centre column x = 0 (test `test_symmetric`: no unpaired cell). No floating block: every block attaches (`audit.py --types`: 100 %).
 * Windows: only non-DLC `Window1x1Flat` / `Window1x1Slope` (the bridge front and sides, 20 blocks).
 
@@ -92,8 +92,8 @@ z24 ...##...##...
 z25 ...#######...
 z26 ...#######...
 z27 ...#######...
-z28 ..TTT...TTT..
-z29 ..TTTt.tTTT..
+z28 ..TTTt.tTTT..
+z29 ..TTT...TTT..
 z30 ..TTT...TTT..
 ```
 
@@ -125,13 +125,13 @@ z19 .##B#...#B##.
 z20 .##G#...#G##.
 z21 .##G#...#G##.
 z22 .##G#...#G##.
-z23 .##B#...#B##.
-z24 .##G#...#G##.
-z25 .###########.
-z26 ..#KKK.KKK#..
-z27 ..#KKK.KKK#..
-z28 .tjKKK.KKKjt.
-z29 .tjj.j.j.jjt.
+z23 .#jB#...#Bj#.
+z24 .#jG#...#Gj#.
+z25 .#jj######j#.
+z26 .tjKKK.KKKjt.
+z27 .tjKKK.KKKjt.
+z28 ..#KKK.KKK#..
+z29 ..#j.....j#..
 z30 ..#########..
 z31 .....ttt.....
 z32 .....ttt.....
@@ -256,7 +256,7 @@ Every ship block is named `[SH] ...`; the PBs `[Helm][SH] Warden Helm` and `[Sta
 | power | 6 x `LargeBlockSmallGenerator` (100 kg uranium each), 8 x `LargeBlockBatteryBlock` (full) | `[SH] Reactor 1..6`, `[SH] Battery P1..4 / S1..4` | fore compartment, flank bays |
 | fuel | 2 x `LargeHydrogenTank` (full, 15 ML each) | `[SH] Hydrogen Tank P/S` | engine room |
 | stores | 2 x `LargeBlockLargeContainer` with spare 10 slugs, 20 artillery, 30 assault shells, 100 gatling boxes each | `[SH] Ammo Locker P/S` | fore compartment |
-| network | 98 x `LargeBlockConveyor` | `[SH] Junction 1..98` | section 7 |
+| network | 101 x `LargeBlockConveyor` | `[SH] Junction 1..101` | section 7 |
 | hangar | 8 x `AirtightHangarDoor`, 2 x `Connector` | `[SH] Hangar Door 1..8`, `[SH] Hangar Connector A/B` | y = 0, z 17..24; (0, 5, 18), (0, 5, 23) |
 | timers / events | `TimerBlockLarge`, 3 x `EventControllerLarge` | `[SH] Timer D` (5 s, silent; toolbar: groups Thrusters and Weapons Off), `[SH] EC Cockpit`, `[SH] EC Power`, `[SH] EC Core` (integrity of the 6 reactors, threshold 0.4, inverted, toolbar: Run Staff) | bridge |
 | sensing | 5 x `LargeCameraBlock`, compact antenna (10 km), 2 x `LargeBlockSensor` (Full) | `[SH] Camera Front/Rear/Port/Starboard/Belly`, `[SH] Antenna`, `[SH] Sensor Lane P/S` | conn platform, belly, keel |
@@ -284,7 +284,7 @@ Rounds per gun with the pre-load: rail 6 (6 min at the 61 s cycle), artillery 6 
 
 * Electricity: 6 x 15 MW = 90 MW against 2 x 38 MW railgun recharge (76 MW) and about 0.14 MW of the rest; hydrogen thrusters draw no electricity. Surplus 14 MW; batteries 24 MWh / 96 MW carry both
   railguns for 19 min with every reactor dead. Uranium 600 kg = 6.7 h at 90 MW.
-* Thrust (N): forward 10.44 MN, every other axis 4.32 MN (table in the numbers: `warden.numbers`). Loaded accelerations 3.98 / 1.65 m/s2.
+* Thrust (N): forward 10.44 MN, every other axis 4.32 MN (table in the numbers: `warden.numbers`). Loaded accelerations 4.03 / 1.67 m/s2.
 * Hydrogen: 30 ML in two tanks; full forward burn 7,230 L/s = 69 min; the catalogue combat need is 4.3 ML per 30 min.
 * Ammunition and fuel masses are in the 26.5 t of pre-load (items are not in the block-mass accel figures of `build_all`, which therefore prints F4.0).
 
@@ -299,7 +299,7 @@ the owner's ships, measured on all game-written samples (`ref/user-samples` + Te
 * tanks and cargo containers are touched by a junction at a face centre in 9 of 29 and 12 of 27 (the rest by tubes or by the thruster / turret itself);
 * junction cubes touch each other: 1,046 of 1,137 have at least one junction neighbour (typical 2 to 4: solid lattices and chains), so face-adjacent junctions form one network and need no tube.
 
-So `_conveyors()` builds ONE network of 98 junction cubes (524 kg, 10 PCU each): terminals = the cell behind every thruster's back face centre (24), the cell under every turret's base centre (14), the tanks'
+So `_conveyors()` builds ONE network of 101 junction cubes (524 kg, 10 PCU each): terminals = the cell behind every thruster's back face centre (24), the cell under every turret's base centre (14), the tanks'
 rear face centres (2) and the lockers' top face centres (2), routed with Dijkstra through free hull cavity (cost 1) and hidden interior armour cubes (cost 4, replaced), never adjacent to the hangar
 connectors or in the hangar column. What it looks like: a fuel bus along the stern service line (z = 29) and the engine room corridor, trunks along both flanks at y = 4 under the sponson belt (z 17..25),
 a deck row under the three forward turrets and one under the three stern gatlings, spurs to every thruster.
@@ -323,7 +323,7 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 ## 9. Paste and load
 
 1. Delete any old `Warden` blueprint folder in the game's blueprint directory before copying the new one in (stale `bp.sbcB5` cache), `Warden` and `Warden Lite` and their ids differ.
-2. Paste the ship in creative (it is a large grid, 1,213 blocks plus the pod's 605, PCU 10,275; each Hornet adds about 1,010). The pod comes with it, docked.
+2. Paste the ship in creative (it is a large grid, 1,208 blocks plus the pod's 605, PCU 10,297; each Hornet adds about 1,010). The pod comes with it, docked.
 3. Ownership: the blocks carry the owner's save id and the game re-owns them to the pasting player.
 4. Scripts: copy `HelmAI.cs` to the Helm PB, `StaffAI.cs` to the Staff PB, `CradleBayAI.cs` to the Pod PB when those files exist (the generator embeds them from `scripts/` automatically; until then the PBs
    have no program). Custom Data is pre-set (`[Ship] Tag=WARDEN`).
@@ -339,17 +339,18 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 5. No lights, beacon, LCD or cargo conveyors to the pod. Large grid, space only (no gravity budget).
 6. Slab sides and hard sponson edges make the silhouette boxy next to a hand-built ship; no `Armor2x1` or round blocks are used.
 7. The thumbnail written by `build_all` shows the ship grid only (the pod is a second grid).
+8. Terminal groups with multi-cell weapons (`B1`, `PD`, `Main Turrets`, `Weapons`) store the block-local cell (0, 0, 0) of each member, because the game's own `Center` cell of the large rail / turret definitions is not in any sample (32 notes in `bp.notes`); the game should resolve any cell of a block, unverified. If a group comes up short of members, re-add them by hand.
 
 ## 11. In-game checks (first paste)
 
 1. Does it paste as two grids (ship + pod) with no DLC warning; does the terminal list 8 doors, 8 gyros, 24 thrusters?
 2. **Fuel**: tanks show 100 %; every thruster has hydrogen (terminal info "Hydrogen: ... filling"); fly: all five groups thrust. If not, the junction network is not connected: check one thruster's back cell and
-   the tank terminal first (`[SH] Junction 1..98`).
+   the tank terminal first (`[SH] Junction 1..101`).
 3. **Ammo**: assault / artillery turrets pull from the lockers (take a shell out of one turret, watch it refill). Gatlings have their own 24 boxes.
 4. Railguns: load and capacitor full on paste? (`RemainingAmmo`, `StoredPower`.)
 5. Hangar: `[Hangar 1]` doors open and close, no panel hits the pod, the lane is clear, the pod stays docked under 1 m/s2 (C3 in `Pod.md`); connector status of the two hangar connectors (C2).
 6. Pod: C1, C4 (`Pod.md` section 8); T1 with the first drone.
-7. PCU and mass in the world's limits; gyro feel (0.15 rad/s2 is slow: a turn of 180 degrees takes about 30 s).
+7. PCU and mass in the world's limits; gyro feel (0.16 rad/s2 yaw: a 180 degree turn takes about 9 s with full torque, accelerate then brake).
 8. Cockpit: seat view through the bridge glass, the toolbar slots, the Remote Control as script reference.
 9. Beam, hull and tower proportions against the renders; the orange colour of the sponson belts; decoys are dark squares.
 

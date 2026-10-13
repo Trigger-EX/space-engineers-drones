@@ -25,6 +25,7 @@ dock_pod(host, pod, host_connectors, host_face='Forward', roll=None, lock=False,
 hangar_footprint(pod) -> dict                               what a host hangar must provide (large cells): width along the row, depth, clearance, connector spacing
 orient_attached(bp, xtype, sub, mn, toward=None, prefer=(...), **add_kwargs) -> block      place any block with the orientation whose mount faces meet a neighbour
 slot_report(pod) -> str                                    one line per slot (cells, boxes) for docs
+assert_clean(bp) -> bp                                     asserts no DLC and no Prototech block in any grid (also run by cradle_pod() and the ships)
 
 Geometry (small cells; drones 7 x 6 x 9 cells = Hornet, Wasp, Watcher, Harrier (8 long) and Lancer, Aegis (9 long)): slot pitch 9 along x (2 cells
 between neighbouring drones), free box 9 x 8 x 9 around each drone, drone merge cell (xc, 3, 9), host merge (xc, 3, 10), rear wall z = 11..12, connectors
@@ -60,6 +61,15 @@ class SlotInfo(dict):
     __getattr__ = dict.__getitem__
 class PodInfo(dict):
     __getattr__ = dict.__getitem__
+
+def assert_clean(bp):
+    """the brief's block rules for every grid of `bp`: defs.json says no DLC, and none of the 14 Prototech blocks (they carry no DLC flag)"""
+    for g, _ in bp.grids():
+        for b in g.blocks:
+            d = sebp.DEFS[b['key']]
+            assert not d['dlc'], f'{g.name}: {b["key"]} needs DLC {d["dlc"]}'
+            assert 'Prototech' not in b['key'], f'{g.name}: {b["key"]} is a Prototech block'
+    return bp
 
 # ----------------------------------------------------------------------------------------------------------
 # placing blocks by their mount faces
@@ -232,6 +242,7 @@ def cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', s
                    lane=((X0, Yb, -24), (X1, Yt, -1)), x_range=(X0, X1), y_range=(Yb, Yt))
     bp.pod = info
     bp.display = name
+    assert_clean(bp)
     return C.finalize(bp)
 
 # ----------------------------------------------------------------------------------------------------------

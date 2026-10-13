@@ -13,7 +13,7 @@ Naming (the scripts rely on it, docs/design/control_arch.md 3.2, grids_bays 6.3)
   * the three PBs: `[Helm][SH] Warden Helm`, `[Staff][SH] Warden Staff` (ship grid) and `[Pod] Pod PB` (pod grid);
   * weapon batteries by tag: `[B1]` = the two railguns (RAIL); turrets are never batteries; point-defence gatlings carry `[PD]`;
   * terminal groups: `B1`, `PD`, `Main Turrets`, `Thrusters`, `Weapons`, `Decoys`, `[Hangar 1]` (the 8 belly doors), `Gyros`, `Reactors`, `Batteries`;
-  * the 98 LargeBlockConveyor junctions are `[SH] Junction n` (fuel and ammunition network, see _conveyors).
+  * the 101 LargeBlockConveyor junctions are `[SH] Junction n` (fuel and ammunition network, see _conveyors).
 Lite = the same ship without the unseen-shape blocks (Sensor, AI Offensive, AI Flight); everything else is built from sample-derived shapes.
 """
 import sys, os, math
@@ -105,14 +105,14 @@ def thruster_plan():
     out = []
     for s, sn in ((-1, 'P'), (1, 'S')):
         for x in (1, 3):
-            out.append(((s * x, 7, 16), 'Up', 'Down', f'Dive {sn}{x}'))          # exhaust up -> pushes the ship down
-        for z in (9, 29):
+            out.append(((s * x, 7, 16), 'Up', 'Down', f'Dive {sn}{x}'))          # exhaust up -> pushes the ship down (2 cells ahead of the COM: 22 MN m of pitch, 8 % of the gyros)
+        for z in (9, 28):
             out.append(((s, 1, z), 'Down', 'Up', f'Lift {sn}{z}'))               # exhaust down -> pushes the ship up
         for y in (3, 4):
             out.append(((s * 5, y, 16), 'Forward', 'Back', f'Brake {sn}{y}'))   # exhaust forward -> pushes the ship back
         for z in (10, 11):
             out.append(((s * 4, 3, z), 'Right' if s > 0 else 'Left', 'Left' if s > 0 else 'Right', f'Strafe {sn}{z}'))
-        for z in (28, 29):
+        for z in (26, 27):
             out.append(((s * 5, 3, z), 'Right' if s > 0 else 'Left', 'Left' if s > 0 else 'Right', f'Strafe {sn}{z}'))
     return out
 
@@ -325,6 +325,7 @@ def _decoys(S, res):
         for i, c in enumerate((best[1], (-best[1][0], best[1][1], best[1][2]))):
             old = res.cell_block[c]
             bp.blocks.remove(old)
+            res.blocks.remove(old)
             b = bp.add('MyObjectBuilder_Decoy', 'LargeDecoy', c, 'Forward', 'Up', nm(f'Decoy {2 * k + i + 1}'), GUND, kind='decoy')
             S.put('decoy', b)
             del res.cell_block[c]
@@ -421,6 +422,7 @@ def _conveyors(S, res, vol):
         old = S.occ.get(c)
         if old is not None:
             bp.blocks.remove(old)
+            if old in res.blocks: res.blocks.remove(old)
             res.cell_block.pop(c, None)
             del S.occ[c]
         b = bp.add('MyObjectBuilder_Conveyor', 'LargeBlockConveyor', c, 'Forward', 'Up', nm(f'Junction {i + 1}'), GUND, kind='conv')
@@ -506,6 +508,7 @@ def warden(lite=False, with_pod=True, lock=False, name=None):
     _sensing(S, full)
     _decoys(S, res)
     _conveyors(S, res, vol)
+    res.check()                                   # hulls: every remaining hull block still meets the hull with its mount faces
     _groups_and_toolbars(S)
     bp.ship = S
     bp.hull = res
@@ -515,6 +518,7 @@ def warden(lite=False, with_pod=True, lock=False, name=None):
         pods.dock_pod(bp, pod, S.conns, lock=lock)
         bp.pod = pod
         check_hangar(bp)
+    pods.assert_clean(bp)
     return C.finalize(bp)
 
 def numbers(bp):
@@ -601,7 +605,7 @@ def deck_plan(bp, y):
 DOCS = {'Warden': 'LARGE-grid frigate (about 85 x 27.5 x 40 m, 2.6 kt with ammunition): two large railguns (battery [B1]), two artillery and four assault turrets, eight gatling turrets '
                   'for point defence, six decoys, a four-engine hydrogen stern (1 large + 3 small, 4 m/s2), 20 small hydrogen thrusters for the other axes, a bridge tower with cockpit, '
                   'Remote Control and the Helm and Staff programmable blocks, and a belly hangar (8 doors) with a docked, empty 4-slot Cradle Pod for Hornet-class drones (own CubeGrid and '
-                  'Pod PB). Ammunition, uranium, hydrogen and batteries are pre-loaded; 98 junction blocks feed the thrusters and every turret from the tanks and two ammo lockers. '
+                  'Pod PB). Ammunition, uranium, hydrogen and batteries are pre-loaded; 101 junction blocks feed the thrusters and every turret from the tanks and two ammo lockers. '
                   'Limits: the two railguns have no feed (6 slugs each, reload by hand from the lockers), the pod carries no drones, and nothing of this has been pasted in the game yet.'}
 MODEL_NOTES_WARDEN = ('Large grid, paste only (delete the old blueprint folder first). Needs the Helm / Staff / Pod scripts for autonomous play (PBs stay empty until the script files exist); '
                       'flyable by hand from the bridge cockpit. The pod is a second grid docked by two connector pairs: press Lock on both hangar connectors if it did not lock '
