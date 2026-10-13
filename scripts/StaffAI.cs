@@ -16,22 +16,30 @@
 //     at once and then 'hunt'. ROLL CALL: the drones' <TYPE>_SWARM beats (gridId, pos, vel, targetId, flags) are collected; alive = heard in the last 3 s, engaged = has a target.
 //     HUD PAGE 2 = the roll call (order, counts, per-drone range / speed / target) on cockpit surface 'Wing Surface' (default 2) and on LCDs named '...Wing Display...'; 'page' / 'page 2'
 //     flips the PB's own screen between page 1 (status) and 2.
-//   * COMMANDS (PB argument, toolbar): wing <cmd>, fleet <cmd>, release / recall / doors (STUBS until M5: they answer
-//     "not yet"), reload, status; every other word is forwarded to the Helm over IGC (.S2H): hunt, guard, rtb, manual, auto, assist hud, lock, next, unlock, ...
+//   * BAYS (M5, scripts/CradleBayAI.cs on the pod PB / the Corsair's [Bay] PB): release <n|all|a-b> [delay_s] [force], hold n, unhold n, recall, doors open|close [n].
+//     The words go out as a string on "<Ship Tag>.S2P" and the bay PBs answer "<Ship Tag>.P2S" (MyTuple<int bay, string state, long droneId, float charge>; bay 0 = the ack of a
+//     command). A pod docked by connectors is another construct (C3/C4, unverified), so each command is repeated until a bay acks it: ConnectedConstructs, then AntennaRelay,
+//     then a unicast to the pod PB when the grid terminal system lists it ([Hangar n] Pod=), 6 tries; the note says which and, if nobody answers, to use the Timer R(n) by hand.
+//     'release all' with several pods is cut into one 'release a-b' per pod, 20 s apart ("Pod Gap"). If [Hangar n] Group= names doors, release opens them first (waits "Door Open Wait"
+//     for Status Open) and closes them "Door Close After" s after the last bay left; 'doors open|close' does it by hand. 'recall' = 'wing rtb', after "Recall Satellite After" s
+//     'wing satellite', and the bays cancel their pending releases and switch the cradle merge blocks on (docking back is phase 2).
+//   * COMMANDS (PB argument, toolbar): wing <cmd>, fleet <cmd>, release / hold / unhold / recall / doors, reload, status; every other word is forwarded to the Helm over IGC (.S2H): hunt, guard, rtb, manual, auto, assist hud, lock, next, unlock, ...
 //     Run with NO argument: menu, each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (cockpit-toolbar fallback, K3).
 //   * DISPLAYS: the PB's own screen, the cockpit surface "Cockpit Surface" (default 1, -1 off) and any LCD named "...Staff Display...": link state, mode, seat,
 //     target, power, trips; "Helm HUD Surface" (default 0) of the cockpit gets the HELM LOST text while the Helm is silent.
 //  CUSTOM DATA  [Staff] Ship Tag (SHIP, the Helm's [Link] Ship Tag), Trip Time (s) 1.5, Watch Helm, Cockpit Surface, Helm HUD Surface, Run Menu, Run Menu Wait,
-//   Display Name, Wing Surface, Wing Display Name; [Wing] Types; [Fleet] as in the drones (send side only).
+//   Display Name, Wing Surface, Wing Display Name, Block Prefix (e.g. [SH]: the lists of gyros / thrusters / guns / controllers / AI blocks only take blocks whose name starts with it,
+//   so drones clamped in the cradles are not adopted), Pod Gap (s) 20, Door Open Wait (s) 15, Door Close After (s) 10, Recall Satellite After (s) 12; [Wing] Types; [Hangar n] Group, Pod;
+//   [Fleet] as in the drones (send side only). Ship Tag also falls back to [Ship] Tag.
 //  NOT MEASURED IN THE GAME: IGC latency CurrentConstruct (K8), the number of IGC callback runs a PB survives, Update10 timing of the PB (the trip is checked
 //   every 10 ticks, so it lands up to 0.17 s after the 1.5 s).
 // =====================================================================
 
-const string VER = "1.1";
+const string VER = "1.2";
 MyIni _ini = new MyIni();
-string Ship = "SHIP", WingName = "wing display", WingOrder = "-", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,recall,doors open,doors close", DispName = "staff display";
+string Ship = "SHIP", BlkPre = "", WingName = "wing display", WingOrder = "-", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,recall,doors open,doors close", DispName = "staff display";
 string[] Types = { "HORNET" };
-double Trip = 1.5, MenuWait = 2; bool Watch = true; int CockSurf = 1, HudSurf = 0, WingSurf = 2, _page = 1;
+double Trip = 1.5, MenuWait = 2, PodGap = 20, DoorWait = 15, DoorClose = 10, RecallWait = 12; bool Watch = true; int CockSurf = 1, HudSurf = 0, WingSurf = 2, _page = 1;
 
 List<IMyGyro> _gyros = new List<IMyGyro>(); List<IMyThrust> _thr = new List<IMyThrust>();
 List<IMyUserControllableGun> _guns = new List<IMyUserControllableGun>(); List<IMyShipController> _ctl = new List<IMyShipController>();
@@ -44,6 +52,12 @@ List<long> _gone = new List<long>(); List<KeyValuePair<double, long>> _ord = new
 double _t, _hbT = -1, _h2sT = -99, _lostAt, _relT = -99, _menuT; int _hbN, _trips, _tick, _menuI, _md, _seat, _fl; bool _lost, _menuOn;
 long _tId; Vector3D _tPos, _tVel; float _tRad, _batt; string _note = "";
 StringBuilder _sb = new StringBuilder();
+// bays (M5)
+class BayRec { public string St = "?"; public long Id, Src; public float Ch; public double Seen; }
+class Hangar { public string Group = "", Pod = ""; }
+Dictionary<int, BayRec> _bay = new Dictionary<int, BayRec>(); List<Hangar> _hg = new List<Hangar>(); List<IMyDoor> _doors = new List<IMyDoor>();
+List<string> _rq = new List<string>(), _rqDone = new List<string>(); string _pendRel = "", _rqRoute = "";
+double _rqT, _rqNext, _pendT, _closeAt, _recallAt = -1; int _rqN; bool _doorsAuto; IMyBroadcastListener _p2s;
 
 // FLEET LINK (shared block, send side): FleetLoad(false) in the constructor, FleetSendHome / FleetSendCmd / FleetSend below.
 
@@ -156,7 +170,10 @@ void Load()
     MyIniParseResult res;
     if (!_ini.TryParse(Me.CustomData, out res)) { _note = "CustomData parse error line " + res.LineNo; return; }
     const string S = "Staff";
-    Ship = Cfg(S, "Ship Tag", Ship).Trim().ToUpperInvariant(); Trip = Math.Max(0.5, Cfg(S, "Trip Time (s)", Trip)); Watch = Cfg(S, "Watch Helm", Watch);
+    Ship = Cfg(S, "Ship Tag", _ini.Get("Ship", "Tag").ToString(Ship)).Trim().ToUpperInvariant(); BlkPre = Cfg(S, "Block Prefix", BlkPre).Trim();
+    PodGap = Cfg(S, "Pod Gap (s)", PodGap); DoorWait = Cfg(S, "Door Open Wait (s)", DoorWait); DoorClose = Cfg(S, "Door Close After (s)", DoorClose); RecallWait = Cfg(S, "Recall Satellite After (s)", RecallWait);
+    _hg.Clear();
+    for (int n = 1; n <= 4; n++) if (_ini.ContainsSection("Hangar " + n)) _hg.Add(new Hangar { Group = Cfg("Hangar " + n, "Group", ""), Pod = Cfg("Hangar " + n, "Pod", "") }); Trip = Math.Max(0.5, Cfg(S, "Trip Time (s)", Trip)); Watch = Cfg(S, "Watch Helm", Watch);
     CockSurf = (int)Cfg(S, "Cockpit Surface", (double)CockSurf); HudSurf = (int)Cfg(S, "Helm HUD Surface", (double)HudSurf);
     MenuItems = Cfg(S, "Run Menu", MenuItems); MenuWait = Cfg(S, "Run Menu Wait", MenuWait); DispName = Cfg(S, "Display Name", DispName).ToLowerInvariant();
     WingSurf = (int)Cfg(S, "Wing Surface", (double)WingSurf); WingName = Cfg(S, "Wing Display Name", WingName).ToLowerInvariant();
@@ -167,19 +184,29 @@ void Load()
 
 void Blocks()
 {
-    GridTerminalSystem.GetBlocksOfType(_gyros, b => b.IsSameConstructAs(Me)); GridTerminalSystem.GetBlocksOfType(_thr, b => b.IsSameConstructAs(Me));
-    GridTerminalSystem.GetBlocksOfType(_guns, b => b.IsSameConstructAs(Me) && !(b is IMyLargeTurretBase));
-    GridTerminalSystem.GetBlocksOfType(_ctl, b => b.IsSameConstructAs(Me) && b.CanControlShip);
-    GridTerminalSystem.GetBlocksOfType(_turrets, b => b.IsSameConstructAs(Me)); GridTerminalSystem.GetBlocksOfType(_ctcs, b => b.IsSameConstructAs(Me));
-    GridTerminalSystem.GetBlocksOfType(_ai, b => b.IsSameConstructAs(Me) && b.CustomName.IndexOf("[AI]", StringComparison.OrdinalIgnoreCase) >= 0);
+    GridTerminalSystem.GetBlocksOfType(_gyros, b => Own(b)); GridTerminalSystem.GetBlocksOfType(_thr, b => Own(b));
+    GridTerminalSystem.GetBlocksOfType(_guns, b => Own(b) && !(b is IMyLargeTurretBase));
+    GridTerminalSystem.GetBlocksOfType(_ctl, b => Own(b) && b.CanControlShip);
+    GridTerminalSystem.GetBlocksOfType(_turrets, b => Own(b)); GridTerminalSystem.GetBlocksOfType(_ctcs, b => Own(b));
+    GridTerminalSystem.GetBlocksOfType(_ai, b => Own(b) && b.CustomName.IndexOf("[AI]", StringComparison.OrdinalIgnoreCase) >= 0);
     GridTerminalSystem.GetBlocksOfType(_lcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(DispName));
     GridTerminalSystem.GetBlocksOfType(_wlcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(WingName));
+    _doors.Clear();
+    foreach (var h in _hg)
+    {
+        var g = h.Group == "" ? null : GridTerminalSystem.GetBlockGroupWithName(h.Group); if (g == null) continue;
+        var l = new List<IMyTerminalBlock>(); g.GetBlocks(l);
+        foreach (var x in l) { var d = x as IMyDoor; if (d != null && !_doors.Contains(d)) _doors.Add(d); }
+    }
 }
+// the host's own blocks: same construct and, with a Block Prefix, named with it (a drone clamped in a cradle is a block of the same grid)
+bool Own(IMyTerminalBlock b) { return b.IsSameConstructAs(Me) && (BlkPre == "" || b.CustomName.StartsWith(BlkPre, StringComparison.OrdinalIgnoreCase)); }
 
 void Listen()
 {
     _hb = IGC.RegisterBroadcastListener(Ship + ".HB"); _h2s = IGC.RegisterBroadcastListener(Ship + ".H2S"); _pil = IGC.RegisterBroadcastListener(Ship + ".PILOT");
     _hb.SetMessageCallback("hb");   // the beat is stamped the moment it arrives, not at the next Update10
+    _p2s = IGC.RegisterBroadcastListener(Ship + ".P2S"); _p2s.SetMessageCallback("p2s");
     SwarmListen();
 }
 
@@ -226,6 +253,15 @@ void Pump()
             Mate mt; if (!_mates.TryGetValue(d.Item1, out mt)) { mt = new Mate(); _mates[d.Item1] = mt; }
             mt.Ty = Types[i]; mt.P = d.Item2; mt.V = d.Item3; mt.T = d.Item4; mt.F = d.Item5; mt.Seen = _t;
         }
+    while (_p2s.HasPendingMessage)
+    {
+        var m = _p2s.AcceptMessage();
+        if (!(m.Data is MyTuple<int, string, long, float>)) continue;
+        var d = (MyTuple<int, string, long, float>)m.Data;
+        if (d.Item1 == 0) { if (d.Item2.StartsWith("ACK ") && d.Item3 > 0 && _rq.Contains(d.Item2.Substring(4)) && !_rqDone.Contains(d.Item2.Substring(4))) _rqDone.Add(d.Item2.Substring(4)); continue; }
+        BayRec r; if (!_bay.TryGetValue(d.Item1, out r)) { r = new BayRec(); _bay[d.Item1] = r; }
+        r.St = d.Item2; r.Id = d.Item3; r.Ch = d.Item4; r.Src = m.Source; r.Seen = _t;
+    }
     while (_pil.HasPendingMessage) { var m = _pil.AcceptMessage(); if (m.Data is MyTuple<int, int>) { var d = (MyTuple<int, int>)m.Data; _md = d.Item1; _seat = d.Item2; } }
 }
 
@@ -241,6 +277,7 @@ void Step()
     else if (!lost && _lost) { _lost = false; _note = "Helm back after " + (_t - _lostAt).ToString("0.0") + " s"; }
     if (_tick % 6 == 0) { _gone.Clear(); foreach (var kv in _mates) if (_t - kv.Value.Seen > 6) _gone.Add(kv.Key); foreach (var k in _gone) _mates.Remove(k); }
     Mothership();
+    BayStep();
     if (_tick % 3 == 0 || _lost) Show();
 }
 
@@ -296,7 +333,10 @@ void Command(string a)
         case "wing": Wing(rest); break;
         case "page": _page = rest == "2" ? 2 : rest == "1" ? 1 : 3 - _page; _note = "page " + _page; break;
         case "fleet": FleetSendCmd(rest); _note = "fleet " + rest; break;
-        case "release": case "recall": case "doors": _note = w + ": bay control comes with the cradle bays (M5)"; break;
+        case "release": Release(rest); break;
+        case "hold": case "unhold": Bays(c); break;
+        case "recall": Bays("recall"); Wing("rtb"); _recallAt = _t + RecallWait; _note = "recall: wing rtb, satellite in " + RecallWait.ToString("0") + " s, bays cancelled"; break;
+        case "doors": Doors(rest); break;
         case "reload": Load(); FleetLoad(false); Blocks(); SwarmListen(); break;
         case "status": _note = "status"; Show(); break;
         default: Fwd(c); break;
@@ -314,6 +354,91 @@ void Wing(string cmd)
     }
     foreach (var ty in Types) IGC.SendBroadcastMessage(ty + "_CMD", cmd);   // the per-type channel accepts every verb, the fleet one only its 'Allowed Commands'
     FleetSendCmd(cmd); WingOrder = cmd; _wingT = _t; _note = "wing " + cmd;
+}
+
+// ---- bays (M5) -------------------------------------------------------------------------------------------------------------------------------
+bool DoorsOpen() { foreach (var d in _doors) if (d.IsFunctional && d.Status != DoorStatus.Open) return false; return true; }
+
+void Doors(string a)
+{
+    string[] p = a.Split(' '); bool open = p[0] == "open";
+    if (_doors.Count == 0) { _note = "doors: no door in the [Hangar n] groups"; return; }
+    if (p[0] != "open" && p[0] != "close") { _note = "doors open|close"; return; }
+    foreach (var d in _doors) { if (open) d.OpenDoor(); else d.CloseDoor(); }
+    _doorsAuto = false; _note = "doors " + p[0] + " (" + _doors.Count + ")";
+}
+
+void Release(string rest)
+{
+    if (_doors.Count > 0 && !DoorsOpen()) { foreach (var d in _doors) d.OpenDoor(); _doorsAuto = true; _pendRel = rest; _pendT = _t; _note = "release " + rest + ": opening the hangar doors"; return; }
+    SendRelease(rest);
+}
+
+// 'release all' with several pods (bay PBs that answered): one 'release a-b <delay>' per pod, Pod Gap seconds apart; the bay PB itself spaces its drones by 2 s
+void SendRelease(string rest)
+{
+    var cmds = new List<string>();
+    if (rest.StartsWith("all") || rest == "")
+    {
+        string tail = rest.Length > 3 ? rest.Substring(3) : "";
+        var lo = new Dictionary<long, int>(); var hi = new Dictionary<long, int>();
+        foreach (var kv in _bay) { if (kv.Value.Src == 0) continue; if (!lo.ContainsKey(kv.Value.Src) || kv.Key < lo[kv.Value.Src]) lo[kv.Value.Src] = kv.Key; if (!hi.ContainsKey(kv.Value.Src) || kv.Key > hi[kv.Value.Src]) hi[kv.Value.Src] = kv.Key; }
+        var order = new List<KeyValuePair<int, long>>(); foreach (var kv in lo) order.Add(new KeyValuePair<int, long>(kv.Value, kv.Key));
+        order.Sort((x, y) => x.Key.CompareTo(y.Key));
+        if (order.Count < 2) cmds.Add("release all" + tail);
+        else for (int i = 0; i < order.Count; i++) cmds.Add("release " + order[i].Key + "-" + hi[order[i].Value] + " " + (i * PodGap).ToString("0") + tail);
+    }
+    else cmds.Add("release " + rest);
+    Bays(cmds.ToArray()); _closeAt = _t + DoorClose;
+}
+
+void Bays(params string[] cmds)
+{
+    _rq.Clear(); _rqDone.Clear(); _rq.AddRange(cmds); _rqT = _t; _rqN = 0; _rqNext = _t; _rqRoute = "";
+    SendBays();
+}
+
+void SendBays()
+{
+    int r = _rqN % 3; bool uni = false;
+    if (r == 2) foreach (var h in _hg) { var pb = h.Pod == "" ? null : GridTerminalSystem.GetBlockWithName(h.Pod); if (pb == null) continue; uni = true; foreach (var c in _rq) if (!_rqDone.Contains(c)) IGC.SendUnicastMessage(pb.EntityId, Ship + ".S2P", c); }
+    _rqRoute = uni ? "unicast to the pod PB" : r == 1 ? "AntennaRelay" : "ConnectedConstructs";
+    if (!uni) foreach (var c in _rq) if (!_rqDone.Contains(c)) IGC.SendBroadcastMessage(Ship + ".S2P", c, r == 1 ? TransmissionDistance.AntennaRelay : TransmissionDistance.ConnectedConstructs);
+    _rqN++; _rqNext = _t + (_rqN < 3 ? 0.8 : 1.5);
+    _note = _rq[0] + (_rq.Count > 1 ? " +" + (_rq.Count - 1) : "") + ": sent via " + _rqRoute + (_rqN > 1 ? " (try " + _rqN + ")" : "");
+}
+
+void BayStep()
+{
+    if (_recallAt > 0 && _t >= _recallAt) { _recallAt = -1; Wing("satellite"); }
+    if (_rq.Count > 0)
+    {
+        if (_rqDone.Count >= _rq.Count) { _note = _rq[0] + (_rq.Count > 1 ? " +" + (_rq.Count - 1) : "") + ": the bays answered"; _rq.Clear(); }
+        else if (_t >= _rqNext)
+        {
+            if (_rqN >= 6) { _note = _rq[0] + ": NO BAY ANSWERED after 6 tries (pod PB running? C3/C4: IGC across the connector) - hand launch: its Timer R(n) / cockpit slot"; _rq.Clear(); }
+            else SendBays();
+        }
+    }
+    if (_pendRel != "" && (DoorsOpen() || _t - _pendT > DoorWait))
+    {
+        if (!DoorsOpen()) _note = "doors still not open after " + DoorWait.ToString("0") + " s: releasing anyway";
+        string r = _pendRel; _pendRel = ""; SendRelease(r);
+    }
+    if (_doorsAuto && _pendRel == "")
+    {
+        bool busy = _rq.Count > 0; foreach (var b in _bay.Values) if (_t - b.Seen < 5 && (b.St == "CHARGING" || b.St == "READY" || b.St == "ARMING" || b.St == "RELEASED")) busy = true;
+        if (busy) _closeAt = _t + DoorClose;
+        else if (_t >= _closeAt) { foreach (var d in _doors) d.CloseDoor(); _doorsAuto = false; _note = "hangar doors closing"; }
+    }
+}
+
+string BayText()
+{
+    if (_bay.Count == 0) return "";
+    var k = new List<int>(_bay.Keys); k.Sort(); var s = new StringBuilder("BAY ");
+    foreach (var n in k) { var r = _bay[n]; s.Append(n).Append(' ').Append(_t - r.Seen > 6 ? "?" : r.St).Append("  "); }
+    return s.Append('\n').ToString();
 }
 
 int Alive() { int n = 0; foreach (var m in _mates.Values) if (_t - m.Seen < 3) n++; return n; }
@@ -359,6 +484,7 @@ string Text()
     int m = _md; b.Append("MODE  ").Append(m >= 0 && m < ModeNames.Length ? ModeNames[m] : "?").Append(_seat == 1 ? "  pilot aboard" : "").Append((_fl & 16) != 0 ? "  FIRING" : "").Append((_fl & 128) != 0 ? "  DEGRADED" : "").Append('\n');
     if (_tId != 0 && _t - _h2sT < 2) b.Append("TGT   ").Append(Vector3D.Distance(_tPos, Me.GetPosition()).ToString("0")).Append(" m  v ").Append(_tVel.Length().ToString("0")).Append('\n');
     else b.Append("TGT   none\n");
+    b.Append(BayText());
     b.Append("PWR ").Append((_batt * 100).ToString("0")).Append("%  DEADMAN ").Append((_fl & 64) != 0 ? "armed" : "-").Append("  WING ").Append(string.Join(",", Types)).Append(' ').Append(Alive()).Append(" up\n");
     if (_menuOn) { var it = MenuItems.Split(','); b.Append("MENU > ").Append(it[_menuI % it.Length].Trim()).Append(' ').Append(_menuI % it.Length + 1).Append('/').Append(it.Length).Append('\n'); }
     if (_note != "") b.Append(_note).Append('\n');

@@ -60,6 +60,7 @@ namespace SeSim.Blueprint
         public MyBlockOrientation Orientation = MyBlockOrientation.Identity;   // default Forward/Up when the element is absent
         public int Origin = -1;             // >= 0: index of the blueprint grid this block came from (set by GridFuse; -1 = the grid it is stored in)
         public string CustomName, CustomData, Program, Storage;
+        public string StoredCustomData;      // the game writes a terminal block's Custom Data into its ModStorage component (GUID 74de02b3-...); NOT applied by the sim unless a rig copies it (CradleRig)
         public bool Enabled = true;
         public long Owner;                  // <Owner> if present (ignored: the scenario assigns the team identity)
         /// <summary>Simple child elements by name (text), e.g. "BroadcastRadius"="5000", "CurrentStoredPower"="1",
@@ -237,6 +238,7 @@ namespace SeSim.Blueprint
                         break;
                     case "ComponentContainer":
                         ScanForStoredPower(c, b);
+                        ScanForCustomData(c, b);
                         { int ts = CountElements(c, "MySerializedTextPanelData"); if (ts > 0) b.Props["TextSurfaces"] = ts.ToString(CultureInfo.InvariantCulture); }
                         break;
                     case "Toolbar":
@@ -319,6 +321,22 @@ namespace SeSim.Blueprint
         }
 
         // railgun capacitor: <Component xsi:type="MyObjectBuilder_EntityCapacitorComponent"><StoredPower>..</StoredPower>
+        static void ScanForCustomData(XmlElement e, BlockData b)
+        {
+            foreach (XmlNode n in e.ChildNodes)
+            {
+                var c = n as XmlElement;
+                if (c == null) continue;
+                if (c.Name == "item")
+                {
+                    string key = null, val = null;
+                    foreach (XmlNode k in c.ChildNodes) { var ke = k as XmlElement; if (ke == null) continue; if (ke.Name == "Key") key = ke.InnerText.Trim(); else if (ke.Name == "Value") val = ke.InnerText; }
+                    if (key == "74de02b3-27f9-4960-b1c4-27351f2b06d1" && val != null) { b.StoredCustomData = val; continue; }
+                }
+                if (HasElementChildren(c)) ScanForCustomData(c, b);
+            }
+        }
+
         static void ScanForStoredPower(XmlElement e, BlockData b)
         {
             foreach (XmlNode n in e.ChildNodes)

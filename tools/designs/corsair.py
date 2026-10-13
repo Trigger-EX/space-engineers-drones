@@ -29,7 +29,8 @@ import sebp_multi as MU
 from sebp_inv import Item
 
 NAME = 'Corsair'
-SCRIPTS = ['CorsairHelmAI.cs', 'CorsairStaffAI.cs']
+SCRIPTS = ['CorsairHelmAI.cs', 'CorsairStaffAI.cs', 'CradleBayAI.cs']
+SCRIPT_MAP = {}                   # test models (designs/cradle_test.py) swap the Helm / Staff program files here
 TAG = '[SH] '                     # host-ship prefix (control_arch 3.6 / grids_bays 6.3): Helm / Staff collect blocks by prefix AND grid
 
 HELM_DATA = """[Ship]
@@ -51,6 +52,10 @@ Tag=B3
 Class=BALLISTIC
 Role=SECONDARY
 
+[Link]
+Ship Tag=SH
+Block Prefix=[SH]
+
 [Cockpit]
 Helm Surface=0
 Staff Surface=1
@@ -60,33 +65,40 @@ STAFF_DATA = """[Ship]
 Tag=SH
 Class=CORVETTE
 
+[Staff]
+Ship Tag=SH
+Block Prefix=[SH]
+
 [Wing]
 Types=HORNET,WASP,WATCHER,HARRIER,LANCER,AEGIS
+
+[Cockpit]
+Staff Surface=1
+"""
+
+# the bay manager (scripts/CradleBayAI.cs) is its own PB, as on the pods: the Staff sends it "<Tag>.S2P release n" over IGC (control_arch 4.2)
+BAY_DATA = """[Pod]
+Tag=SH
+Slots=2
 
 [Bay 1]
 Merge=[SH] [Bay 1] Merge Port
 Drone Box Min=-22,4,57
 Drone Box Max=-16,9,64
 Drone Prefix=Hornet
-Away X=0
-Away Y=0
-Away Z=-1
+Away=0,0,-1
 
 [Bay 2]
 Merge=[SH] [Bay 2] Merge Starboard
 Drone Box Min=16,4,57
 Drone Box Max=22,9,64
 Drone Prefix=Hornet
-Away X=0
-Away Y=0
-Away Z=-1
-
-[Cockpit]
-Staff Surface=1
+Away=0,0,-1
 """
 
 
 def _script(name):
+    name = SCRIPT_MAP.get(name, name)
     return script_text(name) if os.path.exists(os.path.join(ROOT, 'scripts', name)) else ''
 
 
@@ -537,12 +549,14 @@ def add_systems(bp, res, env, lite):
                  extra=pb_extra(_script('CorsairHelmAI.cs')) if _script('CorsairHelmAI.cs') else '', custom_data=HELM_DATA)
     pb_s = place(bp, occ, 'MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', (0, 3, 31), '[Staff] Corsair', kind='ctrl',
                  extra=pb_extra(_script('CorsairStaffAI.cs')) if _script('CorsairStaffAI.cs') else '', custom_data=STAFF_DATA)
+    pb_b = place_any(bp, occ, 'MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', [(0, 4, 30), (0, 5, 31), (0, 5, 30), (0, 3, 30), (0, 3, 27), (0, 3, 33)],
+                     '[Bay] Corsair', kind='ctrl', extra=pb_extra(_script('CradleBayAI.cs')) if _script('CradleBayAI.cs') else '', custom_data=BAY_DATA)
     rc = place(bp, occ, 'MyObjectBuilder_RemoteControl', 'SmallBlockRemoteControl', (0, 4, 29), TAG + 'Remote Control', kind='ctrl')
     timer = place(bp, occ, 'MyObjectBuilder_TimerBlock', 'TimerBlockSmall', (0, 4, 31), TAG + 'Timer D (deadman)', kind='ctrl',
                   settings={'Delay': 5000, 'Silent': 'true'})
     # event controller for the dead-man's second layer: placed and named, UNCONFIGURED (the "Cockpit occupied" event number was never seen, test K4)
     place(bp, occ, 'MyObjectBuilder_EventControllerBlock', 'EventControllerSmall', (0, 5, 29), TAG + 'EC Cockpit (configure in game)', kind='ctrl')
-    S.update(cockpit=cockpit, pb=pb_h, staff=pb_s, rc=rc, timer=timer)
+    S.update(cockpit=cockpit, pb=pb_h, staff=pb_s, bay=pb_b, rc=rc, timer=timer)
 
     # ---- cradle merge blocks (clamp face Forward, towards the drone), one cell in front of the 2-cell wall ----
     merges = []

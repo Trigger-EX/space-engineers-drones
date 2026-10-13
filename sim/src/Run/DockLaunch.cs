@@ -2,6 +2,7 @@
 // block (optionally also the drone's) is switched off at --release-at seconds, and the drone's PB runs the REAL script in the blueprint's own
 // default state (IDLE, default Custom Data) with NO _JOIN message. The run reports whether and when the drone left, how far, and the mode.
 //
+//   (--cradle: a real merge-block cradle host with clamped drones instead of the dummy printer: see DockLaunchCradle.cs)
 //   mono SimHost.exe dock-launch [--model Hornet] [--seconds 30] [--release-at 3] [--both-merges] [--join-at T] [--arm-at T]
 //        [--custom-data "INI with \n"] [--seed 1] [--repo DIR] [--trace FILE]
 //   --join-at T   also broadcast "<TAG>_JOIN" ("join") from a helper PB-less sender at T s (default: never, the bug scenario)
@@ -117,6 +118,7 @@ namespace SeSim.Run
 
         public static int Run(string[] args, string simDir, string repo)
         {
+            if (Has(args, "--cradle")) return DockLaunchCradle.Run(args, simDir, repo);      // a real cradle host (M5, DockLaunchCradle.cs)
             string model = Arg(args, "--model", "Hornet");
             double secs = Dbl(args, "--seconds", 30), rel = Dbl(args, "--release-at", 3);
             double joinAt = Dbl(args, "--join-at", -1), armAt = Dbl(args, "--arm-at", -1), recAt = Dbl(args, "--recompile-at", -1);

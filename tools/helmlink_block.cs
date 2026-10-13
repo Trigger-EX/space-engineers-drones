@@ -1,4 +1,4 @@
-// >>> HELMLINK v1.0 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
+// >>> HELMLINK v1.1 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
 // The Helm sends, with TransmissionDistance.CurrentConstruct (never leaves the ship, no secret needed), on "<Ship Tag>.<suffix>" (Ship Tag default SHIP, [Link] in Custom Data):
 //   .HB     long tick                                                   heartbeat every "Heartbeat (s)" (0.5): the Staff releases every override when it stays silent for 1.5 s
 //   .H2S    MyTuple<int flags, long tgtId, Vector3D tgtPos, Vector3D tgtVel, float tgtRadius, float batt>   5 Hz: flags bit0-2 mode (0 IDLE 1 GUARD 2 HUNT 4 RTB 5 MANUAL 6 ASSIST),
@@ -8,10 +8,14 @@
 // The link is optional: [Link] Enable (AUTO/ON/OFF) = AUTO switches it on while a PB named "[Staff] ..." is on the construct, so the single-PB ships are untouched.
 // Script hooks: HlkCfg() at the end of LoadConfig; HlkBlocks() at the end of GetBlocks; HlkTick() once per Update1 tick after ManTick().
 // Uses from the script: Cfg(), Command(), Man, _occ, _mode (Mode.IDLE/GUARD/HUNT/ASSIST/RTB), _tgt (Track), _now, _tick, _firing, _dm, _thr, _gyros, _batFrac.
-bool HlkOn; string HlkShip = "SHIP", HlkEn = "AUTO", _hlkKey = ""; double HlkHb = 0.5; int _hlkMd = -9, _hlkSeat = -9; IMyBroadcastListener _hlkIn;
+// BLOCK PREFIX (v1.1, M5): [Link] Block Prefix (default empty = off) limits every block list the script builds to blocks whose name starts with it ("[SH]" on the warships), so the
+// blocks of drones that are merged to the ship's cradles (they are blocks of the SAME grid while clamped) are never adopted: Own(b) replaces b.IsSameConstructAs(Me) in the lists.
+// Ship Tag also falls back to the [Ship] Tag key of the ship designs' Custom Data.
+bool Own(IMyTerminalBlock b) { return b.IsSameConstructAs(Me) && (HlkPre == "" || b.CustomName.StartsWith(HlkPre, StringComparison.OrdinalIgnoreCase)); }
+bool HlkOn; string HlkShip = "SHIP", HlkEn = "AUTO", HlkPre = "", _hlkKey = ""; double HlkHb = 0.5; int _hlkMd = -9, _hlkSeat = -9; IMyBroadcastListener _hlkIn;
 void HlkCfg()
 {
-    HlkEn = Cfg("Link", "Enable (AUTO/ON/OFF)", HlkEn).Trim().ToUpperInvariant(); HlkShip = Cfg("Link", "Ship Tag", HlkShip).Trim().ToUpperInvariant(); HlkHb = Math.Max(0.1, Cfg("Link", "Heartbeat (s)", HlkHb));
+    HlkEn = Cfg("Link", "Enable (AUTO/ON/OFF)", HlkEn).Trim().ToUpperInvariant(); HlkShip = Cfg("Link", "Ship Tag", _ini.Get("Ship", "Tag").ToString(HlkShip)).Trim().ToUpperInvariant(); HlkPre = Cfg("Link", "Block Prefix", HlkPre).Trim(); HlkHb = Math.Max(0.1, Cfg("Link", "Heartbeat (s)", HlkHb));
 }
 void HlkBlocks()
 {
@@ -42,4 +46,4 @@ void HlkTick()
         IGC.SendBroadcastMessage(HlkShip + ".H2S", new MyTuple<int, long, Vector3D, Vector3D, float, float>(f, t != null ? t.Id : 0, t != null ? t.P(_now) : Vector3D.Zero, t != null ? t.V(_now) : Vector3D.Zero, t != null ? (float)t.Radius : 0, (float)_batFrac), cc);
     }
 }
-// <<< HELMLINK v1.0 <<<
+// <<< HELMLINK v1.1 <<<

@@ -61,7 +61,7 @@ class Rules(unittest.TestCase):
     def test_names(self):
         bp = ship(False)
         pbs = [b for b in bp.blocks if b['sub'] == 'SmallProgrammableBlock']
-        self.assertEqual(sorted(b['name'] for b in pbs), ['[Helm] Corsair', '[Staff] Corsair'])
+        self.assertEqual(sorted(b['name'] for b in pbs), ['[Bay] Corsair', '[Helm] Corsair', '[Staff] Corsair'])
         for b in bp.blocks:
             if b['xtype'].endswith('_CubeBlock') or b in pbs:
                 continue

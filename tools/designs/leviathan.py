@@ -410,10 +410,10 @@ def _bridge(S, full):
     bp = S.bp
     cd = f'[Ship]\nTag={TAG}\n'
     helm_cd = (cd + '\n[Battery 1]\nTag=B1\nClass=RAIL\nRole=PRIMARY_CANDIDATE\nMin Range=200\nMax Range=0\nWindow Scale=1.0\nSalvo=1\n'
-               '\n[Cockpit]\nHelm Surface=0\nStaff Surface=1\nGunnery Surface=2\n')
+               '\n[Link]\nBlock Prefix=[SH]\n\n[Cockpit]\nHelm Surface=0\nStaff Surface=1\nGunnery Surface=2\n')
     gun_cd = (cd + '\n[Turrets]\nGroups=Artillery,Assault,Rockets,PD\nPD Group=PD\nMain Group=Main Turrets\n'
               '\n[Ammo]\nLockers=[SH] Ammo Locker\nFeed=conveyor\n')
-    staff_cd = (cd + '\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n'
+    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n'
                 '\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB 1\n\n[Hangar 2]\nGroup=[Hangar 2]\nPod=[Pod] Pod PB 2\n')
     S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 13, 53), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.gunner = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (2, 13, 54), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
@@ -721,7 +721,7 @@ def leviathan(lite=False, with_pods=True, lock=False, name=None):
     bp.pods_ = []
     if with_pods:
         for s, tag, pname, nose in ((-1, 'POD1', 'Port', 'Left'), (1, 'POD2', 'Starboard', 'Right')):
-            pod = pods.cradle_pod(4, lite=lite, name=f'{name} {pname} Cradle Pod', tag=tag, ship_tag=TAG)
+            pod = pods.cradle_pod(4, lite=lite, name=f'{name} {pname} Cradle Pod', tag=tag, ship_tag=TAG, first_bay=1 if s < 0 else 5)
             pod.display = f'Leviathan {pname} Cradle Pod'
             pod.pod.pb['name'] = f'[Pod] Pod PB {1 if s < 0 else 2}'
             _dock_upright(bp, pod, S.conns[s], nose, lock)

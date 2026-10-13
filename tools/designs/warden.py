@@ -259,8 +259,8 @@ def _bridge(S, full):
     bp = S.bp
     cd = f'[Ship]\nTag={TAG}\n'
     helm_cd = (cd + '\n[Battery 1]\nTag=B1\nClass=RAIL\nRole=PRIMARY_CANDIDATE\nMin Range=200\nMax Range=0\nWindow Scale=1.0\nSalvo=1\n'
-               '\n[Cockpit]\nHelm Surface=0\nStaff Surface=1\n')
-    staff_cd = (cd + '\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB\n')
+               '\n[Link]\nBlock Prefix=[SH]\n\n[Cockpit]\nHelm Surface=0\nStaff Surface=1\n')
+    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB\n')
     S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 9, 20), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.add('gunner', 'MyObjectBuilder_Cockpit', 'CockpitOpen', (1, 9, 20), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
     S.add('rc', 'MyObjectBuilder_RemoteControl', 'LargeBlockRemoteControl', (-1, 9, 20), 'Forward', 'Up', nm('Remote Control'), toward='Down', kind='ctrl')
