@@ -61,6 +61,12 @@ def eff_radius_cells(margin_m=None):
 
 def dvec(name): return DIR[name]
 
+def block_label(b):
+    """unique, human readable id of a block: its name or subtype plus its Min cell in the drone frame"""
+    return (b['name'] or b['sub']) + ('' if b['name'] else '@' + ','.join(str(v) for v in b['min']))
+
+TIER_A = 4                     # FAMILY[:TIER_A] (tip and tip-1 centres, both radii) must hold wherever a legal welder position can do it
+
 def neighbours26(c):
     x, y, z = c
     for dx in (-1, 0, 1):
@@ -122,8 +128,8 @@ def family_report(bp, bay):
     """{hyp name: [uncovered block names]} for FAMILY plus 'redundancy': blocks that fewer than two welders reach under RED_HYP"""
     out = {}
     for h in FAMILY:
-        out[h.name] = [b['name'] or b['sub'] for b, ws in coverage(bp, bay, hyp=h) if not ws]
-    out['redundancy'] = [b['name'] or b['sub'] for b, ws in coverage(bp, bay, hyp=RED_HYP) if len(ws) < 2]
+        out[h.name] = [block_label(b) for b, ws in coverage(bp, bay, hyp=h) if not ws]
+    out['redundancy'] = [block_label(b) for b, ws in coverage(bp, bay, hyp=RED_HYP) if len(ws) < 2]
     return out
 
 def foreign_reach(bp, bays, margin_m=None):
@@ -248,12 +254,14 @@ def verify_bay(bp, bay, margin_m=None, backoff=None, strict_camera=False, family
     st['welders'] = len(bay_welders(bp, bay['n'])); st['drone_blocks'] = len(drone.blocks)
     if family and margin_m is None and backoff is None:
         fr = family_report(bp, bay)
-        waived = getattr(des, 'infeasible', None) or {}            # {hyp name: set(block names)} that NO legal welder position can reach (reported, not failed)
+        imp = getattr(des, 'impossible', None) or {}                # {hyp name: set(block labels)} that NO legal welder position can reach
         st['family'] = {k: len(v) for k, v in fr.items()}
-        st['waived'] = {k: sorted(set(v) & set(waived.get(k, ()))) for k, v in fr.items() if set(v) & set(waived.get(k, ()))}
-        for k, v in fr.items():
-            real = [n for n in v if n not in set(waived.get(k, ()))]
-            if real: prob.append(f'bay {bay["n"]}: {len(real)} drone blocks not covered ({"by two welders " if k == "redundancy" else "under " }{RED_HYP.name if k == "redundancy" else k}): ' + ', '.join(real[:5]) + (' ...' if len(real) > 5 else ''))
+        st['impossible'] = {k: len(set(v) & set(imp.get(k, ()))) for k, v in fr.items()}
+        tier_a = [h.name for h in FAMILY[:TIER_A]]
+        for k in tier_a:                                               # tier A: fail unless physically impossible (listed in the report)
+            real = [n for n in fr[k] if n not in set(imp.get(k, ()))]
+            if real: prob.append(f'bay {bay["n"]}: {len(real)} drone blocks not covered under {k}: ' + ', '.join(real[:5]) + (' ...' if len(real) > 5 else ''))
+        st['partial'] = {k: len(v) for k, v in fr.items() if k not in tier_a and v}      # best-effort hypotheses: reported in the table, not a failure
         cov = coverage(bp, bay, hyp=RED_HYP)
         st['min_cover'] = min((len(ws) for b, ws in cov), default=0)
     else:

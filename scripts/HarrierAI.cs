@@ -304,12 +304,12 @@ void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flCha
 // The block needs the script's fields: Tag (IGC tag) and _flChan (FLEET LINK block); everything else is its own.
 const string LnSec = "Launch";
 int _lnS;                                   // 0 free, 1 docked and armed (waiting for the separation), 2 take-off burn, 3 launched
-bool _lnAuto = true, _lnArmed, _lnHold, _lnForce, _lnLocOk, _lnDock, _lnHomeOk;
+bool _lnAuto = true, _lnArmed, _lnHold, _lnForce, _lnLocOk, _lnDock, _lnHomeOk, _lnPending;
 double _lnBurst = 4, _lnClear = 8, _lnSpeed = 25, _lnClock, _lnT, _lnJoinT = -999;
 string _lnModeCfg = "GUARD", _lnMsg = "", _lnJKey = "";
 Vector3D _lnAwayCfg, _lnAwayLoc, _lnDir, _lnP0, _lnHome;
 IMyCubeGrid _lnGrid;
-long _lnTick; int _lnFree;
+long _lnTick; int _lnFree, _lnWait;
 IMyBroadcastListener _lnJ1, _lnJ2;
 List<IMyShipMergeBlock> _lnMg = new List<IMyShipMergeBlock>();
 List<IMyThrust> _lnThr = new List<IMyThrust>();
@@ -429,17 +429,42 @@ void LnPrep()
     if (_lnCtl == null && ctrls.Count > 0) _lnCtl = ctrls[0];
 }
 
+// the release is only complete when the grid has split: while the printer's merge block is still on this grid the thrusters/gyros found here may be the printer's
+bool LnReady()
+{
+    var g = Me.CubeGrid;
+    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g);
+    if (_lnMg.Count < 2 || ++_lnWait > 9) return true;       // (gives up waiting after ~1.7 s)
+    _lnPending = true; return false;
+}
+
 void LnBegin()
 {
+    _lnWait = 0; _lnPending = false;
     _lnForce = false; _lnS = 2; _lnT = 0; _lnJoinT = -999;
     LnPrep();
     Vector3D me = Me.GetPosition(), d = Vector3D.Zero; string src = "";
-    if (_lnAwayCfg.LengthSquared() > 0.25) { d = _lnAwayCfg; src = "Custom Data"; }
-    else if (_lnLocOk) { d = Vector3D.TransformNormal(_lnAwayLoc, Me.WorldMatrix); src = "merge pair"; }
+    Vector3D lw = _lnLocOk ? Vector3D.TransformNormal(_lnAwayLoc, Me.WorldMatrix) : Vector3D.Zero;
+    if (_lnAwayCfg.LengthSquared() > 0.25 && !(_lnLocOk && Vector3D.Dot(Vector3D.Normalize(_lnAwayCfg), lw) < -0.2)) { d = _lnAwayCfg; src = "Custom Data"; }   // (a stored vector that points INTO the printer is ignored)
+    else if (_lnLocOk) { d = lw; src = "merge pair"; }
+    else if (LnOwnMerge(me, ref d)) src = "own merge block";
     else if (_lnHomeOk && (me - _lnHome).LengthSquared() > 25) { d = me - _lnHome; src = "home point"; }
     else { d = _lnCtl != null ? _lnCtl.WorldMatrix.Backward : Me.WorldMatrix.Backward; src = "own back"; }
     _lnDir = Vector3D.Normalize(d); _lnP0 = me;
     _lnMsg = "away from " + src;
+}
+
+// no printer information: the drone's own merge block sits on the side that faced the printer, so "from the merge block to the centre of mass" points away from it
+bool LnOwnMerge(Vector3D me, ref Vector3D d)
+{
+    var g = Me.CubeGrid;
+    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g);
+    if (_lnMg.Count == 0 || _lnCtl == null) return false;
+    IMyShipMergeBlock mb = _lnMg[0];
+    foreach (var m in _lnMg) if ((m.GetPosition() - me).LengthSquared() < (mb.GetPosition() - me).LengthSquared()) mb = m;
+    Vector3D v = _lnCtl.CenterOfMass - mb.GetPosition();
+    if (v.LengthSquared() < 0.09) return false;
+    d = v; return true;
 }
 
 // one tick of the take-off: true = the script must not fly this tick
@@ -482,9 +507,9 @@ bool LaunchStep(double dt, bool idle, string startMode, bool homeOk, Vector3D ho
     if (_lnS == 3) return false;
     bool changed = Me.CubeGrid != _lnGrid;
     bool join = _lnClock - _lnJoinT < 3;                     // the printer repeats "join" every 2 s
-    if (!(changed || join || _lnForce || _lnTick % (_lnS == 1 ? 10 : 60) == 0)) return false;
+    if (!(changed || (_lnForce && _lnTick % 10 == 0) || _lnTick % (_lnS == 1 || _lnPending ? 10 : 60) == 0 || (join && _lnTick % 10 == 0))) return false;   // (never more than 6 checks a second)
     _lnGrid = Me.CubeGrid;
-    _lnDock = LnDocked();
+    _lnDock = LnDocked(); _lnPending = false;
     if (_lnS == 0)
     {
         if (_lnDock)
@@ -494,12 +519,12 @@ bool LaunchStep(double dt, bool idle, string startMode, bool homeOk, Vector3D ho
         }
         if (_lnHold && !_lnForce) return false;
         bool go = _lnForce || (_lnAuto && (_lnArmed || (join && idle && LnComplete())));
-        if (go) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); }
+        if (go && LnReady()) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); }
         return false;
     }
     if (_lnDock) { _lnFree = 0; return false; }              // state 1: still locked
     if (++_lnFree < 2 && !changed) return false;             // (two checks in a row, so that one odd reading does not launch)
-    if (_lnAuto || _lnForce) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); }
+    if (_lnAuto || _lnForce) { if (LnReady()) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); } return false; }
     _lnS = 0;                                                // Auto=false: wait for the "launch" command
     return false;
 }
