@@ -1325,7 +1325,7 @@ public void Main(string arg, UpdateType src)
         if (_crash != ex.Message || _errRun % 60 == 1) { _crash = ex.Message; Echo("Script error: " + ex.Message); if (_lcd != null) _lcd.WriteText("SCRIPT ERROR\n" + ex.Message + "\nSend this text to Claude."); }
     }
 }
-int _errRun, _okRun;
+int _errRun, _okRun; bool _rcOut;
 
 void Tick(string arg, UpdateType src)
 {
@@ -1340,7 +1340,8 @@ void Tick(string arg, UpdateType src)
 
     if (_tick % 600 == 0) GetBlocks();
     CheckGrid();
-    if (_rc == null || !_rc.IsFunctional) { _err = "No working Remote Control / cockpit"; Display(); Release(); return; }
+    if (_rc == null || !_rc.IsFunctional || !_rc.IsSameConstructAs(Me)) { _err = "No working Remote Control / cockpit"; if (!_rcOut || _tick % 60 == 0) { _rcOut = true; GetBlocks(); Display(); Release(); } return; }   // (not on this construct = a severed piece: same as no controller; look for another one at 1 Hz)
+    _rcOut = false;
 
     ReadIGC(); FollowStep(); ReadSwarm();
     ReadIGC(); ReadSwarm();
