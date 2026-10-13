@@ -239,13 +239,13 @@ void Mothership()
     if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_HOMER", rad);
     foreach (var t in _turrets) if (t.IsFunctional && t.HasTarget) Share(t.GetTargetedEntity());
     foreach (var c in _ctcs) if (c.IsFunctional && c.HasTarget) Share(c.GetTargetedEntity());
-    if (_tId != 0 && _t - _h2sT < 1.0 && _tRad > 0) Send(new MyTuple<long, Vector3D, Vector3D, double, long>(_tId, _tPos, _tVel, _tRad, Me.EntityId));   // what the Helm shoots, the wing shoots
+    if (_tId != 0 && _t - _h2sT < 1.0 && _tRad > 0) Send(new MyTuple<long, Vector3D, Vector3D, double, long>(_tId, _tPos, _tVel, _tRad, Me.CubeGrid.EntityId));   // what the Helm shoots, the wing shoots (sender = my grid: the Helm skips it, else it takes its own extrapolated target back as a fresh IGC sighting and a lost target never goes stale)
 }
 
 void Share(MyDetectedEntityInfo e)
 {
     if (e.IsEmpty() || e.Relationship != MyRelationsBetweenPlayerAndBlock.Enemies) return;
-    Send(new MyTuple<long, Vector3D, Vector3D, double, long>(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() * 0.5, Me.EntityId));
+    Send(new MyTuple<long, Vector3D, Vector3D, double, long>(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() * 0.5, Me.CubeGrid.EntityId));
 }
 void Send(MyTuple<long, Vector3D, Vector3D, double, long> tup) { foreach (var ty in Types) IGC.SendBroadcastMessage(ty + "_TGT", tup); FleetSend(tup); }
 

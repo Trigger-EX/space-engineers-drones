@@ -1317,7 +1317,7 @@ void ReadIGC()
         var msg = _lHome.AcceptMessage();
         if (msg.Data is Vector3D) { _dynHome = (Vector3D)msg.Data; _dynHomeT = _now; }
     }
-    FleetPump(Command, p => { _dynHome = p; _dynHomeT = _now; });
+    FleetPump(Command, p => { if (!HlkOn || (p - Me.GetPosition()).LengthSquared() > 2500) { _dynHome = p; _dynHomeT = _now; } });   // (the Staff of my own ship broadcasts HOME = my own position: not a home)
 }
 
 void ReadTgt(IMyBroadcastListener l)
@@ -1328,7 +1328,7 @@ void ReadTgt(IMyBroadcastListener l)
         if (msg.Source == IGC.Me || !(msg.Data is MyTuple<long, Vector3D, Vector3D, double, long>)) continue;
         var d = (MyTuple<long, Vector3D, Vector3D, double, long>)msg.Data;
         if (d.Item4 < 0) { _ignore[d.Item1] = _now + 120; _contacts.Remove(d.Item1); if (_tgt != null && _tgt.Id == d.Item1) _tgt = null; continue; }
-        if (Ignored(d.Item1) || d.Item1 == Me.CubeGrid.EntityId || _mates.ContainsKey(d.Item1) || !FleetOk(d)) continue;   // (a feed can name my own grid or a wingmate)
+        if (d.Item5 == Me.CubeGrid.EntityId || Ignored(d.Item1) || d.Item1 == Me.CubeGrid.EntityId || _mates.ContainsKey(d.Item1) || !FleetOk(d)) continue;   // (a feed can name my own grid or a wingmate)
         Track t;
         if (_contacts.TryGetValue(d.Item1, out t) && t.Src != "IGC" && _now - t.Seen < 0.5) continue; // own data is fresher
         if (t == null) { t = new Track { Id = d.Item1, Type = MyDetectedEntityType.LargeGrid, Name = "shared" }; _contacts[d.Item1] = t; }
