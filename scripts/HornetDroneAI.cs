@@ -1454,6 +1454,7 @@ void LoadConfig()
     Stickiness = Cfg(S, "Target Stickiness (score bonus for the current target)", Stickiness);
     AiRepick = Cfg(S, "AI Re-pick Interval (s; 0 off)", AiRepick);
     PatrolOn = Cfg(S, "Search Patrol When Nothing Found (HUNT)", PatrolOn);
+    PatrolRandom = Cfg(S, "Search Patrol Own Start Corner And Direction", PatrolRandom);
     PatrolRadius = Cfg(S, "Search Patrol Radius (m)", PatrolRadius);
     PatrolAfter = Cfg(S, "Search Patrol Starts After (s)", PatrolAfter);
     PatrolAfterFight = Cfg(S, "Search Patrol Starts After A Fight (s)", PatrolAfterFight);
@@ -2807,10 +2808,10 @@ bool AiStep()
 //  PatrolAfter seconds stops waiting at home: it flies chords of a square of "radius" PatrolRadius around the home point (cruise speed,
 //  AI blocks off), and stops every leg for PatrolListen seconds with the AI blocks on, which is when they look around. As soon as there is
 //  a target, or the drone takes damage, the patrol ends. Needs AI blocks, HUNT mode and open space (no planet gravity).
-bool PatrolOn = true;
+bool PatrolOn = true, PatrolRandom = true;
 double PatrolRadius = 1200, PatrolAfter = 15, PatrolAfterFight = 90, PatrolListen = 6, PatrolMaxLeg = 40, PatrolSpeed = 60;
 bool _patrolLeg = false, _patrolFrame = false, _patrolStopSet = false; double _patrolPhaseT = -99, _noTgtSince = 0, _listenT = -1, _aiMoveT = -99, PatrolHold = 90; int _patrolK = 0; Vector3D _listenV;
-Vector3D _patrolWp, _patrolC, _patrolE1, _patrolE2, _patrolStop;
+Vector3D _patrolWp, _patrolC, _patrolE1, _patrolE2, _patrolStop; double _patrolRadF = 1; int _patrolDir = 1;
 bool PatrolStep()
 {
     if (!PatrolOn || _mode != Mode.HUNT || _rc == null || UnderFire || _now - _noTgtSince < (_lastTgtT < 0 ? PatrolAfter : PatrolAfterFight) || _rc.GetNaturalGravity().LengthSquared() > 0.25)
@@ -2831,9 +2832,13 @@ bool PatrolStep()
             double a0 = 6.2831853 * rank / (_mates.Count + 1) + (Math.Abs(Me.CubeGrid.EntityId) % 628) * 0.001;
             Vector3D e1 = _patrolE1 * Math.Cos(a0) + _patrolE2 * Math.Sin(a0);
             _patrolE2 = _patrolE2 * Math.Cos(a0) - _patrolE1 * Math.Sin(a0); _patrolE1 = e1;
+            // every drone gets its own direction and radius (from its grid id), so identical scripts do not fly the same square in lock-step
+            // and miss each other (sim: mirror-image starts kept two patrolling ships 2.5-2.9 km apart for the whole 300 s). The first corner stays "forward".
+            int ph = PatrolRandom ? (int)(Math.Abs(Me.CubeGrid.EntityId) % 997) : 0;
+            _patrolDir = ((ph / 8) & 1) == 0 ? 1 : -1; _patrolRadF = PatrolRandom ? 0.8 + 0.1 * ((ph / 16) % 5) : 1;
         }
-        double th = _patrolK++ * 1.5707963;
-        _patrolWp = _patrolC + (_patrolE1 * Math.Cos(th) + _patrolE2 * Math.Sin(th)) * PatrolRadius;
+        double th = _patrolK++ * 1.5707963 * _patrolDir;
+        _patrolWp = _patrolC + (_patrolE1 * Math.Cos(th) + _patrolE2 * Math.Sin(th)) * (PatrolRadius * _patrolRadF);
         _patrolLeg = true; _patrolPhaseT = _now; _listenT = -1;
     }
     else if (_now - _patrolPhaseT > PatrolMaxLeg || Vector3D.Distance(_rc.GetPosition(), _patrolWp) < 150) { _patrolLeg = false; _patrolPhaseT = _now; _patrolStop = _rc.GetPosition(); _patrolStopSet = true; }
