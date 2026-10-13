@@ -27,6 +27,7 @@ namespace SeSim.Combat
         public float[] HealthPool;              // railgun penetration budget
         public byte[] Mode;
         public long[] ShotId;                   // unique id per spawned projectile (Hit events carry it: unique-hit metric)
+        public Vector3D[] Head, Inh;            // rockets: barrel direction (zero = accelerate along the velocity) and inherited ship velocity (RocketInherit 2)
         long _nextShotId;
         public long TotalSpawned, TotalHits, TotalExpired;
 
@@ -49,7 +50,7 @@ namespace SeSim.Combat
         void Alloc(int n)
         {
             Pos = new Vector3D[n]; Vel = new Vector3D[n]; Travelled = new double[n]; Age = new double[n];
-            Ammo = new AmmoDef[n]; ShooterShip = new int[n]; ShooterBody = new Body[n]; HealthPool = new float[n]; Mode = new byte[n]; ShotId = new long[n];
+            Ammo = new AmmoDef[n]; ShooterShip = new int[n]; ShooterBody = new Body[n]; HealthPool = new float[n]; Mode = new byte[n]; ShotId = new long[n]; Head = new Vector3D[n]; Inh = new Vector3D[n];
         }
 
         void Grow()
@@ -57,7 +58,7 @@ namespace SeSim.Combat
             int n = Pos.Length * 2;
             Array.Resize(ref Pos, n); Array.Resize(ref Vel, n); Array.Resize(ref Travelled, n); Array.Resize(ref Age, n);
             Array.Resize(ref Ammo, n); Array.Resize(ref ShooterShip, n); Array.Resize(ref ShooterBody, n);
-            Array.Resize(ref HealthPool, n); Array.Resize(ref Mode, n); Array.Resize(ref ShotId, n);
+            Array.Resize(ref HealthPool, n); Array.Resize(ref Mode, n); Array.Resize(ref ShotId, n); Array.Resize(ref Head, n); Array.Resize(ref Inh, n);
         }
 
         public static byte ModeOf(AmmoDef a)
@@ -66,7 +67,11 @@ namespace SeSim.Combat
             return a.MissileExplosionDamage > 0 && a.MissileExplosionRadius > 0 ? ModeRocket : ModeSlug;   // large railgun slug: radius 1, damage 0
         }
 
-        public void Spawn(Vector3D pos, Vector3D vel, AmmoDef ammo, Body shooter, int shooterShip)
+        public void Spawn(Vector3D pos, Vector3D vel, AmmoDef ammo, Body shooter, int shooterShip) { Spawn(pos, vel, ammo, shooter, shooterShip, default(Vector3D), default(Vector3D)); }
+
+        /// <summary>head: a rocket's barrel direction (it accelerates along it, not along its velocity); inh: the part of vel that is the
+        /// shooter's velocity and is kept as is (SimSettings.RocketInherit 2). Zero head = the old model (speed grows along the velocity).</summary>
+        public void Spawn(Vector3D pos, Vector3D vel, AmmoDef ammo, Body shooter, int shooterShip, Vector3D head, Vector3D inh)
         {
             if (Count == Pos.Length) Grow();
             int i = Count++;
@@ -75,6 +80,7 @@ namespace SeSim.Combat
             HealthPool[i] = ammo.MissileHealthPool;
             Mode[i] = ModeOf(ammo);
             ShotId[i] = ++_nextShotId;
+            Head[i] = head; Inh[i] = inh;
             TotalSpawned++;
         }
 
@@ -84,7 +90,7 @@ namespace SeSim.Combat
             if (i != last)
             {
                 Pos[i] = Pos[last]; Vel[i] = Vel[last]; Travelled[i] = Travelled[last]; Age[i] = Age[last]; Ammo[i] = Ammo[last];
-                ShooterShip[i] = ShooterShip[last]; ShooterBody[i] = ShooterBody[last]; HealthPool[i] = HealthPool[last]; Mode[i] = Mode[last]; ShotId[i] = ShotId[last];
+                ShooterShip[i] = ShooterShip[last]; ShooterBody[i] = ShooterBody[last]; HealthPool[i] = HealthPool[last]; Mode[i] = Mode[last]; ShotId[i] = ShotId[last]; Head[i] = Head[last]; Inh[i] = Inh[last];
             }
             Ammo[last] = null; ShooterBody[last] = null;
         }
@@ -104,7 +110,23 @@ namespace SeSim.Combat
                 {
                     double sp = v0.Length();
                     double cap = ammo.Speed > 0 ? ammo.Speed : sp;
-                    if (sp < cap && sp > 0)
+                    Vector3D hd = Head[i];
+                    if (hd.LengthSquared() > 0.5)
+                    {
+                        if (Inh[i].LengthSquared() > 0)
+                        {   // RocketInherit 2: own speed along the barrel grows to the cap, the inherited velocity is kept
+                            double own = Vector3D.Dot(v0 - Inh[i], hd);
+                            if (own < cap) { own += ammo.MissileAcceleration * dt; if (own > cap) own = cap; v1 = Inh[i] + hd * own; }
+                        }
+                        else
+                        {   // RocketInherit 1: accelerate along the barrel, total speed capped (the cap rescales the velocity, so a rocket that
+                            // left a ship moving sideways bends round onto the barrel axis: the curving rockets of Keen's bug tracker)
+                            v1 = v0 + hd * (ammo.MissileAcceleration * dt);
+                            double l = v1.Length();
+                            if (l > cap) v1 *= cap / l;
+                        }
+                    }
+                    else if (sp < cap && sp > 0)
                     {
                         double sp2 = sp + ammo.MissileAcceleration * dt; if (sp2 > cap) sp2 = cap;
                         v1 = v0 * (sp2 / sp);

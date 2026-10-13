@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Keep the LEAD block (tools/lead_block.cs) identical in every armed drone script.
+
+  python3 -I tools/lead_sync.py --check    exit 1 if any script has a missing/different block
+  python3 -I tools/lead_sync.py --apply    replace the block (or insert it before 'public Program()') in every script
+Hooks that call the block (Track fields, LeadSpin / LeadSample in Track, the solvers) are NOT touched; see docs/lead-v1.md.
+"""
+import os, re, sys
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI",
+           "BasiliskAI"]
+BEGIN, END = "// >>> LEAD v", "// <<< LEAD v"
+
+def block():
+    with open(os.path.join(ROOT, "tools", "lead_block.cs"), encoding="utf-8", newline="") as f:
+        return f.read().replace("\r\n", "\n").rstrip("\n") + "\n"
+
+def main():
+    apply_ = "--apply" in sys.argv
+    b = block(); bad = 0
+    for n in SCRIPTS:
+        p = os.path.join(ROOT, "scripts", n + ".cs")
+        with open(p, encoding="utf-8", newline="") as f: raw = f.read()
+        crlf = "\r\n" in raw
+        t = raw.replace("\r\n", "\n")
+        i = t.find(BEGIN)
+        if i >= 0:
+            j = t.find(END, i); j = t.find("\n", j) + 1
+            cur = t[i:j]
+            if cur == b: print("ok      ", n); continue
+            new = t[:i] + b + t[j:]
+        else:
+            m = re.search(r"^public Program\(\)", t, re.M)
+            if not m: print("NO ANCHOR", n); bad += 1; continue
+            new = t[:m.start()] + b + "\n" + t[m.start():]
+        if not apply_: print("DIFFERS ", n); bad += 1; continue
+        if crlf: new = new.replace("\n", "\r\n")
+        with open(p, "w", encoding="utf-8", newline="") as f: f.write(new)
+        print("updated ", n)
+    return 1 if bad else 0
+
+sys.exit(main())

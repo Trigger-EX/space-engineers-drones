@@ -1,5 +1,5 @@
 // =====================================================================
-//  WASP DRONE AI  v2.2-wasp  - rocket fire control, lead solver & flight
+//  WASP DRONE AI  v2.5-wasp  - rocket fire control, lead solver & flight
 //  For Space Engineers (vanilla, small grid). Paste into a Programmable Block.
 //  Derived from HORNET DRONE AI v1.8: same tracking, hive (IGC), AI hand-off,
 //  damage sensing, printer join; the weapon model and fire control are new.
@@ -42,6 +42,12 @@
 //   * optional "Dash Along AI Heading" (off): measured +4 points in 1v1, -11 in teams (see the notes)
 //   * config keys that contain "=" were renamed (MyIni splits there)
 //
+//  v2.5 (LEAD v1.0, shared block, docs/lead-v1.md): the lead solver predicts the target with its freshest acceleration, held only
+//   for as long as its manoeuvres usually last (an AI ship on evasive flips its strafe every 2-5 s); the hull aim point counts only
+//   across the line of fire, turns with the target's spin, and keeps "Aim Margin" x the predicted miss of known hull around it
+//   Rockets: modelled leaving with the ship's velocity + launch speed, accelerating along the barrel with the speed capped (they curve
+//   when fired from a moving ship, Keen bug tracker); "Rocket Velocity Model" CAPPED / NONE (the v2.3 model) / FULL
+//
 //  COMMANDS (PB argument, toolbar, or IGC "<Tag>_CMD")
 //   guard    hold home point, engage anything inside GuardRadius
 //   follow   stay with the owner: a ship running a Mothership link, or you on foot near the drone ("escort" works too)
@@ -57,13 +63,16 @@
 //  Settings live in the PB's Custom Data (written on first run).
 // =====================================================================
 
-const string VER = "2.4-wasp";
+const string VER = "2.5-wasp";
 
 // ---------------- settings (overwritten from Custom Data) -------------
 string Tag = "WASP";
 double ProjSpeed = 200;      // m/s  rocket top speed (informational; the solver uses the Rkt* curve below)
 double RktV0 = 100, RktAcc = 600, RktVmax = 200;   // Missile200mm: launch speed, acceleration, cap
-bool InheritVel = false;     // rockets do not inherit the launcher's velocity (set true if a test shows they do)
+string RocketModel = "CAPPED"; // CAPPED: a rocket leaves with our velocity + launch speed, accelerates along the barrel, total speed capped
+                              // (fired from a moving ship it curves onto the barrel line; Keen bug tracker); NONE: our velocity is ignored;
+                              // FULL: our velocity is kept on top of the rocket's own speed
+double LeadMargin = 1.0;      // aim point keeps this many predicted misses of known hull around it (LEAD block)
 double MaxFireRangeU = 650, MaxLeadTimeU = 3.5, StandoffU = 350;   // when the rocket stock is unknown/unlimited (creative world: empty inventories) the doctrine is "more rockets, from farther": sim, locked duels, win 34.8 -> 43.6 %
 double MaxFireRange = 420;   // rockets die at 800 m; accuracy falls with flight time (sim sweep: 650 -> 420 doubled the hit rate, 31 -> 75 %, and gave more hits per drone)
 double MaxLeadTime = 2.0;    // never fire at an intercept further than this many seconds of flight (was 3.2)
@@ -139,12 +148,14 @@ void RegisterFeeds()
 class Track
 {
     public long Id; public Vector3D Pos, Vel, Acc; public double AccMag;
+    public Vector3D LAcc, LSeg, LW, LOR; public int LSegN; public double LSegT0 = -99, LManT = 2;   // LEAD v1.0 state (fresh acceleration, manoeuvres, spin)
     public double Spin, SpinSince = -1, Rad0, Raw, RawMax, DeadAt = -1, DisSince = -1; public Vector3D OF, OU; public bool HasOri;
     public MatrixD O = MatrixD.Identity; public List<Vector3D> Hull = new List<Vector3D>(); public int HullNext;
     public Vector3D Thrust, AimLocal; public double AimT = -99;
     // how fast it's rotating, from orientation changes between sightings
     public void Ori(MatrixD o, double dt)
     {
+        LeadSpin(this, o, dt);
         if (HasOri && dt > 0.04 && dt < 2)
         {
             double a = Math.Max(Math.Acos(MathHelper.Clamp(Vector3D.Dot(OF, o.Forward), -1, 1)), Math.Acos(MathHelper.Clamp(Vector3D.Dot(OU, o.Up), -1, 1)));
@@ -155,6 +166,7 @@ class Track
     public MyDetectedEntityType Type; public string Name;
     public void Set(Vector3D p, Vector3D v, double r, double now, string src)
     {
+        LeadSample(this, v, now, now - Seen);
         double dt = now - Seen;
         if (Seen > 0 && dt > 0.04 && dt < 2)
         {
@@ -600,6 +612,100 @@ string FollowStatus()
     return s + "\n";
 }
 // <<< FOLLOW <<<
+// >>> LEAD v1.0 (shared block: identical in every armed drone script, see docs/lead-v1.md) >>>
+// Target prediction for the lead solvers. Measured on an offline bench (tools/lead_bench/Bench.cs: rockets, gatling and railgun shots at
+// strafing / turning / orbiting / burning targets from 6 m to 120 m long) and in the sim; numbers in docs/lead-v1.md.
+//  * Fresh acceleration: 0.8 of the newest velocity-difference sample (the Longbow's v2.2 finding). The old smoothed, steadiness-gated
+//    acceleration lagged a strafing target by about a second and was the worst estimate in every pattern.
+//  * Manoeuvre horizon: the present acceleration is extrapolated only for as long as this target's manoeuvres usually last (the mean
+//    length of its stretches of steady acceleration), then the target flies on at constant velocity. A burn that has already outlasted
+//    that is trusted for longer the longer it goes on (an orbit, a chase). Matters for slow shots: a rocket needs about 4 s to cover
+//    800 m, and an AI ship with "evasive manoeuvres" flips its strafe every 2-5 s.
+//  * Aim point: a hull point counts only across the line of fire (its depth along the line does not change what the shot hits, but a
+//    deep point swings sideways when the target turns), is turned with the target's measured spin for at most 1 s, and must leave
+//    Lead Margin x the predicted miss of known hull around it, so a long, uncertain shot goes to the middle of the known hull instead
+//    of its edge, and a short, sure one may still pick the engines.
+// Hooks (one line each, in class Track): fields  public Vector3D LAcc, LSeg, LW, LOR; public int LSegN; public double LSegT0 = -99, LManT = 2;
+//   LeadSpin(this, o, dt) first thing in Track.Ori;  LeadSample(this, v, now, now - Seen) first thing in Track.Set.
+// Solvers use LeadAcc(t), LeadHold(t), LeadK / LeadKd, LeadOffset; AimOffset filters its hull points through LeadPick.
+static double LeadFastW = 0.8, LeadFastK = 0.9, LeadAccMax = 30;
+static void LeadSample(Track t, Vector3D v, double now, double dt)
+{
+    if (dt >= 2) { t.LAcc = Vector3D.Zero; t.LSegN = 0; return; }
+    if (t.Seen <= 0 || dt < 0.04) return;
+    Vector3D a = (v - t.Vel) / dt;
+    if (a.LengthSquared() > LeadAccMax * LeadAccMax) a = Vector3D.Normalize(a) * LeadAccMax;
+    t.LAcc = t.LAcc * (1 - LeadFastW) + a * LeadFastW;
+    // a new manoeuvre starts when the acceleration turns well away from the mean of the present one
+    double am = a.Length(), sm = t.LSeg.Length(), mx = Math.Max(am, sm);
+    if (t.LSegN == 0 || (mx > 0.5 && (a - t.LSeg).Length() > 0.6 * mx && now - t.LSegT0 > 0.3))
+    {
+        if (t.LSegN > 0) t.LManT = MathHelper.Clamp(t.LManT * 0.7 + (now - t.LSegT0) * 0.3, 0.4, 8);
+        t.LSeg = a; t.LSegN = 1; t.LSegT0 = now;
+    }
+    else { t.LSegN++; t.LSeg += (a - t.LSeg) / Math.Min(t.LSegN, 8); }
+    if (now - t.LSegT0 > t.LManT) t.LManT = Math.Min(8, t.LManT + 0.3 * dt);
+}
+// spin (world, rad/s) from two orientations: for a small turn phi, each axis b moves by phi x b, so sum(b_old x b_new) = 2 phi
+static void LeadSpin(Track t, MatrixD o, double dt)
+{
+    if (t.HasOri && dt > 0.04 && dt < 2 && t.LOR.LengthSquared() > 0.5)
+        t.LW = t.LW * 0.5 + (Vector3D.Cross(t.OF, o.Forward) + Vector3D.Cross(t.OU, o.Up) + Vector3D.Cross(t.LOR, o.Right)) * (0.25 / dt);
+    t.LOR = o.Right;
+}
+Vector3D LeadAcc(Track t) { return t.LAcc.LengthSquared() < 0.25 ? Vector3D.Zero : t.LAcc * LeadFastK; }
+// seconds the present manoeuvre is expected to go on
+double LeadHold(Track t)
+{
+    double age = _now - t.LSegT0;
+    return Math.Max(Math.Max(t.LManT - age, 0.3 * t.LManT), 2 * (age - t.LManT));
+}
+// target displacement = acceleration * LeadK(T, hold) after T seconds; velocity change = acceleration * LeadKd(T, hold)
+static double LeadK(double T, double h) { return T <= h ? 0.5 * T * T : h * (T - 0.5 * h); }
+static double LeadKd(double T, double h) { return Math.Min(T, h); }
+// aim offset (world) T seconds of flight from now: only across the line of fire 'los', turned with the target's spin for at most 1 s
+Vector3D LeadOffset(Track t, Vector3D off, Vector3D los, double T)
+{
+    if (off.LengthSquared() < 1e-6) return off;
+    double wl = t.LW.Length(), h = Math.Min(_now - t.Seen + T, 1.0);
+    if (wl > 1e-3 && h > 0)
+    {
+        Vector3D k = t.LW / wl; double an = wl * h, c = Math.Cos(an), s = Math.Sin(an);
+        off = off * c + Vector3D.Cross(k, off) * s + k * (Vector3D.Dot(k, off) * (1 - c));
+    }
+    return off - Vector3D.Dot(off, los) * los;
+}
+// Predicted miss (m) of a shot with T seconds of flight: what the target's manoeuvring can do in that time.
+static double LeadMiss(Track t, double T) { return 0.5 * t.AccMag * T * T; }
+// Hull points (target frame) that leave 'need' metres of known hull around them across the line of fire (l, target frame), judged
+// against the extent of all hull points along 4 directions (an octagon round the known hull); none: the one with the most.
+List<int> _leadKeep = new List<int>();
+List<int> LeadPick(List<Vector3D> hull, Vector3D l, double need)
+{
+    _leadKeep.Clear();
+    int n = hull.Count;
+    if (l.LengthSquared() < 0.25 || need <= 0) { for (int i = 0; i < n; i++) _leadKeep.Add(i); return _leadKeep; }   // (no line of fire yet)
+    Vector3D u = Vector3D.Cross(l, Math.Abs(l.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); u.Normalize();
+    Vector3D v = Vector3D.Cross(l, u);
+    double x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, p0 = 1e9, p1 = -1e9, q0 = 1e9, q1 = -1e9;
+    for (int i = 0; i < n; i++)
+    {
+        double x = Vector3D.Dot(hull[i], u), y = Vector3D.Dot(hull[i], v), p = (x + y) * 0.7071, q = (x - y) * 0.7071;
+        x0 = Math.Min(x0, x); x1 = Math.Max(x1, x); y0 = Math.Min(y0, y); y1 = Math.Max(y1, y);
+        p0 = Math.Min(p0, p); p1 = Math.Max(p1, p); q0 = Math.Min(q0, q); q1 = Math.Max(q1, q);
+    }
+    int best = 0; double bm = -1e9;
+    for (int i = 0; i < n; i++)
+    {
+        double x = Vector3D.Dot(hull[i], u), y = Vector3D.Dot(hull[i], v), p = (x + y) * 0.7071, q = (x - y) * 0.7071;
+        double m = Math.Min(Math.Min(Math.Min(x - x0, x1 - x), Math.Min(y - y0, y1 - y)), Math.Min(Math.Min(p - p0, p1 - p), Math.Min(q - q0, q1 - q)));
+        if (m >= need) _leadKeep.Add(i);
+        if (m > bm) { bm = m; best = i; }
+    }
+    if (_leadKeep.Count == 0 && n > 0) _leadKeep.Add(best);
+    return _leadKeep;
+}
+// <<< LEAD v1.0 <<<
 
 public Program()
 {
@@ -730,7 +836,8 @@ void LoadConfig()
     RktV0 = Cfg(S, "Rocket Launch Speed", RktV0);
     RktAcc = Cfg(S, "Rocket Acceleration", RktAcc);
     RktVmax = Cfg(S, "Rocket Top Speed", RktVmax);
-    InheritVel = Cfg(S, "Projectiles Inherit Ship Velocity", InheritVel);
+    RocketModel = Cfg(S, "Rocket Velocity Model (CAPPED/NONE/FULL)", RocketModel).Trim().ToUpperInvariant();
+    LeadMargin = Cfg(S, "Aim Margin (predicted misses)", LeadMargin);
     MaxFireRange = Cfg(S, "Max Fire Range", MaxFireRange);
     MaxLeadTime = Cfg(S, "Max Flight Time", MaxLeadTime);
     SafeRange = Cfg(S, "Min Launch Distance", SafeRange);
@@ -1329,32 +1436,65 @@ double RktTime(double d)
     return ta + (d - da) / Math.Max(RktVmax, 1);
 }
 
-// Rocket intercept. The rocket flies a straight line at its own speed curve D(T) (it does not inherit our
-// velocity unless InheritVel), so solve  |P_target(T) - shooter| = D(T)  for the flight time T by damped
-// fixed-point iteration (converges while the target is slower than the rocket).
-bool _leadOk = false;
 double FireRange { get { return _rockets >= 0 ? MaxFireRange : MaxFireRangeU; } }
+// Rocket flight in the barrel frame for a launch from a ship moving at ua along the barrel and us across it (CAPPED model): distance
+// along the barrel s, sideways drift q (towards us) and speed along the barrel sv after T seconds. Phase 1: launch velocity
+// (ua + V0, us), +A along the barrel until the speed reaches Vmax; phase 2: speed Vmax, the angle th to the barrel decays as
+// tan(th/2) = tan(th0/2) exp(-A/Vmax t). Closed form, within 1 m of a 60 Hz step-by-step flight.
+void RktPath(double T, double ua, double us, out double s, out double q, out double sv)
+{
+    double V = RktVmax, A = Math.Max(RktAcc, 1e-3), va = ua + RktV0, t1, th;
+    if (va * va + us * us >= V * V) { t1 = 0; th = Math.Atan2(us, va); }
+    else { t1 = (Math.Sqrt(V * V - us * us) - va) / A; th = Math.Asin(MathHelper.Clamp(us / V, -1, 1)); }
+    if (T <= t1) { s = va * T + 0.5 * A * T * T; q = us * T; sv = va + A * T; return; }
+    s = va * t1 + 0.5 * A * t1 * t1; q = us * t1;
+    double k = A / V, h = T - t1, c = Math.Tan(0.5 * th), x = c * Math.Exp(-k * h);
+    q += V / k * 2 * (Math.Atan(c) - Math.Atan(x));
+    s += V * (h - Math.Log((1 + c * c) / (1 + x * x)) / k);
+    sv = V * (1 - x * x) / (1 + x * x);
+}
+
+// Rocket intercept (v2.4): find the barrel direction d and flight time T with  rocket(d, T) = target(T).  The target is predicted
+// with the LEAD block (fresh acceleration held for the expected rest of its manoeuvre, aim point across the line of fire); the
+// rocket follows RocketModel. Newton on T: f(T) = s(T) - |target(T) - sideways drift(T)|.
+bool _leadOk = false;
+Vector3D _aimLos; double _aimNeed;   // line of fire and required hull margin for AimOffset's choice
 bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, out Vector3D point, out Vector3D dir)
 {
-    Vector3D tp = t.P(_now) + AimOffset(t), tv = t.V(_now), ta = UseTargetAccel ? t.EA() : Vector3D.Zero;
-    Vector3D rp = tp - shooter;
-    Vector3D rv = InheritVel ? tv - shooterVel : tv;
-    double tt = RktTime(rp.Length()), resid = 0;
-    Vector3D p = rp;
-    for (int i = 0; i < 10; i++)
+    Vector3D rp = t.P(_now) - shooter, tv = t.V(_now), ta = UseTargetAccel ? LeadAcc(t) : Vector3D.Zero;
+    double rl = rp.Length();
+    if (rl < 1 || double.IsNaN(rl)) { point = shooter + rp; dir = Vector3D.Zero; _leadOk = false; return false; }
+    Vector3D los = rp / rl, d = los, p = rp;
+    double tt = RktTime(rl), h = LeadHold(t), f = 99;
+    _aimLos = los; _aimNeed = LeadMargin * LeadMiss(t, tt);
+    Vector3D off = AimOffset(t);
+    int model = RocketModel == "NONE" ? 0 : RocketModel == "FULL" ? 2 : 1;
+    for (int i = 0; i < 12; i++)
     {
-        p = rp + (rv * tt + 0.5 * ta * tt * tt) * LeadScale;
-        double nt = RktTime(p.Length());
-        resid = Math.Abs(nt - tt);
-        tt = MathHelper.Clamp(0.5 * (tt + nt), 0, 12);
+        p = rp + LeadOffset(t, off, los, tt) + (tv * tt + ta * LeadK(tt, h)) * LeadScale;
+        Vector3D w = p, cv = tv + ta * LeadKd(tt, h);
+        double s, q, sv;
+        if (model == 1)
+        {
+            double ua = Vector3D.Dot(shooterVel, d); Vector3D up = shooterVel - ua * d; double us = up.Length();
+            RktPath(tt, ua, us, out s, out q, out sv);
+            if (us > 1e-3) w -= up * (q / us);
+        }
+        else
+        {
+            RktPath(tt, 0, 0, out s, out q, out sv);
+            if (model == 2) { w -= shooterVel * tt; cv -= shooterVel; }
+        }
+        double wl = w.Length();
+        if (wl < 1) break;
+        d = w / wl; f = s - wl;
+        tt = MathHelper.Clamp(tt - f / Math.Max(sv - Vector3D.Dot(d, cv), 20), 0.02, 12);
     }
-    _leadOk = resid < 0.05 && !double.IsNaN(tt);
+    _leadOk = Math.Abs(f) < 2 && !double.IsNaN(tt) && !double.IsNaN(d.X);
     _leadT = tt;
-    double len = p.Length();
-    if (len < 1 || double.IsNaN(len)) { point = tp; dir = Vector3D.Zero; _leadOk = false; return false; }
     point = shooter + p;
-    dir = p / len;
-    return true;
+    dir = d;
+    return _leadOk;
 }
 
 // ---- fire control state
@@ -1556,7 +1696,7 @@ void Display()
         _sb.Append("Target : ").Append(_tgt.Type == MyDetectedEntityType.SmallGrid ? "SMALL " : _tgt.Type == MyDetectedEntityType.LargeGrid ? "LARGE " : "").Append(_tgt.Src).Append('\n');
         double mySpd = _rc != null ? _rc.GetShipVelocities().LinearVelocity.Length() : 0;
         _sb.Append("Range  : ").Append(dist.ToString("0")).Append(" m  tgt ").Append(_tgt.V(_now).Length().ToString("0")).Append(" me ").Append(mySpd.ToString("0")).Append(" m/s\n");
-        _sb.Append("Lead   : ").Append(_leadT.ToString("0.00")).Append(" s flight  acc ").Append(_tgt.EA().Length().ToString("0.0")).Append("/").Append(_tgt.AccMag.ToString("0.0")).Append(" x").Append(LeadScale.ToString("0.00")).Append('\n');
+        _sb.Append("Lead   : ").Append(_leadT.ToString("0.00")).Append(" s flight  acc ").Append(LeadAcc(_tgt).Length().ToString("0.0")).Append("/").Append(_tgt.AccMag.ToString("0.0")).Append(" for ").Append(LeadHold(_tgt).ToString("0.0")).Append(" s  x").Append(LeadScale.ToString("0.00")).Append('\n');
         _sb.Append("Aim err: ").Append(_aimErrDeg.ToString("0.00")).Append(" / ").Append(_fireWinDeg.ToString("0.00")).Append(" deg").Append(_showFire ? "  FIRING" : "").Append('\n');
     }
     else _sb.Append("Target : none (").Append(_contacts.Count).Append(" contacts)\n\n\n\n");
@@ -1901,16 +2041,19 @@ Vector3D AimOffset(Track t)
     if (_now - t.AimT > 0.5)
     {
         string mode = AimLabel(t);
-        int n = t.Hull.Count, slot = (int)Math.Abs(Me.CubeGrid.EntityId % 9973);
+        int slot = (int)Math.Abs(Me.CubeGrid.EntityId % 9973);
         int step = slot + (int)(_now / 4);
-        if (mode == "SPREAD") t.AimLocal = t.Hull[step % n];
+        // only hull points with enough known hull round them for this shot's predicted miss (LEAD block)
+        var keep = LeadPick(t.Hull, Vector3D.TransformNormal(_aimLos, MatrixD.Transpose(t.O)), _aimNeed);
+        int n = keep.Count;
+        if (mode == "SPREAD") t.AimLocal = t.Hull[keep[step % n]];
         else
         {
             Vector3D axis = mode == "ENGINES" ? -t.Thrust
                 : Vector3D.TransformNormal(_rc.GetPosition() - t.P(_now), MatrixD.Transpose(t.O));
             if (axis.LengthSquared() < 1e-6) axis = Vector3D.Forward;
             axis.Normalize();
-            _aimIdx.Clear(); for (int i = 0; i < n; i++) _aimIdx.Add(i);
+            _aimIdx.Clear(); _aimIdx.AddRange(keep);
             _aimIdx.Sort((a, b) => Vector3D.Dot(t.Hull[b], axis).CompareTo(Vector3D.Dot(t.Hull[a], axis)));
             t.AimLocal = t.Hull[_aimIdx[step % Math.Max(1, n / 4)]];   // one of the best quarter
         }
