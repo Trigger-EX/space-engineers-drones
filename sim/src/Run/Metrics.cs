@@ -19,6 +19,8 @@ namespace SeSim.Run
         public double DamageDealt, DamageTaken, FriendlyDamageDealt, TimeOnTargetS, MinDistanceToEnemy = double.MaxValue;
         public double MassLostFraction, TimeAliveS, DisabledAtS = -1, DestroyedAtS = -1, AvgSpeed, MaxSpeed;
         public double ScriptCpuMs, ScriptMaxTickMs; public long ScriptRuns;
+        /// <summary>SimSettings.CountInstructions: one pre-rendered JSON object per PB of this ship (IlStats.ToJson); null when not counting.</summary>
+        public List<string> IlJson;
         /// <summary>Seconds the PB status screen showed a script target ("Target : ..." not "none"), first such time (-1 never),
         /// and seconds the ship's AI Offensive block was enabled (v1.8 hybrid search: the vanilla AI flies the ship).</summary>
         public double ScriptTargetS, FirstScriptTargetS = -1, AiOnS;
@@ -549,6 +551,7 @@ namespace SeSim.Run
                     if (!Valid(si)) continue;
                     var st = _st[si];
                     st.ScriptRuns += r.Runs; st.ScriptCpuMs += r.CpuMs;
+                    if (r.Il != null) { if (st.IlJson == null) st.IlJson = new List<string>(); st.IlJson.Add(r.Il.ToJson(r.ScriptName, si, SimSettings.Dt)); }
                     if (r.MaxCpuMs > st.ScriptMaxTickMs) st.ScriptMaxTickMs = r.MaxCpuMs;
                     if (r.Dead && r.DeathReason != null && st.FirstException == null && r.DeathReason != "detached" && r.DeathReason != "block destroyed")
                         st.FirstException = r.DeathReason;

@@ -171,7 +171,7 @@ namespace SeSim.Run
             PrinterFaults.At = Dbl(args, "--fault-at", 40); PrinterFaults.Len = Dbl(args, "--fault-len", 3);
             ulong seed = (ulong)Dbl(args, "--seed", 1);
             string scriptFile = Arg(args, "--script-file", null);
-            var settings = new SimSettings();
+            var settings = new SimSettings(); settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
             var bp = BlueprintLoader.Get(Path.Combine(Path.Combine(repo, "out"), "Blueprints"), model);
             var w = new World(settings, defs, seed);
@@ -267,6 +267,7 @@ namespace SeSim.Run
             if (lastErr != null) Console.WriteLine("LAST ERROR TEXT: " + lastErr);
             if (Has(args, "--echo")) Console.WriteLine("--- Hive PB terminal info (last run) ---\n" + runner.EchoText);
             bool ok = runner != null && !runner.Dead && (fault != "none" || (statesSeen.ContainsKey("BUILD") && statesSeen.ContainsKey("FINISH") && statesSeen.ContainsKey("CHARGE"))) && (!Has(args, "--expect-clean") || errRuns == 0);
+            if (settings.CountInstructions) IlReport.Dump(host, "printer-test " + model + " fault=" + fault, args);
             Console.WriteLine(ok ? "PRINTER OK" : "PRINTER FAILED");
             return ok ? 0 : 1;
         }

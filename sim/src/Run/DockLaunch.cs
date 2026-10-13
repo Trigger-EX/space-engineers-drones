@@ -123,7 +123,7 @@ namespace SeSim.Run
             ulong seed = (ulong)Dbl(args, "--seed", 1);
             string cd = Arg(args, "--custom-data", null);
             string tracePath = Arg(args, "--trace", null);
-            var settings = new SimSettings();
+            var settings = new SimSettings(); settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
             SizeOf = b => { var d = defs.Get(b.TypeId, b.Subtype); return d.SizeCells; };
             var bp = BlueprintLoader.Get(Path.Combine(Path.Combine(repo, "out"), "Blueprints"), model);
@@ -208,6 +208,7 @@ namespace SeSim.Run
             if (Has(args, "--echo")) Console.WriteLine("--- PB echo ---\n" + last);
             if (tw != null) tw.Dispose();
             bool ok = leftAt >= 0 && modeNow != "IDLE" && modeNow != "?";
+            if (settings.CountInstructions) IlReport.Dump(host, "dock-launch " + model + " " + string.Join(" ", args), args);
             Console.WriteLine(ok ? "LAUNCH OK" : "LAUNCH FAILED (drone did not leave and start working)");
             return ok ? 0 : 1;
         }

@@ -46,6 +46,7 @@ namespace SeSim.Run
         public Action<string> EchoAction;
         public Func<IMyIntergridCommunicationSystem> IgcGetter;
         public int Recompiles;
+        public IlStats Il;                       // SimSettings.CountInstructions only
     }
 
     public sealed class ScriptHost
@@ -91,7 +92,8 @@ namespace SeSim.Run
         {
             var pb = r.Pb;
             Type t;
-            try { t = ScriptRegistry.GetProgramType(pb.ProgramText, SimDir); }
+            string cmode = World.Settings.CountInstructions ? World.Settings.InstructionCountMode : null;
+            try { t = ScriptRegistry.GetProgramType(pb.ProgramText, SimDir, cmode); if (cmode != null && r.Il == null) r.Il = new IlStats(ScriptRegistry.SitesOf(pb.ProgramText, cmode)); }
             catch (Exception e) { Kill(r, e, "compile"); return; }
             Sandbox.ModAPI.IMyGridProgram gp;
             object o;
@@ -112,11 +114,12 @@ namespace SeSim.Run
             if (ctor == null) { Kill(r, new MissingMethodException("Program has no parameterless constructor"), "init"); return; }
             DetRandomSeed.Set(r.RngState);
             pb.InMain = true;
+            if (r.Il != null) r.Il.Begin(World.Settings.EnforceInstructionLimit ? World.Settings.MaxInstructionCount : 0);
             long t0 = Stopwatch.GetTimestamp();
             try { ctor.Invoke(o, null); }
             catch (TargetInvocationException e) { r.Program = gp; Kill(r, e.InnerException ?? e, "constructor"); return; }
             catch (Exception e) { r.Program = gp; Kill(r, e, "constructor"); return; }
-            finally { pb.InMain = false; r.RngState = DetRandomSeed.Get(); AddCpu(r, t0, false); }
+            finally { pb.InMain = false; r.RngState = DetRandomSeed.Get(); AddCpu(r, t0, false); if (r.Il != null) r.Il.End(World.Tick, UpdateType.None, true, IlCounter.Dead); }
             r.Program = gp;
             r.Dead = false; r.DeathReason = null;
         }
@@ -153,10 +156,11 @@ namespace SeSim.Run
             r.EchoSeen = false;
             DetRandomSeed.Set(r.RngState);
             pb.InMain = true;
+            if (r.Il != null) r.Il.Begin(World.Settings.EnforceInstructionLimit ? World.Settings.MaxInstructionCount : 0);
             long t0 = Stopwatch.GetTimestamp();
             try { r.Program.Main(argument, type); }
             catch (Exception e) { Kill(r, e, "Main"); }
-            finally { pb.InMain = false; r.RngState = DetRandomSeed.Get(); AddCpu(r, t0, true); }
+            finally { pb.InMain = false; r.RngState = DetRandomSeed.Get(); AddCpu(r, t0, true); if (r.Il != null) r.Il.End(tick, type, false, IlCounter.Dead); }
         }
 
         /// <summary>Phase 1 of World.Step.</summary>

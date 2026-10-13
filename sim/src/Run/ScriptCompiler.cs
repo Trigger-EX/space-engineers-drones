@@ -119,9 +119,31 @@ namespace SeSim.Run
             }
         }
 
-        public static Type GetProgramType(string scriptText, string simDir)
+        static readonly Dictionary<string, string[]> KeyToSites = new Dictionary<string, string[]>();
+
+        public static Type GetProgramType(string scriptText, string simDir) { return GetProgramType(scriptText, simDir, null); }
+
+        /// <summary>counting: the instrumented assembly (SimSettings.CountInstructions, sim/src/Run/IlProfile.cs); its injection sites are in SitesOf().</summary>
+        public static Type GetProgramType(string scriptText, string simDir, string countMode)
         {
             string key = ScriptCompiler.ScriptKey(scriptText);
+            if (!string.IsNullOrEmpty(countMode))
+            {
+                Type ct;
+                lock (Lock) { if (KeyToType.TryGetValue(key + "|" + countMode, out ct)) return ct; }
+                if (countMode == "il") GetProgramType(scriptText, simDir, null);      // the plain assembly is the input of the IL injector
+                lock (Lock)
+                {
+                    LoadManifestLocked(simDir);
+                    if (!KeyToName.ContainsKey(key)) KeyToName[key] = "custom-" + key.Substring(0, 8);
+                    string plain = countMode == "il" ? KeyToDll[key] : null;
+                    string idll = IlInstrument.Build(scriptText, key, simDir, countMode, plain);
+                    KeyToSites[key + "|" + countMode] = IlInstrument.LoadSites(idll);
+                    ct = Assembly.LoadFrom(idll).GetType("Program", true);
+                    KeyToType[key + "|" + countMode] = ct;
+                    return ct;
+                }
+            }
             lock (Lock)
             {
                 Type t;
@@ -147,6 +169,12 @@ namespace SeSim.Run
                 KeyToType[key] = t;
                 return t;
             }
+        }
+
+        public static string[] SitesOf(string scriptText, string countMode)
+        {
+            string key = ScriptCompiler.ScriptKey(scriptText) + "|" + countMode;
+            lock (Lock) { string[] s; return KeyToSites.TryGetValue(key, out s) ? s : null; }
         }
 
         public static string NameOf(string scriptText)   // "HornetDroneAI" for reports

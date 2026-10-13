@@ -157,7 +157,17 @@ namespace SeSim.Core
 
         // ---- scripts (slot D) ----------------------------------------------------------------------------
         public double FakeLastRunTimeMs = 0.05;                  // Runtime.LastRunTimeMs (constant, deterministic)
-        public int FakeInstructionCount = 0;                     // Runtime.CurrentInstructionCount
+        public int FakeInstructionCount = 0;                     // Runtime.CurrentInstructionCount (when CountInstructions is false)
+        /// <summary>il_profiler: run every script through the instruction counter (tools/ilcount, Keen's InstructionCountingRewriter model: one count per
+        /// code block entered). Runtime.CurrentInstructionCount returns the live count, CurrentCallChainDepth the live depth, and the run result gets a
+        /// per-PB "il" record. Needs tools/ilcount/build.sh once. Slower (about 1.5-2x script time). Default off.</summary>
+        public bool CountInstructions = false;
+        /// <summary>"blocks" (default): the game's own model, one count per code block entered (tools/ilcount/IlRewrite.cs, a port of Keen's
+        /// InstructionCountingRewriter). "il": IL instructions executed inside the script assembly (tools/ilcount/IlCecil.cs), a conservative
+        /// upper-bound view that is several times the "blocks" figure. Only the blocks mode matches the 50,000 limit of the current public game source.</summary>
+        public string InstructionCountMode = "blocks";
+        /// <summary>With CountInstructions: a Main/constructor run that exceeds MaxInstructionCount dies ("Script too complex", the PB stops) like in the game.</summary>
+        public bool EnforceInstructionLimit = false;
         public int MaxInstructionCount = 50000;                  // wiki value
         public int MaxCallChainDepth = 1000;                     // [I]
         /// <summary>Swarm cue (test harness for the kamikaze scenarios, docs/kamikaze-defence.md): every SwarmCueSeconds (0 = off) each PB of

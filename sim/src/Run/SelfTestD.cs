@@ -34,6 +34,7 @@ namespace SeSim.Run
             TestJson();
             TestScenarioGen();
             TestSettingsParse();
+            TestInstructionCount(simDir);
             Console.WriteLine(_fail == 0 ? "SelfTestD passed" : "SelfTestD FAILED: " + _fail);
             return _fail;
         }
@@ -63,6 +64,34 @@ namespace SeSim.Run
             Type et = null; string err = null;
             try { et = ScriptRegistry.GetProgramType(edited, simDir); } catch (Exception e) { err = e.Message; }
             Check(et != null, "unknown program text is compiled on demand" + (err != null ? " (" + err + ")" : ""));
+        }
+
+        /// <summary>il_profiler: the block-counting rewriter reproduces Keen's counting rules on a script whose count is known by hand.</summary>
+        static void TestInstructionCount(string simDir)
+        {
+            if (!File.Exists(IlInstrument.RewriterPath(simDir))) { Console.WriteLine("  skip instruction-count test (run tools/ilcount/build.sh to enable)"); return; }
+            // blocks entered: Main 1, for body 10, if body 5, else body 5, Helper (called once) 1 + its while body 3, lambda called 4 times 4, try/catch: catch 1 = 30
+            string txt = "int _r; public Program() { } void Helper() { int k = 0; while (k < 3) { k++; } }\n"
+                       + "public void Main(string a, UpdateType u) { for (int i = 0; i < 10; i++) { if (i % 2 == 0) _r++; else _r--; } Helper();\n"
+                       + "  var l = new List<int> { 1, 2, 3, 4 }; l.ForEach(x => _r += x); int z = 0; try { z = 5 / (z - z); } catch (Exception) { _r = 0; } }";
+            try
+            {
+                Type t = ScriptRegistry.GetProgramType(txt, simDir, "blocks");
+                var o = (Sandbox.ModAPI.IMyGridProgram)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(t);
+                var settings = new SimSettings { CountInstructions = true };
+                o.Runtime = new SimRuntimeInfo(settings);
+                SimShim.IlCounter.Begin(ScriptRegistry.SitesOf(txt, "blocks").Length, 0);
+                t.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null).Invoke(o, null);   // binds Main like the game
+                SimShim.IlCounter.Begin(ScriptRegistry.SitesOf(txt, "blocks").Length, 0);
+                o.Main("", Sandbox.ModAPI.Ingame.UpdateType.Terminal);
+                int n = SimShim.IlCounter.Total;
+                Check(n == 30 && o.Runtime.CurrentInstructionCount == 30, "instruction counter counts blocks entered like Keen's rewriter (got " + n + ", expected 30)");
+                SimShim.IlCounter.Begin(ScriptRegistry.SitesOf(txt, "blocks").Length, 20);
+                bool thrown = false;
+                try { o.Main("", Sandbox.ModAPI.Ingame.UpdateType.Terminal); } catch (SimShim.ScriptTooComplexException) { thrown = true; }
+                Check(thrown, "limit enforcement throws ScriptTooComplexException (not swallowed by the script's own catch)");
+            }
+            catch (Exception e) { Check(false, "instruction-count test: " + e.GetType().Name + ": " + e.Message); }
         }
 
         static void TestDetRandom()

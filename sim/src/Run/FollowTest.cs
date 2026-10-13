@@ -110,7 +110,7 @@ namespace SeSim.Run
             string tracePath = Arg(args, "--trace", null);
             string cmd = Arg(args, "--cmd", "follow");   // e.g. guard / form, to compare with the other modes; satellite = the vertical ring
             bool satellite = cmd == "satellite" || cmd == "sat" || cmd == "orbit";
-            var settings = new SimSettings();
+            var settings = new SimSettings(); settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
             var bp = BlueprintLoader.Get(Path.Combine(Path.Combine(repo, "out"), "Blueprints"), model);
             var w = new World(settings, defs, seed);
@@ -265,6 +265,7 @@ namespace SeSim.Run
             if (path == "fight") Console.WriteLine("  enemy " + (enemy == null ? "never spawned" : enemy.Main.Alive ? "SURVIVED" : "destroyed / split"));
             Console.WriteLine(string.Format(Inv, "  expected slot distance ~{0:F0} m", slot));
             if (tw != null) tw.Dispose();
+            if (settings.CountInstructions) IlReport.Dump(host, "follow-test " + model + " " + string.Join(" ", args), args);
             Console.WriteLine(ok ? "FOLLOW OK" : "FOLLOW FAILED");
             return ok ? 0 : 1;
         }

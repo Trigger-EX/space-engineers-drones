@@ -13,9 +13,9 @@ namespace SeSim.Run
         public TimeSpan TimeSinceLastRun { get { return SinceLast; } }
         public double LastRunTimeMs { get { return Settings.FakeLastRunTimeMs; } }
         public UpdateFrequency UpdateFrequency { get; set; }
-        public int CurrentInstructionCount { get { return Settings.FakeInstructionCount; } }
+        public int CurrentInstructionCount { get { return Settings.CountInstructions ? SimShim.IlCounter.Total : Settings.FakeInstructionCount; } }
         public int MaxInstructionCount { get { return Settings.MaxInstructionCount; } }
-        public int CurrentCallChainDepth { get { return 0; } }
+        public int CurrentCallChainDepth { get { return Settings.CountInstructions ? SimShim.IlCounter.Depth : 0; } }
         public int MaxCallChainDepth { get { return Settings.MaxCallChainDepth; } }
     }
 }

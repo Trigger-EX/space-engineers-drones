@@ -90,6 +90,7 @@ namespace SeSim.Run
                 KN(sb, "collisions", s.Collisions); KN(sb, "collision_damage", Math.Round(s.CollisionDamageTaken, 1)); KN(sb, "detonations", s.Detonations);
                 KS(sb, "script", s.Script); KN(sb, "script_runs", s.ScriptRuns);
                 if (timing) { KN(sb, "script_cpu_ms", Math.Round(s.ScriptCpuMs, 1)); KN(sb, "script_max_tick_ms", Math.Round(s.ScriptMaxTickMs, 3)); }
+                if (s.IlJson != null) { Key(sb, "il"); sb.Append('[').Append(string.Join(",", s.IlJson)).Append("],"); }
                 KN(sb, "exceptions", s.ScriptExceptions); KS(sb, "first_exception", s.FirstException);
                 KB(sb, "stuck", s.StuckOrCircling); KS(sb, "stuck_kind", s.StuckKind, false);
                 sb.Append('}');
