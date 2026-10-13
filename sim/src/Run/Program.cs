@@ -8,6 +8,7 @@
 //         --face (ships start pointing at the enemy), --custom-data "INI with \n" (PB CustomData of the script drones)
 //   summarize --in runs.jsonl [--out summary.csv]    rebuild summary.csv from a runs.jsonl
 //   dock-launch [--model Hornet] [--seconds 30] [--release-at 3] ...   printed drone merged to a dummy printer, merge off, no _JOIN (sim/src/Run/DockLaunch.cs)
+//   follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] ...   FOLLOW mode vs a moving owner (sim/src/Run/FollowTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
 // Options not listed here are SimSettings fields in kebab case (e.g. --gyro-pitch-sign 1, --friendly-fire false,
 // --infinite-ammo false); unknown options are an error. --cap-seconds N changes the fight cap (default 300).
@@ -144,6 +145,8 @@ namespace SeSim.Run
                 }
                 case "dock-launch":
                     return DockLaunch.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
+                case "follow-test":
+                    return FollowTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "compile-scripts":
                     return CompileScripts(simDir, FindRepoRoot(null));
                 case "summarize":

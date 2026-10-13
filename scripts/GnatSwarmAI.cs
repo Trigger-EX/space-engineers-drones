@@ -37,9 +37,11 @@
 //
 //  COMMANDS (argument, toolbar, or IGC "<Tag>_CMD" to command the swarm)
 //   form | attack | rtb | idle | lock | unlock | home | reload
+//   follow / escort = form: the formation sphere sits round whatever broadcasts the home point (a ship running a Mothership
+//   link), outside its hull, and moves with it (v1.11: the drones match the ship's velocity, so they keep up)
 // =====================================================================
 
-const string VER = "1.10";
+const string VER = "1.11";
 
 // ---------------- settings (Custom Data) ----------------
 string Tag = "GNAT";
@@ -82,6 +84,8 @@ MyIni _ini = new MyIni();
 double _now = 0; long _tick = 0;
 Vector3D _home; bool _homeSet = false;
 Vector3D _dynHome; double _dynHomeT = -99;
+Vector3D _hvP, _homeV; double _hvT = -99;   // carrier velocity from successive home fixes (FORM / RTB feed-forward)
+IMyBroadcastListener _lHomeR2; string _lHomeR2Key = null;   // "<fleet>_HOMER" (carrier radius from any link)
 
 IMyShipController _rc;
 List<IMyGyro> _gyros = new List<IMyGyro>();
@@ -174,7 +178,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -427,7 +431,7 @@ void Command(string a)
     if (w.Length == 0) return;
     switch (w[0])
     {
-        case "form": case "guard": SetMode(Mode.FORM); break;
+        case "form": case "guard": case "follow": case "escort": SetMode(Mode.FORM); break;
         case "attack": case "hunt": SetMode(Mode.ATTACK); break;
         case "rtb": SetMode(Mode.RTB); break;
         case "idle": case "stop": SetMode(Mode.IDLE); break;
@@ -628,7 +632,21 @@ void ReadIGC()
     while (_lHome.HasPendingMessage) { var m = _lHome.AcceptMessage(); if (m.Data is Vector3D) { _dynHome = (Vector3D)m.Data; _dynHomeT = _now; } }
     FleetPump(Command, p => { _dynHome = p; _dynHomeT = _now; });
     while (_lHomeR.HasPendingMessage) { var m = _lHomeR.AcceptMessage(); if (m.Data is double) { _homeR = (double)m.Data; _homeRT = _now; } }
+    if (_lHomeR2Key != _flChan)
+    {
+        if (_lHomeR2 != null) IGC.DisableBroadcastListener(_lHomeR2);
+        _lHomeR2 = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_HOMER") : null; _lHomeR2Key = _flChan;
+    }
+    while (_lHomeR2 != null && _lHomeR2.HasPendingMessage) { var m = _lHomeR2.AcceptMessage(); if (m.Data is double) { _homeR = (double)m.Data; _homeRT = _now; } }
+    if (_dynHomeT > _hvT)
+    {   // a new home fix: the carrier's velocity from the last one (a jump over 150 m/s is another carrier or a respawn, not speed)
+        double hd = _dynHomeT - _hvT;
+        if (hd > 0.05 && hd < 2) { Vector3D raw = (_dynHome - _hvP) / hd; _homeV = raw.LengthSquared() > 150 * 150 ? Vector3D.Zero : _homeV + (raw - _homeV) * 0.5; }
+        else _homeV = Vector3D.Zero;
+        _hvP = _dynHome; _hvT = _dynHomeT;
+    }
 }
+Vector3D HomeVel() { return (_now - _dynHomeT < 2 && !(_mode != Mode.RTB && _tgt == null && _now - _assistT < 4)) ? _homeV : Vector3D.Zero; }   // zero while the home point is not the carrier
 
 void Broadcast()
 {
@@ -865,7 +883,7 @@ void Control(double dt)
         Vector3D slot = _mode == Mode.RTB ? Home() + SpherePoint(_idx, _n) * HomePad() : Home() + SpherePoint(_idx, _n) * (FormRadius + 6 * Math.Sqrt(_n) + HomePad());
         Vector3D d = slot - me; double sd = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, sd * 0.4), Math.Sqrt(2 * aMax * 0.4 * sd));
-        Vector3D want = (sd > 0.5 ? d / sd * v : Vector3D.Zero) + sep + Evade();
+        Vector3D want = HomeVel() + (sd > 0.5 ? d / sd * v : Vector3D.Zero) + sep + Evade();   // + the carrier's velocity: keep up with it
         if (_mode == Mode.RTB && sd < 20 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
         Vector3D accel = (want - myVel) * AccelGain;
         // parked drones face outward from the formation, so the swarm's cameras watch every direction

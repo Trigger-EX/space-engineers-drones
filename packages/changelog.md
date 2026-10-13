@@ -1,4 +1,23 @@
-### v2.1 (this package): first in-game report fixes
+### v2.2 (this package): FOLLOW mode
+Question from the user: does `guard` follow the owner? Only as a side effect: a Mothership link's position replaces the guard spot, but
+the drones fly to the ship's centre (into its hull for most drone types), lag behind a moving ship, and fall back to the old spot when
+the link stops. Nothing followed a player on foot.
+- **FOLLOW** (shared block in every scripted combat drone, `tools/follow_block.cs`, synced by `tools/follow_sync.py`): `follow` / `escort`
+  command (also Start Mode and launch Mode `FOLLOW`). The owner is the ship running a Mothership link (any type, FLEET channel), or the
+  owner's own character seen by the drone's sensor (on foot, ~50 m; wins while seen). Each drone flies its own slot on a ring behind the
+  owner (upper half in gravity) outside its hull, with the owner's velocity fed forward (estimated from the link's position fixes, so old
+  link scripts work), detours round the hull instead of through it, engages only targets within 800 m of the owner, breaks off past
+  1.2 km (2.2 km for the snipers), and after a link loss coasts 3 s on the owner's track (10 s on foot) and holds there. On a
+  collision course with the owner it sidesteps up to 8 s ahead, and the ring widens (up to 2x) while the owner manoeuvres hard.
+  New `[Follow]` section in Custom Data. No AI-block search in FOLLOW (the AI Flight block would fly the drone away from you).
+- Gnat 1.11: `follow` / `escort` = `form`; the formation now matches the link ship's velocity (keeps up with it), and also reads the
+  ship radius from the FLEET channel.
+- Mothership links (Hornet / Longbow v1.1, Gnat v1.2): send the ship's radius on `<Tag>_HOMER` and `<fleet>_HOMER`; `follow` relays.
+- FLEET block: `follow` and `escort` added to the default `Allowed Commands`.
+- Simulator: `follow-test` (moving owner on the fleet channel, or an owner character reported to the sensors; cruise, weave, link loss,
+  on foot, fight).
+
+### v2.1: first in-game report fixes
 In-game report (2026-10-13): Full drones set to `guard` stood still; `hunt` drones waited about 20 s, then all flew off the same way
 and never saw a pirate ship 700 m away. Cause: the AI blocks paste with **AI Behavior off**, so they do nothing, but the scripts handed
 them the ship and switched their own camera search off while waiting for them. Reproduced in the simulator (AI blocks inert:

@@ -16,10 +16,26 @@ Package contents: {{COUNTS}}. All ships are small grid unless noted; **no DLC bl
 
 Every script keeps its settings in the Programmable Block's **Custom Data** (ini; written on first run, edit and run `reload`).
 Commands go in the PB's *argument* (run the PB with the text, or put it on a toolbar slot / button panel) or arrive over IGC on the channel `<IGC Tag>_CMD`.
-Printed drones start in IDLE and wait for the printer's `_JOIN`; a drone pasted by hand needs `guard` or `hunt` (or set `Start Mode`).
+Printed drones start in IDLE and wait for the printer's `_JOIN`; a drone pasted by hand needs `guard`, `follow` or `hunt` (or set `Start Mode`).
 
 - `guard` holds the spot where the drone was pasted (or where you last ran `home`) and attacks anything within `Guard Radius` (1.5 km) of it.
-  With nothing in sight it stays put and turns in place to scan; it does not patrol.
+  With nothing in sight it stays put and turns in place to scan; it does not patrol. If a ship runs a Mothership link, its live position
+  replaces that spot (so guard drags along behind a carrier), but guard flies to the ship's centre and falls back to the old spot if
+  the link stops: for an escort use `follow`.
+- `follow` (or `escort`) keeps the drone with **you**: (v2.2)
+  - **in a ship**: put a Mothership link script (`HornetMothership.cs`, `LongbowMothership.cs` or `GnatMothership.cs`, any of them
+    drives every drone type over the FLEET channel) on a Programmable Block on your ship. Your ship needs an antenna.
+  - **on foot**: Full drones (they have a sensor) also follow your character while their sensor sees you (about 50 m). Step out of the
+    ship next to them and they switch to you; walk off further than that and they hold where they last saw you.
+  - Each drone takes its own slot on a ring behind you (upper half only on a planet), 60 m out (20 m on foot, further for big ships or
+    many drones), outside your hull, and matches your speed. It attacks only enemies within 800 m of you and breaks off past 1.2 km
+    (2.2 km for the Longbow and Mantis snipers). If the link drops it keeps going your way for 3 s, then holds there until it hears you.
+  - Run `follow` on each drone, or `follow` on the Mothership link PB (that drone type), or `fleet follow` on it (every type).
+    Settings: `[Follow]` section in Custom Data (`Slot Distance`, `On Foot Distance`, `Owner Radius`, `Engage Radius`, `Leash`,
+    `Coast After Link Loss (s)`, `Follow Owner On Foot`). Gnats: `follow` is their `form` (the swarm sphere round the link ship, which
+    now keeps up with it); no on-foot mode.
+  - Drones configured before v2.2 have an `Allowed Commands` line in `[Fleet]` without `follow`: add `follow,escort` to it (or delete
+    the line and run `reload`) if you want `fleet follow` to reach them.
 - `hunt` attacks anything it finds. After 15 s with nothing found it flies a search square of 1.2 km around home, stopping every leg to look
   around; several hunters fan out in different directions.
 
