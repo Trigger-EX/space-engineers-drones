@@ -2403,6 +2403,7 @@ string AimLabel(Track t)
 }
 Vector3D AimOffset(Track t)
 {
+    SeekerTick(t);
     if (!AimActive(t)) return Vector3D.Zero;
     if (BreachMode(t)) return BreachOffset(t);
     if (_now - t.AimT > 0.5)
@@ -2500,7 +2501,6 @@ void BreachSet(Vector3D s, Vector3D dir, bool seek)
 Vector3D BreachOffset(Track t)
 {
     if (_bId != t.Id) { _bId = t.Id; _bOn = false; _bBad.Clear(); _skOk = false; }
-    SeekerTick(t);
     if (_bOn && _now - _bProgT > BreachStall) BreachDrop();
     // a seeker point replaces a plain breach point at once, and an old seeker point once its hole has stalled for 6 s
     if (_skOk && _skId == t.Id && !BreachBad(_skS) && (!_bOn || !_bSeek || ((_skS - _bS).LengthSquared() > 64 && _now - _bProgT > 6)))
@@ -2554,6 +2554,7 @@ void SeekerSetup()
         catch (Exception x) { _skLog = "group not set: " + x.Message; }
     }
 }
+// called from AimOffset every tick (rate-limited here), whatever the aim mode, so it also maps the hull of a turret-fed track
 void SeekerTick(Track t)
 {
     if (!SeekerOn || _skT.Count == 0 || _now - _skT0 < 0.5) return;
@@ -2584,6 +2585,7 @@ void SeekerTick(Track t)
         var e = cam.Raycast(q + cd * BreachProbe);
         if (e.IsEmpty() || e.EntityId != t.Id || !e.HitPosition.HasValue)
         { _skLog = (hp ? "block pos given, " : "aim ray, ") + "ray missed hull"; continue; }
+        StoreHull(t, e);                                   // a turret-fed track has no camera lock: these rays map its hull
         MatrixD inv = MatrixD.Transpose(e.Orientation);
         _skS = Vector3D.TransformNormal(e.HitPosition.Value - e.Position, inv);
         _skDir = Vector3D.TransformNormal(cd, inv);
