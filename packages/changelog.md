@@ -8,6 +8,14 @@
   - To fit 80,000 characters the Custom Data keys Aim Point, Breach Large Ships, Listen To IGC Tags, Friendly Fire Check, Guard Radius, Cruise Speed, Max Fire Range and Projectile Speed were dropped from the Helm (the `aim`/`breach` commands remain; the values keep their defaults).
 - Simulator: `--face-away` (our ships start with their back to the nearest enemy).
 
+### v2.8 (unreleased): printer timer chain and free take-off lanes
+Request: could timer blocks release the drones from the printers automatically, and welders sometimes cover the front of the drone so it cannot take off. Details and limits: `docs/printer-release.md`.
+- **Timer chain per bay** (`printer_lib.add_bay_timers`): `Timer Build / Release / Reclamp [Bay N]` on the pod shell, toolbars: welders off (block group `Bay N Welders`) -> printer merge block off -> merge block and welders on -> next build. Press `Start` on `Timer Build` once; the bay then cycles without any script. Delays are guesses (Build ~8 x the ideal weld time, Release 20 s, Reclamp 30 s). Not started by the blueprint. Untested in the game; it cannot split a drone that is fused to the printer grid (audit printers-01).
+- **HiveMotherAI 2.3**: leaves a bay alone while one of its timers is counting down ("timer cycle running - script paused") and takes the bay back when they stop.
+- **Nose lane** (`printer_lib.front_prism`): the drone's footprint swept 16 cells along its own Forward is kept free of welders, scaffold, projector and other bays. Before, 5 of 11 Hornet welders stood in front of the nose. The solver falls back to the old layout only when a tier-A block could not be reached otherwise. Hornet Lite: 12 welders instead of 11; Gnat unchanged.
+- **Exit lane 14 -> 18 cells** (the launch burn runs 8 m; the Hornet Forge's bay 1 ran into bay 2's scaffold at 7.5 m) and **array bays now leave outwards** (the mirrored exit was only a tie-break and both Hornet Forge bays left to the right).
+- `reach.py` verifies both lanes for every bay; `sebp.py`: a block dict can carry `sample_shape=True` to use the game-written shape (used for the printer timers, the legacy Timer shape is from Keen source).
+
 ### v2.7 (unreleased): WARSHIPS Shrike, Corsair, Warden, Leviathan (new package `Warships_v2.7_Full` / `_Lite`)
 - **Helm default mode REACT** (`ShrikeAI.cs`, mode 7 in the `.H2S` flags, `StaffAI.cs` shows it): combat-ready but passive until an AI alarm, a mate's alarm, damage or a held target wakes it. `Start Mode` default is REACT (the key name is unchanged). Four rarely used Custom Data keys were dropped to make room (`Target Large/Small Grids`, `Aim Kp/Kd`, `RTB Battery Fraction`); the Helm is 79,977 of 80,000.
 - **Cockpit buttons `deploy` / `dock`** (Staff) on Warden, Leviathan and Corsair; the cradle bay PB keeps a docked drone's thrusters off and switches them on at release.

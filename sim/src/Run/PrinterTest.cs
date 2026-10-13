@@ -12,6 +12,9 @@
 //   --fault welderclosed at --fault-at s welder 1 of every bay is removed: every member access throws NRE
 //   --fault all          halfload + welderclosed + projlost on different bays (bay 1,2,3 / 4 = plain) in the same run
 //
+//   --timer-chain        BlockAutomation on; at --timer-at s (default 20) every 'Timer Build [Bay N]' is started with short delays (Build 30 s, Release 5 s, Reclamp 8 s).
+//                        PASS needs: the timers expired, the script showed 'timer cycle running' for the bay, the bay's merge block went off and came back, and the script
+//                        left the bay alone meanwhile. Run with --seconds 120.
 //   mono SimHost.exe printer-test [--model "Mobile Hive"] [--seconds 320] [--fault none] [--fault-at 40] [--fault-len 3]
 //        [--script-file FILE] [--seed 1] [--repo DIR] [--echo] [--expect-clean]
 //
@@ -171,7 +174,8 @@ namespace SeSim.Run
             PrinterFaults.At = Dbl(args, "--fault-at", 40); PrinterFaults.Len = Dbl(args, "--fault-len", 3);
             ulong seed = (ulong)Dbl(args, "--seed", 1);
             string scriptFile = Arg(args, "--script-file", null);
-            var settings = new SimSettings(); settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
+            bool timerChain = Has(args, "--timer-chain"); double timerAt = Dbl(args, "--timer-at", 20);
+            var settings = new SimSettings(); if (timerChain) settings.BlockAutomation = true; settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
             var bp = BlueprintLoader.Get(Path.Combine(Path.Combine(repo, "out"), "Blueprints"), model);
             var w = new World(settings, defs, seed);
@@ -181,12 +185,15 @@ namespace SeSim.Run
             var at = new SpawnPlacement { Origin = Vector3D.Zero, Forward = Vector3D.Forward, Up = Vector3D.Up, LinearVelocity = Vector3D.Zero, AngularVelocity = Vector3D.Zero };
             var bodies = GridFactory.Spawn(w, bp, 0, 0, at, new Dictionary<long, long>());
             // swap in the stand-ins BEFORE any script constructor runs (FlushPending attaches the PBs)
+            var timers = new List<SimTimer>(); var bayMerges = new List<SimMergeBlock>(); bool timersStarted = false; int pausedLines = 0, mergeOffSeen = 0, mergeOnAfter = 0; bool mergeWasOff = false;
             SimProgrammableBlock hive = null; var projs = new List<FaultyProjector>(); var welders = new List<FaultyWelder>();
             foreach (var b in bodies)
                 foreach (var bi in b.Blocks)
                 {
                     string nm = bi.Api != null ? bi.Api.CustomName : null;
                     if (bi.Api is SimProgrammableBlock && nm != null && nm.StartsWith("Hive Mother", StringComparison.Ordinal)) hive = (SimProgrammableBlock)bi.Api;
+                    if (bi.Api is SimTimer && nm != null && nm.StartsWith("Timer ", StringComparison.Ordinal)) timers.Add((SimTimer)bi.Api);
+                    if (bi.Api is SimMergeBlock && nm != null && nm.Contains("[Bay ") && nm.StartsWith("Merge", StringComparison.Ordinal)) bayMerges.Add((SimMergeBlock)bi.Api);
                     if (bi.Api is SimProjector)
                     {
                         int bay = BayOf(nm);
@@ -229,6 +236,22 @@ namespace SeSim.Run
                     closed = true;
                     foreach (var fw in welders) if (fw.CustomNameValue != null && fw.CustomNameValue.StartsWith("Welder 1 ", StringComparison.Ordinal)) fw.Closed2 = true;
                 }
+                if (timerChain && !timersStarted && now >= timerAt)
+                {
+                    timersStarted = true;
+                    foreach (var tm in timers)
+                    {
+                        if (tm.CustomName.StartsWith("Timer Build", StringComparison.Ordinal)) { tm.TriggerDelay = 30; tm.StartCountdown(); }
+                        else if (tm.CustomName.StartsWith("Timer Release", StringComparison.Ordinal)) tm.TriggerDelay = 5;
+                        else if (tm.CustomName.StartsWith("Timer Reclamp", StringComparison.Ordinal)) tm.TriggerDelay = 8;
+                    }
+                }
+                if (timerChain && timersStarted && t % 6 == 0)
+                {
+                    bool anyOff = false; foreach (var mb in bayMerges) if (!mb.Enabled) anyOff = true;
+                    if (anyOff) { if (!mergeWasOff) mergeOffSeen++; } else if (mergeWasOff) mergeOnAfter++;
+                    mergeWasOff = anyOff;
+                }
                 w.Step();
                 if (runner == null || runner.Dead) break;
                 if (runner.Runs != lastRuns)
@@ -237,6 +260,7 @@ namespace SeSim.Run
                     string e = runner.EchoText ?? "";
                     if (e.StartsWith("ERROR", StringComparison.Ordinal) || e.Contains("\nERROR ") ) { errRuns++; lastErr = e.Split('\n')[0]; if (firstErr == null) { firstErr = lastErr; firstErrT = w.Time; } }
                     else if (e.Contains("ERRORS (") ) { errRuns++; if (firstErr == null) { firstErr = "(screen shows ERRORS)"; firstErrT = w.Time; } }
+                    if (e.Contains("timer cycle running")) pausedLines++;
                     foreach (var line in e.Split('\n'))
                     {
                         if (!line.StartsWith("Bay ", StringComparison.Ordinal)) continue;
@@ -266,7 +290,10 @@ namespace SeSim.Run
             foreach (var kv in PrinterFaults.ThrowSites) Console.WriteLine("  throw site " + kv.Key + " x" + kv.Value);
             if (lastErr != null) Console.WriteLine("LAST ERROR TEXT: " + lastErr);
             if (Has(args, "--echo")) Console.WriteLine("--- Hive PB terminal info (last run) ---\n" + runner.EchoText);
-            bool ok = runner != null && !runner.Dead && (fault != "none" || (statesSeen.ContainsKey("BUILD") && statesSeen.ContainsKey("FINISH") && statesSeen.ContainsKey("CHARGE"))) && (!Has(args, "--expect-clean") || errRuns == 0);
+            int expiries = 0; foreach (var tm in timers) expiries += tm.Expiries;
+            if (timerChain) Console.WriteLine("TIMER CHAIN: timers " + timers.Count + ", expiries " + expiries + ", script screens showing 'timer cycle running' " + pausedLines + ", merge blocks went off " + mergeOffSeen + "x and on again " + mergeOnAfter + "x");
+            bool chainOk = !timerChain || (timers.Count > 0 && expiries >= 3 && pausedLines > 0 && mergeOffSeen > 0 && mergeOnAfter > 0);
+            bool ok = chainOk && runner != null && !runner.Dead && (fault != "none" || timerChain || (statesSeen.ContainsKey("BUILD") && statesSeen.ContainsKey("FINISH") && statesSeen.ContainsKey("CHARGE"))) && (!Has(args, "--expect-clean") || errRuns == 0);
             if (settings.CountInstructions) IlReport.Dump(host, "printer-test " + model + " fault=" + fault, args);
             Console.WriteLine(ok ? "PRINTER OK" : "PRINTER FAILED");
             return ok ? 0 : 1;

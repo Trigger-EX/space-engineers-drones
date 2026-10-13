@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.2  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.3  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -36,6 +36,11 @@
 //  type, message, section, bay/state and method are shown in the terminal info and on LCD 0, the last 3 errors are kept with timestamps,
 //  and the script keeps ticking.
 //
+//  v2.3 TIMER CHAIN: every generated printer carries three timers per bay ("Timer Build / Release / Reclamp [Bay N]") that run the bay
+//  without this script: welders off after the build time, merge block off (the drone leaves on its own LAUNCH block), merge block on +
+//  welders on, and round again. Start "Timer Build" once by hand to use it. While ANY of a bay's timers is counting down this script
+//  leaves the bay completely alone ("timer cycle running, script paused"); Stop the timers to hand the bay back.
+//
 //  Keeps "Max Drones" (total) and each tag's "Max Alive" by counting the hive's
 //  _SWARM broadcasts. Broadcasts the printer as each tag's home point (_HOME).
 //  Optional carrier relay: forwards the turrets' targets to every tag (_TGT).
@@ -47,7 +52,7 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.2";
+const string VER = "2.3";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
@@ -84,6 +89,8 @@ class Bay
     // take-off
     public bool Armed, LaunchWritten, RackLaunch; public double FusedT;
     public string ProjErr = "";
+    // timer chain (Timer Build / Release / Reclamp [Bay N]): while one counts down the script does not touch the bay
+    public List<IMyTimerBlock> Timers = new List<IMyTimerBlock>(); public double TimerSeen = -999;
 }
 class ErrRec { public string Text; public double T, Last; public int N = 1; }
 List<Bay> _bays = new List<Bay>();
@@ -235,11 +242,12 @@ void GetBlocks()
 {
     _dead.Clear();
     var old = _bays; var nb = new List<Bay>();      // built aside: a failure half way keeps the previous bay list
-    var projs = new List<IMyProjector>(); var welders = new List<IMyShipWelder>(); var merges = new List<IMyShipMergeBlock>();
+    var projs = new List<IMyProjector>(); var welders = new List<IMyShipWelder>(); var merges = new List<IMyShipMergeBlock>(); var timers = new List<IMyTimerBlock>();
     _where = "GetBlocks find bay blocks";
     GridTerminalSystem.GetBlocksOfType(projs, b => b != null && b.IsSameConstructAs(Me) && b.CustomName.Contains("[Bay"));
     GridTerminalSystem.GetBlocksOfType(welders, b => b != null && b.IsSameConstructAs(Me) && b.CustomName.Contains("[Bay"));
     GridTerminalSystem.GetBlocksOfType(merges, b => b != null && b.IsSameConstructAs(Me) && b.CustomName.Contains("[Bay"));
+    GridTerminalSystem.GetBlocksOfType(timers, b => b != null && b.IsSameConstructAs(Me) && b.CustomName.Contains("[Bay"));
     _cap.Clear();
     MyIniParseResult r; bool iniOk = _ini.TryParse(Me.CustomData ?? "", out r);
     for (int n = 1; n <= MaxBays; n++)
@@ -249,10 +257,11 @@ void GetBlocks()
         if (bay == null) bay = new Bay { N = n };
         _where = "GetBlocks bay " + n + " assign blocks";
         var oldProj = bay.Proj; var oldMerge = bay.Merge;
-        bay.Proj = null; bay.Merge = null; bay.Welders.Clear();
+        bay.Proj = null; bay.Merge = null; bay.Welders.Clear(); bay.Timers.Clear();
         foreach (var p in projs) if (p.CustomName.Contains(tag)) bay.Proj = p;
         foreach (var m in merges) if (m.CustomName.Contains(tag)) bay.Merge = m;
         foreach (var w in welders) if (w.CustomName.Contains(tag)) bay.Welders.Add(w);
+        foreach (var tm in timers) if (tm.CustomName.Contains(tag)) bay.Timers.Add(tm);
         if (bay.Proj == null || bay.Merge == null) continue;
         if ((oldProj != null && oldProj != bay.Proj) || (oldMerge != null && oldMerge != bay.Merge)) { bay.DPb = null; bay.DMerge = null; bay.DBats.Clear(); bay.KickW = null; }   // a replaced block: forget what was derived from the old one
         if (bay.KickW != null && !bay.Welders.Contains(bay.KickW)) bay.KickW = null;
@@ -454,6 +463,16 @@ void StepBay(Bay b, ref int building, ref int docked)
         b.Welders.RemoveAll(w => Gone(w));
         if (b.KickW != null && !b.Welders.Contains(b.KickW)) b.KickW = null;
     }
+    _where = "bay " + b.N + " " + b.State + " timer chain";
+    if (TimerChainRunning(b))
+    {   // the player's timers own this bay: no power switching, no merge switching, no state changes
+        b.Msg = "timer cycle running - script paused (stop the bay's timers to resume)";
+        return;
+    }
+    if (b.Msg.StartsWith("timer cycle running"))
+    {   // handed back: whatever the timers left behind (welders, merge block) is re-evaluated from scratch; a finished drone still in the bay is recognised by BUILD -> FINISH
+        b.Msg = ""; if (b.State != "FAULT") { b.State = "IDLE"; b.T = _now; b.DPb = null; b.DMerge = null; b.DBats.Clear(); b.KickW = null; }
+    }
     switch (b.State)
     {
         case "IDLE":
@@ -534,6 +553,14 @@ void StepBay(Bay b, ref int building, ref int docked)
             if (!b.Held && t > FaultSeconds) { b.State = "IDLE"; b.T = _now; }
             break;
     }
+}
+
+// true while any of the bay's timers counts down (plus 3 s: a chain hands over from one timer to the next inside one tick)
+bool TimerChainRunning(Bay b)
+{
+    if (b.Timers.Count == 0) return false;
+    foreach (var tm in b.Timers) { try { if (tm.IsCountingDown) b.TimerSeen = _now; } catch (Exception) { } }
+    return _now - b.TimerSeen < 3;
 }
 
 void StartBuild(Bay b)

@@ -36,6 +36,7 @@ from reach import neighbours26, eff_radius_cells, cell_dist, tip_point_from_cell
 NH = len(FAM)
 RED_IDX = FAM.index(reach.RED_HYP)
 import sebp
+import sebp_toolbar as TB
 from sebp import Blueprint, DIR, E, ser, frag, cross, neg
 import xml.etree.ElementTree as ET
 
@@ -129,7 +130,8 @@ class BayDesign:
         self.proj = None
         self.stats = {}
 
-EXIT_LEN = 14          # cells of free runway behind the drone (see exit_prism)
+EXIT_LEN = 18          # cells of free runway for the drone's take-off (see exit_prism); 9 m = longer than the launch block's 8 m Clear Distance
+FRONT_LEN = 16         # cells of free lane in front of the drone's nose (see front_prism)
 
 def exit_options(design, avoid_axes=()):
     """exit directions to try, best first: straight away from the merge block (-c, what HiveMotherAI nudges along by default), then sideways;
@@ -147,10 +149,19 @@ def exit_prism(design, length=None, e=None):
     e = e or getattr(design, 'exit', None) or neg(design.c)
     return {(x + e[0] * k, y + e[1] * k, z + e[2] * k) for (x, y, z) in design.D for k in range(1, L + 1)}
 
+def front_prism(design, length=None):
+    """cells swept by the drone's footprint when it flies NOSE FIRST (drone Forward, 16 cells).  Welder bodies are 3 m long and used to end up
+    in front of the nose (5 of 11 Hornet welders), so a drone that tried to take off straight ahead flew into them.  Empty when the printer's
+    own merge block sits in front of the nose (clamp direction Forward) or when the bay was solved without the nose lane (design.front False)."""
+    if not getattr(design, 'front', True) or tuple(design.c) == DIR['Forward']: return set()
+    v = DIR['Forward']; L = length or FRONT_LEN
+    return {(x + v[0] * k, y + v[1] * k, z + v[2] * k) for (x, y, z) in design.D for k in range(1, L + 1)}
+
 def build_forbidden(design, soft_camera=False):
     F = set(design.D)
     for c in list(design.D): F.update(neighbours26(c))
     F |= exit_prism(design)
+    F |= front_prism(design)
     for c, why in design.drone.reserve.items():
         if soft_camera and why.startswith('camera'): continue
         F.add(tuple(c))
@@ -163,39 +174,49 @@ def _bbox(cells, pad):
 
 MODES = ((1, False), (1, True), (0, False), (0, True))        # (gap cells between welders and drone, camera zones soft)
 
-def solve_bay_auto(drone, margin_m=None, avoid_axes=(), prefer=None):
+def solve_bay_auto(drone, margin_m=None, avoid_axes=(), prefer=None, force=False):
     """pick the exit direction and the weld mode: the (exit, mode) with the FEWEST (block, sphere hypothesis) pairs that no legal welder
     position can reach wins; ties go to the straight-back exit and the strictest mode.  Then run the cover solver on it."""
     des0 = BayDesign(drone)
     opts = exit_options(des0, avoid_axes)
     if prefer is not None and tuple(prefer) in opts: opts.remove(tuple(prefer)); opts.insert(1, tuple(prefer))      # right after the straight-back exit
+    if force and prefer is not None and tuple(prefer) in opts: opts = [tuple(prefer)]                             # exactly this exit (array bays must not leave towards the neighbour)
     key = (drone.name, _drone_sig(drone), tuple(opts))
     if key in _AUTO: return _AUTO[key]
-    scored = []; last = None
-    for ei, e in enumerate(opts):
-        for mi, (gap, soft) in enumerate(MODES):
+    best = {}; last = None
+    for front in (True, False):
+        scored = []
+        for ei, e in enumerate(opts):
+            for mi, (gap, soft) in enumerate(MODES):
+                try:
+                    ctx = _prepare(drone, soft, gap, e, front=front)
+                except AssertionError as ex:
+                    last = last or ex; continue
+                scored.append(((ctx['n_infeasible'], ei, mi), ctx))
+            if scored and min(sc[0][0] for sc in scored) == 0: break
+        scored.sort(key=lambda t: t[0])
+        # run the real cover on the best few settings: welders blocking each other can make a nominally better setting worse
+        for sc, ctx in scored[:TRY_SETTINGS]:
             try:
-                ctx = _prepare(drone, soft, gap, e)
+                des = _cover(ctx)
             except AssertionError as ex:
                 last = last or ex; continue
-            scored.append(((ctx['n_infeasible'], ei, mi), ctx))
-        if scored and min(sc[0][0] for sc in scored) == 0: break
-    if not scored: raise last
-    scored.sort(key=lambda t: t[0])
-    # run the real cover on the best few settings: welders blocking each other can make a nominally better setting worse
-    best = None
-    for sc, ctx in scored[:TRY_SETTINGS]:
-        try:
-            des = _cover(ctx)
-        except AssertionError as ex:
-            last = last or ex; continue
-        rk = (des.stats['missA'], des.stats['unmet_weight'], len(des.welders), sc)
-        if best is None or rk < best[0]: best = (rk, des)
+            rk = (des.stats['missA'], des.stats['unmet_weight'], len(des.welders), sc)
+            if front not in best or rk < best[front][0]: best[front] = (rk, des)
+        # a nose lane is worth more than the best-effort (deeper than tip) coverage: when the settings WITH the lane reach every tier-A pair, the
+        # layouts without it are not even tried
+        if front and front in best and best[front][0][0] == 0: break
+    # the lane wins unless it costs more than FRONT_MISS_TOL tier-A pairs (the pessimistic 1.0 m sphere hypotheses) compared with the layout without it
+    if True in best and (False not in best or best[True][0][0] <= best[False][0][0] + FRONT_MISS_TOL): pick = best[True]
+    elif False in best: pick = best[False]
+    else: pick = None
+    best = pick
     if best is None: raise last
     _AUTO[key] = best[1]
     return best[1]
 
 TRY_SETTINGS = 3
+FRONT_MISS_TOL = 2        # tier-A (block, hypothesis) pairs the nose lane may cost before the solver gives it up
 REPAIR_ITERS = 30
 
 _AUTO = {}
@@ -203,8 +224,8 @@ _AUTO = {}
 def _drone_sig(drone):
     return hash(tuple(sorted((b['xtype'][-12:], b['sub'], b['min'], b['fwd'], b['up']) for b in drone.blocks)))
 
-def solve_bay(drone, soft_camera=False, gap=1, margin_m=None, max_pad=9, verbose=False, exit_dir=None):
-    return _cover(_prepare(drone, soft_camera, gap, tuple(exit_dir) if exit_dir else None))
+def solve_bay(drone, soft_camera=False, gap=1, margin_m=None, max_pad=9, verbose=False, exit_dir=None, front=True):
+    return _cover(_prepare(drone, soft_camera, gap, tuple(exit_dir) if exit_dir else None, front=front))
 
 # ---- numpy helpers ----
 _KOFF = 128
@@ -231,13 +252,13 @@ def any_reach(points, radius, cells):
     if len(points) == 0 or len(cells) == 0: return False
     return bool((_boxdist(np.asarray(points, float), np.asarray(cells)) <= radius).any())
 
-def _prepare(drone, soft_camera, gap, exit_dir, max_pad=9):
+def _prepare(drone, soft_camera, gap, exit_dir, max_pad=9, front=True):
     """everything the cover solver needs for one (exit direction, gap, camera zones) setting: forbidden cells, welder candidates with their
     coverage bitmasks over (block, hypothesis) pairs; raises AssertionError when even the baseline hypothesis cannot be met"""
-    key = (exit_dir, drone.name, soft_camera, gap, _drone_sig(drone))
+    key = (exit_dir, drone.name, soft_camera, gap, _drone_sig(drone), front)
     if key in _CTX: return _CTX[key]
     des = BayDesign(drone)
-    des.gap = gap; des.soft_camera = soft_camera; des.exit = tuple(exit_dir) if exit_dir else neg(des.c)
+    des.gap = gap; des.soft_camera = soft_camera; des.exit = tuple(exit_dir) if exit_dir else neg(des.c); des.front = bool(front)
     F = build_forbidden(des, soft_camera)
     Mp0 = des.Mp; S10 = add3(Mp0, des.c)
     assert S10 not in F, f'{drone.name}: stalk cell {S10} behind the printer merge is not free'
@@ -247,7 +268,7 @@ def _prepare(drone, soft_camera, gap, exit_dir, max_pad=9):
     # and any cell where the welder's real mount points would connect to a drone block.
     Fw = F
     if gap == 0:
-        Fw = set(des.D) | ray | exit_prism(des)
+        Fw = set(des.D) | ray | exit_prism(des) | front_prism(des)
         for c, why in drone.reserve.items():
             if soft_camera and why.startswith('camera'): continue
             Fw.add(tuple(c))
@@ -398,7 +419,7 @@ def _cover(ctx):
     ta = [h.name for h in FAM[:TIER_A]]
     des.conflict = {k: v for k, v in inf.items() if k in ta and v - imp.get(k, set())}
     des.conflict = {k: v - imp.get(k, set()) for k, v in des.conflict.items()}
-    des.stats = dict(welders=len(chosen), scaffold=len(armour), candidates=len(cand), gap=des.gap, soft_camera=des.soft_camera,
+    des.stats = dict(welders=len(chosen), scaffold=len(armour), candidates=len(cand), gap=des.gap, soft_camera=des.soft_camera, front=des.front,
                      infeasible_pairs=ctx['n_infeasible'], unmet_pairs=_pop(sum(hb) & ~res['union']), missA=res['missA'], unmet_weight=res['unmet'])
     return des
 
@@ -798,8 +819,12 @@ class Printer:
             ea = [abs(v) for v in base_design.exit].index(1)
             if ea != lat[0] or ia == (na - 1) / 2.0: return base_design
             want = mul3(ua, -1 if ia < (na - 1) / 2.0 else 1)
-            try: return solve_bay_auto(drone, prefer=want)
-            except AssertionError: return base_design
+            for force in (True, False):
+                try:
+                    d_ = solve_bay_auto(drone, prefer=want, force=force)
+                    if tuple(d_.exit) == tuple(want) or not force: return d_       # a tie-break only nudges: the exit must really point outwards
+                except AssertionError: pass
+            return base_design
         # centre the array around the pod axis
         ca = (na - 1) / 2.0; cb = (nb - 1) / 2.0
         nums = []
@@ -1026,9 +1051,70 @@ class Printer:
             return t
         raise AssertionError(f'{self.label}: no room for the turret')
 
+    # ---- timer chain (release without the Programmable Block) ----
+    BUILD_DELAY_FACTOR = 8        # x the perfectly parallel weld time (sum of block build times / welders): the support chain makes real prints 4-10x slower
+    CHARGE_DELAY_S = 20           # between "welders off" and "merge off": the drone's batteries top up from the printer while merged
+    RECLAMP_DELAY_S = 30          # between "merge off" and "merge on + welders on": the old drone has to be gone from the projection
+
+    def _timer_cell(self, taken):
+        """a free cell next to the pod shell for one 1x1x1 timer: (cell, direction name from the timer towards the shell).  Prefers the Up face (away
+        from the bay stalks and the thruster flames)."""
+        order = ['Up', 'Left', 'Right', 'Backward', 'Forward', 'Down']
+        for dn in order:
+            e = DIR[dn]
+            for A in sorted(self.pod_cells):
+                c = add3(A, e)
+                if c in self.pod_cells or c in taken or not self.is_free(c): continue
+                if self.occ.get(A, {}).get('sub') not in ('SmallBlockArmorBlock', 'SmallHeavyBlockArmorBlock'): continue
+                if any(add3(c, d) in self.occ and self.occ[add3(c, d)].get('kind') in ('thr',) for d in DIR.values()): continue
+                yield c, dirname(neg(e))
+
+    def add_bay_timers(self):
+        """per bay three timers that run the bay WITHOUT the Programmable Block (script missing, crashed, "too complex", or the player prefers timers):
+            Timer Build    [Bay N]  Delay ~ build time.   Toolbar: this bay's welders OFF, Start Timer Release
+            Timer Release  [Bay N]  Delay 20 s (charge).  Toolbar: this bay's printer merge block OFF, Start Timer Reclamp
+            Timer Reclamp  [Bay N]  Delay 30 s (old drone leaves).  Toolbar: merge block ON, welders ON, Start Timer Build
+        The player presses Start on 'Timer Build' ONCE (terminal > Start, or a button panel) and the bay loops by itself; Stop on any of the three
+        stops it.  The drone separates from the printer when its merge block is released and flies off with its own LAUNCH block (it sees the merge pair
+        open).  HiveMotherAI.cs leaves a bay alone while one of its timers is counting down ("timer cycle running").  The timers are NOT started by
+        the blueprint.  Delays are guesses (the print time is not known): the Build delay is the one to tune."""
+        import pods
+        bp = self.bp
+        taken = set(); made = []
+        for r in self.records:
+            n = r['n']; drone = r['drone']
+            tsum = sum((C._stat(b).get('build_time_s') or 0) for b in drone.blocks)
+            nw = max(1, len(r['welders']))
+            build_s = int(min(3600, max(120, 10 * round(tsum / nw * self.BUILD_DELAY_FACTOR / 10))))
+            gname = f'Bay {n} Welders'
+            bp.group(gname, r['welders'])
+            ts = {}
+            for role, delay in (('Timer Build', build_s), ('Timer Release', self.CHARGE_DELAY_S), ('Timer Reclamp', self.RECLAMP_DELAY_S)):
+                placed = None
+                for c, toward in self._timer_cell(taken):
+                    try:
+                        placed = pods.orient_attached(bp, 'MyObjectBuilder_TimerBlock', 'TimerBlockSmall', c, toward=toward, occ=self.occ,
+                                                      name=self.nm(role, n), kind='timer')
+                    except AssertionError:
+                        continue
+                    break
+                assert placed is not None, f'{self.label}: no free cell for {role} of bay {n}'
+                placed['sample_shape'] = True            # the game-written Timer shape (with <Toolbar>), not the legacy one
+                placed['settings'] = {'Delay': delay * 1000, 'Silent': True}
+                placed['bay'] = n
+                self._own(placed); taken.add(tuple(placed['min']))
+                ts[role] = placed
+            bp.set_toolbars(ts['Timer Build'], toolbar=[TB.group(gname, 'OnOff_Off'), TB.block(ts['Timer Release'], 'Start')])
+            bp.set_toolbars(ts['Timer Release'], toolbar=[TB.block(r['merge'], 'OnOff_Off'), TB.block(ts['Timer Reclamp'], 'Start')])
+            bp.set_toolbars(ts['Timer Reclamp'], toolbar=[TB.block(r['merge'], 'OnOff_On'), TB.group(gname, 'OnOff_On'), TB.block(ts['Timer Build'], 'Start')])
+            r['timers'] = ts
+            made.append(f'bay {n}: Timer Build {build_s} s, Release {self.CHARGE_DELAY_S} s, Reclamp {self.RECLAMP_DELAY_S} s')
+        self.timer_notes = made
+
     # ---- finish ----
     def finish(self, script, ini_text):
         self.add_pb(script, ini_text)
+        self.add_bay_timers()
         bp = self.bp
         bp.bays = [dict(n=r['n'], drone=r['drone'], T=r['T'], merge=r['merge'], projector=r['projector'], welders=r['welders'], offset=r['offset'],
                         g=r['g'], c=r['c'], design=r['design'], exit=r['exit']) for r in self.records]
