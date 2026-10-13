@@ -11,7 +11,7 @@
 // Script hooks: ManCfg() at the end of LoadConfig; ManBlocks() at the end of GetBlocks; ManSeat() early in Tick, then "if (Man) ManFly(dt); else if (!AiStep()) Control(dt);";
 // ManTick() each Update1 tick and ManMenu() for a Run without argument; "if (ManCmd(w)) return;" at the top of Command; ManMode()/ManHud() in Display; ManSave() / ManLoad(..)
 // for Storage; ManCap() as the turn-rate cap of Aim.
-// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _sb, _ai, _aiOn, _aiKick, _patrolLeg, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
+// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _sb, _ai, _aiOn, _aiKick, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
 List<IMyShipController> _seats = new List<IMyShipController>(); IMyShipController _seat;
 List<IMyTimerBlock> _dm = new List<IMyTimerBlock>(); IMyTextSurface _hud;
 bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _menuOn; int _force, _asLvl = 1, _menuI; // _force: 0 follow the seat, 1 manual, 2 auto
@@ -74,7 +74,6 @@ void ManFree()
     BatFire(false, Vector3D.Zero);   // a continuous second battery stops too
     if (_aiOn) { _aiOn = false; _aiKick = false; foreach (var b in _ai) b.Enabled = false; }
     ManDamp(_userDamp);   // after the AI blocks: switching those off may touch the dampeners
-    _patrolLeg = false;
     if (_firing) { _firing = false; foreach (var g in _guns) if (g.IsFunctional) g.ApplyAction("Shoot_Off"); }
 }
 
@@ -134,8 +133,7 @@ void ManFly(double dt)
         _pipR = Math.Atan2(d.X, -d.Z) * 57.2958; _pipU = Math.Atan2(d.Y, -d.Z) * 57.2958;
         double dist = Vector3D.Distance(pt, gp);
         _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(rm.Forward, dir), -1, 1)) * 57.2958;
-        double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;
-        _fireWinDeg = Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol;
+        _fireWinDeg = BatWin(dist);
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
         if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
@@ -169,6 +167,7 @@ string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl ==
 // compact cockpit page (<= 8 lines)
 string ManHud()
 {
+    if (_rc == null) return "NO CONTROLLER\n";   // (the Remote Control was destroyed)
     var b = new StringBuilder();
     b.Append("MODE ").Append(ManMode()).Append(_hold ? " (seat taken)" : "").Append('\n');
     if (_tgt != null)

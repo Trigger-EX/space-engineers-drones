@@ -180,7 +180,7 @@ namespace SeSim.Run
                     if (w.Tick == 11 * 60) { prog.GetType().GetMethod("Save").Invoke(prog, null); store = ((Sandbox.ModAPI.IMyGridProgram)prog).Storage; }
                 });
                 var sp = store.Split(';');
-                bool stored = sp.Length == 7 && sp[0] == "HUNT" && sp[5] == "1" && sp[6] == "0";   // mode;home x;y;z;set;assist level;pilot dampener switch
+                bool stored = sp.Length == 8 && sp[0] == "HUNT" && sp[5] == "1" && sp[6] == "0";   // mode;home x;y;z;set;assist level;pilot dampener switch;calibrated MaxTurn (M3: "0" = not calibrated)
                 if (dAtSit && !dAfterOff && autoOff && !dAtResit && stored) ok++;
                 if (seed == 0) Info("Storage after 'damp off': " + store);
                 Info("seed " + seed + ": dampeners after sitting " + dAtSit + " (AUTO had them off), after 'damp off' " + dAfterOff + ", AUTO flying at 17.8 s off=" + autoOff + ", after sitting again " + dAtResit);

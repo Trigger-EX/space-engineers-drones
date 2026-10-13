@@ -18,13 +18,17 @@ import sebp_toolbar as TB
 from core import hornet_frame
 
 MODELS = {}
-NO_LITE = ('Shrike Test', 'Shrike Test Rocket', 'Shrike Staff Test')
+NO_LITE = ('Shrike Test', 'Shrike Test Rocket', 'Shrike Staff Test', 'Shrike Multi Test', 'Shrike Basilisk Test')
 DOCS = {
     'Shrike Test': 'TEST SHIP (not for the game): Hornet hull with a cockpit and a Remote Control, one Programmable Block [Helm] running ShrikeAI (MANUAL mode, assist, '
                    'dead-man heartbeat), a Deadman timer and the groups it switches off. For the simulator\'s scripted pilot.',
     'Shrike Staff Test': 'TEST SHIP (not for the game): Shrike Test split in two Programmable Blocks, [Helm] (ShrikeAI) and [Staff] (StaffAI, control_arch M2): IGC heartbeat watch '
                          '(the Staff releases every override when the Helm falls silent), mothership link, displays; plus an Event Controller (cockpit occupied, PLACEHOLDER event id) that stops / starts '
                          'the Deadman timer and a cockpit toolbar that Runs both PBs (argument-less menus).',
+    'Shrike Multi Test': 'TEST SHIP (not for the game; control_arch M3): Shrike Test with THREE fixed batteries: gatling [B1] (left flank), SmallMissileLauncher [B2] (right flank) and a SmallRailgun [B3] on the roof, '
+                         'to exercise BATTERY v1.0 (primary choice, standoff, rail confirm state machine). Throwaway.',
+    'Shrike Basilisk Test': 'TEST SHIP (not for the game; control_arch M3): the Basilisk hull (large grid, 4 LargeMissileLauncher tagged [B2], gatling turret on the roof) running ShrikeAI instead of BasiliskAI: '
+                            'turret-only mode (a turret ship), large-grid MaxTurn calibration, rocket battery. Throwaway.',
     'Shrike Test Rocket': 'TEST SHIP (not for the game): Shrike Test with a gatling [B1] and a SmallMissileLauncher [B2] (BATTERY-lite: two classes).',
 }
 
@@ -34,7 +38,7 @@ def _drop(bp, pred):
         bp.blocks.remove(b)
         for c in [c for c, why in bp.reserve.items() if why.endswith(' of ' + (b['name'] or b['sub']))]: del bp.reserve[c]
 
-def _shrike_test(name, weapon_b2=None, staff=False):
+def _shrike_test(name, weapon_b2=None, staff=False, rail=False):
     bp = hornet_frame(name, '', 'MyObjectBuilder_SmallGatlingGun', script_text('ShrikeAI.cs'), ai=True, sensor=True, merge=False)
     bp.legacy_shapes = False                       # sample-derived shapes: cockpit / timer / PB (enabled)
     # the cockpit stands on the rear deck (the antenna's place); the Hornet's cameras, dive thrusters, PB and 4 batteries stay where they are
@@ -53,6 +57,17 @@ def _shrike_test(name, weapon_b2=None, staff=False):
         bp.keep_clear(g, 6, 'muzzle')
         guns = [guns[0], g]
     guns[0]['name'] = guns[0]['name'] + ' [B1]'
+    if rail:
+        # a small railgun (1x2x8) on the roof along the centre line: the roof camera makes room, the muzzle ends 4 cells ahead of the nose
+        _drop(bp, lambda b: (b['name'] or '').endswith('Camera Up'))
+        r3 = bp.add('MyObjectBuilder_SmallMissileLauncherReload', 'SmallRailgun', (0, 2, -8), 'Forward', 'Up', f'{name} Railgun [B3]', GUN, kind='gun', state={'capacitor': 'full'})
+        bp.keep_clear(r3, 8, 'muzzle')
+        guns.append(r3)
+        # the railgun's capacitor recharges at 3.6 MW (EntityComponents.sbc): six small reactors with uranium, 0.5 MW each (the 4 small batteries give 0.8 MW)
+        from sebp_inv import Item
+        for x in (-2, 2):
+            for z in (-1, 0, 1):
+                bp.add('MyObjectBuilder_Reactor', 'SmallBlockSmallGenerator', (x, -1, z), 'Forward', 'Up', f'{name} Reactor {"L" if x < 0 else "R"}{z + 2}', kind='power', items=[Item.ingot('Uranium', 5)])
     bp.group('Weapons', guns)
     deadman_kit(bp, name, seat, timer=timer, ec_cell=(1, 1, 1) if staff else None, experimental=staff)     # Timer D (5 s, Silent, cuts the groups) [+ the cockpit EC on the split ship]
     if staff:
@@ -67,12 +82,31 @@ def shrike_test(lite=False):
 def shrike_staff_test(lite=False):
     return _shrike_test('Shrike Staff Test', staff=True)
 
+def shrike_multi_test(lite=False):
+    return _shrike_test('Shrike Multi Test', ('MyObjectBuilder_SmallMissileLauncher', ''), rail=True)
+
+def shrike_basilisk_test(lite=False):
+    """The Basilisk hull (large grid, 4 launchers, gatling turret on the roof) with ShrikeAI in a '[Helm]' PB instead of BasiliskAI; launchers tagged [B2]."""
+    import extra as X
+    bp = X.basilisk(lite=False)
+    name = 'Shrike Basilisk Test'
+    pb = [b for b in bp.blocks if (b['name'] or '').endswith(' PB')][0]
+    pb['name'] = f'[Helm] {name} PB'
+    pb['extra'] = pb_extra(script_text('ShrikeAI.cs'))
+    pb['custom_data'] = '[Shrike]\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=GUARD\nStandoff Range=600\nEvasive Jinking=false\nOrbit Speed=10\nCombat Speed=40\nMin Range=150\n'
+    for b in bp.blocks:
+        if 'Launcher' in (b['name'] or ''): b['name'] = b['name'] + ' [B2]'
+    bp.name = name
+    return bp
+
 def shrike_test_rocket(lite=False):
     return _shrike_test('Shrike Test Rocket', ('MyObjectBuilder_SmallMissileLauncher', ''))
 
 MODELS['Shrike Test'] = shrike_test
 MODELS['Shrike Test Rocket'] = shrike_test_rocket
 MODELS['Shrike Staff Test'] = shrike_staff_test
+MODELS['Shrike Multi Test'] = shrike_multi_test
+MODELS['Shrike Basilisk Test'] = shrike_basilisk_test
 
 if __name__ == '__main__':
     for n, f in MODELS.items():

@@ -1,5 +1,5 @@
 // SLOT D. CLI entry point: mono out/sim/SimHost.exe <command> [options]
-//   selftest [physics|api|combat|runner|audit|m0|m1|scenario|all]   engine self-checks by group (default: the first four);
+//   selftest [physics|api|combat|runner|audit|m0|m1|m2|m3|scenario|all]   engine self-checks by group (default: the first four);
 //                                 `selftest scenario` (or --selftest scenario) also runs 3 short duels end to end
 //   list [--filter RX] [--kind K] print scenario names with job counts
 //   run   --filter REGEX [--seeds N] [--jobs 4] [--seed 1] [--shard i/n] [--out DIR] [--resume] [--<setting> value ...]
@@ -126,8 +126,8 @@ namespace SeSim.Run
                     bool strict = groups.Remove("strict");
                     SelfTestSkips.Count = 0;
                     foreach (string g in groups)
-                        if (g != "physics" && g != "api" && g != "combat" && g != "runner" && g != "audit" && g != "m0" && g != "m1" && g != "m2" && g != "scenario" && g != "all")
-                            throw new ArgumentException("unknown selftest group '" + g + "' (physics, api, combat, runner, audit, m0, m1, m2, scenario, all)");
+                        if (g != "physics" && g != "api" && g != "combat" && g != "runner" && g != "audit" && g != "m0" && g != "m1" && g != "m2" && g != "m3" && g != "scenario" && g != "all")
+                            throw new ArgumentException("unknown selftest group '" + g + "' (physics, api, combat, runner, audit, m0, m1, m2, m3, scenario, all)");
                     bool all = groups.Count == 0 || groups.Contains("all") || (groups.Count == 1 && groups.Contains("scenario"));
                     int f = 0;
                     if (all || groups.Contains("physics")) f += SeSim.Core.SelfTestA.Run();
@@ -138,6 +138,7 @@ namespace SeSim.Run
                     if (all || groups.Contains("m0")) f += SelfTestM0.Run(simDir, FindRepoRoot(null));
                     if (all || groups.Contains("m1")) f += SelfTestM1.Run(simDir, FindRepoRoot(null));
                     if (all || groups.Contains("m2")) f += SelfTestM2.Run(simDir, FindRepoRoot(null));
+                    if (all || groups.Contains("m3")) f += SelfTestM3.Run(simDir, FindRepoRoot(null));
                     if (groups.Contains("scenario") || groups.Contains("all")) f += SelfTestD.RunScenarioTests(simDir, FindRepoRoot(null));
                     if (strict && SelfTestSkips.Count > 0) { Console.WriteLine("SELFTEST --strict: " + SelfTestSkips.Count + " section(s) skipped"); f++; }
                     Console.WriteLine(f == 0 ? "SELFTEST OK" + (SelfTestSkips.Count > 0 ? " (" + SelfTestSkips.Count + " sections skipped; --strict fails on that)" : "") : "SELFTEST FAILURES: " + f);

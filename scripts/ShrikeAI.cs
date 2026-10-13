@@ -49,8 +49,6 @@ double OrbitSpeed = 22;      // tangential speed around the target
 double JinkEvery = 1.0, JinkEveryRand = 1.0;   // a new random evasive direction every JinkEvery + rand x JinkEveryRand seconds
 double JinkSpeed = 12;       // random evasive velocity
 double LockRange = 2500;     // manual "lock" raycast distance
-double CloseScanRange = 120; // all-around camera scan distance
-bool CloseScan = true;
 double ScanRange = 1200;     // auto-scan raycast distance
 double ScanCone = 35;        // auto-scan half-angle (deg)
 double AimKp = 6, AimKd = 0.35, MaxTurn = 5; // gyro tuning (rad/s)
@@ -107,7 +105,7 @@ class Track
     public Vector3D LAcc, LSeg, LW, LOR; public int LSegN; public double LSegT0 = -99, LManT = 2;   // LEAD v1.0 state (fresh acceleration, manoeuvres, spin)
     public double Spin, SpinSince = -1, Rad0, Raw, RawMax, DeadAt = -1, DisSince = -1; public Vector3D OF, OU; public bool HasOri;
     public MatrixD O = MatrixD.Identity; public List<Vector3D> Hull = new List<Vector3D>(); public int HullNext;
-    public Vector3D Thrust, AimLocal; public double AimT = -99;
+    public Vector3D Thrust, AimLocal; public double AimT = -99; public double Hl = -99;   // BATTERY: last time no battery could hit it
     // how fast it's rotating, from orientation changes between sightings
     public void Ori(MatrixD o, double dt)
     {
@@ -708,7 +706,7 @@ void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message
 // Script hooks: ManCfg() at the end of LoadConfig; ManBlocks() at the end of GetBlocks; ManSeat() early in Tick, then "if (Man) ManFly(dt); else if (!AiStep()) Control(dt);";
 // ManTick() each Update1 tick and ManMenu() for a Run without argument; "if (ManCmd(w)) return;" at the top of Command; ManMode()/ManHud() in Display; ManSave() / ManLoad(..)
 // for Storage; ManCap() as the turn-rate cap of Aim.
-// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _sb, _ai, _aiOn, _aiKick, _patrolLeg, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
+// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _sb, _ai, _aiOn, _aiKick, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
 List<IMyShipController> _seats = new List<IMyShipController>(); IMyShipController _seat;
 List<IMyTimerBlock> _dm = new List<IMyTimerBlock>(); IMyTextSurface _hud;
 bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _menuOn; int _force, _asLvl = 1, _menuI; // _force: 0 follow the seat, 1 manual, 2 auto
@@ -771,7 +769,6 @@ void ManFree()
     BatFire(false, Vector3D.Zero);   // a continuous second battery stops too
     if (_aiOn) { _aiOn = false; _aiKick = false; foreach (var b in _ai) b.Enabled = false; }
     ManDamp(_userDamp);   // after the AI blocks: switching those off may touch the dampeners
-    _patrolLeg = false;
     if (_firing) { _firing = false; foreach (var g in _guns) if (g.IsFunctional) g.ApplyAction("Shoot_Off"); }
 }
 
@@ -831,8 +828,7 @@ void ManFly(double dt)
         _pipR = Math.Atan2(d.X, -d.Z) * 57.2958; _pipU = Math.Atan2(d.Y, -d.Z) * 57.2958;
         double dist = Vector3D.Distance(pt, gp);
         _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(rm.Forward, dir), -1, 1)) * 57.2958;
-        double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;
-        _fireWinDeg = Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol;
+        _fireWinDeg = BatWin(dist);
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
         if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
@@ -866,6 +862,7 @@ string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl ==
 // compact cockpit page (<= 8 lines)
 string ManHud()
 {
+    if (_rc == null) return "NO CONTROLLER\n";   // (the Remote Control was destroyed)
     var b = new StringBuilder();
     b.Append("MODE ").Append(ManMode()).Append(_hold ? " (seat taken)" : "").Append('\n');
     if (_tgt != null)
@@ -886,74 +883,272 @@ void ManShow()
 }
 // <<< MANUAL v1.0 <<<
 
-// >>> BATTERY v0.1-lite (two weapon batteries with a class table, for the Shrike fighter; the full N-battery manager of docs/design/control_arch.md s3 replaces it; tools/blocks_sync.py) >>>
-// Fixed guns form two batteries by the tag in the block name: [B1] and [B2]; an untagged gun joins B1 when it is ballistic (gatling, autocannon), else B2. Each battery's
-// class (speed, range, shot interval) comes from its first gun's definition id (BatSpec). The PRIMARY battery is B1 (B2 when B1 is empty): it is the one Control()/Aim() orient the
-// ship by, with the script's own lead solver, ProjSpeed and MaxFireRange (taken from the class table when the primary is not ballistic). The other battery fires on its
-// own lead solution (BatFire) whenever ITS boresight is inside its silhouette window, in its own range band and the line of fire is clear: continuous fire (Shoot_On/Off) for
-// ballistic guns, ShootOnce every "interval" seconds for rocket, railgun and shell classes. Turrets never belong to a battery (they are designators and fire themselves).
-// Hooks: BatSort() at the end of GetBlocks (after _guns; sets _aimRef); PrimGuns() instead of _guns for the gun centre in Control() and for SetFire(); BatFire(haveAim, myVel)
-// after the primary's fire decision in Control() (BatFire(false, ..) in IDLE) and in ManFly().
-class Bat { public string Cls = "-"; public double Speed = 800, Range = 800, MinRange = 0, Cool = 0, Next; public bool On; public List<IMyUserControllableGun> G = new List<IMyUserControllableGun>(); }
-Bat[] _bat = { new Bat(), new Bat() }; int _prim;
+// >>> BATTERY v1.0 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
+// Fixed guns (never turrets) form up to four batteries by the tag in the block name: [B1] .. [B4]. An untagged gun joins by class: ballistic (gatling, autocannon) B1, rocket B2, railgun B3,
+// shell (artillery, assault cannon) B4. The class of a battery (BALL ROCK RAIL SHEL: speed, range, minimum range, shot interval, reload, dps, dispersion) comes from its first gun's
+// definition id (BatSpec); a battery of mixed guns is treated as its first gun's class.
+// PRIMARY battery = the one Control() / Aim() orient the ship by (ProjSpeed, MaxFireRange and _aimRef follow it, and with them the script's own LEAD solver): argmax of
+//   score = dps x guns x P(hit) x P(ready)   at the present range, re-evaluated every 10 ticks, switched only after 3 s and when the newcomer scores 25 % more (BatPick).
+//   P(hit) = clamp(1 - (LeadMiss(track, T) x Miss Scale + dispersion x range) / track radius, 0, 1), T = range / projectile speed; P(ready): a railgun / shell battery counts when its
+//   next shot is due within 1.5 s (the confirmed-shot state machine of the Longbow: ammo drop, IsShooting, retry), other batteries are always ready.
+// SECONDARY batteries fire on their own lead solution (BatAim: this class' ProjSpeed through the same Lead()) whenever THEIR boresight is inside the silhouette window, in their own
+// range band and the line is clear; continuous fire (Shoot_On/Off) for ballistic guns, ShootOnce for the others (BatShoot). The primary fires through the script's own fire decision.
+// STANDOFF (BatStand, every 30 ticks, only on a ship with a non-ballistic battery and Standoff By Weapons=true): the range on a 100 m grid that maximises the sum of the scores minus
+//   Threat Weight x total dps x threat(r), threat = 2.5 inside 450 m, 1.0 inside 1,000 m, 0.2 beyond (the enemy is assumed to carry gatlings / rockets of 800 m): a rail or artillery ship
+//   kites at 1,000 m, a rocket + gatling ship closes to ~500 m.
+// TURRET-ONLY MODE (Turret Only AUTO = the ship has turrets, ON, OFF): a track that every working battery would hit with P < 0.15 is left to the turrets: the fixed batteries refuse it
+//   (BatOk) and target selection puts it behind every track a battery can hit (BatHope, debounced 2 s). The Track class carries the field "public double Hl = -99;".
+// TURN-RATE CALIBRATION (BatTurn, Auto Max Turn AUTO = large grids, ON, OFF): while the first slews saturate the gyros, the peak angular acceleration a is measured; then
+//   MaxTurn = 0.85 x sqrt(2 a x 0.6 rad) and AimKp = MaxTurn / 0.6 (the ship can stop inside the 0.6 rad PD zone); stored in Storage (field 8).
+// Hooks: BatCfg() at the end of LoadConfig; BatSort() at the end of GetBlocks (after _guns); PrimGuns() instead of _guns for the gun centre in Control() and for SetFire(); SetFire() starts with
+//   "if (_bat[_prim].Cool > 0) { _firing = on; BatShoot(_bat[_prim], on); return; }"; BatOk(_bat[_prim], dist) in the primary's fire decision (Control); BatFire(haveAim, myVel) after it
+//   (BatFire(false, ..) in IDLE, Release and ManFly); "+ BatHope(t)" in the target score of PruneAndSelect; BatTurn(w) in Aim(); BatSave() / BatLoad(..) for Storage; BatStatus() in Display.
+class Bat
+{
+    public string Cls = "-"; public double Speed = 800, Range = 700, MinR, Cool, Rel, Dps, Dsp, Next, Rdy, Pend = -1, Am, Sc; public bool On, Saw, Want; public int I; public IMyUserControllableGun Gn;
+    public List<IMyUserControllableGun> G = new List<IMyUserControllableGun>();
+}
+Bat[] _bat = { new Bat(), new Bat(), new Bat(), new Bat() };
+bool _rkt; int _prim, _batFix; double _primT = -99, _bs0, _br0; bool BatSo = true; string BatTur = "AUTO", BatCal = "AUTO";
 List<IMyUserControllableGun> PrimGuns() { return _bat[_prim].G; }
 
+void BatCfg()
+{
+    const string S = "Battery";
+    string p = Cfg(S, "Primary (AUTO/B1..B4)", "AUTO").Trim().ToUpperInvariant();
+    _batFix = p.Length == 2 && p[0] == 'B' && p[1] >= '1' && p[1] <= '4' ? p[1] - '0' : 0;
+    BatSo = Cfg(S, "Standoff By Weapons", BatSo);
+    BatTur = Cfg(S, "Turret Only (AUTO/ON/OFF)", BatTur).Trim().ToUpperInvariant();
+    BatCal = Cfg(S, "Auto Max Turn (AUTO/ON/OFF)", BatCal).Trim().ToUpperInvariant();
+}
+
+void BatSp(Bat b, string c, double sp, double rg, double mr, double cool, double rel, double dps, double dsp)
+{ b.Cls = c; b.Speed = sp; b.Range = rg; b.MinR = mr; b.Cool = cool; b.Rel = rel; b.Dps = dps; b.Dsp = dsp; }
+bool BatBall(string s) { return s.Contains("Gatling") || s.Contains("Autocannon") || s.Contains("Interior"); }
 void BatSpec(Bat b)
 {
-    b.Cls = "-"; b.Speed = 800; b.Range = 800; b.MinRange = 0; b.Cool = 0;
+    b.Cls = "-";
     if (b.G.Count == 0) return;
-    string s = b.G[0].BlockDefinition.ToString();   // "MyObjectBuilder_SmallGatlingGun/" (a gatling has no subtype)
-    if (s.Contains("Gatling") || s.Contains("Autocannon") || s.Contains("Interior")) b.Cls = "BALL";
-    else if (s.Contains("Railgun")) { b.Cls = "RAIL"; bool big = s.Contains("Large"); b.Speed = big ? 2000 : 1000; b.Range = big ? 2000 : 1400; b.Cool = big ? 2.1 : 0.6; b.MinRange = 150; }
-    else if (s.Contains("Missile") || s.Contains("Rocket")) { b.Cls = "ROCK"; b.Speed = 200; b.Range = 800; b.Cool = 0.35; b.MinRange = 100; }
-    else { b.Cls = "SHEL"; b.Speed = 500; b.Range = s.Contains("Large") ? 2000 : 1400; b.Cool = 1.0; b.MinRange = 150; }
+    string s = b.G[0].BlockDefinition.ToString();   // "MyObjectBuilder_SmallGatlingGun/" (a gatling has no subtype), "...SmallMissileLauncherReload/SmallRailgun"
+    bool big = s.Contains("Large");
+    if (BatBall(s)) BatSp(b, "BALL", _bs0, _br0, 0, 0, 0, 1000, 0.004);
+    else if (s.Contains("Calibre")) BatSp(b, "SHEL", 500, (big ? 2000 : 1400) * 0.85, 150, 1, big ? 12 : 6, big ? 500 : 300, 0.001);   // (before "Missile": the shell guns sit in launcher block types)
+    else if (s.Contains("Railgun")) BatSp(b, "RAIL", big ? 2000 : 1000, (big ? 2000 : 1400) * 0.85, 150, 0.25, big ? 60 : 20, big ? 800 : 400, 0);
+    else BatSp(b, "ROCK", 200, 680, 100, 0.35, 0, 500, 0.002);
 }
+
+int BatN(Bat b) { int n = 0; foreach (var g in b.G) if (g.IsFunctional) n++; return n; }
 
 void BatSort()
 {
+    if (_bs0 == 0) { _bs0 = ProjSpeed; _br0 = MaxFireRange; }
     foreach (var b in _bat) b.G.Clear();
     foreach (var g in _guns)
     {
-        string n = g.CustomName, s = g.BlockDefinition.ToString();
-        _bat[n.Contains("[B2]") ? 1 : n.Contains("[B1]") ? 0 : (s.Contains("Gatling") || s.Contains("Autocannon") ? 0 : 1)].G.Add(g);
+        string n = g.CustomName, s = g.BlockDefinition.ToString(); int k = -1;
+        for (int i = 0; i < 4; i++) if (n.Contains("[B" + (i + 1) + "]")) k = i;
+        if (k < 0) k = BatBall(s) ? 0 : s.Contains("Calibre") ? 3 : s.Contains("Railgun") ? 2 : 1;
+        _bat[k].G.Add(g);
     }
     foreach (var b in _bat) BatSpec(b);
-    _prim = _bat[0].G.Count > 0 ? 0 : 1;
-    if (_bat[_prim].G.Count > 0 && _bat[_prim].Cls != "BALL") { ProjSpeed = _bat[_prim].Speed; MaxFireRange = _bat[_prim].Range * 0.85; }
-    _aimRef = _bat[_prim].G.Count > 0 ? (IMyTerminalBlock)_bat[_prim].G[0] : _rc;
+    BatSet(_batFix > 0 && _bat[_batFix - 1].G.Count > 0 ? _batFix - 1 : _bat[_prim].G.Count > 0 ? _prim : BatFirst());
+}
+int BatFirst() { for (int i = 0; i < 4; i++) if (BatN(_bat[i]) > 0) return i; return 0; }
+
+// make battery i the primary (also the refresh of ProjSpeed, MaxFireRange and the aim reference after a block was lost)
+void BatSet(int i)
+{
+    if (i != _prim)
+    {
+        foreach (var g in _bat[_prim].G) if (g.IsFunctional) g.ApplyAction("Shoot_Off");
+        _bat[_prim].On = false; _firing = false; _primT = _now; _prim = i;
+    }
+    var b = _bat[i];
+    ProjSpeed = b.Speed; MaxFireRange = b.Range; _rkt = b.Cls == "ROCK";
+    IMyTerminalBlock r = _rc;
+    foreach (var g in b.G) if (g.IsFunctional) { r = g; break; }
+    _aimRef = r;
+}
+
+// unpredictable displacement (m) of the track after T s of flight (the Basilisk's FireGate "unc": the acceleration the lead cannot foresee)
+double BatUnc(Track t, double T) { return 0.5 * Math.Max(0, t.AccMag - t.EA().Length()) * T * T; }
+double BatPh(Bat b, double r, Track t) { return MathHelper.Clamp(1 - (BatUnc(t, r / b.Speed) + b.Dsp * r) / t.Radius, 0, 1); }
+// score of battery b at range r; w = how much a battery that is not ready is discounted (1: not at all counted, 0.5: halved for the standoff planning)
+double BatSc(Bat b, double r, double w)
+{
+    int n = BatN(b);
+    if (n == 0 || r < b.MinR || r > b.Range) return 0;
+    return b.Dps * n * BatPh(b, r, _tgt) * (b.Rel > 0 && _now + 1.5 < b.Rdy ? 1 - w : 1);
+}
+
+void BatPick()
+{
+    if (_tgt == null || _rc == null) return;
+    double r = Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()), bm = 0; int bi = -1, p = _prim;
+    for (int i = 0; i < 4; i++) { _bat[i].Sc = BatSc(_bat[i], r, 1); if (_bat[i].Sc > bm) { bm = _bat[i].Sc; bi = i; } }
+    if (_batFix > 0 && _bat[_batFix - 1].G.Count > 0) p = _batFix - 1;
+    else if (BatN(_bat[p]) == 0) p = BatFirst();
+    else if (bi >= 0 && bi != p && _now - _primT > 3 && _bat[bi].Sc > _bat[p].Sc * 1.25) p = bi;
+    BatSet(p);
+    if (_tick % 30 == 3) BatStand();
+}
+
+void BatStand()
+{
+    if (!BatSo || _tgt == null) return;
+    double hi = 0, tot = 0; bool nb = false;
+    foreach (var b in _bat) { int n = BatN(b); if (n == 0) continue; if (b.Cls != "BALL") nb = true; hi = Math.Max(hi, b.Range); tot += b.Dps * n; }
+    double lo = Math.Max(MinRange, 60 + Me.CubeGrid.WorldVolume.Radius), bj = -1e9;
+    if (!nb || hi < lo) return;
+    for (double r = Math.Ceiling(lo / 100) * 100; r <= hi; r += 100)
+    {
+        double j = -tot * (r < 450 ? 2.5 : r < 1000 ? 1 : 0.2);
+        foreach (var b in _bat) j += BatSc(b, r, 0.5);
+        if (j > bj) { bj = j; Standoff = r; }
+    }
+}
+
+// silhouette window (deg) of the tracked target at this range: the fire window of every battery
+double BatWin(double dist) { double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6; return Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol; }
+bool BatTO() { return BatTur == "ON" || (BatTur == "AUTO" && _turrets.Count > 0); }
+bool BatOk(Bat b, double d)
+{
+    if (b.Cls == "ROCK" && BatUnc(_tgt, d / 200) > Math.Max(_tgt.Radius * 0.8, 3)) return false;   // rockets cannot be recalled: not at a jinking target (FireGate)
+    return !BatTO() || BatPh(b, d, _tgt) >= 0.15;
+}
+double BatHope(Track t)
+{
+    if (!BatTO() || _rc == null) return 0;
+    double r = Vector3D.Distance(t.P(_now), _rc.GetPosition());
+    foreach (var b in _bat) if (BatN(b) > 0 && BatPh(b, r, t) >= 0.15) return _now - t.Hl < 2 ? 1500 : 0;   // (a good sample after a hopeless one counts after 2 s: the acceleration estimate swings)
+    t.Hl = _now;
+    return 1500;
+}
+
+// lead solution of a secondary battery: true when it may fire now
+bool BatAim(Bat b, Vector3D myVel)
+{
+    if (_tgt == null) return false;
+    Vector3D gp = Vector3D.Zero, pt, dir; int n = 0; IMyUserControllableGun f = null;
+    foreach (var g in b.G) if (g.IsFunctional) { gp += g.GetPosition(); n++; if (f == null) f = g; }
+    if (n == 0) return false;
+    gp /= n;
+    double sp = ProjSpeed, sl = _leadT; bool sr = _rkt; ProjSpeed = b.Speed; _rkt = b.Cls == "ROCK";
+    bool ok = Lead(_tgt, gp, myVel, out pt, out dir);
+    ProjSpeed = sp; _leadT = sl; _rkt = sr;
+    if (!ok) return false;
+    Vector3D fw = f.WorldMatrix.Forward;
+    double dist = Vector3D.Distance(pt, gp), err = Math.Acos(MathHelper.Clamp(Vector3D.Dot(fw, dir), -1, 1)) * 57.2958;
+    bool go = dist >= b.MinR && dist < b.Range && err < BatWin(dist) && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax && BatOk(b, dist);
+    if (go && FriendCheck) { MatesInLine(gp, fw, dist); if (_now < _holdFireUntil) go = false; }
+    return go;
 }
 
 void BatFire(bool allow, Vector3D myVel)
 {
-    var b = _bat[1 - _prim];
-    if (b.G.Count == 0) return;
-    bool shoot = false;
-    if (allow && _tgt != null)
+    if (allow && _tick % 10 == 3) BatPick();
+    for (int i = 0; i < 4; i++)
     {
-        Vector3D gp = Vector3D.Zero, pt, dir; int n = 0; IMyUserControllableGun f = null;
-        foreach (var g in b.G) if (g.IsFunctional) { gp += g.GetPosition(); n++; if (f == null) f = g; }
-        if (n > 0)
-        {
-            gp /= n;
-            double sp = ProjSpeed, sl = _leadT; ProjSpeed = b.Speed;
-            bool ok = Lead(_tgt, gp, myVel, out pt, out dir);
-            ProjSpeed = sp; _leadT = sl;
-            if (ok)
-            {
-                Vector3D fw = f.WorldMatrix.Forward;
-                double dist = Vector3D.Distance(pt, gp), aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;
-                double win = Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol, err = Math.Acos(MathHelper.Clamp(Vector3D.Dot(fw, dir), -1, 1)) * 57.2958;
-                shoot = dist >= b.MinRange && dist < b.Range * 0.85 && err < win && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
-                if (shoot && FriendCheck) { MatesInLine(gp, fw, dist); if (_now < _holdFireUntil) shoot = false; }
-            }
-        }
+        var b = _bat[i];
+        if (i == _prim || b.G.Count == 0) continue;
+        if (!allow) b.Want = false; else if ((_tick + i) % 3 == 0) b.Want = BatAim(b, myVel);
+        BatShoot(b, b.Want);
     }
-    if (b.Cool > 0) { if (shoot && _now >= b.Next) { b.Next = _now + b.Cool; foreach (var g in b.G) if (g.IsFunctional) g.ShootOnce(); } }
-    else if (shoot != b.On) { b.On = shoot; foreach (var g in b.G) if (g.IsFunctional) g.ApplyAction(shoot ? "Shoot_On" : "Shoot_Off"); }
 }
 
-string BatStatus() { return "Batt " + _bat[0].Cls + "x" + _bat[0].G.Count + " " + _bat[1].Cls + "x" + _bat[1].G.Count + " prim B" + (_prim + 1) + "\n"; }
-// <<< BATTERY v0.1 <<<
+long BatAm(IMyUserControllableGun g) { var v = g.GetInventory(0); return v != null ? v.CurrentVolume.RawValue : 0; }
+IMyUserControllableGun BatGun(Bat b) { for (int k = 0; k < b.G.Count; k++) { var g = b.G[++b.I % b.G.Count]; if (g.IsFunctional) return g; } return null; }
+
+void BatShoot(Bat b, bool on)
+{
+    if (b.Pend >= 0) BatCheck(b);
+    if (b.Cool > 0)
+    {
+        if (!on || _now < b.Next || (b.Rel > 0 && (b.Pend >= 0 || _now < b.Rdy))) return;
+        b.Next = _now + b.Cool;
+        if (b.Rel > 0)
+        {
+            var g = BatGun(b);
+            if (g == null) return;
+            b.Gn = g; b.Pend = _now; b.Saw = false; b.Am = BatAm(g); g.ShootOnce();
+        }
+        else foreach (var g in b.G) if (g.IsFunctional) g.ShootOnce();
+    }
+    else if (on != b.On || (on && _tick % 30 == 0)) { b.On = on; foreach (var g in b.G) if (g.IsFunctional) g.ApplyAction(on ? "Shoot_On" : "Shoot_Off"); }
+}
+// single-shot guns: an ammo drop or a busy-then-idle gun confirms the shot and starts the reload; nothing within 3 s = still charging, ask again in 2 s
+void BatCheck(Bat b)
+{
+    var g = b.Gn;
+    if (g.IsShooting) b.Saw = true;
+    if (BatAm(g) < b.Am) { b.Pend = -1; b.Rdy = _now + b.Rel * 1.1 / b.G.Count + 0.5; }
+    else if (b.Saw && !g.IsShooting) { b.Pend = -1; b.Rdy = _now + b.Rel / b.G.Count - 1; }
+    else if (_now - b.Pend > 3) { b.Pend = -1; b.Rdy = _now + 2; }
+}
+
+// ROCK class lead solver (the Basilisk's, "capped" rocket model): a rocket leaves at ship velocity + 100 m/s along the barrel, accelerates at 600 m/s^2 along it up to 200 m/s and
+// bends towards the barrel direction; Newton on the flight time T finds the barrel direction d with rocket(d, T) = target(T). Lead() starts with
+// "if (_rkt) return BatRkt(t, shooter, shooterVel, out point, out dir);" while a rocket battery is being solved.
+double RkT(double d) { return d <= 25 ? (Math.Sqrt(1e4 + 1200 * d) - 100) / 600 : 1 / 6.0 + (d - 25) / 200; }
+void RkP(double T, double ua, double us, out double s, out double q, out double sv)
+{
+    double V = 200, A = 600, va = ua + 100, t1, th;
+    if (va * va + us * us >= V * V) { t1 = 0; th = Math.Atan2(us, va); }
+    else { t1 = (Math.Sqrt(V * V - us * us) - va) / A; th = Math.Asin(MathHelper.Clamp(us / V, -1, 1)); }
+    if (T <= t1) { s = va * T + 0.5 * A * T * T; q = us * T; sv = va + A * T; return; }
+    s = va * t1 + 0.5 * A * t1 * t1; q = us * t1;
+    double k = A / V, h = T - t1, c = Math.Tan(0.5 * th), x = c * Math.Exp(-k * h);
+    q += V / k * 2 * (Math.Atan(c) - Math.Atan(x));
+    s += V * (h - Math.Log((1 + c * c) / (1 + x * x)) / k);
+    sv = V * (1 - x * x) / (1 + x * x);
+}
+bool BatRkt(Track t, Vector3D shooter, Vector3D shooterVel, out Vector3D point, out Vector3D dir)
+{
+    Vector3D rp = t.P(_now) - shooter, tv = t.V(_now), ta = LeadAcc(t);
+    double rl = rp.Length();
+    point = shooter + rp; dir = Vector3D.Zero;
+    if (rl < 1 || double.IsNaN(rl)) return false;
+    Vector3D los = rp / rl, d = los, p = rp;
+    double tt = RkT(rl), h = LeadHold(t), f = 99;
+    _aimLos = los; _aimNeed = LeadMargin * LeadMiss(t, tt);
+    Vector3D off = AimOffset(t);
+    for (int i = 0; i < 12; i++)
+    {
+        p = rp + LeadOffset(t, off, los, tt) + (tv * tt + ta * LeadK(tt, h)) * LeadScale;
+        Vector3D w = p, up = shooterVel - Vector3D.Dot(shooterVel, d) * d; double us = up.Length(), s, q, sv;
+        RkP(tt, Vector3D.Dot(shooterVel, d), us, out s, out q, out sv);
+        if (us > 1e-3) w -= up * (q / us);
+        double wl = w.Length();
+        if (wl < 1) break;
+        d = w / wl; f = s - wl;
+        tt = MathHelper.Clamp(tt - f / Math.Max(sv - Vector3D.Dot(d, tv + ta * LeadKd(tt, h)), 20), 0.02, 12);
+    }
+    _leadT = tt; point = shooter + p; dir = d;
+    return Math.Abs(f) < 2 && !double.IsNaN(tt) && !double.IsNaN(d.X);
+}
+
+double _caA, _caT, _caS; Vector3D _caW; bool _caDone;
+void BatTurn(Vector3D cmd)
+{
+    if (_caDone || BatCal == "OFF" || (BatCal != "ON" && Me.CubeGrid.GridSizeEnum != MyCubeSize.Large)) return;
+    double dt = _now - _caT;
+    if (dt < 0.1) return;
+    Vector3D w = _rc.GetShipVelocities().AngularVelocity;
+    bool sat = (cmd - w).Length() > 0.8;
+    if (_caT > 0 && dt < 0.2 && sat) { _caA = Math.Max(_caA, (w - _caW).Length() / dt); _caS += dt; }
+    _caW = w; _caT = _now;
+    if (_caS > 3 || (_caS > 0.5 && !sat)) { _caDone = true; MaxTurn = MathHelper.Clamp(0.85 * Math.Sqrt(1.2 * _caA), 0.15, MaxTurn); AimKp = MaxTurn / 0.6; }
+}
+string BatSave() { return _caDone ? MaxTurn.ToString("0.###") : "0"; }
+void BatLoad(string s) { double v; if (BatCal != "OFF" && double.TryParse(s, out v) && v > 0) { MaxTurn = v; AimKp = v / 0.6; _caDone = true; } }
+
+string BatStatus()
+{
+    var s = new StringBuilder("Batt");
+    for (int i = 0; i < 4; i++) if (_bat[i].G.Count > 0) s.Append(" B").Append(i + 1).Append(i == _prim ? "* " : " ").Append(_bat[i].Cls).Append('x').Append(BatN(_bat[i]));
+    return s.Append(" so ").Append(Standoff.ToString("0")).Append(" w ").Append(MaxTurn.ToString("0.0")).Append(BatTO() ? " TO\n" : "\n").ToString();
+}
+// <<< BATTERY v1.0 <<<
 
 // >>> HELMLINK v1.0 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
 // The Helm sends, with TransmissionDistance.CurrentConstruct (never leaves the ship, no secret needed), on "<Ship Tag>.<suffix>" (Ship Tag default SHIP, [Link] in Custom Data):
@@ -1027,6 +1222,7 @@ public Program()
                 if (double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
                 { _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
                 if (p.Length >= 7) ManLoad(p[5], p[6]);
+                if (p.Length >= 8) BatLoad(p[7]);
             }
         }
     }
@@ -1051,7 +1247,7 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", ManSave());
+    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", ManSave(), BatSave());
 }
 
 Mode ParseMode(string s, Mode def)
@@ -1102,10 +1298,8 @@ void Tick(string arg, UpdateType src)
     if (!Hot()) StepSlimScan();
     if (_tick % 20 == 7) CheckDamage();
     if (_tick % 6 == 0) PollDesignators();
-    if (_tick % 10 == 5 && !Hot()) PollSensors();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
-    if ((Man || _mode != Mode.IDLE) && !Hot()) OmniScan();
     if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT) && (!Man || ManScan) && !Hot()) AutoScanStep();
     if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0 && !Hot()) ShareTarget();
 
@@ -1146,7 +1340,7 @@ void Command(string a)
 
 void SetMode(Mode m)
 {
-    _mode = m; _noTgtSince = _now; _patrolLeg = false; _patrolStopSet = false;
+    _mode = m;
     if ((m == Mode.IDLE || m == Mode.ASSIST) && !Man) Release();
 }
 
@@ -1160,7 +1354,6 @@ void LoadConfig()
     Tag = Cfg(S, "IGC Tag", Tag);
     StartMode = Cfg(S, "Start Mode (GUARD/HUNT/ASSIST/IDLE)", StartMode);
     ProjSpeed = Cfg(S, "Projectile Speed", ProjSpeed);
-    InheritVel = Cfg(S, "Projectiles Inherit Ship Velocity", InheritVel);
     MaxFireRange = Cfg(S, "Max Fire Range", MaxFireRange);
     Standoff = Cfg(S, "Standoff Range", Standoff);
     MinRange = Cfg(S, "Min Range", MinRange);
@@ -1169,33 +1362,21 @@ void LoadConfig()
     CruiseSpeed = Cfg(S, "Cruise Speed", CruiseSpeed);
     OrbitSpeed = Cfg(S, "Orbit Speed", OrbitSpeed);
     Jink = Cfg(S, "Evasive Jinking", Jink);
-    JinkSpeed = Cfg(S, "Jink Speed", JinkSpeed);
-    LockRange = Cfg(S, "Manual Lock Range", LockRange);
     AutoScan = Cfg(S, "Auto Camera Scan", AutoScan);
-    CloseScan = Cfg(S, "All-around Close Scan", CloseScan);
-    ScanRange = Cfg(S, "Scan Range", ScanRange);
     TargetLarge = Cfg(S, "Target Large Grids", TargetLarge);
     TargetSmall = Cfg(S, "Target Small Grids", TargetSmall);
-    TargetChars = Cfg(S, "Target Characters", TargetChars);
-    TargetNeutral = Cfg(S, "Target Neutral/Unowned", TargetNeutral);
     ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
     FriendCheck = Cfg(S, "Friendly Fire Check", FriendCheck);
-    FireStaleMax = Cfg(S, "Max Track Age To Fire (s)", FireStaleMax);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
-    LeadMargin = Cfg(S, "Aim Margin (predicted misses)", LeadMargin);
-    UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
-    SplitFocus = Cfg(S, "Split Targets Across Hive (false: focus fire)", SplitFocus);
     ListenTags = Cfg(S, "Listen To IGC Tags (target feeds)", ListenTags);
     AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
     BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
-    PatrolOn = Cfg(S, "Search Patrol When Nothing Found (HUNT)", PatrolOn);
-    PatrolAfter = Cfg(S, "Search Patrol Starts After (s)", PatrolAfter);
     RtbBattery = Cfg(S, "RTB Battery Fraction", RtbBattery);
     AimKp = Cfg(S, "Aim Kp", AimKp);
     AimKd = Cfg(S, "Aim Kd", AimKd);
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
-    ManCfg(); HlkCfg();
+    ManCfg(); HlkCfg(); BatCfg();
     string out1 = _ini.ToString();
     if (out1 != Me.CustomData) Me.CustomData = out1;
 }
@@ -1222,8 +1403,6 @@ void GetBlocks()
     GridTerminalSystem.GetBlocksOfType(_turrets, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_ctcs, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_bats, b => b.IsSameConstructAs(Me));
-    GridTerminalSystem.GetBlocksOfType(_sensors, b => b.IsSameConstructAs(Me));
-    ConfigureSensors();
     foreach (var c in _cams) c.EnableRaycast = true;
     ScanSlims();
     FindAi();
@@ -1525,7 +1704,7 @@ void PruneAndSelect()
         if (t == _tgt) score -= Stickiness;                            // stickiness
         score += Math.Max(0, (_now - t.Seen) - 1.0) * 150;             // stale tracks lose to fresh sightings
         if (dist < 150) score -= 350;                                  // something right on top of us comes first
-        score += HiveScore(t) + KzScore(t);
+        score += HiveScore(t) + KzScore(t) + BatHope(t);
         if (score < bestScore) { bestScore = score; best = t; }
     }
     _tgt = best;
@@ -1534,7 +1713,6 @@ void PruneAndSelect()
 Vector3D Home()
 {
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
-    if (_mode == Mode.HUNT && _tgt == null && _patrolStopSet) return _patrolStop;   // search patrol: hold the listening stop, not fly home
     return (_now - _dynHomeT < 5) ? _dynHome : _home;
 }
 
@@ -1611,9 +1789,8 @@ void Control(double dt)
             Vector3D gunFwd = _aimRef.WorldMatrix.Forward;
             double dist = Vector3D.Distance(aimPoint, gunPos);
             _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gunFwd, aimDir), -1, 1)) * 57.2958;
-            double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;   // aiming at a hull point needs a tighter window
-            _fireWinDeg = Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol;
-            shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
+            _fireWinDeg = BatWin(dist);   // (aiming at a hull point needs a tighter window)
+            shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax && BatOk(_bat[_prim], dist);
             if (shoot && FriendCheck) { MatesInLine(gunPos, gunFwd, dist); if (_tick % 20 == 0) CheckLineOfFire(gunPos, gunFwd, dist); }
             if (_now < _holdFireUntil) shoot = false;
         }
@@ -1630,7 +1807,7 @@ void Control(double dt)
             Vector3D fwd = _rc.WorldMatrix.Forward;
             Vector3D toHome = Home() - me;
             if (_mode == Mode.RTB && toHome.LengthSquared() > 400) fwd = Vector3D.Normalize(toHome);
-            else if (myVel.LengthSquared() > 100 && _mode != Mode.GUARD && !((_patrolLeg || _now - _hitDirT < 10) && AutoScan)) fwd = Vector3D.Normalize(myVel);   // (a patrol leg keeps sweeping: the thrusters fly any direction)
+            else if (myVel.LengthSquared() > 100 && _mode != Mode.GUARD && !(_now - _hitDirT < 10 && AutoScan)) fwd = Vector3D.Normalize(myVel);
             else
             {
                 // radar sweep: yaw round and nod up/down so the camera cone covers all around
@@ -1652,11 +1829,6 @@ void Control(double dt)
         Vector3D d = home - me; double dist = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, dist * 0.8), Math.Sqrt(2 * aBrake * dist));
         want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade() + Separation(me);
-        if (_patrolLeg && _mode == Mode.HUNT && _tgt == null)   // search patrol: cruise towards the current waypoint
-        {
-            Vector3D pd = _patrolWp - me; double pl = pd.Length();
-            want = (pl > 1 ? pd / pl * PatrolSpeed : Vector3D.Zero) + Evade() + Separation(me);
-        }
         if (_mode == Mode.RTB && dist < 15 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
     }
     else
@@ -1679,7 +1851,7 @@ void Control(double dt)
             rnd -= Vector3D.Dot(rnd, dir) * dir;
             _jink = rnd.LengthSquared() > 1e-6 ? Vector3D.Normalize(rnd) * JinkSpeed : Vector3D.Zero;
         }
-        double orbit = dist < MaxFireRange * 1.2 ? OrbitSpeed : 0;
+        double orbit = dist < Math.Max(MaxFireRange, Standoff) * 1.2 ? OrbitSpeed : 0;
         want = tv + dir * vr + tan * orbit * _orbitSign + (Jink ? _jink : Vector3D.Zero) + Evade() + Separation(me);
         if (_mode == Mode.GUARD && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
     }
@@ -1698,6 +1870,7 @@ Vector3D _aimLos; double _aimNeed;   // line of fire and required hull margin fo
 double LeadMargin = 1.0;             // aim point keeps this many predicted misses of known hull around it
 bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, out Vector3D point, out Vector3D dir)
 {
+    if (_rkt) return BatRkt(t, shooter, shooterVel, out point, out dir);   // BATTERY: the rocket class has its own flight model
     Vector3D c = t.P(_now), tv = t.V(_now), ta = UseTargetAccel ? LeadAcc(t) : Vector3D.Zero;
     Vector3D rp0 = c - shooter, rv = InheritVel ? tv - shooterVel : tv;
     double s = ProjSpeed, rl = rp0.Length(), h = LeadHold(t);
@@ -1780,6 +1953,7 @@ void Aim(Vector3D desiredFwd, Vector3D desiredUp, Vector3D ffWorld, double dt)
     Vector3D wWorld = AimW(desiredFwd, desiredUp, ffWorld, dt);
     double cap = ManCap();   // MaxTurn, ramped up from the present rate for 2 s after the pilot leaves
     if (wWorld.LengthSquared() > cap * cap) wWorld = Vector3D.Normalize(wWorld) * cap;
+    BatTurn(wWorld);
     GyroRate(wWorld);
 }
 
@@ -1864,6 +2038,7 @@ void SetFire(bool on)
 {
     // Re-send "on" twice a second: AI blocks (or anything else) may have switched the guns off behind my back when they
     // handed control over, and a script that only sends changes would then believe it is still firing.
+    if (_bat[_prim].Cool > 0) { _firing = on; BatShoot(_bat[_prim], on); return; }   // single-shot class (BATTERY)
     if (on == _firing && !(on && _tick % 30 == 0)) return;
     _firing = on;
     foreach (var g in PrimGuns()) if (g.IsFunctional) g.ApplyAction(on ? "Shoot_On" : "Shoot_Off");
@@ -1885,9 +2060,8 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("SHRIKE AI v").Append(VER).Append('\n').Append(ManHud()).Append(BatStatus());
-    _sb.Append("Cam ").Append(_cams.Count).Append(" Gyr ").Append(_gyros.Count).Append(" Thr ").Append(_thr.Count).Append(" Run ").Append(_avgMs.ToString("0.000")).Append(" ms Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append(" peak ").Append(_peakIns).Append('\n');
-    if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
-    _sb.Append(HiveStatus()); _sb.Append(KzStatus());
+    _sb.Append("Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append(" peak ").Append(_peakIns).Append(" ms ").Append(_avgMs.ToString("0.000")).Append('\n');
+    _sb.Append(UnderFire ? "UNDER FIRE\n" : "").Append(AiStatus()).Append(_crash != "" ? "! Script error: " + _crash + "\n" : ""); _sb.Append(KzStatus());
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner: set ownership\n");
     string s = _sb.ToString();
     if (_lcd != null) _lcd.WriteText(s);
@@ -1896,60 +2070,8 @@ void Display()
 }
 
 // =====================================================================
-//  SENSORS (360 deg, ~50 m) + idle sweep
-List<IMySensorBlock> _sensors = new List<IMySensorBlock>();
-List<MyDetectedEntityInfo> _sensed = new List<MyDetectedEntityInfo>();
+//  IDLE SWEEP (the Hornet's 50 m sensor bubble is not carried: turrets, cameras and the AI blocks see for a warship; control_arch M3 size cut)
 Vector3D _sweepUp; bool _sweepUpSet = false;
-
-int _sensorSetupMissing = 0;
-
-// Sets the sensor up through its terminal settings by name. Any setting the game doesn't recognise is
-// skipped (and reported on screen) instead of breaking the script.
-void ConfigureSensors()
-{
-    _sensorSetupMissing = 0;
-    foreach (var s in _sensors)
-    {
-        s.Enabled = true;
-        SetF(s, 50f, "LeftExtend", "Left"); SetF(s, 50f, "RightExtend", "Right");
-        SetF(s, 50f, "TopExtend", "Top"); SetF(s, 50f, "BottomExtend", "Bottom");
-        SetF(s, 50f, "FrontExtend", "Front"); SetF(s, 50f, "BackExtend", "Back");
-        SetB(s, true, "Detect Enemy", "DetectEnemy");
-        SetB(s, TargetNeutral, "Detect Neutral", "DetectNeutral");
-        SetB(s, false, "Detect Owner", "DetectOwner");
-        SetB(s, false, "Detect Friendly", "DetectFriendly");
-        SetB(s, TargetSmall, "Detect Small Ships", "DetectSmallShips");
-        SetB(s, TargetLarge, "Detect Large Ships", "DetectLargeShips");
-        SetB(s, TargetLarge, "Detect Stations", "DetectStations");
-        SetB(s, TargetChars, "Detect Players", "DetectPlayers");
-        SetB(s, false, "Detect Asteroids", "DetectAsteroids");
-        SetB(s, false, "Detect Floating Objects", "DetectFloatingObjects");
-        SetB(s, false, "Detect Subgrids", "DetectSubgrids");
-    }
-}
-void SetF(IMyTerminalBlock b, float v, string n1, string n2)
-{
-    if (b.GetProperty(n1) != null) b.SetValueFloat(n1, v);
-    else if (b.GetProperty(n2) != null) b.SetValueFloat(n2, v);
-    else _sensorSetupMissing++;
-}
-void SetB(IMyTerminalBlock b, bool v, string n1, string n2)
-{
-    if (b.GetProperty(n1) != null) b.SetValueBool(n1, v);
-    else if (b.GetProperty(n2) != null) b.SetValueBool(n2, v);
-    else _sensorSetupMissing++;
-}
-
-void PollSensors()
-{
-    foreach (var s in _sensors)
-    {
-        if (!s.IsWorking) continue;
-        _sensed.Clear();
-        s.DetectedEntities(_sensed);
-        foreach (var e in _sensed) if (Valid(e)) AddContact(e, "SENSOR");
-    }
-}
 
 // Idle search attitude: keep yawing round while nodding the nose up and down (+/-34 deg, 16 s period),
 // so the camera scan cone covers above and below as well as the horizon.
@@ -1974,54 +2096,8 @@ Vector3D SweepDir(Vector3D gravUp)
 }
 
 // =====================================================================
-//  CLOSE-RANGE ALL-AROUND SCAN
-//  Cameras that don't face forward fire short rays in a spiral over their
-//  whole view cone, as fast as their charge allows, so enemies above,
-//  below, beside or behind are found without the drone turning to look.
-int _omniCam = 0, _omniIdx = 0;
+//  CAMERA HELPERS (the close-range all-around scan of the Hornet is not carried: a warship has turrets, sensors and AI blocks for that; control_arch M3)
 bool Forwardish(IMyCameraBlock c) { return Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.9; }
-// Under fire (or on a hive alarm) the side cameras reach HardScanRange: the shooter is usually a turret or gatling at up to 800 m.
-// The forward cameras stay out of it while the long auto-scan, the AI confirm rays or a lock need them: short close-scan rays used to
-// drain them below the auto-scan's range, so a drone under fire from 700 m never cast a long ray (in-game report 2026-10-13).
-double HardScanRange = 900;
-void OmniScan()
-{
-    if (!CloseScan || _cams.Count == 0) return;
-    for (int shots = 0, tries = 0; shots < 3 && tries < _cams.Count; tries++)
-    {
-        var c = _cams[_omniCam++ % _cams.Count];
-        bool hard = UnderFire || Alerted;
-        // nothing to track: the side cameras look far too (a 120 m close scan never finds the ship that is shooting from 700 m)
-        double rng = hard || _tgt == null ? Math.Max(CloseScanRange * 4, HardScanRange) : CloseScanRange;
-        if (!c.IsWorking || (Forwardish(c) && !(hard && _tgt == null && !_aiOn && !AutoScan)) || c.AvailableScanRange < rng * 2) continue; // keep charge for tracking
-        _omniIdx++;
-        MyDetectedEntityInfo e; Vector3D hp;
-        if (hard && _tgt == null && _now - _hitDirT < 10 && HitPoint(c, rng, out hp)) e = c.Raycast(hp);   // just hit: look where the shots came from
-        else
-        {
-            double r = 40 * Math.Sqrt((_omniIdx % 89 + 0.5) / 89.0), th = _omniIdx * 2.39996323;
-            e = c.Raycast(rng, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
-        }
-        if (Valid(e)) AddContact(e, "SCAN");
-        shots++;
-    }
-}
-// A point rng metres out, inside 35 deg of the side that was hit (golden-angle spiral), that camera c can see; false if none of 4 tries is in its cone.
-int _hitIdx = 0;
-bool HitPoint(IMyCameraBlock c, double rng, out Vector3D pt)
-{
-    Vector3D a = Vector3D.Cross(_hitDir, Math.Abs(_hitDir.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); a.Normalize();
-    Vector3D b = Vector3D.Cross(_hitDir, a), cp = c.GetPosition();
-    for (int k = 0; k < 4; k++)
-    {
-        _hitIdx++;
-        double r = Math.Tan(0.61 * Math.Sqrt((_hitIdx % 97 + 0.5) / 97.0)), th = _hitIdx * 2.39996323;
-        Vector3D d = Vector3D.Normalize(_hitDir + (a * Math.Cos(th) + b * Math.Sin(th)) * r);
-        pt = cp + d * rng;
-        if (Vector3D.Dot(d, c.WorldMatrix.Forward) > 0.72) return true;
-    }
-    pt = Vector3D.Zero; return false;
-}
 
 // =====================================================================
 //  v1.8: TARGET STATUS, DAMAGE SENSING, SPLIT FOCUS, ASSIST
@@ -2163,14 +2239,6 @@ Vector3D Evade()
     return _evade;
 }
 
-string HiveStatus()
-{
-    string s = "Hive: " + (_mates.Count + 1) + (SplitFocus ? " SPLIT" : " FOCUS");
-    if (UnderFire) s += "  !! UNDER FIRE (" + _hits + ")";
-    if (_tgt != null && _tgt.DisSince >= 0) s += "  tgt disabled";
-    if (_tgt != null) s += "\nAim: " + AimLabel(_tgt) + " (" + _tgt.Hull.Count + " hull pts)" + AimInfo();
-    return s + "\n" + AiStatus() + (_crash != "" ? "! Script error: " + _crash + "\n" : "");
-}
 
 class Mate { public long Id; public Vector3D Pos, Vel; public double Seen; public long Tgt; public int Flags; }
 Dictionary<long, Mate> _mates = new Dictionary<long, Mate>();
@@ -2391,14 +2459,6 @@ bool AiStep()
     // and the confirm rays below pick it up again, which hands control straight back to the script.
     bool want = AiAssist && _ai.Count > 0 && AiModeOk() &&
         ((_tgt == null && _now - _lastTgtT > 2) || (_tgt != null && _now - _tgt.Seen > AiStaleTakeover));
-    if (_tgt != null) { _noTgtSince = _now; _patrolStopSet = false; if (_patrolLeg) { _patrolLeg = false; _patrolPhaseT = _now; } }   // (a target ends the patrol leg at once, not only when the target is gone again)
-    if (_aiOn && PatrolOn)
-    {   // is the AI flying / turning the ship? (the patrol leaves it alone while it is; its own speed jitters, so movement in the last 4 s counts)
-        var vs = _rc.GetShipVelocities();
-        Vector3D refV = _patrolK == 0 ? Vector3D.Zero : _listenV;   // before the first leg the reference is rest
-        if ((vs.LinearVelocity - refV).LengthSquared() > 9 || vs.AngularVelocity.LengthSquared() > 0.0144) _aiMoveT = _now;
-    }
-    if (PatrolStep()) want = false;            // (runs without AI blocks too: the listening stops are then the script's camera sweep)     // on a patrol leg the script flies and the AI blocks stay off until the next listening stop
     want = AiGate(want);   // AI GATE: the AI blocks may do nothing (AI Behavior off): time-share with the script's own search
     if (want != _aiOn)
     {
@@ -2447,47 +2507,7 @@ bool AiStep()
     }
     return true;
 }
-// ---- SEARCH PATROL ---------------------------------------------------------------------------------------------------
-//  HUNT means "go and find them". The AI blocks only see out to their own search range, so a drone that has had no target for
-//  PatrolAfter seconds stops waiting at home: it flies chords of a square of "radius" PatrolRadius around the home point (cruise speed,
-//  AI blocks off), and stops every leg for PatrolListen seconds with the AI blocks on, which is when they look around. As soon as there is
-//  a target, or the drone takes damage, the patrol ends. Needs AI blocks, HUNT mode and open space (no planet gravity).
-bool PatrolOn = true, PatrolRandom = true;
-double PatrolRadius = 1200, PatrolAfter = 15, PatrolAfterFight = 90, PatrolListen = 6, PatrolMaxLeg = 40, PatrolSpeed = 60;
-bool _patrolLeg = false, _patrolFrame = false, _patrolStopSet = false; double _patrolPhaseT = -99, _noTgtSince = 0, _listenT = -1, _aiMoveT = -99, PatrolHold = 90; int _patrolK = 0; Vector3D _listenV;
-Vector3D _patrolWp, _patrolC, _patrolE1, _patrolE2, _patrolStop; double _patrolRadF = 1; int _patrolDir = 1;
-bool PatrolStep()
-{
-    if (!PatrolOn || _mode != Mode.HUNT || _rc == null || UnderFire || _now - _noTgtSince < (_lastTgtT < 0 ? PatrolAfter : PatrolAfterFight) || _rc.GetNaturalGravity().LengthSquared() > 0.25)
-    { _patrolLeg = false; return false; }
-    if (!_patrolLeg)
-    {
-        if (_listenT < 0 || _listenT < _patrolPhaseT) { _listenT = _now; _listenV = _rc.GetShipVelocities().LinearVelocity; }   // a listening stop begins
-        if (_now - _patrolPhaseT < PatrolListen) return false;
-        // The AI blocks need a few seconds to turn onto what they found and for a confirm ray to hit it. If the ship is being flown
-        // (velocity changed by more than 3 m/s, or it is turning) the AI has a target: leave it on, up to PatrolHold seconds.
-        if (_now - _listenT < PatrolHold && _now - _aiMoveT < 4) return false;
-        if (!_patrolFrame)
-        {
-            _patrolC = Home(); _patrolE1 = _rc.WorldMatrix.Forward; _patrolE2 = _rc.WorldMatrix.Right; _patrolFrame = true;
-            // fan out: hive mates start at different corners (slot = rank by grid id), plus a per-drone twist. Drones pasted from one
-            // blueprint face the same way, so without this they all flew the same first leg (in-game report 2026-10-13).
-            int rank = 0; foreach (var m in _mates.Values) if (m.Id < Me.CubeGrid.EntityId) rank++;
-            double a0 = 6.2831853 * rank / (_mates.Count + 1) + (Math.Abs(Me.CubeGrid.EntityId) % 628) * 0.001;
-            Vector3D e1 = _patrolE1 * Math.Cos(a0) + _patrolE2 * Math.Sin(a0);
-            _patrolE2 = _patrolE2 * Math.Cos(a0) - _patrolE1 * Math.Sin(a0); _patrolE1 = e1;
-            // every drone gets its own direction and radius (from its grid id), so identical scripts do not fly the same square in lock-step
-            // and miss each other (sim: mirror-image starts kept two patrolling ships 2.5-2.9 km apart for the whole 300 s). The first corner stays "forward".
-            int ph = PatrolRandom ? (int)(Math.Abs(Me.CubeGrid.EntityId) % 997) : 0;
-            _patrolDir = ((ph / 8) & 1) == 0 ? 1 : -1; _patrolRadF = PatrolRandom ? 0.8 + 0.1 * ((ph / 16) % 5) : 1;
-        }
-        double th = _patrolK++ * 1.5707963 * _patrolDir;
-        _patrolWp = _patrolC + (_patrolE1 * Math.Cos(th) + _patrolE2 * Math.Sin(th)) * (PatrolRadius * _patrolRadF);
-        _patrolLeg = true; _patrolPhaseT = _now; _listenT = -1;
-    }
-    else if (_now - _patrolPhaseT > PatrolMaxLeg || Vector3D.Distance(_rc.GetPosition(), _patrolWp) < 150) { _patrolLeg = false; _patrolPhaseT = _now; _patrolStop = _rc.GetPosition(); _patrolStopSet = true; }
-    return _patrolLeg;
-}
+// (the Hornet's SEARCH PATROL for HUNT is not carried: a warship is sent to its targets by the Staff / the pilot; control_arch M3 size cut)
 
 // The AI blocks keep their nose on an enemy that I wrote off as finished (tumbling, shrunk): if two confirm rays in 10 s find it there it is
 // still a live target for them (an AI that never lets go would otherwise idle this drone until its next search), so it comes off my ignore list.
