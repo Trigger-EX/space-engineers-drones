@@ -8,6 +8,7 @@
 2. the existing checks (skipped with --fast):
      build_all.py --only Hornet Gnat --no-zip      builds, re-validates and reloads the shipped drones (must PASS)
      probe_blueprints.py                           the risky-block probe set must still be writable
+     probe_ext.py                                  the paste probes of the extension (items, toolbars, cockpit, docked pod) must build and attach
      audit.py --shape <Hornet> <Starburst sample>  generated XML vs a game-written ship: tag presence / order
      audit.py --types <sample>                     the mount-point validator on a game-written multi-grid ship (100 % attached)
 --update-golden rewrites tools/tests/golden_hashes.json (sha256 of the bp.sbc of the shipped drones) after a deliberate design change.
@@ -35,6 +36,7 @@ def existing_checks():
         ok &= run([os.path.join(TOOLS, 'build_all.py'), '--only', 'Hornet', 'Gnat', '--no-zip', '--out', os.path.join(d, 'out')],
                   'build_all.py --only Hornet Gnat --no-zip', ' 0 FAIL')
         ok &= run([os.path.join(TOOLS, 'probe_blueprints.py'), os.path.join(d, 'probes')], 'probe_blueprints.py')
+        ok &= run([os.path.join(TOOLS, 'probe_ext.py'), os.path.join(d, 'probes_ext')], 'probe_ext.py', 'E21_Docked_Pod_Locked')
         hornet = os.path.join(d, 'out', 'Blueprints', 'Hornet', 'bp.sbc')
         if ground.have_samples():
             star = [f for f in ground.files() if ground.name_of(f) == 'Starburst']

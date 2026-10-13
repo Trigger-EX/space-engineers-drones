@@ -258,7 +258,11 @@ Tags: **seen** = reproduced from / verified against a game-written file, **deriv
   `ConnectedEntityId` right after `Enabled`, same `MasterToSlaveTransform`, `IsApproaching`/`IsConnecting true`, `TimeOfConnection` 60000 [arbitrary]; master = the child's
   block with `MasterToSlaveGrid`). Whether a paste restores the lock is **unverified** (test C2 of docs/design/grids_bays.md). Merge blocks store no lock.
 
-### 7.6 Still open
+### 7.6 In-game test plan for the extension, and what is still open
+
+`python3 -I tools/probe_ext.py out/probes_ext` writes 13 paste probes (E01 small gatling with 4 boxes ... E14 bridge seat, E20/E21 docked pod unlocked / locked); the header of
+the file says what to look at after each paste. Nothing of the extension has been pasted in the game yet.
+
 
 * In-game paste of any new shape (turrets, reactor, cargo with items, cockpit, locked connectors, toolbars with groups) has not been done.
 * Unseen subtypes: see `sebp.shape_report()`; notably 6 thrusters, 7 cockpits (container omitted), the small turrets and interior turret (container from the large
