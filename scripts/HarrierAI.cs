@@ -486,8 +486,15 @@ bool LnBurn(double dt, bool idle, string startMode, Action<string> cmd)
         return false;
     }
     bool cut = vAway >= _lnSpeed;
-    double best = 0;
+    double best = -2;
     foreach (var t in _lnThr) if (t.IsFunctional) best = Math.Max(best, Vector3D.Dot(t.WorldMatrix.Backward, _lnDir));
+    if (best <= 0.3 && best > -0.2)
+    {   // no thruster pushes (nearly) along Away (e.g. a ship with only fore/aft thrusters and a sideways Away): burn along the best thruster axis, which is perpendicular to Away, never toward the printer
+        Vector3D alt = Vector3D.Zero; double ab = -2;
+        foreach (var t in _lnThr) if (t.IsFunctional) { double q = Vector3D.Dot(t.WorldMatrix.Backward, _lnDir); if (q > ab) { ab = q; alt = t.WorldMatrix.Backward; } }
+        if (alt.LengthSquared() > 0.5) { _lnDir = Vector3D.Normalize(alt); _lnP0 = Me.GetPosition(); best = 1; _lnMsg += ", thrust axis"; }
+    }
+    if (best < 0) best = 0;
     foreach (var t in _lnThr)
     {
         double c = t.IsFunctional ? Vector3D.Dot(t.WorldMatrix.Backward, _lnDir) : 0;

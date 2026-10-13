@@ -296,11 +296,271 @@ void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_fl
 void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
 // <<< FLEET LINK <<<
 
+// >>> LAUNCH v1.0 (shared block: identical in every drone script, see docs/launch-protocol.md) >>>
+// Automatic take-off for drones that were printed on (merged to) a printer. A drone must leave and start working WITHOUT depending on one message:
+//   * it notices on its own that the merge pair opened (no connected merge block on its grid any more, or the grid changed) and then
+//   * burns away from the printer for "Burst Seconds" (gyros held at zero rate, thrusters pushed along the Away vector, dampeners off),
+//   * clears the merge/antenna/thruster/gyro/battery switches that welding may have left off, and
+//   * switches the script into its configured mode (the script's Start Mode, or [Launch] Mode when that is IDLE).
+// Other triggers that do the same: Custom Data [Launch] Armed=true while the PB is not docked (a PB recompiled after the release),
+// the argument "armed" (printer arms it while the drone is still on its grid), the argument "launch", a "<Tag>_JOIN" broadcast or a
+// FLEET "<ch>_CMD" string "join" (only for an IDLE, complete, undocked drone), and a docked -> undocked change seen by the PB itself.
+// Custom Data (own [Launch] section; defaults are written on the first run, "reload" re-reads them):
+//   Auto=true  Burst Seconds=4  Away X/Y/Z=0 (world vector away from the printer, zero = unknown)  Armed=false  Clear Distance=8
+//   Max Speed=25  Mode=GUARD
+// Script hooks (the only lines a script needs): LaunchLoad() after LoadConfig() and FleetLoad() (constructor and "reload"); in Command():
+//   case "armed": case "launch": case "disarm": LaunchCmd(word); break;   at the very top of Control(dt) (or the tick, before any thrust):
+//   if (LaunchStep(dt, <mode is IDLE>, StartMode, <home known>, <home point>, Command)) return;    LaunchStatus() in the display text.
+// The block needs the script's fields: Tag (IGC tag) and _flChan (FLEET LINK block); everything else is its own.
+const string LnSec = "Launch";
+int _lnS;                                   // 0 free, 1 docked and armed (waiting for the separation), 2 take-off burn, 3 launched
+bool _lnAuto = true, _lnArmed, _lnHold, _lnForce, _lnLocOk, _lnDock, _lnHomeOk, _lnPending;
+double _lnBurst = 4, _lnClear = 8, _lnSpeed = 25, _lnClock, _lnT, _lnJoinT = -999;
+string _lnModeCfg = "GUARD", _lnMsg = "", _lnJKey = "";
+Vector3D _lnAwayCfg, _lnAwayLoc, _lnDir, _lnP0, _lnHome;
+IMyCubeGrid _lnGrid;
+long _lnTick; int _lnFree, _lnWait;
+IMyBroadcastListener _lnJ1, _lnJ2;
+List<IMyShipMergeBlock> _lnMg = new List<IMyShipMergeBlock>();
+List<IMyThrust> _lnThr = new List<IMyThrust>();
+List<IMyGyro> _lnGy = new List<IMyGyro>();
+IMyShipController _lnCtl;
+
+void LaunchLoad()
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    if (!ini.ContainsKey(LnSec, "Auto")) ini.Set(LnSec, "Auto", true);
+    if (!ini.ContainsKey(LnSec, "Burst Seconds")) ini.Set(LnSec, "Burst Seconds", _lnBurst);
+    if (!ini.ContainsKey(LnSec, "Away X")) ini.Set(LnSec, "Away X", 0.0);
+    if (!ini.ContainsKey(LnSec, "Away Y")) ini.Set(LnSec, "Away Y", 0.0);
+    if (!ini.ContainsKey(LnSec, "Away Z")) ini.Set(LnSec, "Away Z", 0.0);
+    if (!ini.ContainsKey(LnSec, "Armed")) ini.Set(LnSec, "Armed", false);
+    if (!ini.ContainsKey(LnSec, "Clear Distance")) ini.Set(LnSec, "Clear Distance", _lnClear);
+    if (!ini.ContainsKey(LnSec, "Max Speed")) ini.Set(LnSec, "Max Speed", _lnSpeed);
+    if (!ini.ContainsKey(LnSec, "Mode")) ini.Set(LnSec, "Mode", _lnModeCfg);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    _lnAuto = ini.Get(LnSec, "Auto").ToBoolean(true);
+    _lnBurst = MathHelper.Clamp(ini.Get(LnSec, "Burst Seconds").ToDouble(4), 0.5, 20);
+    _lnClear = MathHelper.Clamp(ini.Get(LnSec, "Clear Distance").ToDouble(8), 1, 200);
+    _lnSpeed = MathHelper.Clamp(ini.Get(LnSec, "Max Speed").ToDouble(25), 3, 200);
+    _lnModeCfg = ini.Get(LnSec, "Mode").ToString("GUARD");
+    _lnAwayCfg = new Vector3D(ini.Get(LnSec, "Away X").ToDouble(0), ini.Get(LnSec, "Away Y").ToDouble(0), ini.Get(LnSec, "Away Z").ToDouble(0));
+    if (ini.Get(LnSec, "Armed").ToBoolean(false)) _lnArmed = true;
+    string fl = _flChan != "" ? _flChan + "_CMD" : "";
+    string key = Tag + "|" + fl;
+    if (key != _lnJKey)
+    {
+        _lnJKey = key;
+        if (_lnJ1 != null) IGC.DisableBroadcastListener(_lnJ1);
+        if (_lnJ2 != null) IGC.DisableBroadcastListener(_lnJ2);
+        _lnJ1 = IGC.RegisterBroadcastListener(Tag + "_JOIN");
+        _lnJ2 = fl != "" ? IGC.RegisterBroadcastListener(fl) : null;
+    }
+}
+
+void LnWrite(bool armed)
+{
+    var ini = new MyIni(); MyIniParseResult r;
+    if (!ini.TryParse(Me.CustomData, out r)) return;
+    ini.Set(LnSec, "Armed", armed);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+}
+
+void LaunchCmd(string w)
+{
+    switch (w)
+    {
+        case "armed": LaunchLoad(); _lnHold = false; _lnArmed = true; LnWrite(true); if (_lnS == 3) _lnS = 0; break;
+        case "launch": if (_lnS < 2) _lnForce = true; break;
+        case "disarm": _lnHold = true; _lnArmed = false; _lnForce = false; if (_lnS == 1) _lnS = 0; LnWrite(false); break;
+    }
+}
+
+void LnRead()
+{
+    if (_lnJ1 != null) while (_lnJ1.HasPendingMessage) { _lnJ1.AcceptMessage(); _lnJoinT = _lnClock; }
+    if (_lnJ2 != null)
+        while (_lnJ2.HasPendingMessage)
+        {
+            var m = _lnJ2.AcceptMessage();
+            if (m.Data is string && ((string)m.Data).Trim().ToLowerInvariant() == "join") _lnJoinT = _lnClock;
+        }
+}
+
+// is a merge pair of this grid locked? Also learns the direction away from the partner block (the block of the pair nearest to the PB is the drone's).
+bool LnDocked()
+{
+    var g = Me.CubeGrid;
+    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g && b.IsConnected);
+    if (_lnMg.Count == 0) return false;
+    if (_lnMg.Count >= 2)
+    {
+        Vector3D me = Me.GetPosition(); IMyShipMergeBlock d = null, p = null; double best = double.MaxValue;
+        foreach (var m in _lnMg) { double q = (m.GetPosition() - me).LengthSquared(); if (q < best) { best = q; d = m; } }
+        best = double.MaxValue;
+        foreach (var m in _lnMg) if (m != d) { double q = (m.GetPosition() - d.GetPosition()).LengthSquared(); if (q < best) { best = q; p = m; } }
+        Vector3D a = d.GetPosition() - p.GetPosition();
+        if (a.LengthSquared() > 1e-4) { a.Normalize(); _lnAwayLoc = Vector3D.TransformNormal(a, MatrixD.Transpose(Me.WorldMatrix)); _lnLocOk = true; }
+    }
+    return true;
+}
+
+// every terminal block of the grid works and there is a thruster and a controller: a half-built drone must not take off on a stray "join"
+bool LnComplete()
+{
+    var g = Me.CubeGrid; var l = new List<IMyTerminalBlock>(); bool thr = false, ctl = false;
+    GridTerminalSystem.GetBlocksOfType(l, b => b.CubeGrid == g);
+    foreach (var b in l) { if (!b.IsFunctional) return false; if (b is IMyThrust) thr = true; if (b is IMyShipController) ctl = true; }
+    return thr && ctl;
+}
+
+// welded blocks may come off: switch on what the flight needs, the merge block off (it must never re-latch)
+void LnPrep()
+{
+    var g = Me.CubeGrid;
+    _lnThr.Clear(); _lnGy.Clear(); _lnCtl = null;
+    GridTerminalSystem.GetBlocksOfType(_lnThr, b => b.CubeGrid == g);
+    GridTerminalSystem.GetBlocksOfType(_lnGy, b => b.CubeGrid == g);
+    foreach (var t in _lnThr) if (!t.Enabled) t.Enabled = true;
+    foreach (var y in _lnGy) if (!y.Enabled) y.Enabled = true;
+    var bats = new List<IMyBatteryBlock>(); GridTerminalSystem.GetBlocksOfType(bats, b => b.CubeGrid == g);
+    foreach (var b in bats) { if (!b.Enabled) b.Enabled = true; if (b.ChargeMode != ChargeMode.Auto) b.ChargeMode = ChargeMode.Auto; }
+    var ants = new List<IMyRadioAntenna>(); GridTerminalSystem.GetBlocksOfType(ants, b => b.CubeGrid == g);
+    foreach (var a in ants) { if (!a.Enabled) a.Enabled = true; if (!a.EnableBroadcasting) a.EnableBroadcasting = true; }
+    var guns = new List<IMyUserControllableGun>(); GridTerminalSystem.GetBlocksOfType(guns, b => b.CubeGrid == g);
+    foreach (var b in guns) if (!b.Enabled) b.Enabled = true;
+    var cams = new List<IMyCameraBlock>(); GridTerminalSystem.GetBlocksOfType(cams, b => b.CubeGrid == g);
+    foreach (var b in cams) if (!b.Enabled) b.Enabled = true;
+    var mgs = new List<IMyShipMergeBlock>(); GridTerminalSystem.GetBlocksOfType(mgs, b => b.CubeGrid == g);
+    foreach (var b in mgs) if (b.Enabled) b.Enabled = false;
+    var ctrls = new List<IMyShipController>(); GridTerminalSystem.GetBlocksOfType(ctrls, b => b.CubeGrid == g && b.CanControlShip);
+    foreach (var c in ctrls) if (c is IMyRemoteControl) { _lnCtl = c; break; }
+    if (_lnCtl == null && ctrls.Count > 0) _lnCtl = ctrls[0];
+}
+
+// the release is only complete when the grid has split: while the printer's merge block is still on this grid the thrusters/gyros found here may be the printer's
+bool LnReady()
+{
+    var g = Me.CubeGrid;
+    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g);
+    if (_lnMg.Count < 2 || ++_lnWait > 9) return true;       // (gives up waiting after ~1.7 s)
+    _lnPending = true; return false;
+}
+
+void LnBegin()
+{
+    _lnWait = 0; _lnPending = false;
+    _lnForce = false; _lnS = 2; _lnT = 0; _lnJoinT = -999;
+    LnPrep();
+    Vector3D me = Me.GetPosition(), d = Vector3D.Zero; string src = "";
+    Vector3D lw = _lnLocOk ? Vector3D.TransformNormal(_lnAwayLoc, Me.WorldMatrix) : Vector3D.Zero;
+    if (_lnAwayCfg.LengthSquared() > 0.25 && !(_lnLocOk && Vector3D.Dot(Vector3D.Normalize(_lnAwayCfg), lw) < -0.2)) { d = _lnAwayCfg; src = "Custom Data"; }   // (a stored vector that points INTO the printer is ignored)
+    else if (_lnLocOk) { d = lw; src = "merge pair"; }
+    else if (LnOwnMerge(me, ref d)) src = "own merge block";
+    else if (_lnHomeOk && (me - _lnHome).LengthSquared() > 25) { d = me - _lnHome; src = "home point"; }
+    else { d = _lnCtl != null ? _lnCtl.WorldMatrix.Backward : Me.WorldMatrix.Backward; src = "own back"; }
+    _lnDir = Vector3D.Normalize(d); _lnP0 = me;
+    _lnMsg = "away from " + src;
+}
+
+// no printer information: the drone's own merge block sits on the side that faced the printer, so "from the merge block to the centre of mass" points away from it
+bool LnOwnMerge(Vector3D me, ref Vector3D d)
+{
+    var g = Me.CubeGrid;
+    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g);
+    if (_lnMg.Count == 0 || _lnCtl == null) return false;
+    IMyShipMergeBlock mb = _lnMg[0];
+    foreach (var m in _lnMg) if ((m.GetPosition() - me).LengthSquared() < (mb.GetPosition() - me).LengthSquared()) mb = m;
+    Vector3D v = _lnCtl.CenterOfMass - mb.GetPosition();
+    if (v.LengthSquared() < 0.09) return false;
+    d = v; return true;
+}
+
+// one tick of the take-off: true = the script must not fly this tick
+bool LnBurn(double dt, bool idle, string startMode, Action<string> cmd)
+{
+    _lnT += dt;
+    double moved = Vector3D.Dot(Me.GetPosition() - _lnP0, _lnDir);
+    double vAway = _lnCtl != null ? Vector3D.Dot(_lnCtl.GetShipVelocities().LinearVelocity, _lnDir) : 0;
+    if (_lnT >= _lnBurst || (_lnT >= 0.5 && moved >= _lnClear && vAway > 1))
+    {
+        foreach (var t in _lnThr) t.ThrustOverridePercentage = 0;
+        foreach (var y in _lnGy) { y.GyroOverride = false; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }
+        if (_lnCtl != null) _lnCtl.DampenersOverride = true;
+        _lnS = 3; _lnArmed = false; LnWrite(false);
+        string m = startMode.Trim().ToUpperInvariant();
+        if (m == "" || m == "IDLE") m = _lnModeCfg.Trim().ToUpperInvariant();
+        _lnMsg = "took off (" + _lnMsg + ", " + moved.ToString("0") + " m, " + _lnT.ToString("0.0") + " s), mode " + m;
+        if (idle && m != "" && m != "IDLE") { cmd("home"); cmd(m.ToLowerInvariant()); }
+        return false;
+    }
+    bool cut = vAway >= _lnSpeed;
+    double best = -2;
+    foreach (var t in _lnThr) if (t.IsFunctional) best = Math.Max(best, Vector3D.Dot(t.WorldMatrix.Backward, _lnDir));
+    if (best <= 0.3 && best > -0.2)
+    {   // no thruster pushes (nearly) along Away (e.g. a ship with only fore/aft thrusters and a sideways Away): burn along the best thruster axis, which is perpendicular to Away, never toward the printer
+        Vector3D alt = Vector3D.Zero; double ab = -2;
+        foreach (var t in _lnThr) if (t.IsFunctional) { double q = Vector3D.Dot(t.WorldMatrix.Backward, _lnDir); if (q > ab) { ab = q; alt = t.WorldMatrix.Backward; } }
+        if (alt.LengthSquared() > 0.5) { _lnDir = Vector3D.Normalize(alt); _lnP0 = Me.GetPosition(); best = 1; _lnMsg += ", thrust axis"; }
+    }
+    if (best < 0) best = 0;
+    foreach (var t in _lnThr)
+    {
+        double c = t.IsFunctional ? Vector3D.Dot(t.WorldMatrix.Backward, _lnDir) : 0;
+        t.ThrustOverridePercentage = (!cut && best > 0.3 && c > 0.15) ? (float)Math.Max(0.01, c / best) : 0f;
+    }
+    foreach (var y in _lnGy) { y.GyroOverride = true; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }   // hold the attitude: a zero rate command
+    if (_lnCtl != null) _lnCtl.DampenersOverride = false;
+    return true;
+}
+
+bool LaunchStep(double dt, bool idle, string startMode, bool homeOk, Vector3D home, Action<string> cmd)
+{
+    _lnTick++; _lnClock += dt;
+    _lnHomeOk = homeOk; _lnHome = home;
+    LnRead();
+    if (_lnS == 2) return LnBurn(dt, idle, startMode, cmd);
+    if (_lnS == 3) return false;
+    bool changed = Me.CubeGrid != _lnGrid;
+    bool join = _lnClock - _lnJoinT < 3;                     // the printer repeats "join" every 2 s
+    if (!(changed || (_lnForce && _lnTick % 10 == 0) || _lnTick % (_lnS == 1 || _lnPending ? 10 : 60) == 0 || (join && _lnTick % 10 == 0))) return false;   // (never more than 6 checks a second)
+    _lnGrid = Me.CubeGrid;
+    _lnDock = LnDocked(); _lnPending = false;
+    if (_lnS == 0)
+    {
+        if (_lnDock)
+        {
+            if (!_lnHold) { _lnS = 1; _lnFree = 0; if (!_lnArmed) { _lnArmed = true; LnWrite(true); } }
+            return false;
+        }
+        if (_lnHold && !_lnForce) return false;
+        bool go = _lnForce || (_lnAuto && (_lnArmed || (join && idle && LnComplete())));
+        if (go && LnReady()) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); }
+        return false;
+    }
+    if (_lnDock) { _lnFree = 0; return false; }              // state 1: still locked
+    if (++_lnFree < 2 && !changed) return false;             // (two checks in a row, so that one odd reading does not launch)
+    if (_lnAuto || _lnForce) { if (LnReady()) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); } return false; }
+    _lnS = 0;                                                // Auto=false: wait for the "launch" command
+    return false;
+}
+
+string LaunchStatus()
+{
+    if (_lnS == 1) return "Launch: docked, waiting for the release\n";
+    if (_lnS == 2) return "Launch: take-off burn " + _lnT.ToString("0.0") + " s\n";
+    if (_lnS == 3) return _lnMsg != "" ? "Launch: " + _lnMsg + "\n" : "";
+    return _lnArmed ? "Launch: armed\n" : "";
+}
+// <<< LAUNCH <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
     LoadConfig();
     FleetLoad(true);
+    LaunchLoad();
     InitHold();
     _mode = ParseMode(StartMode, Mode.IDLE);
     if (!string.IsNullOrEmpty(Storage))
@@ -319,7 +579,6 @@ public Program()
     if (!string.IsNullOrEmpty(ExtraHomeTag)) _lHome2 = IGC.RegisterBroadcastListener(ExtraHomeTag);
     _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
     _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
-    _lJoin = IGC.RegisterBroadcastListener(Tag + "_JOIN");
     RegisterFeeds();
     _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
     GetBlocks();
@@ -363,7 +622,7 @@ void Tick(string arg, UpdateType src)
     CheckGrid();
     if (_rc == null || !_rc.IsFunctional) { _err = "No working Remote Control / cockpit"; Display(); Release(); return; }
 
-    ReadIGC(); ReadJoin(); ReadSwarm();
+    ReadIGC(); ReadSwarm();
     if (_tick % 6 == 3) BroadcastStatus();
     StepSlimScan();
     if (_tick % 20 == 7) CheckDamage();
@@ -404,7 +663,8 @@ void Command(string a)
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
             double r; if (w.Length > 1 && double.TryParse(w[1], out r)) Standoff = MathHelper.Clamp(r, MinRange, MaxFireRange); break;
-        case "reload": LoadConfig(); FleetLoad(true); GetBlocks(); break;
+        case "reload": LoadConfig(); FleetLoad(true); LaunchLoad(); GetBlocks(); break;
+        case "armed": case "launch": case "disarm": LaunchCmd(w[0]); break;
     }
 }
 
@@ -925,6 +1185,7 @@ void PowerAndHealth()
 bool Huge(Track t) { return t.RawMax > HugeTargetRadius; }
 void Control(double dt)
 {
+    if (LaunchStep(dt, _mode == Mode.IDLE, StartMode, _now - _dynHomeT < 5, _dynHome, Command)) return;   // automatic take-off after the release from a printer (LAUNCH block)
     var vels = _rc.GetShipVelocities();
     Vector3D myVel = vels.LinearVelocity;
     Vector3D grav = _rc.GetNaturalGravity();
@@ -1233,6 +1494,7 @@ void Display()
     _sb.Append("Ins    : ").Append(Runtime.CurrentInstructionCount).Append(" / ").Append(Runtime.MaxInstructionCount).Append("  peak ").Append(_peakIns).Append('\n');
     if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
     _sb.Append(HiveStatus());
+    _sb.Append(LaunchStatus());
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner: set ownership\n");
     if (_err != "") _sb.Append("! ").Append(_err).Append('\n');
     string s = _sb.ToString();
@@ -1751,21 +2013,4 @@ bool AiModeOk() { return _mode == Mode.GUARD || _mode == Mode.HUNT; }
 //  * "<Tag>_JOIN" from a printer: an IDLE drone (fresh off the printer) starts working; drones that
 //    are already busy ignore it.
 IMyCubeGrid _myGrid;
-IMyBroadcastListener _lJoin;
 void CheckGrid() { if (Me.CubeGrid != _myGrid) { _myGrid = Me.CubeGrid; GetBlocks(); } }
-void ReadJoin()
-{
-    while (_lJoin.HasPendingMessage)
-    {
-        _lJoin.AcceptMessage();
-        if (_mode == Mode.IDLE && !Docked()) { GetBlocks(); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } SetMode(Mode.GUARD); }
-    }
-}
-// still latched to a printer?
-bool Docked()
-{
-    var merges = new List<IMyShipMergeBlock>();
-    GridTerminalSystem.GetBlocksOfType(merges, b => b.CubeGrid == Me.CubeGrid);
-    foreach (var m in merges) if (m.IsConnected) return true;
-    return false;
-}

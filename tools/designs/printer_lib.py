@@ -6,7 +6,8 @@ CONCEPTS
              drone's grid axes equal the printer's grid axes.  (Rotation would need Keen's yaw/pitch/roll mapping, see below.)
   Bay        projector [Bay N] + SmallShipWelder(s) [Bay N] + merge block [Bay N], plus the armour scaffold that carries them.
              The printer merge block sits in the cell the drone merge block clamps toward; the clamp faces oppose.
-  Solver     `solve_bay(drone)` finds welder positions (set cover over the drone's blocks, reach model in reach.py), keeps every
+  Solver     `solve_bay_auto(drone)` finds welder positions (weighted set cover over (block, sphere hypothesis) pairs, hypothesis family in
+             reach.py, numpy candidate generation, randomised restarts + repair), keeps every
              printer cell out of the drone's 26-neighbourhood and clear zones, routes armour from each welder's mounting face to
              the merge stalk and places the projector.  Results are cached per drone model.
 
@@ -170,20 +171,32 @@ def solve_bay_auto(drone, margin_m=None, avoid_axes=(), prefer=None):
     if prefer is not None and tuple(prefer) in opts: opts.remove(tuple(prefer)); opts.insert(1, tuple(prefer))      # right after the straight-back exit
     key = (drone.name, _drone_sig(drone), tuple(opts))
     if key in _AUTO: return _AUTO[key]
-    best = None; last = None
+    scored = []; last = None
     for ei, e in enumerate(opts):
         for mi, (gap, soft) in enumerate(MODES):
             try:
                 ctx = _prepare(drone, soft, gap, e)
             except AssertionError as ex:
                 last = last or ex; continue
-            sc = (ctx['n_infeasible'], ei, mi)
-            if best is None or sc < best[0]: best = (sc, ctx)
-        if best is not None and best[0][0] == 0: break
+            scored.append(((ctx['n_infeasible'], ei, mi), ctx))
+        if scored and min(sc[0][0] for sc in scored) == 0: break
+    if not scored: raise last
+    scored.sort(key=lambda t: t[0])
+    # run the real cover on the best few settings: welders blocking each other can make a nominally better setting worse
+    best = None
+    for sc, ctx in scored[:TRY_SETTINGS]:
+        try:
+            des = _cover(ctx)
+        except AssertionError as ex:
+            last = last or ex; continue
+        rk = (des.stats['missA'], des.stats['unmet_weight'], len(des.welders), sc)
+        if best is None or rk < best[0]: best = (rk, des)
     if best is None: raise last
-    des = _cover(best[1])
-    _AUTO[key] = des
-    return des
+    _AUTO[key] = best[1]
+    return best[1]
+
+TRY_SETTINGS = 3
+REPAIR_ITERS = 30
 
 _AUTO = {}
 
@@ -291,7 +304,7 @@ def _prepare(drone, soft_camera, gap, exit_dir, max_pad=9):
 
 _CTX = {}
 WELDER_BUDGET = 12        # soft cap per bay for the best-effort hypotheses (tier A may exceed it when the drone needs more)
-RESTARTS = 24             # randomised greedy restarts; the best (fewest tier-A misses, least unmet weight, fewest welders) wins
+RESTARTS = 12             # randomised greedy restarts; the best (fewest tier-A misses, least unmet weight, fewest welders) wins
 # importance of each FAMILY hypothesis (tier A = FAM[:4], must be met wherever any legal welder position can do it; the rest is best effort)
 HYP_WEIGHT = {'tip r1.3': 8, 'tip r1.0': 8, 'tip-1 r1.3': 6, 'tip-1 r1.0': 6, 'tip-2 r1.3': 3, 'tip-2 r1.0': 2, 'mid r1.3': 2, 'mid r1.0': 1}
 TIER_A = reach.TIER_A
@@ -331,6 +344,24 @@ def _cover(ctx):
         if res is None: continue
         sc = (res['missA'], res['unmet'], len(res['chosen']))
         if best is None or sc < best[0]: best = (sc, res)
+    # repair: a tier-A pair that no restart managed (welders blocking each other): force a welder that reaches it, let the cover adapt around it
+    forced = []
+    rng = random.Random(77)
+    by_e = collections.defaultdict(list)
+    for ci, cc in enumerate(cand):
+        for e in _bits(cc[3] & tierA): by_e[e].append(ci)
+    it = 0
+    while best is not None and best[0][0] > 0 and it < REPAIR_ITERS:
+        it += 1
+        miss = tierA & ~best[1]['union']
+        e = rng.choice(list(_bits(miss)))
+        forced.append(rng.choice(by_e[e]))
+        if len(forced) > 6: forced.pop(rng.randrange(len(forced) - 1))
+        res = _greedy(ctx2, rng, 0.3, forced)
+        if res is None: continue
+        sc = (res['missA'], res['unmet'], len(res['chosen']))
+        if sc < best[0]: best = (sc, res)
+        elif sc[0] <= best[0][0] + 1 and rng.random() < 0.5: best = (sc, res) if sc[0] <= best[0][0] else best
     assert best, f'{drone.name}: no welder layout found'
     res = best[1]
     chosen = res['chosen']
@@ -363,11 +394,15 @@ def _cover(ctx):
         m = hb[k] & ctx['infeasible']
         if m: imp[h.name] = set(names(m))
     des.impossible = imp
+    # tier-A pairs that were reachable in principle but not together with the other welders (they block each other): listed, the verifier waives them
+    ta = [h.name for h in FAM[:TIER_A]]
+    des.conflict = {k: v for k, v in inf.items() if k in ta and v - imp.get(k, set())}
+    des.conflict = {k: v - imp.get(k, set()) for k, v in des.conflict.items()}
     des.stats = dict(welders=len(chosen), scaffold=len(armour), candidates=len(cand), gap=des.gap, soft_camera=des.soft_camera,
-                     infeasible_pairs=ctx['n_infeasible'], unmet_pairs=_pop(sum(hb) & ~res['union']), missA=res['missA'])
+                     infeasible_pairs=ctx['n_infeasible'], unmet_pairs=_pop(sum(hb) & ~res['union']), missA=res['missA'], unmet_weight=res['unmet'])
     return des
 
-def _greedy(ctx, rng, noise):
+def _greedy(ctx, rng, noise, forced=()):
     des = ctx['des']; F = ctx['F']; cand = ctx['cand']; nb = ctx['nb']; Mp = ctx['Mp']; S1 = ctx['S1']
     hb = ctx['hb']; wts = ctx['wts']; feas = ctx['feas']; tierA = ctx['tierA']; inbox = ctx['inbox']; center_dist = ctx['center_dist']
     red_bits = hb[RED_IDX]
@@ -390,7 +425,9 @@ def _greedy(ctx, rng, noise):
         occupied |= set(cs); occupied |= set(path); struct |= set(path); armour |= set(path)
         union |= m
         return True
-    need = tierA
+    for ci in forced:                                   # candidates a repair pass insisted on (see _cover)
+        if not (cand[ci][2] & occupied) and (cand[ci][0], cand[ci][1]) not in banned: add(ci)
+    need = tierA & ~union
     while need:
         us = usable_all()
         hard = None; hc = None; counts = []
@@ -950,12 +987,16 @@ class Printer:
             if self.occ.get(A, {}).get('sub') not in ('SmallBlockArmorBlock', 'SmallHeavyBlockArmorBlock'): continue
             if A[2] != -POD_R: continue
             cells = [add3(A, mul3(m, k)) for k in range(1, length + 1)]
-            zone = [add3(A, mul3(m, k)) for k in range(length + 1, length + 1 + muzzle)]
             if not all(self.is_free(c) for c in cells): continue
-            if any((c in self.occ) or (c in self.noprint) for c in zone): continue
+            mz = None                                         # the full muzzle clearance if possible, else down to 3 cells (the bays stand in front now)
+            for cand_mz in sorted({muzzle, 5, 4, 3}, reverse=True):
+                if cand_mz > muzzle: continue
+                zone = [add3(A, mul3(m, k)) for k in range(length + 1, length + 1 + cand_mz)]
+                if not any((c in self.occ) or (c in self.noprint) for c in zone): mz = cand_mz; break
+            if mz is None: continue
             mn = tuple(min(cc[j] for cc in cells) for j in range(3))
             g = bp.add(xtype, sub, mn, 'Forward', 'Up', self.nm(f'Gatling {placed + 1}'), GUN, kind='gun')
-            bp.keep_clear(g, muzzle, 'muzzle')
+            bp.keep_clear(g, mz, 'muzzle')
             self._own(g); placed += 1
         assert placed == n, f'{self.label}: only {placed} of {n} guns fit'
 

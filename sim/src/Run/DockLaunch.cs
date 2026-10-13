@@ -175,7 +175,7 @@ namespace SeSim.Run
                 if (!joinSent && joinAt >= 0 && now >= joinAt)
                 {
                     joinSent = true;
-                    string tag = model == "Harrier" ? "HARRIER" : "HORNET";
+                    string tag = model.Split(new[] { (char)32 }, 2)[0].ToUpperInvariant();   // WASP, LANCER, HORNET, HARRIER ...
                     SendJoin(w, pb, tag);
                 }
                 w.Step();
@@ -222,9 +222,10 @@ namespace SeSim.Run
         static string ModeOf(string echo)
         {
             if (string.IsNullOrEmpty(echo)) return null;
-            int i = echo.IndexOf("Mode   : ", StringComparison.Ordinal);
+            int i = echo.IndexOf("Mode   : ", StringComparison.Ordinal), skip = 9;
+            if (i < 0) { i = echo.IndexOf("Mode : ", StringComparison.Ordinal); skip = 7; }   // Gnat prints "Mode : FORM"
             if (i < 0) return null;
-            i += 9; int j = echo.IndexOf('\n', i); if (j < 0) j = echo.Length;
+            i += skip; int j = echo.IndexOf('\n', i); if (j < 0) j = echo.Length;
             return echo.Substring(i, j - i).Trim();
         }
 

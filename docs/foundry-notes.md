@@ -13,10 +13,10 @@
 ### FINISH
 * Welders stay on. `Power(b,false)` is ignored in BUILD and FINISH; only `Fault()` (after the state changed) and later states switch them off.
 * Done when a complete pass over the bay's cell box found: no non-null slim block (excluding `Ignore Cells`, the printer merge block) that is
-  not `IsFullIntegrity` or whose FatBlock is not `IsFunctional`; occupied cells >= `Drone Cell Count` - `Drone Cell Tolerance` (default 2);
+  not `IsFullIntegrity` or whose FatBlock is not `IsFunctional`; unique blocks found >= `Drone Cell Count` - `Drone Cell Tolerance` (default 2);
   and the pass started while `RemainingBlocks == 0`. Also `RemainingBlocks <= 0` at the end.
 * Bay keys (Custom Data, `[Bay N]`, written by the blueprint tooling, coordinates are the printer grid's cell coordinates):
-  `Drone Box Min=x,y,z`, `Drone Box Max=x,y,z`, `Drone Cell Count=n` (occupied cells; the script counts cells, which also satisfies a block count
+  `Drone Box Min=x,y,z`, `Drone Box Max=x,y,z`, `Drone Cell Count=n` (unique drone blocks, as printer_lib writes it; compared with the unique blocks found, which also satisfies a block count
   because cells >= blocks), `Drone Cell Tolerance`, `Ignore Cells=x,y,z;x,y,z`, `Skip Finish Check=false`, `Launch Burst Seconds`.
   Box > 200000 cells is rejected with a warning. Scan budget 150 cells per Update10 tick per bay.
 * Without box keys: terminal blocks starting with the bay prefix must all be functional + full integrity, and `Finish Fallback Seconds` (90) must

@@ -165,7 +165,9 @@ void GetBlocks()
         {
             bay.Tag = C(sec, "Tag", bay.Tag); bay.Prefix = C(sec, "Prefix", bay.Prefix); bay.Cap = (int)C(sec, "Max Alive", bay.Cap); bay.MaxPrints = (int)C(sec, "Max Prints", bay.MaxPrints);
             bool held = C(sec, "Hold", bay.Held); bay.Held = held;
-            bay.Exit = C(sec, "Exit Direction (printer axis the drone leaves along, blank means straight away from the merge block)", bay.Exit);
+            string exl = C(sec, "Exit Direction (printer axis the drone leaves along, blank means straight away from the merge block)", bay.Exit);
+            if (_ini.ContainsKey(sec, "Exit Direction")) { string exs = _ini.Get(sec, "Exit Direction").ToString("").Trim(); if (exs != "") exl = exs; }   // short key = what printer_lib writes
+            bay.Exit = exl;
             bay.SkipFinish = C(sec, "Skip Finish Check", false);
             bay.Burst = C(sec, "Launch Burst Seconds", LaunchBurst);
             bay.Cells = (int)C(sec, "Drone Cell Count", 0.0);
@@ -422,7 +424,7 @@ void StepFinish(Bay b, double t)
     Stall(b);
     if (b.Starved) b.T += _dt;
     else if (t > FinishTimeout)
-        Fault(b, "finish timeout: " + (b.HavePass ? b.LBad + " unfinished, " + b.LCells + "/" + b.Cells + " cells. " + b.LBadText : "scan never completed") + (rem > 0 ? " " + rem + " blocks never placed (unsupported?)" : ""));
+        Fault(b, "finish timeout: " + (b.HavePass ? b.LBad + " unfinished, " + b.LBlocks + "/" + b.Cells + " blocks. " + b.LBadText : "scan never completed") + (rem > 0 ? " " + rem + " blocks never placed (unsupported?)" : ""));
 }
 
 // incremental walk over the drone's cell box; returns true when a complete pass found everything welded
@@ -470,9 +472,9 @@ bool ScanBox(Bay b, int rem)
     bool prog = !b.HavePass || b.PBad < b.LBad || b.PInteg > b.LInteg + 0.5f || b.PBlocks > b.LBlocks;
     if (prog) b.LastProgress = _now;
     b.LBad = b.PBad; b.LBlocks = b.PBlocks; b.LCells = b.PCells; b.LInteg = b.PInteg; b.HavePass = true;
-    bool ok = b.PassOk && b.PBad == 0 && b.PCells >= b.Cells - b.Tol;
+    bool ok = b.PassOk && b.PBad == 0 && b.PBlocks >= b.Cells - b.Tol;
     if (b.PBad > 0) b.LBadText = b.PBad + " unfinished: " + string.Join("; ", b.PBadL.ToArray());
-    else if (b.PCells < b.Cells - b.Tol) b.LBadText = "only " + b.PCells + " of " + b.Cells + " drone cells present";
+    else if (b.PBlocks < b.Cells - b.Tol) b.LBadText = "only " + b.PBlocks + " of " + b.Cells + " drone blocks present";
     else b.LBadText = "";
     ResetScan(b);
     return ok;
@@ -634,7 +636,8 @@ bool Arm(Bay b)
         {
             ini.Set("Launch", "Auto", !RackMode);                 // rack drones wait for the launch command instead
             ini.Set("Launch", "Burst Seconds", b.Burst >= 0 ? b.Burst : LaunchBurst);
-            ini.Set("Launch", "Away X", b.Away.X); ini.Set("Launch", "Away Y", b.Away.Y); ini.Set("Launch", "Away Z", b.Away.Z);
+            Vector3D da = -b.Away;      // b.Away is the PRINTER's push direction (towards the printer); the drone must burn the other way
+            ini.Set("Launch", "Away X", da.X); ini.Set("Launch", "Away Y", da.Y); ini.Set("Launch", "Away Z", da.Z);
             ini.Set("Launch", "Exit Direction", b.Exit == null ? "" : b.Exit.Trim());
             ini.Set("Launch", "Armed", true);
             b.DPb.CustomData = ini.ToString();

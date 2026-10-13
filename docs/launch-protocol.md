@@ -139,3 +139,23 @@ different opponent mix).
 * The merge block face convention is not needed (the direction comes from the two merge block positions), but a printer whose bay has other drone merge blocks within a
   few metres of the PB can confuse the learned direction; the printer's `Away X/Y/Z` has priority and is the reliable source.
 * Burn length with real thrust/mass: the drone leaves after `Clear Distance` (8 m) at the earliest 0.5 s, at most `Burst Seconds`.
+
+## 9. Review notes (independent launch review)
+
+* **Scripts with the block**: Hornet, Harrier, Gnat, Longbow (S and L, same script), Wasp, Lancer, Aegis, Mantis, Basilisk (`launch_sync.py --check` ok for all nine).
+  Hooks verified by grep in each: `LaunchLoad` (constructor and `reload`), `armed/launch/disarm` in `Command`, `LaunchStep` first on the control path (Gnat: before `AiStep`/`Control`), `LaunchStatus` in the display.
+* **Not on the block (honest status)**:
+  * **Stinger** (`StingerAI.cs`) is a rack missile. It has no LAUNCH block on purpose: it waits docked, and `Docked()` plus `Auto Launch When Released` start the hunt only when a target is in range
+    (or on the `launch` command over `<LaunchTag>_CMD`). It does not fly off by itself without a target. The Stinger Rack printer sends `launch` three times after separation (rack mode).
+  * **Midge** has no script. With no Programmable Block it cannot be told to take off: its AI Flight/Offensive blocks must be switched on by hand (or by a printer-side timer) once and the
+    defaults of those blocks decide what it does. Midge Lite is a Gnat Lite and does launch (Gnat block).
+  * **Longbow L** has no merge block, so the block is inert there.
+* **Away sign**: `HiveMotherAI` keeps `b.Away` as the direction the PRINTER pushes itself (drone to printer). The `[Launch] Away X/Y/Z` written to the drone is the negation (away from the printer).
+  The drone additionally ignores a stored vector that points into the printer when it learned the merge-pair direction while docked.
+* **Thrust-axis fallback (new)**: when no functional thruster pushes within 0.3 (cosine) of Away, and none points into the printer (cosine above -0.2), the burn uses the thruster axis that is
+  closest to Away (usually perpendicular), so ships with only fore/aft thrusters (Gnat) leave instead of staying put. The text `thrust axis` appears in the take-off message.
+  If every thruster points into the printer the burn does not thrust at all.
+* **Safety**: the burn can only start when the merge pair is open (`LnDocked()` false, two consecutive checks) or on `launch`/`Armed` while undocked; it waits up to ~1.7 s for the grid split.
+  Gyros are held at zero rate; no gyro sign convention is used.
+* **Test**: `sim/dock_launch_test.sh Hornet Harrier Gnat Wasp Lancer Aegis` all 10/10 ('DOCK-LAUNCH ALL OK' each). Mantis and Longbow S need the printer latch (`with_latch`) in the test blueprint; the
+  stock blueprints have none, so they are not covered by the shipped script (see the lead's scratch run in section 7).

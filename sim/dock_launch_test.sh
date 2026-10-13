@@ -13,16 +13,16 @@ run() { # name, expect (0 = must launch, 1 = must stay), args...
   echo "$line" | grep RESULT | sed 's/^/        /'
 }
 for m in "${models[@]}"; do
-  run "$m default (printer side merge off, no JOIN, no arming)"      0 --model $m --seconds 20
-  run "$m both merge blocks off"                                      0 --model $m --seconds 20 --both-merges
-  run "$m printer arms the PB at 1 s (Custom Data + argument)"        0 --model $m --seconds 20 --arm-at 1 --custom-data "[Launch]\nArmed=true\nAway Z=-1"
-  run "$m stored Away points into the printer (ignored)"              0 --model $m --seconds 20 --arm-at 1 --custom-data "[Launch]\nArmed=true\nAway Z=1"
-  run "$m PB recompiled while docked"                                 0 --model $m --seconds 20 --recompile-at 2
-  run "$m PB recompiled during the burn"                              0 --model $m --seconds 20 --recompile-at 3.4
-  run "$m PB first runs after the release, Armed in Custom Data"      0 --model $m --seconds 20 --release-at 0 --custom-data "[Launch]\nArmed=true"
-  run "$m PB first runs after the release, only a JOIN at 2 s"        0 --model $m --seconds 20 --release-at 0 --join-at 2
-  run "$m Auto=false stays until told (expect: stays)"                1 --model $m --seconds 20 --custom-data "[Launch]\nAuto=false"
-  run "$m never docked, no trigger (expect: stays)"                   1 --model $m --seconds 20 --release-at 0
+  run "$m default (printer side merge off, no JOIN, no arming)"      0 --model "$m" --seconds 20
+  run "$m both merge blocks off"                                      0 --model "$m" --seconds 20 --both-merges
+  run "$m printer arms the PB at 1 s (Custom Data + argument)"        0 --model "$m" --seconds 20 --arm-at 1 --custom-data "[Launch]\nArmed=true\nAway Z=-1"
+  run "$m stored Away points into the printer (ignored)"              0 --model "$m" --seconds 20 --arm-at 1 --custom-data "[Launch]\nArmed=true\nAway Z=1"
+  run "$m PB recompiled while docked"                                 0 --model "$m" --seconds 20 --recompile-at 2
+  run "$m PB recompiled during the burn"                              0 --model "$m" --seconds 20 --recompile-at 3.4
+  run "$m PB first runs after the release, Armed in Custom Data"      0 --model "$m" --seconds 20 --release-at 0 --custom-data "[Launch]\nArmed=true"
+  run "$m PB first runs after the release, only a JOIN at 2 s"        0 --model "$m" --seconds 20 --release-at 0 --join-at 2
+  run "$m Auto=false stays until told (expect: stays)"                1 --model "$m" --seconds 20 --custom-data "[Launch]\nAuto=false"
+  run "$m never docked, no trigger (expect: stays)"                   1 --model "$m" --seconds 20 --release-at 0
 done
 [ $fail = 0 ] && echo "DOCK-LAUNCH ALL OK" || echo "DOCK-LAUNCH FAILURES"
 exit $fail

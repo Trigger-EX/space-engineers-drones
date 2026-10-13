@@ -17,7 +17,10 @@ WHAT A PRINTER IS
     the small merge block is from Keen source (not seen), the cargo container is a guess.
 
 GEOMETRY GUARANTEES (tools/designs/reach.py checks them again independently, for every bay of every printer)
-  * every drone block is within reach of a welder (sphere radius 1.3 m minus 0.2 m margin, centred on the welder tip face);
+  * every drone block is within reach of a welder under a FAMILY of sphere-centre hypotheses (centre at the tip face, 1, 2, 3 cells inside the
+    welder; radius 1.3 m and 1.0 m), see docs/welder-reach.md: tier A (tip and tip-1) is mandatory except where no legal welder position can
+    reach, the deeper hypotheses and a second welder per block are best effort; every drone block is also SUPPORTED (mount-point chain from the
+    merge pair, so the welders can actually build it);
   * drone and printer never overlap; the drone touches the printer only through the merge pair (armour, projector, stalk keep out of
     the drone's 26-neighbourhood; a welder TIP may touch the drone only where it has no mount point, flagged gap=0 in the notes);
   * exhaust, muzzle and camera clear zones of the drone are free of printer blocks (camera zones are the first to be relaxed, reported);
@@ -25,7 +28,11 @@ GEOMETRY GUARANTEES (tools/designs/reach.py checks them again independently, for
 
 UNVERIFIED IN GAME (see the final report): small merge block clamp face, whether welded blocks separate from the projector grid when the
 merge pair is switched off (they are built INTO the projector's grid), projected PB behaviour, the exact welder sensor centre, the
-projection offset sign (checked against the Starburst ship, it fits exactly).
+projection offset sign (checked against the Starburst ship, it fits exactly).  The welder sphere centre is NOT known (the dummy position in
+Welder.mwm is unpublished), hence the hypothesis family.
+
+CUSTOM DATA for HiveMotherAI.cs, per [Bay N]: Exit Direction, Drone Box Min / Drone Box Max (printer grid cells, translation T included), Drone Cell
+Count (unique drone blocks), Drone Occupied Cells, Ignore Cells; and a [Launch] section (Auto=true, Burst Seconds=4).
 """
 import sys, os, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

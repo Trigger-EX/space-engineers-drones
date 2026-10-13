@@ -255,11 +255,13 @@ def verify_bay(bp, bay, margin_m=None, backoff=None, strict_camera=False, family
     if family and margin_m is None and backoff is None:
         fr = family_report(bp, bay)
         imp = getattr(des, 'impossible', None) or {}                # {hyp name: set(block labels)} that NO legal welder position can reach
+        conf = getattr(des, 'conflict', None) or {}                 # tier-A pairs reachable alone but not together with the other welders (blocking)
+        st['conflict'] = {k: sorted(v) for k, v in conf.items() if v}
         st['family'] = {k: len(v) for k, v in fr.items()}
         st['impossible'] = {k: len(set(v) & set(imp.get(k, ()))) for k, v in fr.items()}
         tier_a = [h.name for h in FAMILY[:TIER_A]]
         for k in tier_a:                                               # tier A: fail unless physically impossible (listed in the report)
-            real = [n for n in fr[k] if n not in set(imp.get(k, ()))]
+            real = [n for n in fr[k] if n not in set(imp.get(k, ())) and n not in set(conf.get(k, ()))]
             if real: prob.append(f'bay {bay["n"]}: {len(real)} drone blocks not covered under {k}: ' + ', '.join(real[:5]) + (' ...' if len(real) > 5 else ''))
         st['partial'] = {k: len(v) for k, v in fr.items() if k not in tier_a and v}      # best-effort hypotheses: reported in the table, not a failure
         cov = coverage(bp, bay, hyp=RED_HYP)
@@ -318,7 +320,7 @@ def verify_printer(bp, margin_m=None, backoff=None):
         lines.append(f'  bay {bay["n"]} ({bay["drone"].name}): {st.get("welders")} welders, {st.get("drone_blocks")} drone blocks, '
                      f'min welders/block {st.get("min_cover")}, welders touching the drone {st.get("weld_touching")}, support rounds {st.get("support_rounds")}'
                      + (f', camera-zone cells blocked {st["camera_zone_blocked"]}' if st.get('camera_zone_blocked') else '')
-                     + (f', WAIVED (no legal welder position reaches them): {st["waived"]}' if st.get('waived') else ''))
+                     + (f', tier-A pairs lost to welder conflicts (waived): {st["conflict"]}' if st.get('conflict') else ''))
         if prob: ok = False; lines += ['    ' + p for p in prob]
     cp = verify_connections(bp, graph)
     if cp: ok = False; lines += ['  ' + p for p in cp[:8]]
