@@ -12,7 +12,8 @@ Naming (the scripts rely on it, docs/design/control_arch.md 3.2, grids_bays 6.3)
   * every block of the ship carries `[SH]` in its CustomName; the pod's blocks carry `[POD]` (never `[SH]`);
   * the three PBs: `[Helm][SH] Warden Helm`, `[Staff][SH] Warden Staff` (ship grid) and `[Pod] Pod PB` (pod grid);
   * weapon batteries by tag: `[B1]` = the two railguns (RAIL); turrets are never batteries; point-defence gatlings carry `[PD]`;
-  * terminal groups: `B1`, `PD`, `Main Turrets`, `Thrusters`, `Weapons`, `Decoys`, `[Hangar 1]` (the 8 belly doors), `Gyros`, `Reactors`, `Batteries`.
+  * terminal groups: `B1`, `PD`, `Main Turrets`, `Thrusters`, `Weapons`, `Decoys`, `[Hangar 1]` (the 8 belly doors), `Gyros`, `Reactors`, `Batteries`;
+  * the 98 LargeBlockConveyor junctions are `[SH] Junction n` (fuel and ammunition network, see _conveyors).
 Lite = the same ship without the unseen-shape blocks (Sensor, AI Offensive, AI Flight); everything else is built from sample-derived shapes.
 """
 import sys, os, math
@@ -103,8 +104,8 @@ def thruster_plan():
     Thrust on the ship points opposite to the exhaust.  Only the two forward Strafe pairs sit flush in the skin; the others stand 1 cell proud."""
     out = []
     for s, sn in ((-1, 'P'), (1, 'S')):
-        for z in (20, 25):
-            out.append(((s, 11, z), 'Up', 'Down', f'Dive {sn}{z}'))              # exhaust up -> pushes the ship down
+        for x in (1, 3):
+            out.append(((s * x, 7, 16), 'Up', 'Down', f'Dive {sn}{x}'))          # exhaust up -> pushes the ship down
         for z in (9, 29):
             out.append(((s, 1, z), 'Down', 'Up', f'Lift {sn}{z}'))               # exhaust down -> pushes the ship up
         for y in (3, 4):
@@ -120,6 +121,7 @@ def _zones():
     flank = lambda c: c[1] == 3 and abs(c[0]) >= HW and c[2] >= Z_MAIN0
     return Zones(
         Zone('conn', H.region(y=(11, 12)), color=GUNL, kind='plate', flat=('Up',)),
+        Zone('bulge', lambda c: abs(c[0]) == HW + 1, color=ORANGE, kind='accent', flat=('Up', 'Down', 'Right', 'Left', 'Backward')),
         Zone('stripe', flank, color=ORANGE, kind='accent'),
         Zone('mouth', lambda c: c[1] <= 1 and 15 <= c[2] <= 26 and abs(c[0]) >= 2, color=ORANGE, kind='accent'),                  # hazard frame round the hangar mouth
         Zone('engine_plate', lambda c: c[2] == Z_MAIN1 and 3 <= c[1] <= 6, color=ORANGE_D, kind='accent'),                         # stern plate behind the nozzles
@@ -245,11 +247,11 @@ def _interior(S, full):
             n += 1
             S.add('reactor', 'MyObjectBuilder_Reactor', 'LargeBlockSmallGenerator', (0, y, z), 'Forward', 'Up', nm(f'Reactor {n}'), toward='Down' if y == 3 else 'Down', kind='reactor',
                   items=[Item.ingot('Uranium', 100)])
-    # flank bays beside the hangar (x +-3, y 3): batteries z 17..19 and 23, gyros z 20..22
+    # flank bays beside the hangar (x +-3, y 3): batteries z 17..19 and 23, gyros z 20..22 and 24
     for s, tag in ((-1, 'P'), (1, 'S')):
         for i, z in enumerate((17, 18, 19, 23)):
             S.add('bat', 'MyObjectBuilder_BatteryBlock', 'LargeBlockBatteryBlock', (s * 3, 3, z), 'Forward', 'Up', nm(f'Battery {tag}{i + 1}'), extra=bat_extra(3), kind='bat', toward='Down')
-        for i, z in enumerate((20, 21, 22)):
+        for i, z in enumerate((20, 21, 22, 24)):
             S.add('gyro', 'MyObjectBuilder_Gyro', 'LargeBlockGyro', (s * 3, 3, z), 'Forward', 'Up', nm(f'Gyroscope {tag}{i + 1}'), toward='Down', kind='gyro')
 
 def _bridge(S, full):
@@ -259,7 +261,7 @@ def _bridge(S, full):
     helm_cd = (cd + '\n[Battery 1]\nTag=B1\nClass=RAIL\nRole=PRIMARY_CANDIDATE\nMin Range=200\nMax Range=0\nWindow Scale=1.0\nSalvo=1\n'
                '\n[Cockpit]\nHelm Surface=0\nStaff Surface=1\n')
     staff_cd = (cd + '\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB\n')
-    S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 9, 20), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit')
+    S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 9, 20), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.add('gunner', 'MyObjectBuilder_Cockpit', 'CockpitOpen', (1, 9, 20), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
     S.add('rc', 'MyObjectBuilder_RemoteControl', 'LargeBlockRemoteControl', (-1, 9, 20), 'Forward', 'Up', nm('Remote Control'), toward='Down', kind='ctrl')
     S.helm = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (-1, 9, 24), 'Backward', 'Up', '[Helm][SH] Warden Helm', toward='Backward', kind='ctrl',
@@ -326,6 +328,105 @@ def _decoys(S, res):
             b = bp.add('MyObjectBuilder_Decoy', 'LargeDecoy', c, 'Forward', 'Up', nm(f'Decoy {2 * k + i + 1}'), GUND, kind='decoy')
             S.put('decoy', b)
             del res.cell_block[c]
+
+def _terminals(S):
+    """[(cell, role, label)] cells that must hold a conveyor junction: behind every hydrogen thruster, under every turret, against a tank and a locker.
+    Layout seen in the owner's ships (Tech Hunter, Red Ship; docs/design/ships/Warden.md section 7): a LargeBlockSmallHydrogenThrust always has a
+    LargeBlockConveyor behind it (1117 of 1117), a gatling turret always stands on one (25 of 25), assault / artillery turrets nearly always (72 of 76 /
+    18 of 18 on a junction), a large thruster's back face centre is touched by one (25 of 25), tanks and cargo containers are touched at the face centre."""
+    bp = S.bp
+    out = []
+    for role, blocks in S.r.items():
+        for b in blocks:
+            cs = bp.cells(b)
+            lo = [min(c[i] for c in cs) for i in range(3)]
+            hi = [max(c[i] for c in cs) for i in range(3)]
+            mid = [(lo[i] + hi[i]) // 2 for i in range(3)]
+            if role.startswith('thr_'):
+                d = DIR[b['fwd']]                       # exhaust direction; the port is on the opposite face (Back), at its centre
+                cell = list(mid)
+                for i in range(3):
+                    if d[i] > 0: cell[i] = lo[i] - 1
+                    elif d[i] < 0: cell[i] = hi[i] + 1
+                out.append((tuple(cell), 'thruster', b['name']))
+            elif role in ('art', 'assault', 'pd'):
+                u = DIR[b['up']]                        # the base is the cell outside the block on the side opposite to Up, under the centre column
+                cell = list(mid)
+                for i in range(3):
+                    if u[i] > 0: cell[i] = lo[i] - 1
+                    elif u[i] < 0: cell[i] = hi[i] + 1
+                out.append((tuple(cell), 'turret', b['name']))
+            elif role == 'tank':
+                out.append(((mid[0], mid[1], hi[2] + 1), 'tank', b['name']))        # rear face centre
+            elif role == 'cargo':
+                out.append(((mid[0], hi[1] + 1, mid[2]), 'locker', b['name']))      # top face centre
+    return out
+
+def _conveyors(S, res, vol):
+    """one junction network (LargeBlockConveyor cubes, adjacent ones connect) from the two tanks to every thruster, every turret base and the two ammo
+    lockers.  Routed by Dijkstra through free hull cavity cells (cost 1) and hidden interior armour cubes (cost 4, replaced by a junction)."""
+    import heapq
+    bp = S.bp
+    env = set(vol['solid'].cells)
+    resv = set()
+    for v in res.reserved.values(): resv |= set(v.cells)
+    terms = _terminals(S)
+    tcells = {c for c, r, n in terms}
+    conn_nb = set()
+    for b in S.conns:
+        for c in bp.cells(b):
+            for d in DIR.values(): conn_nb.add(tuple(c[i] + d[i] for i in range(3)))
+
+    def cost(c, terminal=False):
+        b = S.occ.get(c)
+        if b is None:
+            if c in env and c not in resv and c not in bp.reserve and c not in conn_nb: return 1
+            return None
+        hb = res.cell_block.get(c)
+        if hb is b and b['sub'].endswith('ArmorBlock') and c not in conn_nb and (terminal or not (res.exposure.get(c) or res.flush.get(c))): return 4
+        return None
+    for c, r, n in terms:
+        assert cost(c, True) is not None, f'{bp.name}: no junction cell behind/under {n} at {c} ({S.occ.get(c) and S.occ[c]["sub"]})'
+    net = set()
+    start = [c for c, r, n in terms if r == 'tank'][0]
+    net.add(start)
+    todo = [c for c, r, n in terms if c != start]
+    todo.sort(key=lambda c: (abs(c[0]) + abs(c[1] - 4) + abs(c[2] - 28), c))
+    while todo:
+        # multi-source Dijkstra from the whole network to the nearest unconnected terminal
+        dist = {c: 0 for c in net}
+        prev = {}
+        h = [(0, c) for c in sorted(net)]
+        heapq.heapify(h)
+        goal = None
+        while h:
+            d0, c = heapq.heappop(h)
+            if d0 > dist.get(c, 1e9): continue
+            if c in todo: goal = c; break
+            for dv in DIR.values():
+                n = (c[0] + dv[0], c[1] + dv[1], c[2] + dv[2])
+                k = cost(n, n in tcells)
+                if k is None: continue
+                nd = d0 + k
+                if nd < dist.get(n, 1e9):
+                    dist[n] = nd; prev[n] = c; heapq.heappush(h, (nd, n))
+        assert goal is not None, f'{bp.name}: conveyor router found no way to {todo[:3]}'
+        c = goal
+        while c not in net:
+            net.add(c); c = prev[c]
+        todo = [t for t in todo if t not in net]
+    # build the junctions: armour cubes in the way are replaced
+    S.conveyors = []
+    for i, c in enumerate(sorted(net, key=lambda c: (c[2], c[1], c[0]))):
+        old = S.occ.get(c)
+        if old is not None:
+            bp.blocks.remove(old)
+            res.cell_block.pop(c, None)
+            del S.occ[c]
+        b = bp.add('MyObjectBuilder_Conveyor', 'LargeBlockConveyor', c, 'Forward', 'Up', nm(f'Junction {i + 1}'), GUND, kind='conv')
+        S.put('conv', b)
+        S.conveyors.append(b)
+    return net
 
 def _groups_and_toolbars(S):
     bp = S.bp
@@ -404,6 +505,7 @@ def warden(lite=False, with_pod=True, lock=False, name=None):
     _bridge(S, full)
     _sensing(S, full)
     _decoys(S, res)
+    _conveyors(S, res, vol)
     _groups_and_toolbars(S)
     bp.ship = S
     bp.hull = res
@@ -472,12 +574,38 @@ def numbers(bp):
     n['dps_sustained'] = round(sum(dps[b['sub'] or 'LargeGatlingTurret'] for b in blocks if (b['sub'] or 'LargeGatlingTurret') in dps and (b['kind'] in ('rail', 'turret'))))
     return n
 
-DOCS = {'Warden': 'LARGE-grid frigate (about 85 m, 2.9 kt): two large railguns (battery [B1]), two artillery and four assault turrets, eight gatling turrets for point defence, six decoys, '
-                  'a four-engine hydrogen stern, bridge tower with cockpit, Remote Control and the Helm and Staff programmable blocks, and a belly hangar with a docked, empty 4-slot '
-                  'cradle pod (own CubeGrid, its own Pod PB) for Hornet-class drones. Ammunition, uranium, hydrogen and batteries are pre-loaded; no conveyor feed (see notes).'}
-MODEL_NOTES_WARDEN = ('Large grid, paste only. Needs the Helm / Staff / Pod scripts for autonomous play (empty programs until the script files exist); flyable by hand from the bridge cockpit. '
-                      'The pod is a second grid docked by two connector pairs: after pasting press Lock on both hangar connectors if it did not lock (docs/design/ships/Warden.md, C1..C4). '
-                      'Artillery, assault turrets and railguns hold only 6 rounds each and no conveyor line feeds them from the two ammo lockers.')
+# ------------------------------------------------------------------------------------------------------------
+# deck plans (text) for the design record: python3 -I tools/designs/warden.py --plans
+# ------------------------------------------------------------------------------------------------------------
+_SYM = {'rail': 'R', 'turret': 'T', 'thr': 't', 'gyro': 'G', 'bat': 'B', 'reactor': 'F', 'tank': 'K', 'cargo': 'C', 'conv': 'j', 'door': 'D', 'conn': 'N', 'ctrl': 'P',
+        'cockpit': 'S', 'decoy': 'X', 'cam': 'c', 'ant': 'a', 'sensor': 'n', 'ai': 'i', 'timer': 'e'}
+
+def deck_plan(bp, y):
+    """one horizontal layer as text: rows = z (bow at the top), columns = x (port left); '.' = empty, '#' armour, 'w' window, letters = systems (_SYM)"""
+    occ = bp.occupancy()
+    cells = [c for c in occ if c[1] == y]
+    if not cells: return ''
+    zs = [c[2] for c in cells]
+    xr = range(-6, 7)
+    rows = []
+    for z in range(min(zs), max(zs) + 1):
+        row = ''
+        for x in xr:
+            b = occ.get((x, y, z))
+            if b is None: row += '.'
+            elif b['xtype'].endswith('_CubeBlock'): row += 'w' if 'Window' in b['sub'] else '#'
+            else: row += _SYM.get(b['kind'], '?')
+        rows.append(f'z{z:>2} ' + row)
+    return f'y = {y}\n   ' + ''.join(str(abs(x) % 10) for x in xr) + '   (columns x -6..6)\n' + '\n'.join(rows)
+
+DOCS = {'Warden': 'LARGE-grid frigate (about 85 x 27.5 x 40 m, 2.6 kt with ammunition): two large railguns (battery [B1]), two artillery and four assault turrets, eight gatling turrets '
+                  'for point defence, six decoys, a four-engine hydrogen stern (1 large + 3 small, 4 m/s2), 20 small hydrogen thrusters for the other axes, a bridge tower with cockpit, '
+                  'Remote Control and the Helm and Staff programmable blocks, and a belly hangar (8 doors) with a docked, empty 4-slot Cradle Pod for Hornet-class drones (own CubeGrid and '
+                  'Pod PB). Ammunition, uranium, hydrogen and batteries are pre-loaded; 98 junction blocks feed the thrusters and every turret from the tanks and two ammo lockers. '
+                  'Limits: the two railguns have no feed (6 slugs each, reload by hand from the lockers), the pod carries no drones, and nothing of this has been pasted in the game yet.'}
+MODEL_NOTES_WARDEN = ('Large grid, paste only (delete the old blueprint folder first). Needs the Helm / Staff / Pod scripts for autonomous play (PBs stay empty until the script files exist); '
+                      'flyable by hand from the bridge cockpit. The pod is a second grid docked by two connector pairs: press Lock on both hangar connectors if it did not lock '
+                      '(docs/design/ships/Warden.md, C1..C4). Drones are added by pasting them against the pod\'s merge blocks.')
 
 MODELS = {'Warden': warden}
 
@@ -485,7 +613,12 @@ if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('--render', default=None)
+    ap.add_argument('--plans', action='store_true', help='print the deck plans of the design record and exit')
     a = ap.parse_args()
+    if a.plans:
+        b_ = warden(False)
+        for y_ in (0, 1, 3, 4, 5, 6, 7, 9, 11): print(deck_plan(b_, y_), '\n')
+        sys.exit(0)
     rc = C.run_module(MODELS, min_acc=0.5)
     import json
     print(json.dumps(numbers(warden(False)), indent=1, default=str))

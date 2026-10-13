@@ -110,7 +110,7 @@ class LoadoutTests(unittest.TestCase):
         bp = ship(False)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockSmallGenerator'), 6)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockBatteryBlock'), 8)
-        self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockGyro'), 6)
+        self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockGyro'), 8)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeHydrogenTank'), 2)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockLargeHydrogenThrust'), 1)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'AirtightHangarDoor' or (b['xtype'].endswith('AirtightHangarDoor'))), 8)
@@ -158,6 +158,51 @@ class LoadoutTests(unittest.TestCase):
         b = sorted((b['sub'] or b['xtype']) for b in lite.blocks)
         extra = [x for x in a if x not in b or a.count(x) != b.count(x)]
         self.assertEqual(sorted(set(extra)), ['LargeBlockSensor', 'LargeFlightMovement', 'LargeOffensiveCombat'])
+
+class ConveyorTests(unittest.TestCase):
+    def test_one_network_reaches_every_consumer(self):
+        bp = ship(False)
+        S = bp.ship
+        cells = {b['min'] for b in S.conveyors}
+        self.assertTrue(60 <= len(cells) <= 140, len(cells))
+        # connected through face adjacency
+        start = next(iter(cells)); seen = {start}; todo = [start]
+        while todo:
+            c = todo.pop()
+            for d in sebp.DIR.values():
+                n = (c[0] + d[0], c[1] + d[1], c[2] + d[2])
+                if n in cells and n not in seen: seen.add(n); todo.append(n)
+        self.assertEqual(seen, cells)
+        terms = W._terminals(S)
+        roles = {}
+        for c, r, n in terms:
+            self.assertIn(c, cells, (r, n))
+            roles[r] = roles.get(r, 0) + 1
+        self.assertEqual(roles, {'thruster': 24, 'turret': 14, 'tank': 2, 'locker': 2})
+        for b in S.conveyors:
+            self.assertEqual((b['xtype'], b['sub']), ('MyObjectBuilder_Conveyor', 'LargeBlockConveyor'))
+            self.assertIn('[SH]', b['name'])
+
+    def test_junctions_keep_off_the_connectors_and_the_lane(self):
+        bp = ship(False)
+        cells = {b['min'] for b in bp.ship.conveyors}
+        for k in bp.ship.conns:
+            c = k['min']
+            for d in sebp.DIR.values(): self.assertNotIn((c[0] + d[0], c[1] + d[1], c[2] + d[2]), cells)
+        for c in cells: self.assertFalse(-1 <= c[0] <= 1 and 0 <= c[1] <= 4 and 17 <= c[2] <= 24, c)       # the hangar column
+
+    def test_thruster_backs_and_turret_bases_are_junctions(self):
+        bp = ship(False)
+        cells = {b['min'] for b in bp.ship.conveyors}
+        occ = bp.occupancy()
+        for b in bp.blocks:
+            if b['xtype'].endswith('_Thrust'):
+                d = sebp.DIR[b['fwd']]
+                cs = bp.cells(b)
+                lo = [min(c[i] for c in cs) for i in range(3)]; hi = [max(c[i] for c in cs) for i in range(3)]
+                mid = [(lo[i] + hi[i]) // 2 for i in range(3)]
+                back = tuple(mid[i] - d[i] * ((hi[i] - lo[i]) // 2 + 1) for i in range(3))
+                self.assertIn(back, cells, b['name'])
 
 class HangarTests(unittest.TestCase):
     def test_pod_docks_on_both_pairs(self):
