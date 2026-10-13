@@ -1,14 +1,15 @@
 // =====================================================================
 //  SHRIKE AI  v0.1-shrike  - the Helm script of the Shrike fighter: autonomous AND hand-flyable (ONE Programmable Block)
 //  For Space Engineers (vanilla, small grid). Paste into a Programmable Block named "[Helm] ...".
-//  A Hornet (HornetDroneAI v2.6) without LAUNCH, FOLLOW and SEEKER (drone-side blocks) plus the MANUAL, BATTERY-lite and dead-man blocks of
-//  docs/design/control_arch.md (sections 2, 3). Everything that is not listed below behaves exactly like the Hornet: tracking, camera / sensor /
-//  AI-block search, LEAD solver, BREACH aiming, KAMIKAZE DEFENCE, FLEET listener, GUARD / HUNT / ASSIST / RTB / IDLE.
+//  A Hornet (HornetDroneAI v2.6) without LAUNCH, FOLLOW and SEEKER (drone-side blocks), without the close-range camera scan, the search patrol and the sensor bubble (size
+//  cuts of M3), plus the MANUAL, BATTERY v1.0 and dead-man blocks of docs/design/control_arch.md (sections 2, 3). Everything that is not listed behaves like the Hornet:
+//  tracking, camera / AI-block search, LEAD solver, BREACH aiming, KAMIKAZE DEFENCE, FLEET listener, GUARD / HUNT / ASSIST / RTB / IDLE.
 //
 //  WHAT THE SHIP MUST HAVE (naming rules the hull designers keep)
 //   * this PB, custom name starting with "[Helm]"; a Remote Control (the script's reference for mass, velocity, orientation) AND a flight seat
 //     (any IMyShipController that CanControlShip and is not the Remote Control; a ship with only a cockpit uses it as the reference too)
-//   * fixed guns; optional "[B1]" / "[B2]" in their names for two batteries (an untagged ballistic gun is B1, any other class B2); turrets are designators
+//   * fixed guns, tagged "[B1]" .. "[B4]" in their names for up to four batteries (untagged: ballistic B1, rocket B2, railgun B3, shell cannon B4); turrets are designators and
+//     fire on their own (a ship with turrets runs the turret-only mode: the fixed batteries refuse a track none of them can hit)
 //   * optional: a Timer whose name contains "Deadman" (5 s, Silent; its toolbar cuts thrusters and weapons), cameras, sensor, AI blocks tagged [AI]
 //
 //  MODES  AUTO = the Hornet modes (_mode: guard hunt assist rtb idle; Start Mode default GUARD, saved in Storage), MANUAL = somebody sits in the seat
@@ -22,14 +23,16 @@
 //   Run with NO argument             menu: each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (HUD shows it)
 //  CUSTOM DATA  [Shrike] = the Hornet keys (IGC Tag default SHRIKE, Start Mode default GUARD); [Manual] Seat Debounce, Release Delay, Assist (OFF/HUD/FBW),
 //   Assist Max Rate, Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale, Pilot Priority Rate, Auto Fire In Manual, Scan In Manual, Run Menu, Run Menu Wait,
-//   Deadman Timer Name, HUD Surface (cockpit text surface, -1 off); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
+//   Deadman Timer Name, HUD Surface (cockpit text surface, -1 off); [Battery] Primary (AUTO/B1..B4), Standoff By Weapons, Turret Only (AUTO/ON/OFF), Auto Max Turn
+//   (AUTO/ON/OFF); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
 //  STAFF LINK (HELMLINK block, optional)   with a second PB "[Staff] ..." on the construct (StaffAI.cs) the Helm sends a heartbeat (2 Hz), its mode / target / battery
 //   (5 Hz) and seat changes over IGC (CurrentConstruct) and obeys the verbs the Staff forwards; the Staff releases every override when the heartbeat stops for 1.5 s.
 //   [Link] Enable (AUTO/ON/OFF) (AUTO = on while a [Staff] PB exists, so the single-PB ship is untouched), Ship Tag (SHIP, same in the Staff), Heartbeat (s).
 //   To fit 80,000 characters the rarely used keys Jink Interval (+ Random), Seconds Before Dropping Disabled Target, Ghost Target Time, Wingmate Separation Range / Speed,
 //   Lead Scale, AI Confirm Raycast Range / Long Raycast Range / Rays Shorten, Target Stickiness, AI Re-pick Interval / Only Within, AI Takes Over After Stale Lock,
-//   Search Patrol Radius / Own Start Corner / After A Fight / Listening Stop / Speed, Breach Min Target Radius, Breach Stall, Evade Speed When Hit, Close Scan Range and
-//   Scan Cone Degrees were removed from Custom Data; their variables keep the Hornet defaults.
+//   Search Patrol (all), Breach Min Target Radius, Breach Stall, Evade Speed When Hit, Close Scan Range, Scan Cone Degrees, All-around Close Scan, and (M3) Split Targets,
+//   Projectiles Inherit Ship Velocity, Use Target Acceleration, Aim Margin, Max Track Age To Fire, Target Characters, Target Neutral/Unowned, Manual Lock Range, Jink Speed,
+//   Scan Range were removed from Custom Data; their variables keep the Hornet defaults.
 //  NOT MEASURED IN THE GAME: stick scale / sign / gyro feel (Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale: control_arch tests K1/K2), the Run-with-argument
 //   toolbar item (K3, hence the menu), Timer re-arm by Stop + Start (does Start restart a counting timer?), DampenersOverride per controller (K7).
 // =====================================================================
@@ -832,6 +835,7 @@ void ManFly(double dt)
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
         if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
+    if (have && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
     if (ManAutoFire) { SetFire(shoot); BatFire(have, _rc.GetShipVelocities().LinearVelocity); }
     // fly-by-wire: stick rate + the PD rate to the lead point, the stick fades the assist; no lock: full release (native feel)
     bool ov = false;
@@ -868,7 +872,7 @@ string ManHud()
     if (_tgt != null)
     {
         b.Append("TGT  ").Append(Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()).ToString("0")).Append(" m  v ").Append(_tgt.V(_now).Length().ToString("0")).Append("  seen ").Append((_now - _tgt.Seen).ToString("0.0")).Append("s  T ").Append(_leadT.ToString("0.00")).Append('\n');
-        b.Append("PIP  R").Append(_pipR.ToString("+0.0;-0.0")).Append(" U").Append(_pipU.ToString("+0.0;-0.0")).Append("  err ").Append(_aimErrDeg.ToString("0.0")).Append(" win ").Append(_fireWinDeg.ToString("0.0")).Append(_fireWinDeg > 0 && _aimErrDeg < _fireWinDeg ? " FIRE" : "").Append('\n');
+        b.Append("PIP  R").Append(_pipR.ToString("+0.0;-0.0")).Append(" U").Append(_pipU.ToString("+0.0;-0.0")).Append("  err ").Append(_aimErrDeg.ToString("0.0")).Append(" win ").Append(_fireWinDeg.ToString("0.0")).Append(_fireWinDeg > 0 && _aimErrDeg < _fireWinDeg ? " FIRE" : "").Append("  B").Append(_prim + 1).Append(_bat[_prim].Cls).Append('\n');
     }
     else b.Append("TGT  none (").Append(_contacts.Count).Append(")\n");
     b.Append("PWR ").Append((_batFrac * 100).ToString("0")).Append("% AMMO ").Append((_ammoFrac * 100).ToString("0")).Append("% THR ").Append((_powerScale * 100).ToString("0")).Append("% DAMP ").Append(_rc.DampenersOverride ? "on" : "off").Append("  DEADMAN ").Append(_dm.Count == 0 ? "-" : Man ? "off" : "armed").Append('\n');
@@ -1080,6 +1084,7 @@ void BatShoot(Bat b, bool on)
 void BatCheck(Bat b)
 {
     var g = b.Gn;
+    if (g == null || g.Closed) { b.Pend = -1; return; }
     if (g.IsShooting) b.Saw = true;
     if (BatAm(g) < b.Am) { b.Pend = -1; b.Rdy = _now + b.Rel * 1.1 / b.G.Count + 0.5; }
     else if (b.Saw && !g.IsShooting) { b.Pend = -1; b.Rdy = _now + b.Rel / b.G.Count - 1; }

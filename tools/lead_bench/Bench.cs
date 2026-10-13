@@ -354,8 +354,8 @@ static class Bench
         int seeds = (int)D("seeds", 12), truth = (int)D("truth", 1);
         double amax = D("amax", 5), flipMin = D("flipmin", 2), flipMax = D("flipmax", 5), strafeV = D("strafev", 30), standoff = D("standoff", 750);
         double sightDt = D("sight", 0.2), shotDt = D("shotdt", 0.6), sAcc = D("sacc", 6), sVmax = D("svmax", 60), orbitV = D("orbit", 10), jinkV = D("jink", 5);
-        double bulletV = weapon == "gatling" ? 800 : weapon == "rail" ? 1000 : 0, range = weapon == "gatling" ? 800 : weapon == "rail" ? 1400 : 800;
-        double spread = weapon == "gatling" ? 0.15 : weapon == "rail" ? 0 : 0.1;
+        double bulletV = weapon == "gatling" ? 800 : weapon == "rail" ? 1000 : weapon == "shell" ? 500 : 0, range = weapon == "gatling" ? 800 : weapon == "rail" ? 1400 : weapon == "shell" ? 1400 : 800;   // shell = the assault cannon / artillery class of BATTERY (500 m/s, no drag in space)
+        double spread = weapon == "gatling" ? 0.15 : weapon == "rail" ? 0 : weapon == "shell" ? 0.06 : 0.1;
         var cfgs = new List<Cfg>();
         if (weapon == "rocket")
         {

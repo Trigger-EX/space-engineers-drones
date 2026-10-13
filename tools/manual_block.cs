@@ -137,6 +137,7 @@ void ManFly(double dt)
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
         if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
+    if (have && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
     if (ManAutoFire) { SetFire(shoot); BatFire(have, _rc.GetShipVelocities().LinearVelocity); }
     // fly-by-wire: stick rate + the PD rate to the lead point, the stick fades the assist; no lock: full release (native feel)
     bool ov = false;
@@ -173,7 +174,7 @@ string ManHud()
     if (_tgt != null)
     {
         b.Append("TGT  ").Append(Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()).ToString("0")).Append(" m  v ").Append(_tgt.V(_now).Length().ToString("0")).Append("  seen ").Append((_now - _tgt.Seen).ToString("0.0")).Append("s  T ").Append(_leadT.ToString("0.00")).Append('\n');
-        b.Append("PIP  R").Append(_pipR.ToString("+0.0;-0.0")).Append(" U").Append(_pipU.ToString("+0.0;-0.0")).Append("  err ").Append(_aimErrDeg.ToString("0.0")).Append(" win ").Append(_fireWinDeg.ToString("0.0")).Append(_fireWinDeg > 0 && _aimErrDeg < _fireWinDeg ? " FIRE" : "").Append('\n');
+        b.Append("PIP  R").Append(_pipR.ToString("+0.0;-0.0")).Append(" U").Append(_pipU.ToString("+0.0;-0.0")).Append("  err ").Append(_aimErrDeg.ToString("0.0")).Append(" win ").Append(_fireWinDeg.ToString("0.0")).Append(_fireWinDeg > 0 && _aimErrDeg < _fireWinDeg ? " FIRE" : "").Append("  B").Append(_prim + 1).Append(_bat[_prim].Cls).Append('\n');
     }
     else b.Append("TGT  none (").Append(_contacts.Count).Append(")\n");
     b.Append("PWR ").Append((_batFrac * 100).ToString("0")).Append("% AMMO ").Append((_ammoFrac * 100).ToString("0")).Append("% THR ").Append((_powerScale * 100).ToString("0")).Append("% DAMP ").Append(_rc.DampenersOverride ? "on" : "off").Append("  DEADMAN ").Append(_dm.Count == 0 ? "-" : Man ? "off" : "armed").Append('\n');

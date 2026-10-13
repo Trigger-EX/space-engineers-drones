@@ -195,6 +195,7 @@ void BatShoot(Bat b, bool on)
 void BatCheck(Bat b)
 {
     var g = b.Gn;
+    if (g == null || g.Closed) { b.Pend = -1; return; }
     if (g.IsShooting) b.Saw = true;
     if (BatAm(g) < b.Am) { b.Pend = -1; b.Rdy = _now + b.Rel * 1.1 / b.G.Count + 0.5; }
     else if (b.Saw && !g.IsShooting) { b.Pend = -1; b.Rdy = _now + b.Rel / b.G.Count - 1; }
