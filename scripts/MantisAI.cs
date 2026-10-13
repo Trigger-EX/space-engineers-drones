@@ -1277,25 +1277,47 @@ string LaunchStatus()
 }
 // <<< LAUNCH <<<
 
+void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }   // a failing setup step must not kill the script for good: the rest still runs and the error is on the screen
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
-    LoadConfig();
-    FleetLoad(true); LaunchLoad(); KzLoad(); AiGateLoad(); FoLeash = Math.Max(FoLeash, 2200); FollowLoad();
-    _mode = ParseMode(StartMode, Mode.IDLE);
-    if (!string.IsNullOrEmpty(Storage))
+    try
     {
-        var p = Storage.Split(';');
-        double x, y, z;
-        if (p.Length >= 5 && double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
-        { _mode = ParseMode(p[0], _mode); _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
+        LoadConfig();
     }
-    _lTgt = IGC.RegisterBroadcastListener(Tag + "_TGT");
-    _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
-    _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
-    _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
-    GetBlocks();
-    if (!_homeSet && _rc != null) { _home = _rc.GetPosition(); _homeSet = true; }
+    catch (Exception ex) { CtorErr("config", ex); }
+    try
+    {
+        FleetLoad(true); LaunchLoad(); KzLoad(); AiGateLoad(); FoLeash = Math.Max(FoLeash, 2200); FollowLoad();
+    }
+    catch (Exception ex) { CtorErr("modules", ex); }
+    try
+    {
+        _mode = ParseMode(StartMode, Mode.IDLE);
+        if (!string.IsNullOrEmpty(Storage))
+        {
+            var p = Storage.Split(';');
+            double x, y, z;
+            if (p.Length >= 5 && double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
+            { _mode = ParseMode(p[0], _mode); _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
+        }
+    }
+    catch (Exception ex) { CtorErr("storage", ex); }
+    try
+    {
+        _lTgt = IGC.RegisterBroadcastListener(Tag + "_TGT");
+        _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
+        _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
+        _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
+    }
+    catch (Exception ex) { CtorErr("listeners", ex); }
+    try
+    {
+        GetBlocks();
+        if (!_homeSet && _rc != null) { _home = _rc.GetPosition(); _homeSet = true; }
+    }
+    catch (Exception ex) { CtorErr("blocks", ex); }
     Runtime.UpdateFrequency = UpdateFrequency.Update1;
 }
 
