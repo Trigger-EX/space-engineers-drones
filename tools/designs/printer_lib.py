@@ -94,7 +94,7 @@ def welder_attach_offsets(fwd, up):
     """cell offsets (relative to the welder's Min) where an armour cube attaches to the welder through real mount points"""
     key = (fwd, up)
     if key in _ATT: return _ATT[key]
-    bp = Blueprint('t', 'Small')
+    bp = Blueprint('t', 'Small', legacy_shapes=True)
     w = bp.add("MyObjectBuilder_ShipWelder", reach.WELDER_SUB, (0, 0, 0), fwd, up, 'w')
     cells = set(bp.cells(w)); adj = set()
     for c in cells:
@@ -671,7 +671,7 @@ class Printer:
     def __init__(self, name, lite, seed_extra=''):
         self.name = name; self.lite = lite
         self.label = name + (' Lite' if lite else '')
-        self.bp = Blueprint(self.label, 'Small', seed=seed_for(self.label + seed_extra))
+        self.bp = Blueprint(self.label, 'Small', seed=seed_for(self.label + seed_extra), legacy_shapes=True)
         self.occ = {}                 # cell -> block dict (printer blocks)
         self.noprint = set()          # cells printer blocks must not use (drones, their ring, clear zones)
         self.bays = []                # PlacedBay objects

@@ -57,7 +57,7 @@ Accept Home=true
 
 def watcher_frame(name, sensor, tag="HORNET"):
     """Hornet-class 6-axis frame without weapons: 6 nose cameras, 5000 m antenna, optional sensor, rear merge latch."""
-    bp = Blueprint(name, "Small", seed=seed_for(name))
+    bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     HULL = (0.58, -0.78, -0.25); ACC = (0.07, 0.55, 0.10)
     for x in (-1, 0, 1):
         for y in (0, 1): bp.armor(x, y, -3, ACC)
@@ -100,7 +100,7 @@ def watcher(lite=False):
 # ---------------------------------------------------------------------------------------------
 def midge_frame(name):
     """Scriptless gatling drone. Core 3 wide x 2 high x 3 deep (z -1..1) behind a centred gatling; AI blocks buried inside."""
-    bp = Blueprint(name, "Small", seed=seed_for(name))
+    bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     ACC = (0.07, 0.55, 0.10)
     g = bp.add("MyObjectBuilder_SmallGatlingGun", "", (0, 0, -5), "Forward", "Up", f"{name} Gatling", GUN, kind="gun")
     bp.keep_clear(g, 6, "muzzle")

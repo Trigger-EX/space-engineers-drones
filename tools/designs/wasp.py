@@ -30,7 +30,7 @@ def _custom(section, tag):
 
 def frame(name, wtype, wsub, wlabel, wlen, script, custom_data, ai=True, sensor=True, merge=True):
     """Hornet-class drone with two forward weapons `wlen` cells long (muzzles at z = -(wlen) .. nose line)."""
-    bp = Blueprint(name, "Small", seed=seed_for(name))
+    bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     HULL = (0.58, -0.78, -0.25); ACC = (0.07, 0.55, 0.10)
     # core: x -1..1, y 0..1, z -3..0
     for x in (-1, 0, 1):

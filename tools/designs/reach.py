@@ -157,7 +157,7 @@ def combined_graph(bp):
     """printer + all drones (translated) in one Blueprint; returns (chk, owner, adj) with owner[id(copy)] = ('P'|'D', bay n or None, original block)"""
     import copy
     from sebp import Blueprint
-    chk = Blueprint('chk', 'Small')
+    chk = Blueprint('chk', 'Small', legacy_shapes=True)
     owner = {}
     for b in bp.blocks:
         nb = copy.copy(b); chk.blocks.append(nb); owner[id(nb)] = ('P', None, b)

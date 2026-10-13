@@ -46,7 +46,7 @@ def place(bp, xtype, sub, name, **kw):
     raise RuntimeError(f'could not attach {xtype}/{sub}')
 
 def build(name, items):
-    bp = sebp.Blueprint(name, 'Small', seed=zlib.crc32(name.encode()) & 0xffff)
+    bp = sebp.Blueprint(name, 'Small', seed=zlib.crc32(name.encode()) & 0xffff, legacy_shapes=True)
     bp.armor(0, 0, 0); bp.armor(1, 0, 0)
     for xtype, sub, kw in items:
         place(bp, xtype, sub, f'{name} {xtype}', **kw)

@@ -22,7 +22,7 @@ import _common as C
 # ---------------------------------------------------------------------------------------------
 def hornet_frame(name, weapon_sub, weapon_type, script, custom_data=None, ai=True, sensor=True, title=None, merge=True):
     """Hornet-class 6-axis small drone: 3x2x4 core, two fixed forward weapons, 12 ion thrusters, rear merge latch."""
-    bp = Blueprint(name, "Small", seed=seed_for(name))
+    bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     HULL = (0.58, -0.78, -0.25); ACC = (0.07, 0.55, 0.10)
     # core: x -1..1, y 0..1, z -3..0
     for x in (-1, 0, 1):
@@ -80,7 +80,7 @@ def hornet(lite=False):
 # ---------------------------------------------------------------------------------------------
 def gnat_frame(script, merge=True, sensor=True, name="Gnat"):
     """Minimal point-and-burn drone: two axial ion thrusters back-to-back, gyro steering, belly merge latch."""
-    bp = Blueprint(name, "Small", seed=7)
+    bp = Blueprint(name, "Small", seed=7, legacy_shapes=True)
     bp.add("MyObjectBuilder_RemoteControl", "SmallBlockRemoteControl", (1, 0, -2), name=f"{name} Remote Control", kind="ctrl", color=RED)
     bat(bp, (1, 0, -1), f"{name} Battery")
     bp.armor(1, 0, 0, RED)
@@ -117,7 +117,7 @@ def gnat(lite=False):
 def longbow_frame(grid, script, lite=False, seeker=False):
     L = grid == "Large"
     tag = ("Longbow L" if L else "Longbow S") + (" Seeker" if seeker else "") + (" Lite" if lite else "")
-    bp = Blueprint(tag, grid, seed=11 if L else 12)
+    bp = Blueprint(tag, grid, seed=11 if L else 12, legacy_shapes=True)
     ACC = (0.12, 0.55, 0.15)
     sub = lambda s, l: l if L else s
     rail = bp.add("MyObjectBuilder_SmallMissileLauncherReload", sub("SmallRailgun", "LargeRailgun"), (0, 0, -8), "Forward", "Up", f"{tag} Railgun", DARK, kind="rail")

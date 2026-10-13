@@ -86,7 +86,7 @@ def harrier(lite=False):
     """HARRIER: Hornet frame, 4 mains (2x2 behind the core), 2 brakes, ONE strafe thruster per side, lift/dive pairs, gyro, 2 gatlings.
     The two mains on the upper row sit at y=1 beside the rear camera (z=1..2); the merge stalk stays on the centre line y=0."""
     name = "Harrier Lite" if lite else "Harrier"
-    bp = Blueprint(name, "Small", seed=seed_for(name))
+    bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     _core(bp, name, script_text("HarrierAI.cs"), _custom("Harrier", "HARRIER", extra="Target Priority Small Bonus=300\n"))
     for x, s in ((-2, "L"), (2, "R")): _gun(bp, name, (x, 0, -4), s)
     for x, s in ((-1, "L"), (1, "R")):
@@ -108,7 +108,7 @@ def aegis(lite=False):
     The brake thrusters move to the nose (x=+-1, y=0, z=-5..-4) because the upper gatlings take the Hornet brake slots.
     Lite: no Decoy / Sensor / AI; the roof gets two heavy armour plates instead."""
     name = "Aegis Lite" if lite else "Aegis"
-    bp = Blueprint(name, "Small", seed=seed_for(name))
+    bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     _core(bp, name, script_text("AegisAI.cs"), _custom("Aegis", "AEGIS",
           extra="Extra Home Channel=HORNET_HOME\nCue Channel=DRONE_CUE\n"))
     for x, s in ((-2, "L"), (2, "R")):
@@ -136,7 +136,7 @@ def mantis(lite=False):
     mounts, 4 mains instead of 2, 3 nose cameras instead of 6.  The gatling bottom (rear cell) seats on the railgun Top mount.
     The up camera moves to the antenna top because the gatling takes its cell."""
     name = "Mantis Lite" if lite else "Mantis"
-    bp = Blueprint(name, "Small", seed=seed_for(name))
+    bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     rail = bp.add("MyObjectBuilder_SmallMissileLauncherReload", "SmallRailgun", (0, 0, -8), "Forward", "Up", f"{name} Railgun", DARK, kind="rail")
     bp.keep_clear(rail, 8, "muzzle")
     gat = bp.add("MyObjectBuilder_SmallGatlingGun", "", (0, 2, -4), "Forward", "Up", f"{name} Gatling", GUN, kind="gun")
@@ -185,7 +185,7 @@ def basilisk(lite=False, seeker=False):
       top deck    LargeGatlingTurret (Full only) centred on the roof, compact antenna + up camera behind it
     Everything is 3 cells wide so every block has a face on the hull; the grid is one connected piece (validated)."""
     name = ("Basilisk Seeker" if seeker else "Basilisk") + (" Lite" if lite else "")
-    bp = Blueprint(name, "Large", seed=seed_for(name))
+    bp = Blueprint(name, "Large", seed=seed_for(name), legacy_shapes=True)
     HEAVY = "LargeHeavyBlockArmorBlock"
     for x in (-1, 0, 1):
         for y in (0, 1): bp.armor(x, y, -1, ACC, sub=HEAVY)
