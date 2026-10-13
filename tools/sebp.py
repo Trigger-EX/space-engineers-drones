@@ -532,6 +532,11 @@ class Blueprint:
                                       f'Event Controller, Sensor, Turret Controller and the cockpit / remote control family')
         for tag, slots in tbs.items():
             for i, it in slots.items():
+                if isinstance(it, TB.WeaponItem):          # a weapon slot names a definition: it must exist, be a weapon and not need DLC
+                    wk = defkey(it.xtype, it.sub)
+                    if not wk: raise TB.ToolbarError(f'{self.label(b)}: slot {i}: weapon {it.xtype}/{it.sub} is not a block definition in defs.json')
+                    if not self.allow_dlc and DEFS[wk]['dlc']: raise TB.ToolbarError(f'{self.label(b)}: slot {i}: weapon {it.sub} needs DLC {DEFS[wk]["dlc"]}')
+                    if not INV.allowed_items(wk): raise TB.ToolbarError(f'{self.label(b)}: slot {i}: {it.xtype}/{it.sub} is not a weapon')
                 act = getattr(it, 'action', None)
                 if it.experimental: self.notes.append(f'{self.label(b)}: slot {i}: UNVERIFIED toolbar item ({act} with a hypothesised parameter shape)')
                 elif act is not None and act not in TB.SEEN_ACTIONS and act != TB.RUN_ACTION:

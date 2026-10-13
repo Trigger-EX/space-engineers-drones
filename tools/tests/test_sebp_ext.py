@@ -653,6 +653,14 @@ class TestToolbars(unittest.TestCase):
         with self.assertRaises(TB.ToolbarError): block_element(bp, tm)
         with self.assertRaises(AssertionError): bp.group('X', [{'name': 'not mine', 'sub': 's'}])
 
+    def test_weapon_slot_must_name_a_real_non_dlc_weapon(self):
+        bp = Blueprint('t', 'Small', seed=1)
+        bp.armor(0, 0, 0)
+        ck = bp.add(T('Cockpit'), 'DBSmallBlockFighterCockpit', (1, 0, 0), name='ck')
+        bp.set_toolbars(ck, [TB.weapon('SmallGatlingGun', '')])                       # fine
+        for bad in (TB.weapon('SmallGatlingGun', 'NoSuchGun'), TB.weapon('Thrust', 'SmallBlockSmallThrust'), TB.weapon('NoSuchType', '')):
+            with self.assertRaises(TB.ToolbarError): bp.set_toolbars(ck, [bad])
+
     def test_unseen_actions_are_reported_not_hidden(self):
         bp = Blueprint('t', 'Small', seed=5)
         tm = bp.add(T('TimerBlock'), 'TimerBlockSmall', (2, 0, 0), name='tm', toolbar=[TB.block(1, 'FancyNewAction')])

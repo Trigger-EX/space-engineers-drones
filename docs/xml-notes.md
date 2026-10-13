@@ -186,7 +186,7 @@ Tags: **seen** = reproduced from / verified against a game-written file, **deriv
 | event controller | `settings=sebp_toolbar.event_settings('connector', 0.8, invert=True)`, `links={'selected': [blocks]}`, `toolbar=[...]` |
 | owner | `Blueprint(owner=id)`, `add(owner=id, built_by=id)`; 0 writes none; default `DEFAULT_OWNER` unchanged |
 | shapes | `Blueprint(legacy_shapes=True)` = the shipped drones' exact XML; default = sample-derived; `sebp.confidence_table()`, `sebp.shape_report()`, `bp.shape_summary()` |
-| several grids | `parent.attach(child, MU.Pose.axes(pos, fwd, up))`, `parent.dock(child, parent_block, child_block, gap=0, roll=0, lock=False)`, `MU.dock_candidates/dock_pose`, `sebp.load_sbc_multi(path)` / `Blueprint.from_sbc_multi` |
+| several grids | `parent.attach(child, MU.Pose.axes(pos, fwd, up))`, `parent.dock(child, parent_block, child_block, gap=0, roll=0, lock=False)`, `MU.dock_candidates/dock_pose`, `sebp.load_sbc_multi(path)` / `Blueprint.from_sbc_multi`; `dock()` raises if the child would sit inside the parent (a connector whose Forward face looks into its own hull), try another `roll=` or move the connector |
 | loader | `load_sbc` now also keeps `id`, `items`, `state`, `toolbars`, `groups`, `pose` per grid |
 
 ### 7.2 Shapes (`tools/shapes.json` format 3, `tools/extract_shapes.py`)
