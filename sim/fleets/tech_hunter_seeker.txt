@@ -1,0 +1,19 @@
+# the fleets of tech_hunter.txt that contain Basilisks, with Basilisk Seekers instead
+3xBasilisk Seeker
+6xBasilisk Seeker
+10xBasilisk Seeker
+5xHornet+5xBasilisk Seeker
+5xGnat+5xBasilisk Seeker
+5xLongbow S+5xBasilisk Seeker
+5xLongbow L+5xBasilisk Seeker
+4xHornet+3xGnat+3xBasilisk Seeker
+4xHornet+3xLongbow S+3xBasilisk Seeker
+4xHornet+3xLongbow L+3xBasilisk Seeker
+4xGnat+3xLongbow S+3xBasilisk Seeker
+4xGnat+3xLongbow L+3xBasilisk Seeker
+4xLongbow S+3xLongbow L+3xBasilisk Seeker
+3xHornet+3xGnat+2xLongbow S+2xBasilisk Seeker
+3xHornet+3xGnat+2xLongbow L+2xBasilisk Seeker
+3xHornet+3xLongbow S+2xLongbow L+2xBasilisk Seeker
+3xGnat+3xLongbow S+2xLongbow L+2xBasilisk Seeker
+2xHornet+2xGnat+2xLongbow S+2xLongbow L+2xBasilisk Seeker

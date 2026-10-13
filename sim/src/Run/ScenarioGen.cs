@@ -85,11 +85,42 @@ namespace SeSim.Run
             }
         }
 
+        /// <summary>--enemy-fleets: explicit drone fleets ("3xHornet+2xGnat+Longbow L") fought against each enemy instead of the
+        /// counts x models grid and the mixed teams. Null = the grid.</summary>
+        public static List<string[]> EnemyFleets;
+        /// <summary>Blueprints usable in --enemy-fleets but not part of the standard matrices.</summary>
+        public static readonly string[] FleetOnlyModels = { "Basilisk Seeker" };
+
+        /// <summary>Parses "3xHornet+2xGnat+Longbow L" into a model list (count prefix "Nx" optional); models must be known.</summary>
+        public static string[] ParseFleet(string spec)
+        {
+            var l = new List<string>();
+            foreach (string part in spec.Split('+'))
+            {
+                string p = part.Trim();
+                if (p.Length == 0) continue;
+                int n = 1;
+                int x = p.IndexOf('x');
+                int parsed;
+                if (x > 0 && int.TryParse(p.Substring(0, x), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out parsed)) { n = parsed; p = p.Substring(x + 1).Trim(); }
+                if (Array.IndexOf(Models, p) < 0 && Array.IndexOf(FleetOnlyModels, p) < 0) throw new ArgumentException("unknown model '" + p + "' in fleet '" + spec + "'");
+                if (n < 1 || n > 64) throw new ArgumentException("bad count in fleet '" + spec + "'");
+                for (int i = 0; i < n; i++) l.Add(p);
+            }
+            if (l.Count == 0) throw new ArgumentException("empty fleet '" + spec + "'");
+            return l.ToArray();
+        }
+
         public static List<Scenario> EnemyScenarios()
         {
             var l = new List<Scenario>();
             foreach (string e in Enemies())
             {
+                if (EnemyFleets != null)
+                {
+                    for (int i = 0; i < EnemyFleets.Count; i++) l.Add(Build("enemy", new[] { e }, EnemyFleets[i]));
+                    continue;
+                }
                 for (int j = 0; j < ArmedModels.Length; j++)
                     for (int c = 0; c < EnemyCounts.Length; c++)
                         l.Add(Build("enemy", new[] { e }, Rep(ArmedModels[j], EnemyCounts[c])));

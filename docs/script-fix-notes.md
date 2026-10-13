@@ -1285,3 +1285,34 @@ control copy = the v2.1 pair. Sets: 1v1 `^1v1/(Aegis|Basilisk)-vs-|^1v1/.*-vs-(A
 `^(2v3|mixed|pirate|swarm|1v2|1v3)/.*(Aegis|Basilisk)` (2,580 runs), 2x/3x Basilisk collision set `^(2v3|pirate|1v2|1v3)/.*[23]xBasilisk`, Pirate `^pirate/.*(Aegis|Basilisk)-vs-Pirate`, GUARD `--commands "0.5:guard"`, sweeps with
 `--custom-data "[Basilisk]\nIGC Tag=BASILISK\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=IDLE\nKey=value"` (keys must not contain "="), alternative physics `--thruster-torque true`, `--gyro-pitch-sign 1`, `--vanilla-search-range 3500`.
 Pooling and per-opponent tables are 40 lines of Python over `runs.jsonl` (`seed_index < 30`, mirror scenarios counted from both sides). Debug builds (gate counters, confirm-ray counters, gyro command vs rate) lived in a separate copy.
+
+## v2.1: first in-game report (2026-10-13): guard stood still, hunt blind
+
+Report: Full drones in `guard` stood still; `hunt` drones waited ~20 s, all flew the same way and never saw a pirate ship 700 m away.
+
+Cause: the `[AI]` blocks paste with AI Behavior off (MidgeNotes.md), so they never act; the scripts released thrusters and gyros to
+them and skipped `AutoScanStep()` while `_aiOn`. HUNT's search patrol then flew its first leg along the drone's own Forward (the same
+for drones pasted from one blueprint), nose along the flight path. Under fire the close scan's 480 m rays used the nose cameras and
+kept their charge below the 1,200 m auto-scan.
+
+Sim settings added: `--script-ai-blocks-inert` (AI blocks on script ships never act), `--ai-behavior-needs-switch` (they act only once
+the bool terminal property `ActivateBehavior` is on; the id in the game is unverified, the scripts match any bool id containing "behavio").
+
+| 3 Hornets vs pirate at 700 m, 40 seeds | before | after |
+|---|---|---|
+| hunt, AI inert: wins / runs where the pirate was found | 0 / 1 | 4 / 15 |
+| guard, AI inert: wins / runs where the pirate was found | 0 / 1 | 5 / 16 |
+| hunt / guard, AI working: wins | 28 / 23 | 30 / 24 |
+
+All models (36 pirate scenarios x 20 seeds, drone-side wins of 720): inert hunt 23 -> 44, inert guard 24 -> 47, needs-switch 23 -> 211.
+
+Fixes: AI GATE shared block (time-shares the AI blocks with the script's search until they have flown the ship once). Its first
+version time-shared always and cut 1v1 decisive results from 90 % to 35 % with working AI blocks: the AI turns onto a far target
+within a second and then only brakes, which a "speeds up / keeps turning" test missed; now a 25 deg heading change also counts, and a
+proven AI is trusted. Side cameras cast 900 m rays with no target; the nose cameras stay with the auto-scan; hit direction from blocks
+that lost integrity (within ~16 deg in a traced run) steers the sweep and the side cameras; patrol fan-out, sweep on legs, hold at
+stops, patrol without AI blocks.
+
+Regression check (all 91 1v1 pairs x 20 seeds, working AI blocks, measured before v2.2/v2.3 were merged): without the Watcher
+77.6 % -> 77.4 % decisive (1,560 fights). Watcher fights 60.0 % -> 24.2 %: the Watcher (Hornet script, no guns, no AI blocks) used to
+sit at home in `hunt` because the patrol needed AI blocks; now it patrols and an attacker rarely catches it in 300 s.

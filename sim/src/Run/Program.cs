@@ -53,7 +53,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "endless" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -191,6 +191,20 @@ namespace SeSim.Run
                 }
                 if (l.Count == 0) throw new ArgumentException("--enemy-counts is empty");
                 ScenarioGen.EnemyCounts = l.ToArray();
+            }
+            if (o.Has("enemy-fleets"))
+            {
+                // inline "3xHornet+2xGnat;Basilisk+Gnat" or a file with one fleet per line ('#' comments)
+                string v = o.Get("enemy-fleets", "");
+                string[] items = File.Exists(v) ? File.ReadAllLines(v) : v.Split(';');
+                var l = new List<string[]>();
+                foreach (string it in items)
+                {
+                    string t = it; int h = t.IndexOf('#'); if (h >= 0) t = t.Substring(0, h);
+                    if (t.Trim().Length > 0) l.Add(ScenarioGen.ParseFleet(t));
+                }
+                if (l.Count == 0) throw new ArgumentException("--enemy-fleets is empty");
+                ScenarioGen.EnemyFleets = l;
             }
             if (o.Has("enemy-brain"))
             {

@@ -300,15 +300,17 @@ void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flCha
 // HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
 // The gate:
 //  * tries to switch "AI Behavior" on (a bool terminal property whose id contains "Behavior"; the exact id is not documented);
-//  * gives the AI blocks the ship for AI Window seconds, then runs the script's own search (camera sweep + scan rays) for
-//    Script Search Window seconds, and so on. While the AI visibly flies the ship (speeds it up or turns it) it keeps it, up to
-//    Max AI Hold seconds. Under fire the script searches unless the AI is already flying.
+//  * until the AI blocks have shown that they work (flown the ship once: sped it up or turned it), gives them the ship for
+//    AI Window seconds, then runs the script's own search (camera sweep + scan rays) for Script Search Window seconds, and so on;
+//    under fire the script searches. While the AI flies the ship it keeps it, up to Max AI Hold seconds. Once the AI has flown the
+//    ship it is trusted and gets the ship whenever the script wants it, as before v2.1 (sim: time-sharing a working AI cost most of
+//    its kills, 1v1 decisive 90 % -> 35 %).
 // Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
 // Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
 // "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
 bool AiGateOn = true, AiBehaviorSwitch = true;
 double AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
-bool _agAi = true; double _agT0 = -1, _agMoveT = -99, _agMinV = 0;
+bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
 int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
 List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
 
@@ -354,25 +356,28 @@ void AiGateFind(List<IMyFunctionalBlock> ai)
 
 bool AiGate(bool want)
 {
-    if (!want || !AiGateOn) { _agT0 = -1; return want; }
+    if (!want || !AiGateOn || _agLive) { _agT0 = -1; return want; }
     var vs = _rc.GetShipVelocities();
     double v = vs.LinearVelocity.Length();
-    if (_agT0 < 0) { _agT0 = _now; _agAi = !UnderFire; _agMoveT = -99; _agMinV = v; }
+    if (_agT0 < 0) { _agT0 = _now; _agAi = !UnderFire; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
     double age = _now - _agT0;
     if (_agAi)
     {
-        // The AI flies if it speeds the ship up again (the dampeners alone only slow it) or turns it. The first 1.5 s are
-        // ignored: the ship is still coasting and turning from the script's own control.
-        if (age < 1.5) _agMinV = v;
+        // The AI flies if it speeds the ship up again (the dampeners alone only slow it), keeps turning it, or has turned it more than
+        // 25 deg since the hand-over (it turns fast onto what it found, then may only brake; the script's own sweep coasts on for
+        // less than that). Speed and turn rate are ignored for the first 1.5 / 2.5 s while the ship coasts from the script's control.
+        if (!_agFwdSet) { _agFwd = _rc.WorldMatrix.Forward; _agFwdSet = true; }
+        if (age < 1.0) _agMinV = v;
         else
         {
             _agMinV = Math.Min(_agMinV, v);
-            if (v > _agMinV + 3 || vs.AngularVelocity.LengthSquared() > 0.0144) _agMoveT = _now;
+            if ((age > 1.5 && v > _agMinV + 3) || (age > 2.5 && vs.AngularVelocity.LengthSquared() > 0.0144) || Vector3D.Dot(_rc.WorldMatrix.Forward, _agFwd) < 0.906)
+            { _agMoveT = _now; _agLive = true; }
         }
         bool busy = _now - _agMoveT < 4 && age < AiHoldMax;
         if (!busy && (age >= AiWin || (UnderFire && age >= 1.5))) { _agAi = false; _agT0 = _now; }
     }
-    else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; }
+    else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
     return _agAi;
 }
 
@@ -380,7 +385,7 @@ string AiGateStatus()
 {
     if (_agFound < 0) return "";
     if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
-    return AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)\n" : "";
+    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
 }
 // <<< AI GATE <<<
 
@@ -1049,6 +1054,7 @@ void Command(string a)
         case "aialert": _alertT = _now; break;
         case "ai": if (w.Length > 1) AiAssist = w[1] == "on"; break;
         case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;
+        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;
         case "focus": SplitFocus = false; break;
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
@@ -1118,7 +1124,11 @@ void LoadConfig()
     SplitFocus = Cfg(S, "Split Targets Across Hive (false: focus fire)", SplitFocus);
     DisabledGrace = Cfg(S, "Seconds Before Dropping Disabled Target", DisabledGrace);
     EvadeSpeed = Cfg(S, "Evade Speed When Hit", EvadeSpeed);
-    AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
+    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
+    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);
+    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);
+    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);
+    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
     AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
     AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
@@ -1163,6 +1173,7 @@ void GetBlocks()
     GridTerminalSystem.GetBlocksOfType(_thr, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_guns, b => b.IsSameConstructAs(Me) && !(b is IMyLargeTurretBase));
     GridTerminalSystem.GetBlocksOfType(_cams, b => b.IsSameConstructAs(Me));
+    SeekerSetup();
     GridTerminalSystem.GetBlocksOfType(_turrets, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_ctcs, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_bats, b => b.IsSameConstructAs(Me));
@@ -1370,7 +1381,8 @@ void MaintainLock()
         var cam = CamFor(aim, 0);
         if (cam == null) return;
         var e = cam.Raycast(aim);
-        if (probingAim && (e.IsEmpty() || e.EntityId != _tgt.Id)) AimMissed(_tgt);
+        if (probingAim && !e.IsEmpty() && e.EntityId == _tgt.Id) BreachHit(_tgt, e, aim);
+        else if (probingAim && (e.IsEmpty() || !BreachMode(_tgt))) AimMissed(_tgt);   // breach: a drone in the way is no miss
         if (!e.IsEmpty() && e.EntityId == _tgt.Id)
         {
             _missRun = 0;
@@ -2127,7 +2139,7 @@ string HiveStatus()
     string s = "Hive: " + (_mates.Count + 1) + (SplitFocus ? " SPLIT" : " FOCUS");
     if (UnderFire) s += "  !! UNDER FIRE (" + _hits + ")";
     if (_tgt != null && _tgt.DisSince >= 0) s += "  tgt disabled";
-    if (_tgt != null) s += "\nAim: " + AimLabel(_tgt) + " (" + _tgt.Hull.Count + " hull pts)";
+    if (_tgt != null) s += "\nAim: " + AimLabel(_tgt) + " (" + _tgt.Hull.Count + " hull pts)" + AimInfo();
     return s + "\n" + AiStatus() + (_crash != "" ? "! Script error: " + _crash + "\n" : "");
 }
 
@@ -2172,11 +2184,13 @@ bool AimActive(Track t) { return AimMode != "CENTER" && t.Hull.Count >= 3; }
 string AimLabel(Track t)
 {
     if (!AimActive(t)) return "CENTER";
+    if (BreachMode(t)) return "BREACH";
     return AimMode == "AUTO" ? (t.Thrust.LengthSquared() > 0.09 ? "ENGINES" : "SPREAD") : AimMode;
 }
 Vector3D AimOffset(Track t)
 {
     if (!AimActive(t)) return Vector3D.Zero;
+    if (BreachMode(t)) return BreachOffset(t);
     if (_now - t.AimT > 0.5)
     {
         string mode = AimLabel(t);
@@ -2213,7 +2227,7 @@ Vector3D ProbePoint(Track t, Vector3D centre, Vector3D dir, double dist, out boo
 {
     probingAim = false;
     int k = ++_probeN;
-    if ((k & 3) == 0 && AimActive(t) && _now - t.Seen < 0.5) { probingAim = true; return centre + AimOffset(t) + dir * 1.5; }
+    if ((k & 3) == 0 && AimActive(t) && _now - t.Seen < 0.5) { probingAim = true; return centre + AimOffset(t) + dir * (BreachMode(t) ? BreachProbe : 1.5); }
     // A ray at the bounding-box centre often passes between the blocks of a small ship (about half of them miss).
     // Hull points kept from earlier hits are real blocks in the target's own frame: aim at one of those instead
     // (2 rays in 3), with a little scatter, and let it run 2 m past so a slightly late ray still clips the hull.
@@ -2233,9 +2247,136 @@ Vector3D ProbePoint(Track t, Vector3D centre, Vector3D dir, double dist, out boo
 }
 void AimMissed(Track t)
 {
+    if (BreachMode(t)) { BreachMiss(); return; }
     for (int i = t.Hull.Count - 1; i >= 0; i--) if ((t.Hull[i] - t.AimLocal).LengthSquared() < 9) t.Hull.RemoveAt(i);
     t.AimT = -99;
 }
+
+// >>> BREACH + SEEKER v1.0 (shared block: identical in every armed drone script, kept in sync by tools/aim_sync.py) >>>
+// BREACH (large ships): spreading hits over a big hull chips thousands of armour blocks and destroys none (sim vs a 13,666-block
+// warship). BREACH holds ONE hull point and keeps every round on it: the known hull point nearest the target's centre (on a long
+// ship that is mid-deck or mid-belly, where the armour over the core is thinnest). Probe rays at it that come back deeper show the
+// hole; the drone then aims down the hole, towards the centre. No progress for "Breach Stall (s)", or two probe rays in a row that
+// find nothing there: that point is dropped and the next one is used. AUTO uses BREACH on large grids of radius >= Breach Min
+// Radius; "aim breach" forces it, "breach off" turns the AUTO switch off.
+// SEEKER (in-game test of "let the game find the vitals"): a turret on this drone with [Seeker] in its name is set to the targeting
+// group "Seeker Group" (PowerSystems / Weapons / Propulsion; vanilla turrets and Custom Turret Controllers aim at the blocks of
+// that group). Twice a second the script reads where that turret points (lead removed), raycasts that line with its cameras, and
+// the hull point hit - right over the subsystem - becomes the breach point; the hole is then drilled along the turret's line.
+// What the turret reports is shown on the status screen ("Seek:" line), so an in-game test shows whether it works.
+// Decoys pull turrets (and the seeker) onto themselves first; static guns are never distracted.
+bool BreachAuto = true; double BreachMinRadius = 25, BreachStall = 30, BreachProbe = 30;
+string SeekerGroup = "PowerSystems"; double SeekerShotSpeed = 800;
+long _bId; bool _bOn, _bSeek; Vector3D _bS, _bDir; double _bDepth, _bProgT; int _bMiss;
+List<Vector3D> _bBad = new List<Vector3D>();
+List<IMyLargeTurretBase> _skT = new List<IMyLargeTurretBase>();
+bool _skOk; long _skId; Vector3D _skS, _skDir; double _skT0 = -99; string _skLog = "";
+
+bool BreachMode(Track t)
+{
+    if (AimMode == "BREACH") return true;
+    return AimMode == "AUTO" && BreachAuto && t.Type == MyDetectedEntityType.LargeGrid && t.Radius >= BreachMinRadius;
+}
+bool BreachBad(Vector3D h) { foreach (var q in _bBad) if ((q - h).LengthSquared() < 36) return true; return false; }
+void BreachSet(Vector3D s, Vector3D dir, bool seek)
+{
+    _bS = s; _bDir = dir; _bSeek = seek; _bOn = true; _bDepth = 0; _bProgT = _now; _bMiss = 0;
+}
+Vector3D BreachOffset(Track t)
+{
+    if (_bId != t.Id) { _bId = t.Id; _bOn = false; _bBad.Clear(); _skOk = false; }
+    SeekerTick(t);
+    if (_bOn && _now - _bProgT > BreachStall) BreachDrop();
+    // a seeker point replaces a plain breach point at once, and an old seeker point once its hole has stalled for 6 s
+    if (_skOk && _skId == t.Id && !BreachBad(_skS) && (!_bOn || !_bSeek || ((_skS - _bS).LengthSquared() > 64 && _now - _bProgT > 6)))
+    { BreachSet(_skS, _skDir, true); _skOk = false; }
+    if (!_bOn)
+    {
+        double best = double.MaxValue; Vector3D s = t.Hull[0];
+        foreach (var h in t.Hull) { if (BreachBad(h)) continue; double d = h.LengthSquared(); if (d < best) { best = d; s = h; } }
+        if (best == double.MaxValue) _bBad.Clear();
+        double l = s.Length();
+        BreachSet(s, l > 1e-3 ? -s / l : Vector3D.Zero, false);
+    }
+    Vector3D a = _bS + _bDir * _bDepth;                    // down the hole
+    t.AimLocal = a;
+    return Vector3D.TransformNormal(a, t.O);
+}
+// a probe ray at the breach point hit the target: how far past the surface point did it get?
+void BreachHit(Track t, MyDetectedEntityInfo e, Vector3D aim)
+{
+    if (!_bOn || _bId != t.Id || !e.HitPosition.HasValue || !AimActive(t) || !BreachMode(t)) return;
+    _bMiss = 0;
+    Vector3D rd = aim - Me.GetPosition();
+    if (rd.LengthSquared() < 1) return;
+    rd.Normalize();
+    double d = Vector3D.Dot(e.HitPosition.Value - (e.Position + Vector3D.TransformNormal(_bS, e.Orientation)), rd);
+    if (d > _bDepth + 0.5) { _bDepth = Math.Min(d, 60); _bProgT = _now; }
+}
+void BreachMiss() { if (++_bMiss >= 2) BreachDrop(); }
+void BreachDrop()
+{
+    if (_bOn) { _bBad.Add(_bS); if (_bBad.Count > 12) _bBad.RemoveAt(0); }
+    _bOn = false; _bSeek = false; _bMiss = 0;
+}
+string AimInfo()
+{
+    string s = "";
+    if (_bOn && _tgt != null && _bId == _tgt.Id && BreachMode(_tgt)) s += " hole " + _bDepth.ToString("0") + " m" + (_bSeek ? " (seeker)" : "");
+    if (_skT.Count > 0) s += "\nSeek: " + _skLog;
+    return s;
+}
+// seeker turrets: [Seeker] in the name, on this grid; set to the targeting group (needs the 1.200+ turret API)
+void SeekerSetup()
+{
+    _skT.Clear();
+    GridTerminalSystem.GetBlocksOfType(_skT, b => b.CubeGrid == Me.CubeGrid && b.CustomName.Contains("[Seeker]"));
+    if (_skT.Count == 0) _skLog = ""; else if (_skLog == "") _skLog = "ready, group " + SeekerGroup;   // (re-scans keep the last report)
+    foreach (var tu in _skT)
+    {
+        try { if (SeekerGroup.Length > 0 && tu.GetTargetingGroup() != SeekerGroup) tu.SetTargetingGroup(SeekerGroup); }
+        catch (Exception x) { _skLog = "group not set: " + x.Message; }
+    }
+}
+void SeekerTick(Track t)
+{
+    if (_skT.Count == 0 || _now - _skT0 < 0.5) return;
+    _skT0 = _now;
+    foreach (var tu in _skT)
+    {
+        if (!tu.IsFunctional) { _skLog = "turret damaged"; continue; }
+        if (!tu.HasTarget) { _skLog = "turret has no target (group " + tu.GetTargetingGroup() + ")"; continue; }
+        var te = tu.GetTargetedEntity();
+        if (te.EntityId != t.Id) { _skLog = "turret on another target"; continue; }
+        if (!tu.IsAimed) { _skLog = "turret turning"; continue; }
+        Vector3D o = tu.GetPosition(), q;
+        bool hp = te.HitPosition.HasValue && (te.HitPosition.Value - te.Position).LengthSquared() > 1;
+        if (hp) q = te.HitPosition.Value;                  // the game told us the block itself
+        else
+        {
+            Vector3D d; Vector3D.CreateFromAzimuthAndElevation(tu.Azimuth, tu.Elevation, out d);
+            d = Vector3D.TransformNormal(d, tu.WorldMatrix);
+            double D = Vector3D.Dot(t.P(_now) - o, d);
+            if (D < 5) { _skLog = "turret points away"; continue; }
+            // turrets lead their target; take the lead off again (bullets inherit our velocity)
+            Vector3D rv = t.V(_now) - _rc.GetShipVelocities().LinearVelocity;
+            q = o + d * D - rv * (D / SeekerShotSpeed);
+        }
+        var cam = CamFor(q, 0);
+        if (cam == null) { _skLog = "no camera charge/angle"; continue; }
+        Vector3D cd = q - cam.GetPosition(); double cl = cd.Length(); if (cl < 1) continue; cd /= cl;
+        var e = cam.Raycast(q + cd * BreachProbe);
+        if (e.IsEmpty() || e.EntityId != t.Id || !e.HitPosition.HasValue)
+        { _skLog = (hp ? "block pos given, " : "aim ray, ") + "ray missed hull"; continue; }
+        MatrixD inv = MatrixD.Transpose(e.Orientation);
+        _skS = Vector3D.TransformNormal(e.HitPosition.Value - e.Position, inv);
+        _skDir = Vector3D.TransformNormal(cd, inv);
+        _skOk = true; _skId = t.Id;
+        _skLog = (hp ? "block pos given" : "aim ray") + ", " + (q - e.HitPosition.Value).Length().ToString("0") + " m under hull";
+        return;
+    }
+}
+// <<< BREACH + SEEKER <<<
 
 // =====================================================================
 //  v1.8: AI-BLOCK HYBRID SEARCH

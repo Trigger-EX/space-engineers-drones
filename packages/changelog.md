@@ -39,13 +39,19 @@ and never saw a pirate ship 700 m away. Cause: the AI blocks paste with **AI Beh
 them the ship and switched their own camera search off while waiting for them. Reproduced in the simulator (AI blocks inert:
 3 Hornets vs pirate at 700 m won 0 of 40, found the pirate in 1 of 40 runs).
 - **AI GATE** (shared block in every scripted drone, `tools/ai_gate_block.cs`): the script tries to switch AI Behavior on itself
-  (the PB screen says whether it could), and never leaves the AI blocks in charge unless they visibly fly the ship: 6 s AI window,
-  then 8 s of the script's own camera search, and so on. Under fire the script searches. New `[AI Gate]` section in Custom Data.
+  (the PB screen says whether it could). Until the AI blocks have flown the ship once, they only get it in 6 s windows between 8 s
+  of the script's own camera search (under fire the script searches); once they have, they are trusted as before (status `AI ok`).
+  New `[AI Gate]` section in Custom Data.
 - Side cameras scan out to 900 m whenever there is no target (was 120 m); short close-scan rays no longer drain the nose cameras
   below the long scan's range while under fire.
 - Hit direction: the blocks that lose integrity tell which side was hit; the nose sweep and the side cameras search that side.
 - HUNT search patrol: drones fan out (each starts its square at a different corner), keep sweeping their cameras on a leg instead of
   looking along the flight path, hold position at listening stops, and Lite drones (no AI blocks) patrol too.
+- Simulator results (pirate ship 700 m away, 36 pirate scenarios x 20 seeds, every model): AI blocks doing nothing, `hunt`: drone
+  side wins 23 -> 44 of 720, `guard`: 24 -> 47 of 720 (3 Hornets alone: found the pirate in 1 -> 15 of 40 fights); AI blocks that
+  need the AI Behavior switch: 23 -> 211 of 720 (the script switches it on). With working AI blocks drone-vs-drone results are
+  unchanged (1v1 without the Watcher, 1,560 fights: 77.6 % -> 77.4 % decisive). The unarmed Watcher (no AI blocks) now patrols in
+  `hunt` like every drone without AI blocks, so armed drones catch it less often (Watcher fights 60 % -> 24 % decisive).
 - Simulator: `--script-ai-blocks-inert` (AI blocks never act) and `--ai-behavior-needs-switch` (AI blocks act only once a script
   switches "ActivateBehavior" on); `GetProperties`/`GetActions` on terminal blocks.
 
