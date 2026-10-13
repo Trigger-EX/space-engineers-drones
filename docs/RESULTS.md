@@ -25,6 +25,12 @@ Caveats (read before trusting any number):
 - Missing deliverables: standalone Stinger/Tick blueprint module and timer/Event-Controller printers (agents stopped by automated safeguards).
 - Nothing here was run in the real game.
 
+## Kamikaze defence (v2.4, `docs/kamikaze-defence.md`)
+Scenario kind `kamikaze` (4 / 8 cued Stingers against every scripted combat model, 31 scenarios x 20 seeds = 620 runs, same seeds, on top of
+v2.3): defenders still combat capable at the end 57% -> 70%, damage taken 9,158 -> 5,373 per fight, defender hull lost 40% -> 27%. Against
+4 Stingers, a lone Hornet, Lancer, Mantis or Longbow S survives 75-85% of fights (was 35-55%). Unchanged: the Gnat (it only sees kamikazes
+at 45 m), the Wasp (rockets too slow for them), and fights without kamikazes (1v1 regression in the doc).
+
 ## Running more simulation on your own PC
 `releases/SE_SimPack_<rev>.zip` is a self-contained pack (precompiled simulator, blueprints, data, run plan). Unzip, double-click `run.bat`,
 then `pack_results.bat`, and send `SE_results.zip`; ingest with `python3 -I tools/sim_ingest.py SE_results.zip --name pc1`.

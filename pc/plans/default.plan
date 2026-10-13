@@ -20,6 +20,8 @@ sweep-standoff-600 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longb
 sweep-standoff-800 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nStandoff Range=800" --resume --out {OUT}
 sweep-nojink | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nEvasive Jinking=false" --resume --out {OUT}
 sweep-jinkspeed-40 | run --filter "^1v1/(Aegis-vs-Hornet|Hornet-vs-(Lancer|Longbow S|Midge|Wasp))$" --seeds 100 --custom-data "[Hornet]\nJink Speed=40" --resume --out {OUT}
+# --- 4b. incoming kamikaze swarms (cued Stingers vs every combat model, docs/kamikaze-defence.md) ---
+kamikaze | run --kind kamikaze --seeds 100 --resume --out {OUT}
 # --- 5. trajectories of a few fights (small CSVs I can plot) ---
 trace-aegis-hornet | one --scenario "1v1/Aegis-vs-Hornet" --seed-index 0 --trace {OUT}/t.csv --trace-every 6
 trace-longbow-wasp | one --scenario "1v1/Longbow S-vs-Wasp" --seed-index 0 --trace {OUT}/t.csv --trace-every 6

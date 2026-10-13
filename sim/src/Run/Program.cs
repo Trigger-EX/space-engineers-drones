@@ -3,7 +3,8 @@
 //                                 `selftest scenario` (or --selftest scenario) also runs 3 short duels end to end
 //   list [--filter RX] [--kind K] print scenario names with job counts
 //   run   --filter REGEX [--seeds N] [--jobs 4] [--seed 1] [--shard i/n] [--out DIR] [--resume] [--<setting> value ...]
-//   one   --scenario NAME --seed-index K [--trace FILE] [--trace-every N] [--profile] [--echo]   single run, optional trace CSV
+//   one   --scenario NAME --seed-index K [--trace FILE] [--trace-every N] [--profile] [--echo] [--echo-every S [--echo-ship I]]
+//                                 single run, optional trace CSV; --echo-every prints ship I's (default 0) PB screens every S seconds
 //   scenario overrides for run/one: --commands "T:cmd;..." (script drones' start commands), --start-distance MIN:MAX,
 //         --face (ships start pointing at the enemy), --custom-data "INI with \n" (PB CustomData of the script drones)
 //   summarize --in runs.jsonl [--out summary.csv]    rebuild summary.csv from a runs.jsonl
@@ -53,7 +54,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -296,6 +297,16 @@ namespace SeSim.Run
                 foreach (var pr in host.Runners)
                     Console.Error.WriteLine("--- PB echo ship " + pr.ShipIndex + " " + pr.ScriptName + (pr.Dead ? " DEAD: " + pr.DeathReason : "") + " ---\n" + pr.EchoText);
             };
+            if (o.Has("echo-every"))
+            {
+                long every = Math.Max(1, (long)Math.Round(o.Dbl("echo-every", 1) * SimSettings.TicksPerSecond)); int eship = o.Int("echo-ship", 0);
+                opt.OnTick = (w, host, ships) =>
+                {
+                    if (w.Tick % every != 0) return;
+                    foreach (var pr in host.Runners)
+                        if (pr.ShipIndex == eship) Console.Error.WriteLine("=== t " + (w.Tick / (double)SimSettings.TicksPerSecond).ToString("0.00", Inv) + " ship " + pr.ShipIndex + " " + pr.ScriptName + " ===\n" + pr.EchoText);
+                };
+            }
             StreamWriter tw = null;
             if (o.Has("trace")) { tw = new StreamWriter(o.Get("trace", "trace.csv"), false, new UTF8Encoding(false)); opt.Trace = tw; }
             RunResult r = ScenarioRunner.RunOne(sc, idx, baseSeed, settings, repo, opt);

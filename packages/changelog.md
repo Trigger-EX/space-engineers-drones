@@ -1,4 +1,20 @@
-### v2.3 (this package): lead aiming against manoeuvring targets
+### v2.4 (this package): kamikaze defence
+Simulated attacks by swarms of small warhead drones (4 and 8 Stingers cued by a carrier's radar, against every combat drone model) showed the
+scripts writing the kamikazes off as wrecks. A Stinger correcting its course at the speed cap spins 1-2 rad/s, so the "tumbling for 4 s" rule
+dropped it, ignored it for 120 s and told the whole hive it was finished, usually just before it arrived.
+- **KAMIKAZE DEFENCE** (shared block in every combat drone script, `tools/kz_block.cs`, synced by `tools/kz_sync.py`; scripts 2.6 / Gnat 1.13
+  / Longbow 2.4; details in `docs/kamikaze-defence.md`):
+  - small contacts on a collision course with the drone or a hive mate are never written off as wrecks, and are dropped once spent;
+  - they become the priority target;
+  - the drone backs away along the threat axis while its guns stay on target, and breaks sideways inside 2 s of impact;
+  - spare camera charge tracks the rest of the swarm and searches round known kamikazes for their pack;
+  - the threats are shared with the hive, and Gnats skip their run-in against a kamikaze.
+  New `[Kamikaze Defence]` section in Custom Data; PB screen line `!! KAMIKAZE x3 (2 at me) next 4.2 s 380 m`.
+- Simulator, 620 kamikaze fights (20 seeds): defenders still fighting at the end 57% -> 70%, damage taken -41%. Against 4 Stingers, a lone
+  Hornet goes 50 -> 80%, Lancer 45 -> 85%, Mantis 35 -> 75%, Longbow S 55 -> 80%. Fights without kamikazes are unchanged (1v1 regression in the doc).
+- Simulator: scenario kind `kamikaze`, settings `SwarmCueSeconds` / `SwarmCueTeam`, `one --echo-every S`, report tool `tools/kz_report.py`.
+
+### v2.3: lead aiming against manoeuvring targets
 In-game report (2026-10-13): the Basilisk's rockets kept missing an enormous target that was doing basic evasive manoeuvres. A rocket
 needs about 4 s to fly 800 m; an AI ship on "evasive" flips its strafe every 2-5 s. Full write-up and measurements: `docs/lead-v1.md`.
 - **LEAD v1.0** (shared block in every armed drone script, `tools/lead_block.cs`, scripts v2.5 / Gnat 1.12 / Longbow 2.3):

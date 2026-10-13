@@ -40,6 +40,10 @@ Everything below is what you need to continue. Read sections 1–4 before touchi
 | Printer ships | Not started (designs in §7) |
 | Simulation engine + fights + audit | Not started (plan in §9) |
 
+**Later work (after this handoff was written):** see `packages/changelog.md` (v2.0 to v2.4) and `docs/RESULTS.md`; v2.4 is the
+**kamikaze defence** against incoming swarms of small warhead drones (`docs/kamikaze-defence.md`, shared block `tools/kz_block.cs`
+synced by `tools/kz_sync.py`, sim scenario kind `kamikaze`).
+
 **What the user currently has installed:** `Drones_v1.7` (Hornet, Longbow S, Longbow L, Gnat). It has
 **floating, unattached blocks**, which the user spotted (e.g. cameras floating on the Hornet).
 

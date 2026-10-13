@@ -16,6 +16,9 @@
 //          (N from --enemy-counts, default 1,2,3,4,6,8,12) and vs each mixed composition ("1vX"). Only the blueprint's largest grid
 //          is spawned (rotor/hinge/piston subgrids are dropped). It is flown by the pirate brain (--enemy-brain pirate, default)
 //          or holds position with dampeners on (--enemy-brain hold); either way its turrets fight on their own.
+//   kamikaze  incoming swarms of small warhead drones (docs/kamikaze-defence.md): each scripted combat model x1 vs 4 and 8 Stingers,
+//          x2 vs 8 Stingers, plus 3 Gnats vs 8. The Stinger team gets a radar cue every 0.5 s (Scenario.SwarmCueSeconds), so every run is
+//          a real attack (on their own the Stingers only see 50 m by sensor and never launch); 10 * 3 + 1 = 31 scenarios
 // Team 0 is the first-named side, team 1 the second. Seeds decide positions/orientations, so the side order has no bias.
 using System;
 using System.Collections.Generic;
@@ -263,6 +266,23 @@ namespace SeSim.Run
             return l;
         }
 
+        static readonly string[] KamikazeTargets = { "Aegis", "Basilisk", "Gnat", "Harrier", "Hornet", "Lancer", "Longbow L", "Longbow S", "Mantis", "Wasp" };
+
+        /// <summary>Incoming kamikaze swarms: cued Stingers (4 / 8) against each scripted combat model (x1 / x2) and against 3 Gnats.</summary>
+        public static List<Scenario> Kamikaze()
+        {
+            var l = new List<Scenario>();
+            foreach (var m in KamikazeTargets)
+            {
+                l.Add(Build("kamikaze", new[] { m }, Rep("Stinger", 4)));
+                l.Add(Build("kamikaze", new[] { m }, Rep("Stinger", 8)));
+                l.Add(Build("kamikaze", Rep(m, 2), Rep("Stinger", 8)));
+            }
+            l.Add(Build("kamikaze", Rep("Gnat", 3), Rep("Stinger", 8)));
+            foreach (var sc in l) sc.SwarmCueSeconds = 0.5;
+            return l;
+        }
+
         public static List<Scenario> All()
         {
             var l = Matrix1v1();
@@ -270,6 +290,7 @@ namespace SeSim.Run
             l.AddRange(Mixed());
             l.AddRange(Swarm());
             l.AddRange(Pirate());
+            l.AddRange(Kamikaze());
             l.AddRange(EnemyScenarios());
             return l;
         }
