@@ -8,7 +8,7 @@ Hooks that call the block (Track fields, LeadSpin / LeadSample in Track, the sol
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI",
-           "BasiliskAI"]
+           "BasiliskAI", "ShrikeAI"]
 BEGIN, END = "// >>> LEAD v", "// <<< LEAD v"
 
 def unlisted():

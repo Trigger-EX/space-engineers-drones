@@ -9,7 +9,7 @@ and docs/kamikaze-defence.md.
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI",
-           "BasiliskAI"]
+           "BasiliskAI", "ShrikeAI"]
 BEGIN, END = "// >>> KAMIKAZE DEFENCE", "// <<< KAMIKAZE DEFENCE <<<"
 
 def unlisted():
