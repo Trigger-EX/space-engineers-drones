@@ -734,9 +734,9 @@ void ManCfg()
 void ManBlocks()
 {
     _seats.Clear(); _dm.Clear(); _hud = null;
-    GridTerminalSystem.GetBlocksOfType(_seats, b => b.IsSameConstructAs(Me) && b.CanControlShip && !(b is IMyRemoteControl));
+    GridTerminalSystem.GetBlocksOfType(_seats, b => Own(b) && b.CanControlShip && !(b is IMyRemoteControl));
     string n = ManDmName.ToLowerInvariant();
-    if (n != "") GridTerminalSystem.GetBlocksOfType(_dm, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(n));
+    if (n != "") GridTerminalSystem.GetBlocksOfType(_dm, b => Own(b) && b.CustomName.ToLowerInvariant().Contains(n));
     try
     {
         var sp = _seats.Count > 0 ? _seats[0] as IMyTextSurfaceProvider : null;

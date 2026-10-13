@@ -40,7 +40,7 @@ string Tag = "SHIP", FleetCh = "FLEET", _note = "", _err = "", _tagKey = "";
 int First = 1, LaneCells = 24;
 bool LaneCheck = true;
 double ChargeFrac = 0.9, WaitMax = 60, WaveGap = 2, ArmMin = 0.5, ArmMax = 3, FusedGrace = 3, Cooldown = 30, MaxTurn = 0.1, MaxAccel = 1.0, JoinSecs = 8, MatchR = 8;
-double _now, _lastOff = -99, _acc, _dt = 1.0 / 6; long _tick; Vector3D _v0; bool _hasV;
+double _now, _lastOff = -99, _acc, _kT = -1; long _tick; Vector3D _v0; bool _hasV;
 
 class Bay
 {
@@ -150,7 +150,7 @@ bool Gone(IMyTerminalBlock x)
 
 public void Main(string arg, UpdateType src)
 {
-    double dt = Runtime.TimeSinceLastRun.TotalSeconds; if (dt > 0 && dt < 5) { _now += dt; _dt = dt; }
+    double dt = Runtime.TimeSinceLastRun.TotalSeconds; if (dt > 0 && dt < 5) _now += dt;
     try
     {
         Pump();
@@ -188,8 +188,8 @@ void Kinematics()
         if (!c.IsFunctional) continue;
         var v = c.GetShipVelocities(); Vector3D lv = v.LinearVelocity;
         _turn = v.AngularVelocity.Length();
-        if (_hasV) _acc = _acc * 0.5 + (lv - _v0).Length() / Math.Max(0.05, _dt) * 0.5;
-        _v0 = lv; _hasV = true; return;
+        if (_hasV && _now > _kT) _acc = _acc * 0.5 + (lv - _v0).Length() / (_now - _kT) * 0.5;
+        _v0 = lv; _kT = _now; _hasV = true; return;
     }
     _turn = 0; _hasV = false; _acc = 0;
 }
