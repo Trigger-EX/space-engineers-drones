@@ -18,7 +18,7 @@ HOOKS = [
     ('    if (!AimActive(t)) return "CENTER";\n',
      '    if (!AimActive(t)) return "CENTER";\n    if (BreachMode(t)) return "BREACH";\n'),
     ('Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n',
-     'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'),
+     'Vector3D AimOffset(Track t)\n{\n    SeekerTick(t);\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'),
     ('return centre + AimOffset(t) + dir * 1.5; }',
      'return centre + AimOffset(t) + dir * (BreachMode(t) ? BreachProbe : 1.5); }'),
     ('void AimMissed(Track t)\n{\n',
@@ -32,11 +32,27 @@ HOOKS = [
      '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
      '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
      '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
-     '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'),
+     '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
+     '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'),
     ('        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n',
      '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
-     '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'),
+     '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
+     '        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;\n'),
 ]
+# earlier wirings of a hook (anchor -> list of texts that a previous version of this tool put in its place)
+PREVIOUS = {
+    'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n': [
+        'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'],
+    '    AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n': [
+        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
+        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
+        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
+        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
+        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'],
+    '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n': [
+        '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
+        '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'],
+}
 CAM_SCAN = "GridTerminalSystem.GetBlocksOfType(_cams"
 
 
@@ -50,6 +66,9 @@ def wire(t, name):
     probs = []
     for old, new in HOOKS:
         if new in t: continue
+        # an older version of the same hook (its first line ends a previous replacement) also counts as the anchor
+        prev = [p for p in PREVIOUS.get(old, []) if t.count(p) == 1]
+        if prev: t = t.replace(prev[0], new); continue
         if t.count(old) != 1: probs.append("hook anchor %r found %d times" % (old.strip()[:50], t.count(old))); continue
         t = t.replace(old, new)
     # SeekerSetup() right after the camera scan line

@@ -1,0 +1,11 @@
+# Tech Hunter study, confirmation set on the final scripts (a subset of tech_hunter.txt that covers every model and the leaders)
+3xLongbow L
+10xLongbow L
+10xLongbow S
+10xHornet
+10xGnat
+10xBasilisk
+5xHornet+5xLongbow L
+5xLongbow S+5xLongbow L
+5xLongbow L+5xBasilisk
+2xHornet+2xGnat+2xLongbow S+2xLongbow L+2xBasilisk

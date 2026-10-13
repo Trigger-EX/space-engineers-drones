@@ -50,6 +50,7 @@ DRONE_DOCS = {
     'Aegis': 'Escort / point defence: four gatlings, two decoys (Lite: armour plates). Parks on a station around the carrier and screens it by standing on the carrier-to-threat line.',
     'Mantis': 'Railgun + gatling hybrid on a Longbow S spine: alpha strike at range, gatling up close. Engage cap 650 m.',
     'Basilisk': 'LARGE-grid armoured rocket gunship: four large missile launchers, six heavy armour blocks, 12 thrusters; Full adds a large gatling turret as point defence. Not printable.',
+    'Longbow L Seeker': 'TEST SHIP for subsystem seeking: Longbow L with an artillery turret (2 km, the railgun\'s reach) named [Seeker] on its back. The script sets the turret to a targeting group (Custom Data: Seeker Group, default PowerSystems), reads where it points and aims its railgun slugs down that line. The status screen shows a "Seek:" line with what the turret reports.',
     'Basilisk Seeker': 'TEST SHIP for subsystem seeking: the Full Basilisk with its roof turret named [Seeker]. The script sets that turret to a targeting group (Custom Data: Seeker Group, default PowerSystems), reads where it points, and drills its rockets into the hull over that block. The status screen shows a "Seek:" line with what the turret reports.',
 }
 # extra per-model notes shown in the README
@@ -57,6 +58,7 @@ MODEL_NOTES = {
     'Gnat': 'Thrust only along the nose axis (forward / back), by design.',
     'Midge': 'Experimental; no script. Configure the three AI blocks by hand (Scripts/MidgeNotes.md). Gatling ammo is not preloaded.',
     'Basilisk': 'Large grid: paste it as a free ship; it has no merge block and cannot be put in a printer bay.',
+    'Longbow L Seeker': 'Large grid, paste only. Experimental (see Basilisk Seeker). Load artillery shells into the turret: a turret without ammunition may not pick a target at all, and then it cannot guide the railgun.',
     'Basilisk Seeker': 'Large grid, paste only. Experimental: tells you whether the game lets a script find an enemy\'s power blocks through a turret. Decoys pull the turret first.',
     'Longbow L': 'Large grid, no merge block: paste only.',
     'Longbow S': 'No docking face in the base model; printers add a docking stalk to it.',
