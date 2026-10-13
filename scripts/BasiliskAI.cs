@@ -17,7 +17,7 @@
 //   * A rocket is SLOW: it leaves at 100 m/s, accelerates at 600 m/s^2 and
 //     tops out at 200 m/s after 1/6 s (25 m). It does NOT inherit the
 //     launcher's velocity (Keen forum), so the lead solver integrates the
-//     rocket's real speed curve (RktDist/RktTime) against the target's
+//     rocket's real speed curve (RktTime) against the target's
 //     predicted track instead of using one constant bullet speed.
 //   * Flight time is long (1.5 s at 300 m, 4 s at 800 m), so the drone sits
 //     closer (Standoff 180 m), and refuses to fire at a target whose
@@ -59,6 +59,7 @@
 //  COMMANDS (PB argument, toolbar, or IGC "<Tag>_CMD")
 //   guard    hold home point, engage anything inside GuardRadius
 //   follow   stay with the owner: a ship running a Mothership link, or you on foot near the drone ("escort" works too)
+//   satellite (sat, orbit)   FOLLOW, but the drones spread round a slowly turning vertical ring centred on the owner (ring size grows with their number); [Follow] section
 //   hunt     chase and engage any target, actively scan
 //   assist   you fly, script aims + fires when a target is locked
 //   rtb      fly home, then idle
@@ -417,7 +418,7 @@ string AiGateStatus()
 }
 // <<< AI GATE <<<
 
-// >>> FOLLOW v1.0 (shared block: identical in every scripted combat drone, synced by tools/follow_sync.py) >>>
+// >>> FOLLOW v1.1 (shared block: identical in every scripted combat drone, synced by tools/follow_sync.py) >>>
 // FOLLOW mode ("follow" or "escort" command, Start Mode FOLLOW, or launch Mode=FOLLOW): the drone stays with its owner instead of
 // holding a fixed home point (GUARD).
 // The owner is found two ways:
@@ -433,6 +434,14 @@ string AiGateStatus()
 //  * engages only targets within Engage Radius of the owner, and drops a fight that takes it beyond Leash;
 //  * the ring widens (up to 2x) while the owner manoeuvres hard (over 3 m/s2), so a ship that out-turns the drones does not run into them;
 //  * link lost: keeps flying the owner's last track for Coast seconds (10 s on foot), then holds that point until the owner is heard again.
+// SATELLITE formation (v1.1, command "satellite" / "sat" / "orbit", or [Follow] Formation=SATELLITE): the same owner tracking, hull clearance,
+// engage/leash and return logic as FOLLOW, but the drones spread evenly round a VERTICAL CIRCLE centred on the owner and the whole ring turns
+// slowly (Orbit Period). Ring radius = Satellite Distance, grown so neighbours stay a wingmate separation apart (more drones = a bigger
+// ring), never inside the hull + 45 m, capped at 600 m. Plane: ACROSS = square to the owner's heading (a halo round the
+// ship, covers all sides), ALONG = side-on (contains the heading). The ring turns with the owner's (lagged) heading. A drone that engages a
+// target leaves its slot (FOLLOW combat rules); when the target is dead it flies back to its slot, which has kept turning. Drones agree on
+// the ring phase without a clock: each averages the phase implied by the mates that sit on the ring. In gravity only the upper arc is used
+// and the drones sway instead of orbiting. "follow" / "escort" switch back to the tail ring.
 // Own [Follow] section in Custom Data (written on first run, "reload" re-reads it).
 // Hooks: FollowLoad() after AiGateLoad(); FollowStep() every tick after ReadIGC(); FollowSensed(e) for each sensor detection and
 // "Detect Owner" = FoFoot, "Detect Players" = TargetChars || FoFoot in ConfigureSensors(); first line of Home():
@@ -440,32 +449,34 @@ string AiGateStatus()
 // idle translation "want = FollowWant(me, aBrake, Separation(me)) + Evade();"; with a target
 // "if (_mode == Mode.FOLLOW && FollowFar(me)) want = FollowBack(me);"; speed cap MaxSpeed in FOLLOW; FollowStatus() in the status.
 double FoDist = 60, FoFootDist = 20, FoRadius = 25, FoEngage = 800, FoLeash = 1200, FoCoast = 3;
-bool FoFoot = true;
+bool FoFoot = true, FoSat = false, FoSatAlong = false;
+double FoSatDist = 100, FoSatPeriod = 180, _foSatPh = 0, _foSatT = -99, _foSatR = 100;
+Vector3D _foSlotV;
 Vector3D _foP, _foV, _foLinkP, _foLinkV, _foFwd, _foUp;
 double _foT = -99, _foLinkT = -99, _foFootT = -99, _foR = 0, _foRT = -99, _foPhase = 0, _foAcc = 0;
 bool _foFrame = false, _foOnFoot = false;
 IMyBroadcastListener _foLR1, _foLR2; string _foKey = "";
 
+string FoK(MyIni i, string k, string d) { if (!i.ContainsKey("Follow", k)) i.Set("Follow", k, d); return i.Get("Follow", k).ToString(d); }
+double FoD(MyIni i, string k, double d, double lo) { if (!i.ContainsKey("Follow", k)) i.Set("Follow", k, d); return Math.Max(lo, i.Get("Follow", k).ToDouble(d)); }
+
 void FollowLoad()
 {
     var ini = new MyIni(); MyIniParseResult res;
     if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Follow";
-    if (!ini.ContainsKey(S, "Slot Distance")) ini.Set(S, "Slot Distance", FoDist);
-    if (!ini.ContainsKey(S, "On Foot Distance")) ini.Set(S, "On Foot Distance", FoFootDist);
-    if (!ini.ContainsKey(S, "Owner Radius")) ini.Set(S, "Owner Radius", FoRadius);
-    if (!ini.ContainsKey(S, "Engage Radius")) ini.Set(S, "Engage Radius", FoEngage);
-    if (!ini.ContainsKey(S, "Leash")) ini.Set(S, "Leash", FoLeash);
-    if (!ini.ContainsKey(S, "Coast After Link Loss (s)")) ini.Set(S, "Coast After Link Loss (s)", FoCoast);
-    if (!ini.ContainsKey(S, "Follow Owner On Foot")) ini.Set(S, "Follow Owner On Foot", FoFoot);
+    FoDist = FoD(ini, "Slot Distance", FoDist, 10);
+    FoFootDist = FoD(ini, "On Foot Distance", FoFootDist, 5);
+    FoRadius = FoD(ini, "Owner Radius", FoRadius, 0);
+    FoEngage = FoD(ini, "Engage Radius", FoEngage, 50);
+    FoLeash = Math.Max(FoEngage, FoD(ini, "Leash", FoLeash, 0));
+    FoCoast = FoD(ini, "Coast After Link Loss (s)", FoCoast, 0);
+    FoFoot = FoK(ini, "Follow Owner On Foot", FoFoot ? "True" : "False").ToLowerInvariant() != "false";
+    string fm = FoK(ini, "Formation (FOLLOW/SATELLITE)", FoSat ? "SATELLITE" : "FOLLOW").Trim().ToUpperInvariant();
+    FoSat = fm == "SATELLITE" || fm == "SAT" || fm == "ORBIT";
+    FoSatDist = FoD(ini, "Satellite Distance (m)", FoSatDist, 30);
+    FoSatPeriod = FoD(ini, "Satellite Orbit Period (s)", FoSatPeriod, 0);
+    FoSatAlong = FoK(ini, "Satellite Ring (ACROSS/ALONG)", "ACROSS").Trim().ToUpperInvariant() == "ALONG";
     string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    FoDist = Math.Max(10, ini.Get(S, "Slot Distance").ToDouble(FoDist));
-    FoFootDist = Math.Max(5, ini.Get(S, "On Foot Distance").ToDouble(FoFootDist));
-    FoRadius = Math.Max(0, ini.Get(S, "Owner Radius").ToDouble(FoRadius));
-    FoEngage = Math.Max(50, ini.Get(S, "Engage Radius").ToDouble(FoEngage));
-    FoLeash = Math.Max(FoEngage, ini.Get(S, "Leash").ToDouble(FoLeash));
-    FoCoast = Math.Max(0, ini.Get(S, "Coast After Link Loss (s)").ToDouble(FoCoast));
-    FoFoot = ini.Get(S, "Follow Owner On Foot").ToBoolean(FoFoot);
     int h = 0; foreach (char c in Tag) h = (h * 31 + c) % 997;
     _foPhase = h / 997.0;   // drone types share no slot list: each type starts its ring at its own angle
     string key = Tag + "#" + _flChan;
@@ -488,10 +499,27 @@ void FoReadR(IMyBroadcastListener l)
     }
 }
 
+// commands: satellite / sat / orbit -> FoSetSat(true); follow / escort -> FoSetSat(false). Written to Custom Data so it survives a recompile.
+void FoSetSat(bool on)
+{
+    if (on != FoSat) _foFrame = false;
+    FoSat = on;
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    ini.Set("Follow", "Formation (FOLLOW/SATELLITE)", on ? "SATELLITE" : "FOLLOW");
+    Me.CustomData = ini.ToString();
+}
+
 void FoSet(Vector3D p, Vector3D v, bool foot) { _foP = p; _foV = v; _foT = _now; _foOnFoot = foot; }
 
 void FollowStep()
 {
+    if (FoSat)
+    {
+        double sdt = _now - _foSatT;
+        if (sdt > 0 && sdt < 1 && FoSatPeriod > 1) _foSatPh += 2 * Math.PI * sdt / FoSatPeriod;
+        _foSatT = _now;
+    }
     FoReadR(_foLR1); FoReadR(_foLR2);
     if (_dynHomeT > _foLinkT)   // a new position fix from the carrier link
     {
@@ -515,7 +543,9 @@ void FollowStep()
     // slot frame: forward = the owner's heading (kept while it stops), up = away from gravity (in space the frame's own up)
     Vector3D g = _rc.GetNaturalGravity();
     if (!_foFrame)
-    {   // start with the drone "behind" the owner: no slot on the far side of the hull
+    {   // FOLLOW: start with the drone "behind" the owner (no slot on the far side of the hull). SATELLITE: every drone starts from the same
+        // world axes, so all of them share one ring plane until the owner moves and turns the frame
+        if (FoSat) { _foFwd = Vector3D.Right; _foUp = Vector3D.Up; _foFrame = true; return; }
         Vector3D to = _foP - _rc.GetPosition();
         _foFwd = to.LengthSquared() > 1 ? Vector3D.Normalize(to) : _rc.WorldMatrix.Forward; _foUp = _rc.WorldMatrix.Up; _foFrame = true;
     }
@@ -552,6 +582,8 @@ Vector3D FollowSlot()
     int n = 1, k = 0; long me = Me.CubeGrid.EntityId;
     foreach (var m in _mates.Values) { if (_now - m.Seen > 3) continue; n++; if (m.Id < me) k++; }
     bool grav = _rc.GetNaturalGravity().LengthSquared() > 0.1;
+    if (FoSat) return FoSatSlot(n, k, grav);
+    _foSlotV = Vector3D.Zero;
     double th = grav ? Math.PI * (k + 0.15 + 0.7 * _foPhase) / n : Math.PI * 0.5 + 2 * Math.PI * (k + 0.7 * _foPhase) / n;
     double gap = Math.Max(SepRange * 1.1, 30) / (2 * Math.Sin((grav ? Math.PI * 0.5 : Math.PI) / Math.Max(n, 2)));
     _foSlotR = _foOnFoot ? Math.Min(40, Math.Max(FoFootDist, n * 4)) : Math.Max(Math.Max(FoDist, FollowRadius() + 30), n > 1 ? gap / 0.866 : 0);
@@ -559,6 +591,38 @@ Vector3D FollowSlot()
     Vector3D right = Vector3D.Cross(_foFwd, _foUp);
     Vector3D side = right * Math.Cos(th) + _foUp * Math.Sin(th);
     return FollowPos() + (-_foFwd * 0.5 + side * 0.866) * _foSlotR;   // 60 deg off the owner's tail
+}
+
+// SATELLITE slot k of n on the vertical ring (see the header). Mates are ranked by grid id; every drone's rank is the same as seen by the others.
+double FoSatBase(int k, int n, bool grav) { return grav ? Math.PI * (k + 0.5) / n : 2 * Math.PI * (k + 0.5 * _foPhase) / n; }
+Vector3D FoSatSlot(int n, int k, bool grav)
+{
+    Vector3D c = FollowPos(), a = FoSatAlong ? _foFwd : Vector3D.Cross(_foFwd, _foUp), nrm = Vector3D.Cross(a, _foUp);
+    if (!grav)
+    {   // phase consensus: the ring phase each fresh mate sitting on the ring implies, averaged (circular mean) with my own
+        double sx = Math.Cos(_foSatPh), sy = Math.Sin(_foSatPh); long me = Me.CubeGrid.EntityId;
+        foreach (var m in _mates.Values)
+        {
+            double age = _now - m.Seen; if (age > 3) continue;
+            int r = me < m.Id ? 1 : 0; foreach (var q in _mates.Values) if (_now - q.Seen <= 3 && q.Id < m.Id) r++;
+            Vector3D d = m.Pos + m.Vel * age - c; double x = Vector3D.Dot(d, a), y = Vector3D.Dot(d, _foUp), L = Math.Sqrt(x * x + y * y);
+            if (Math.Abs(L - _foSatR) > 0.3 * _foSatR || Math.Abs(Vector3D.Dot(d, nrm)) > 0.3 * _foSatR) continue;   // off the ring (fighting)
+            double ph = Math.Atan2(y, x) - FoSatBase(r, n, false); sx += Math.Cos(ph); sy += Math.Sin(ph);
+        }
+        double dp = Math.Atan2(sy, sx) - _foSatPh; dp -= 2 * Math.PI * Math.Floor((dp + Math.PI) / (2 * Math.PI));
+        _foSatPh += dp * 0.02;
+    }
+    double gap = Math.Max(SepRange * 1.1, 40);
+    double R = _foOnFoot ? Math.Min(40, Math.Max(FoFootDist, n * 4))
+        : Math.Min(600, Math.Max(Math.Max(FoSatDist, FollowRadius() + 45), n > 1 ? gap / (2 * Math.Sin((grav ? Math.PI * 0.5 : Math.PI) / Math.Max(n, 2))) : 0));
+    if (!_foOnFoot) R *= 1 + MathHelper.Clamp((_foAcc - 3) / 6, 0, 1);   // the owner throws itself around: up to twice the room
+    _foSatR = R; _foSlotR = R;
+    double w = FoSatPeriod > 1 ? 2 * Math.PI / FoSatPeriod : 0;
+    double th = FoSatBase(k, n, grav);
+    if (grav) th += 0.2 * Math.PI / n * Math.Sin(_foSatPh);   // sway by a fifth of the slot spacing: neighbours cannot meet
+    else th += _foSatPh;
+    _foSlotV = grav ? Vector3D.Zero : (a * -Math.Sin(th) + _foUp * Math.Cos(th)) * (R * w);
+    return c + (a * Math.Cos(th) + _foUp * Math.Sin(th)) * R;
 }
 
 // sep = the script's wingmate separation (SepRange); on foot the ring is smaller than that, so a 15 m push replaces it.
@@ -584,7 +648,7 @@ Vector3D FollowWant(Vector3D me, double aBrake, Vector3D sep)
     }
     Vector3D d = goal - me; double dist = d.Length();
     double v = Math.Min(Math.Min(MaxSpeed, dist * 0.6), Math.Sqrt(2 * aBrake * dist));
-    Vector3D w = FollowVel() + (dist > 0.5 ? d / dist * v : Vector3D.Zero);
+    Vector3D w = FollowVel() + _foSlotV + (dist > 0.5 ? d / dist * v : Vector3D.Zero);
     Vector3D om = me - o; double oml = om.Length(), band = Math.Max(clr, Math.Min(clr + 25, _foSlotR - 8));
     if (oml < band)
     {   // near the hull: no closing in, and get out of the way of an owner turning into the drone
@@ -627,7 +691,7 @@ string FollowStatus()
     if (_mode != Mode.FOLLOW) return "";
     if (!FollowKnown()) return "Follow : no owner yet (link script on your ship" + (FoFoot ? ", or stand within ~50 m" : "") + ")\n";
     double age = _now - _foT;
-    string s = "Follow : " + (_foOnFoot ? "on foot" : "ship") + (age > 1.5 ? " LOST " + age.ToString("F0") + " s" : "") + "  " + FollowVel().Length().ToString("F0") + " m/s";
+    string s = (FoSat ? "Satellite : ring " + _foSatR.ToString("F0") + " m, " + (_mates.Count + 1) + " ships, " : "Follow : ") + (_foOnFoot ? "on foot" : "ship") + (age > 1.5 ? " LOST " + age.ToString("F0") + " s" : "") + "  " + FollowVel().Length().ToString("F0") + " m/s";
     if (_rc != null) s += "  " + Vector3D.Distance(_rc.GetPosition(), FollowPos()).ToString("F0") + " m away";
     return s + "\n";
 }
@@ -1256,7 +1320,7 @@ Mode ParseMode(string s, Mode def)
     switch (s.Trim().ToUpperInvariant())
     {
         case "IDLE": return Mode.IDLE; case "GUARD": return Mode.GUARD; case "HUNT": return Mode.HUNT;
-        case "ASSIST": return Mode.ASSIST; case "RTB": return Mode.RTB; case "FOLLOW": case "ESCORT": return Mode.FOLLOW; default: return def;
+        case "ASSIST": return Mode.ASSIST; case "RTB": return Mode.RTB; case "FOLLOW": case "ESCORT": return Mode.FOLLOW; case "SATELLITE": case "SAT": case "ORBIT": FoSat = true; return Mode.FOLLOW; default: return def;
     }
 }
 
@@ -1309,7 +1373,8 @@ void Command(string a)
     switch (w[0])
     {
         case "guard": SetMode(Mode.GUARD); break;
-        case "follow": case "escort": SetMode(Mode.FOLLOW); break;
+        case "follow": case "escort": FoSetSat(false); SetMode(Mode.FOLLOW); break;
+        case "satellite": case "sat": case "orbit": FoSetSat(true); SetMode(Mode.FOLLOW); break;
         case "hunt": SetMode(Mode.HUNT); break;
         case "assist": SetMode(Mode.ASSIST); break;
         case "rtb": SetMode(Mode.RTB); break;
@@ -1950,13 +2015,7 @@ void Control(double dt)
     ApplyThrust((acc - grav) * mass);
 }
 
-// Distance a rocket has flown t seconds after launch, and the inverse (time to cover d metres).
-double RktDist(double t)
-{
-    double ta = Math.Max(0, (RktVmax - RktV0) / Math.Max(RktAcc, 1));
-    if (t <= ta) return RktV0 * t + 0.5 * RktAcc * t * t;
-    return RktV0 * ta + 0.5 * RktAcc * ta * ta + RktVmax * (t - ta);
-}
+// Time to fly d metres after launch (the rocket speed curve).
 double RktTime(double d)
 {
     double ta = Math.Max(0, (RktVmax - RktV0) / Math.Max(RktAcc, 1));

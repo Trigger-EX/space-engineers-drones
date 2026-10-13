@@ -1,3 +1,9 @@
+### v2.7 (unreleased): SATELLITE formation
+New operating mode: the drones spread round a slowly turning vertical ring centred on the owner (a ship running a Mothership link, you on foot, or the Gnat's carrier /
+home point), break off and engage anything inside the Engage Radius, and fly back to their slots afterwards. Command `satellite` / `sat` / `orbit`; ring distance
+(`Satellite Distance`, default 100 m, grows with the number of ships), orbit period and plane are in the `[Follow]` Custom Data section. Details, numbers and tests:
+`docs/follow-mode.md`. FOLLOW block v1.1 (`tools/follow_block.cs`); the Gnat has its own copy. Size: the Basilisk is now 99,733 of the 100,000 characters.
+
 ### v2.6 (this package): BREACH aim against big ships; SEEKER test ships
 - **Script length fix (important).** A Programmable Block takes at most 100,000 characters; since v2.2 every armed drone script
   was over it (Hornet 155,629, Basilisk 175,054 characters with comments), so a pasted drone's PB could not hold its script. The

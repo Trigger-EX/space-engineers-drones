@@ -3,12 +3,13 @@
 // ("FLEET_HOME" position + "FLEET_HOMER" radius, every 10 ticks like the Mothership link), or, with --path foot, is a character that
 // the drones' sensors report (Relationship Owner) while it is within 50 m of a sensor, with no link at all.
 //
-//   mono SimHost.exe follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] [--speed 40] [--radius 20]
+//   mono SimHost.exe follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight|park] [--speed 40] [--radius 20]
 //        [--no-radius] [--stress] [--cmd follow] [--seconds 140] [--seed 1] [--echo] [--trace FILE] [--repo DIR]
 //   cruise  0-10 s parked, 10-30 s speeds up along +X, cruise, 60-80 s 90 deg turn, 80-100 s slows to a stop, then parked
 //   weave   constant speed, heading swings +/-30 deg (30 s period; --weave-deg, --weave-period) and climbs/dives
 //   --stress: pass/fail on hull clearance only (e.g. weave --weave-deg 60 --weave-period 20: the owner turns twice as hard as a drone can)
 //   lost    as cruise, but the link goes silent at 50 s: the drones must hold near where the owner was going, not fly back
+//   park    owner stationary at the origin (the satellite ring test: --cmd satellite)
 //   foot    a character walking at 4 m/s with turns, seen only by the drones' sensors (no link)
 //   fight   owner parked; an enemy drone of the same model (HUNT) appears 600 m away at 30 s: drones engage, stay within the
 //           leash, and come back afterwards
@@ -45,7 +46,8 @@ namespace SeSim.Run
         sealed class Drone
         {
             public List<Body> Bodies; public SimProgrammableBlock Pb; public List<SimSensor> Sensors = new List<SimSensor>();
-            public List<double> Dist = new List<double>(); public int InsideTicks; public double MinMate = double.MaxValue, MaxDist;
+            public List<double> Rad = new List<double>(); public double Ang0, AngPrev, AngSum; public bool AngInit; public double PlaneMax;
+            public List<double> Dist = new List<double>(); public int InsideTicks; public double MinMateSettled = double.MaxValue, MinMate = double.MaxValue, MaxDist;
             public Body Main { get { return Pb.Inst.Body; } }
         }
 
@@ -80,7 +82,7 @@ namespace SeSim.Run
                 }
                 p = pos; return;
             }
-            if (path == "fight") { p = Vector3D.Zero; v = Vector3D.Zero; return; }
+            if (path == "fight" || path == "park") { p = Vector3D.Zero; v = Vector3D.Zero; return; }
             // cruise / lost: piecewise, integrated the same way
             {
                 double dtt = 1.0 / 60; Vector3D pos = Vector3D.Zero; v = Vector3D.Zero; double s = 0, hd = 0;
@@ -106,7 +108,8 @@ namespace SeSim.Run
             ulong seed = (ulong)Dbl(args, "--seed", 1);
             WeaveDeg = Dbl(args, "--weave-deg", 30); WeavePeriod = Dbl(args, "--weave-period", 30);
             string tracePath = Arg(args, "--trace", null);
-            string cmd = Arg(args, "--cmd", "follow");   // e.g. guard / form, to compare with the other modes
+            string cmd = Arg(args, "--cmd", "follow");   // e.g. guard / form, to compare with the other modes; satellite = the vertical ring
+            bool satellite = cmd == "satellite" || cmd == "sat" || cmd == "orbit";
             var settings = new SimSettings();
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
             var bp = BlueprintLoader.Get(Path.Combine(Path.Combine(repo, "out"), "Blueprints"), model);
@@ -185,6 +188,14 @@ namespace SeSim.Run
                     if (dist < clear) d.InsideTicks++;
                     for (int j = i + 1; j < drones.Count; j++)
                         if (drones[j].Main.Alive) { double m = (drones[j].Main.WorldBoundCenter - dp).Length(); if (m < d.MinMate) d.MinMate = m; if (m < drones[j].MinMate) drones[j].MinMate = m; }
+                    if (satellite && now >= settle && t % 6 == 0 && path != "cruise")
+                    {   // ring metrics in the world frame the drones start from: ring plane spans Y,Z (normal X) for ACROSS
+                        Vector3D rel = dp - op; double ang = Math.Atan2(rel.Y, rel.Z);
+                        if (!d.AngInit) { d.AngInit = true; d.AngPrev = ang; }
+                        double da = ang - d.AngPrev; da -= 2 * Math.PI * Math.Floor((da + Math.PI) / (2 * Math.PI)); d.AngSum += da; d.AngPrev = ang;
+                        d.Rad.Add(dist); if (Math.Abs(rel.X) > d.PlaneMax) d.PlaneMax = Math.Abs(rel.X);
+                        for (int j = 0; j < drones.Count; j++) if (j != i && drones[j].Main.Alive) { double m = (drones[j].Main.WorldBoundCenter - dp).Length(); if (m < d.MinMateSettled) d.MinMateSettled = m; }
+                    }
                     if (now >= settle && t % 6 == 0) { d.Dist.Add(dist); if (dist > d.MaxDist) d.MaxDist = dist; }
                     if (tw != null && t % 30 == 0)
                         tw.WriteLine(string.Format(Inv, "{0:F2},{1:F1},{2:F1},{3:F1},{4:F1},{5},{6:F1},{7:F1},{8}", now, op.X, op.Y, op.Z, ov.Length(), i, dist, d.Main.LinearVelocity.Length(), ModeOf(d.Pb.Runner.EchoText)));
@@ -193,6 +204,7 @@ namespace SeSim.Run
                 {
                     sb.Append(string.Format(Inv, "  t={0,5:F0}s owner ({1,7:F0},{2,5:F0},{3,7:F0}) {4,4:F0} m/s |", now, op.X, op.Y, op.Z, ov.Length()));
                     foreach (var d in drones) sb.Append(string.Format(Inv, " {0,6:F0} m", d.Main.Alive ? (d.Main.WorldBoundCenter - op).Length() : -1));
+                    if (satellite) foreach (var d in drones) { Vector3D rl = d.Main.WorldBoundCenter - op; sb.Append(string.Format(Inv, " [{0:F0},{1:F0},{2:F0}]", rl.X, rl.Y, rl.Z)); }
                     if (enemy != null) sb.Append(enemy.Main.Alive ? "  enemy alive" : "  enemy gone");
                     sb.Append('\n');
                 }
@@ -222,13 +234,27 @@ namespace SeSim.Run
                 double endDist = d.Main.Alive ? (d.Main.WorldBoundCenter - opEnd).Length() : -1;
                 string mode = ModeOf(d.Pb.Runner.EchoText);
                 string fol = Line(d.Pb.Runner.EchoText, "Follow : ");
+                string satLine = Line(d.Pb.Runner.EchoText, "Satellite : ring ");
+                double ringR = 0; { var sr = System.Text.RegularExpressions.Regex.Match(satLine, @"^([0-9]+) m"); if (sr.Success) double.TryParse(sr.Groups[1].Value, NumberStyles.Float, Inv, out ringR); }
+                if (satellite && ringR > 0) slot = ringR;   // the ring the drones report replaces the FOLLOW slot distance
                 bool good = d.Main.Alive && !d.Pb.Runner.Dead && d.InsideTicks == 0 && p95 < slot * 3 && endDist < slot * 1.6;
                 if (Has(args, "--stress")) good = !d.Pb.Runner.Dead && d.InsideTicks == 0;   // an owner that out-turns the drones: only the hull counts
+                if (satellite) good = d.Main.Alive && !d.Pb.Runner.Dead && d.InsideTicks == 0 && ringR > 0 && Math.Abs(endDist - ringR) < 0.25 * ringR && !(mode == "FOLLOW" ? false : mode == "RTB");
                 if (path == "lost") good = d.Main.Alive && !d.Pb.Runner.Dead && (d.Main.WorldBoundCenter - coast).Length() < 150;
                 bool crippled = mode == "RTB" || mode == "IDLE" || !d.Main.Alive || Shot(d) || (d.Pb.Runner.EchoText ?? "").Contains("No working Remote Control");   // lost guns / thrust / PB in the fight: not a FOLLOW fault
                 bool engaged = !Line(d.Pb.Runner.EchoText, "Target : ").StartsWith("none", StringComparison.Ordinal);   // still fighting at the end
                 if (path == "fight") good = (!d.Pb.Runner.Dead || Shot(d)) && (crippled || (d.MaxDist < leash * 1.15 && (engaged || endDist < slot * 1.6)));
                 if (path == "fight" && crippled) fol = "(crippled in the fight: " + mode + ")";
+                if (satellite && d.Rad.Count > 0 && path == "park")
+                {   // park: every sample is on the settled ring: radius spread, plane deviation, orbit rate, spacing
+                    double rm = 0; foreach (var x in d.Rad) rm += x; rm /= d.Rad.Count;
+                    double sd = 0; foreach (var x in d.Rad) sd += (x - rm) * (x - rm); sd = Math.Sqrt(sd / d.Rad.Count);
+                    double rate = d.AngSum / Math.Max(1, secs - settle) * 180 / Math.PI;
+                    Console.WriteLine(string.Format(Inv, "    ring: radius {0:F0} +/- {1:F1} m, plane deviation max {2:F0} m, orbit {3:F2} deg/s (expected {4:F2}), closest mate {5:F0} m",
+                        rm, sd, d.PlaneMax, rate, SatPeriodDeg(drones[0]), d.MinMateSettled == double.MaxValue ? -1 : d.MinMateSettled));
+                    good &= sd < 0.12 * rm && d.PlaneMax < 0.2 * rm && Math.Abs(Math.Abs(rate) - SatPeriodDeg(drones[0])) < 0.5 * SatPeriodDeg(drones[0]) + 0.3
+                         && (d.MinMateSettled > 0.5 * 2 * rm * Math.Sin(Math.PI / Math.Max(count, 2)) || count < 2);
+                }
                 ok &= good;
                 Console.WriteLine(string.Format(Inv, "  drone {0}: dist mean {1,5:F0} p95 {2,5:F0} max {3,5:F0} m | end {4,5:F0} m | inside hull {5,4:F1} s | closest mate {6,5:F0} m | mode {7} | {8} {9}",
                     i, mean, p95, d.MaxDist, endDist, d.InsideTicks / (double)SimSettings.TicksPerSecond, d.MinMate == double.MaxValue ? -1 : d.MinMate, mode, fol, good ? "ok" : "FAIL"));
@@ -241,6 +267,13 @@ namespace SeSim.Run
             if (tw != null) tw.Dispose();
             Console.WriteLine(ok ? "FOLLOW OK" : "FOLLOW FAILED");
             return ok ? 0 : 1;
+        }
+
+        static double SatPeriodDeg(Drone d)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(d.Pb.CustomData ?? "", @"Satellite Orbit Period \(s\)\s*=\s*([0-9.]+)");
+            double p = 180; if (m.Success) double.TryParse(m.Groups[1].Value, NumberStyles.Float, Inv, out p);
+            return p > 1 ? 360 / p : 0;
         }
 
         // a PB shot off or destroyed in the fight is a combat loss, not a script failure

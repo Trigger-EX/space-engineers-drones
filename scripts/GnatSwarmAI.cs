@@ -41,6 +41,7 @@
 //
 //  COMMANDS (argument, toolbar, or IGC "<Tag>_CMD" to command the swarm)
 //   form | attack | rtb | idle | lock | unlock | home | reload
+//   satellite (sat, orbit): FORM as a slowly turning vertical ring round the carrier / home point (ring size grows with the swarm)
 //   follow / escort = form: the formation sphere sits round whatever broadcasts the home point (a ship running a Mothership
 //   link), outside its hull, and moves with it (v1.11: the drones match the ship's velocity, so they keep up)
 //  KAMIKAZE DEFENCE (v1.13; shared block tools/kz_block.cs, docs/kamikaze-defence.md): incoming swarms of small warhead drones are
@@ -974,14 +975,14 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
+    Storage = string.Join(";", _mode == Mode.FORM && SatOn ? "SAT" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
 }
 
 Mode ParseMode(string s, Mode d)
 {
     switch (s.Trim().ToUpperInvariant())
     {
-        case "IDLE": return Mode.IDLE; case "FORM": return Mode.FORM; case "ATTACK": return Mode.ATTACK; case "RTB": return Mode.RTB;
+        case "SATELLITE": case "SAT": case "ORBIT": SatOn = true; return Mode.FORM; case "IDLE": return Mode.IDLE; case "FORM": return Mode.FORM; case "ATTACK": return Mode.ATTACK; case "RTB": return Mode.RTB;
         default: return d;
     }
 }
@@ -1033,7 +1034,8 @@ void Command(string a)
     if (w.Length == 0) return;
     switch (w[0])
     {
-        case "form": case "guard": case "follow": case "escort": SetMode(Mode.FORM); break;
+        case "form": case "guard": case "follow": case "escort": SatOn = false; SetMode(Mode.FORM); break;
+        case "satellite": case "sat": case "orbit": SatOn = true; SetMode(Mode.FORM); break;
         case "attack": case "hunt": SetMode(Mode.ATTACK); break;
         case "rtb": SetMode(Mode.RTB); break;
         case "idle": case "stop": SetMode(Mode.IDLE); break;
@@ -1074,6 +1076,8 @@ void LoadConfig()
     ConeDeg = Cfg(S, "Attack Cone Degrees", ConeDeg);
     LatMax = Cfg(S, "Max Sideways Drift m/s", LatMax);
     FormRadius = Cfg(S, "Formation Radius", FormRadius);
+    SatDist = Math.Max(30, Cfg(S, "Satellite Distance (m)", SatDist));
+    SatPeriod = Math.Max(0, Cfg(S, "Satellite Orbit Period (s)", SatPeriod));
     SepRadius = Cfg(S, "Separation Radius", SepRadius);
     EngageRadius = Cfg(S, "Engage Radius From Home", EngageRadius);
     MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
@@ -1439,6 +1443,46 @@ Vector3D ConePoint(Vector3D axis, double coneDeg, int i, int n)
     return Vector3D.Normalize(axis * Math.Cos(th) + (u * Math.Cos(ph) + v * Math.Sin(ph)) * Math.Sin(th));
 }
 
+// SATELLITE (command "satellite" / "sat" / "orbit", Start Mode SATELLITE): FORM, but the swarm spreads evenly round a VERTICAL CIRCLE centred on
+// Home() (the carrier link ship, else the home point) and the whole ring turns slowly (Satellite Orbit Period). Radius = Satellite Distance, grown
+// so neighbours stay apart (more drones = a bigger ring), never inside the carrier hull + 45 m. The ring plane is square to the carrier's heading.
+// Ring phase: no clock, each drone averages the phase implied by the mates on the ring. Fights and returns work as in FORM. Same behaviour as
+// the SATELLITE formation of the other drones (tools/follow_block.cs). In gravity only the upper arc is used and the drones sway.
+bool SatOn = false; double SatDist = 100, SatPeriod = 180, _satPh = 0, _satT = -99, _satR = 100; Vector3D _satFwd = Vector3D.Right, _satV;
+double SatBase(int k, int n, bool grav) { return grav ? Math.PI * (k + 0.5) / n : 2 * Math.PI * (k + 0.5) / n; }
+Vector3D SatSlot()
+{
+    double dt = _now - _satT; _satT = _now;
+    if (dt > 0 && dt < 1 && SatPeriod > 1) _satPh += 2 * Math.PI * dt / SatPeriod;
+    Vector3D c = Home(), hv = HomeVel(), up = Vector3D.Up, g = _rc.GetNaturalGravity();
+    bool grav = g.LengthSquared() > 0.1;
+    if (grav) up = -Vector3D.Normalize(g);
+    if (hv.LengthSquared() > 9) _satFwd = Vector3D.Normalize(_satFwd + (Vector3D.Normalize(hv) - _satFwd) * 0.005);
+    Vector3D a = Vector3D.Cross(_satFwd, up);
+    if (a.LengthSquared() < 0.01) a = _rc.WorldMatrix.Right;
+    a.Normalize(); Vector3D fw = Vector3D.Normalize(Vector3D.Cross(up, a));
+    int n = _n, k = _idx;
+    if (!grav)
+    {
+        double sx = Math.Cos(_satPh), sy = Math.Sin(_satPh);
+        foreach (var m in _mates.Values)
+        {
+            int r = _ids.IndexOf(m.Id); double age = _now - m.Seen; if (r < 0 || age > 3) continue;
+            Vector3D d = m.Pos + m.Vel * age - c; double x = Vector3D.Dot(d, a), y = Vector3D.Dot(d, up), L = Math.Sqrt(x * x + y * y);
+            if (Math.Abs(L - _satR) > 0.3 * _satR || Math.Abs(Vector3D.Dot(d, fw)) > 0.3 * _satR) continue;   // off the ring (fighting)
+            double ph = Math.Atan2(y, x) - SatBase(r, n, false); sx += Math.Cos(ph); sy += Math.Sin(ph);
+        }
+        double dp = Math.Atan2(sy, sx) - _satPh; dp -= 2 * Math.PI * Math.Floor((dp + Math.PI) / (2 * Math.PI));
+        _satPh += dp * 0.02;
+    }
+    double R = Math.Min(600, Math.Max(Math.Max(SatDist, HomePad() + 20), n > 1 ? Math.Max(SepRadius * 1.1, 40) / (2 * Math.Sin((grav ? Math.PI * 0.5 : Math.PI) / Math.Max(n, 2))) : 0));
+    _satR = R;
+    double th = SatBase(k, n, grav);
+    if (grav) th += 0.2 * Math.PI / n * Math.Sin(_satPh); else th += _satPh;
+    _satV = grav || SatPeriod <= 1 ? Vector3D.Zero : (a * -Math.Sin(th) + up * Math.Cos(th)) * (R * 2 * Math.PI / SatPeriod);
+    return c + (a * Math.Cos(th) + up * Math.Sin(th)) * R;
+}
+
 Vector3D SpherePoint(int i, int n)
 {
     if (n <= 1) return Vector3D.Zero;
@@ -1494,15 +1538,16 @@ void Control(double dt)
     }
     if (_tgt == null || _mode == Mode.RTB)
     {   // formation slot around home (or fly home)
-        Vector3D slot = _mode == Mode.RTB ? Home() + SpherePoint(_idx, _n) * HomePad() : Home() + SpherePoint(_idx, _n) * (FormRadius + 6 * Math.Sqrt(_n) + HomePad());
+        bool sat = SatOn && _mode == Mode.FORM; _satV = Vector3D.Zero;
+        Vector3D slot = _mode == Mode.RTB ? Home() + SpherePoint(_idx, _n) * HomePad() : sat ? SatSlot() : Home() + SpherePoint(_idx, _n) * (FormRadius + 6 * Math.Sqrt(_n) + HomePad());
         Vector3D d = slot - me; double sd = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, sd * 0.4), Math.Sqrt(2 * aMax * 0.4 * sd));
-        Vector3D want = HomeVel() + (sd > 0.5 ? d / sd * v : Vector3D.Zero) + sep + Evade();   // + the carrier's velocity: keep up with it
+        Vector3D want = HomeVel() + _satV + (sd > 0.5 ? d / sd * v : Vector3D.Zero) + sep + Evade();   // + the carrier's velocity: keep up with it
         if (_mode == Mode.RTB && sd < 20 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
         Vector3D accel = (want - myVel) * AccelGain;
         // parked drones face outward from the formation, so the swarm's cameras watch every direction
         Vector3D gUp = grav.LengthSquared() > 0.1 ? -Vector3D.Normalize(grav) : Vector3D.Zero;
-        Vector3D faceHint = myVel.LengthSquared() > 25 ? myVel : (_n > 1 && _mode != Mode.RTB ? SpherePoint(_idx, _n) : (AutoScan && _mode != Mode.RTB ? SweepDir(gUp) : _ref.WorldMatrix.Forward));
+        Vector3D faceHint = myVel.LengthSquared() > 25 ? myVel : (_n > 1 && _mode != Mode.RTB ? (sat ? slot - Home() : SpherePoint(_idx, _n)) : (AutoScan && _mode != Mode.RTB ? SweepDir(gUp) : _ref.WorldMatrix.Forward));
         VectorFly(accel, grav, mass, aMax, faceHint, dt);
         SetFire(false);
         return;
@@ -1723,6 +1768,7 @@ void Display()
     _sb.Append("GNAT SWARM AI v").Append(VER).Append('\n');
     _sb.Append("Mode : ").Append(_mode).Append(_tgt != null && _mode != Mode.RTB ? "  " + _run : "").Append('\n');
     _sb.Append("Swarm: #").Append(_idx + 1).Append(" of ").Append(_n).Append('\n');
+    if (SatOn && _mode == Mode.FORM) _sb.Append("Satellite : ring ").Append(_satR.ToString("0")).Append(" m\n");
     if (_tgt != null && _rc != null)
     {
         _sb.Append("Tgt  : ").Append(Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()).ToString("0")).Append(" m  ").Append(_tgt.Src).Append('\n');
