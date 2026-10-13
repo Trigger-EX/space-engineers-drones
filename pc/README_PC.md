@@ -12,6 +12,7 @@ No installs needed on Windows 10/11: SimHost.exe is a normal .NET Framework prog
    If it is too large, send only `results\*\summary.csv`, `meta.json`, `status.txt`, `machine.txt` (see `SE_results_lite` below) and I will ask for specifics.
 
 GPUs are not used: the simulator is a CPU program (thousands of independent fights, one per thread). They don't help without a rewrite.
-Linux/WSL: `./run_plan.sh` and `./pack_results.sh` do the same with mono installed.
+**Linux Mint / Ubuntu / Debian:** unzip, open a terminal in the folder and run `./run_mint.sh` (it installs mono with apt if needed, runs a 5 s self-check,
+runs the plan on all CPUs minus one, and writes `SE_results.zip`). Options: `./run_mint.sh --only verify,full-fresh`, `./run_mint.sh --jobs 12`.
 `results\verify` is a small check: I compare it to the same fights run on my machine to see whether your CPU/.NET gives identical numbers.
 If a line fails, send `results\machine.txt` and the failing `results\<name>\log.txt`.
