@@ -307,6 +307,16 @@ def _walkways(S, res):
     rooms = [(0, 9, 21), (-1, 9, 21), (1, 9, 21), (0, 4, 21), (0, 3, 21), (0, 2, 21), (0, 1, 21)] + [(0, y, z) for y in (1, 2, 3, 4) for z in range(HANGAR_Z[0], HANGAR_Z[1] + 1)]
     C.walk_check(S, (3, 7, 21), [(0, 9, 21), (0, 4, 21)], path + rooms, 'Warden walkway')
 
+def _dress(S, res, vol, full=True):
+    """artificial gravity for the crew spaces (bridge, tower shaft, hangar) and round slopes / corners in the concave edges of the interior rooms"""
+    env = vol['solid'].cells
+    if full: C.place_gravity(S, res, env, (0, 3, 20), (30.0, 50.0, 40.0), nm('Gravity Generator'))
+    n = 0
+    for box in (((-3, 9, 19), (3, 10, 25)), ((-3, 3, 12), (3, 5, 30))):
+        n += C.chamfer_room(S, res, env, box)
+    S.chamfered = n
+    res.check()                                   # the new slopes meet the walls with their mount faces
+
 def _hangar(S, full):
     bp = S.bp
     conns = []
@@ -542,6 +552,7 @@ def warden(lite=False, with_pod=True, lock=False, name=None, wing=0):
     _walkways(S, res)
     _conveyors(S, res, vol)
     res.check()                                   # hulls: every remaining hull block still meets the hull with its mount faces
+    _dress(S, res, vol, full)
     C.link_conveyors(bp, [(c, n) for c, r, n in _terminals(S)])   # <ConveyorLines> for the junction network and its terminals
     _groups_and_toolbars(S)
     bp.ship = S

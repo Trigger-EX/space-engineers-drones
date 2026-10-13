@@ -364,3 +364,87 @@ def route_walkway(S, res, env, waypoints, avoid=(), armour_cost=5):
         for c in reversed(leg[:-1]):
             if c not in out: out.append(c)
     return out
+
+# ---- gravity generator (large grid only; the field is centred on the block, gravity pulls toward the block's Down) ----
+def place_gravity(S, res, env, target, field_m, name, accel=9.81, color=None):
+    """One LargeBlock flat gravity generator (`GravityGenerator/`, no DLC) on a floor: the free interior cell nearest to `target` whose Bottom face stands on a
+    block, upright (Up = ship Up, so the field pulls toward the ship's Down).  `field_m` = (x, y, z) field box in metres, centred on the block.
+    Returns the block.  The XML (FieldSize / GravityAcceleration) is the object-builder shape of Keen's source, never seen in a game file."""
+    bp = S.bp
+    resv = set()
+    for v in res.reserved.values(): resv |= set(v.cells)
+    env = set(env)
+    cands = [c for c in env if c[0] == 0 and c not in S.occ and c not in resv and c not in bp.reserve and (c[0], c[1] - 1, c[2]) in S.occ]
+    cands.sort(key=lambda c: (sum((c[i] - target[i]) ** 2 for i in range(3)), c))
+    extra = f'<FieldSize x="{field_m[0]}" y="{field_m[1]}" z="{field_m[2]}" /><GravityAcceleration>{accel}</GravityAcceleration>'
+    for c in cands[:200]:
+        below = S.occ[(c[0], c[1] - 1, c[2])]
+        if below['kind'] in ('door', 'conv', 'thr', 'turret'): continue
+        b = bp.add('MyObjectBuilder_GravityGenerator', '', c, 'Forward', 'Up', name, color or GUN, extra=extra, kind='gravity')
+        if len(bp.cells(b)) == 1 and not any(q in S.occ or q in bp.reserve for q in bp.cells(b)) and _attached_up(bp, b, S.occ):
+            return S.put('gravity', b)
+        bp.blocks.pop()
+    raise AssertionError(f'{bp.name}: no floor cell for the gravity generator near {target}')
+
+def _attached_up(bp, b, occ):
+    import pods
+    c = bp.cells(b)[0]
+    n = occ.get((c[0], c[1] - 1, c[2]))
+    return n is not None and pods._attached_to(bp, b, [n])
+
+# ---- interior dressing: round slopes / corners in the concave edges of a room ----
+def chamfer_room(S, res, env, box, name='room', max_blocks=None):
+    """Fill the concave edges and corners of the room `box` = ((x0, y0, z0), (x1, y1, z1)) (inclusive cells) with round armour slopes / corners (light, no DLC)
+    so it stops looking like a cut-out shell.  A cell qualifies when 2 (edge) or 3 (corner) of its faces touch hull armour on different axes and the room is
+    open at least two cells deep in front of it; walkway, reserved and system cells are left alone.  Returns the number of blocks placed."""
+    import hulls as H
+    bp = S.bp
+    lo, hi = box
+    resv = set()
+    for v in res.reserved.values(): resv |= set(v.cells)
+    env = set(env)
+    def hull_wall(c):
+        b = S.occ.get(c)
+        return b is not None and res.cell_block.get(c) is b and len(bp.cells(b)) == 1 and (b['sub'].endswith('ArmorBlock') or b['kind'] in ('armor', 'plate', 'dark', 'accent', 'stripe'))
+    def free(c):
+        return c not in S.occ and c in env and c not in resv and c not in bp.reserve
+    todo = []
+    for x in range(lo[0], hi[0] + 1):
+        for y in range(lo[1], hi[1] + 1):
+            for z in range(lo[2], hi[2] + 1):
+                c = (x, y, z)
+                if not free(c): continue
+                walls = [d for d in DIR.values() if hull_wall((c[0] + d[0], c[1] + d[1], c[2] + d[2]))]
+                if len(walls) != 2: continue                 # edges only: a corner cell next to its edge slopes would press an open face on a neighbour
+                axes = {next(i for i in range(3) if d[i]) for d in walls}
+                if len(axes) != len(walls): continue
+                # every other neighbour must be free (an edge, not a nook with equipment beside it)
+                others = [d for d in DIR.values() if d not in walls]
+                ok = True
+                for d in others:
+                    n = (c[0] + d[0], c[1] + d[1], c[2] + d[2])
+                    if not (free(n) or (n in S.occ and (lo[0] <= n[0] <= hi[0] and lo[1] <= n[1] <= hi[1] and lo[2] <= n[2] <= hi[2]) and False)): ok = False
+                if not ok: continue
+                E = [tuple(-v for v in d) for d in walls]            # the faces that look into the room
+                # two cells of open room in front of the edge (no narrowing of a passage)
+                if any(not free((c[0] + 2 * e[0], c[1] + 2 * e[1], c[2] + 2 * e[2])) for e in E): continue
+                todo.append((c, E))
+    cellset = {c for c, E in todo}
+    todo = [(c, E) for c, E in todo if (-c[0], c[1], c[2]) in cellset]               # the ships are mirror-symmetric about x = 0
+    todo = [(c, E) for c, E in todo if not any((c[0] + e[0], c[1] + e[1], c[2] + e[2]) in cellset for e in E)]   # no two slopes face each other
+    placed = 0
+    chams = []
+    st = dict(heavy=False, color=(0.0, -0.81, -0.35), round=True, kind='armor')
+    for c, E in todo:
+        if max_blocks is not None and placed >= max_blocks: break
+        kind = 'slope' if len(E) == 2 else 'corner'
+        try:
+            b = H._emit(res, c, kind, E, st)
+        except H.HullError:
+            continue
+        S.occ[c] = b
+        res.blocks.remove(b)               # res.check() treats the whole envelope as hull; these are checked against the real walls below
+        chams.append(b)
+        placed += 1
+    H.check_mount_faces(bp, set(S.occ), None, blocks=chams)     # full mount faces on walls, slanted faces on free air
+    return placed

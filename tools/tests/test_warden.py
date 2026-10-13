@@ -52,7 +52,7 @@ class RuleTests(unittest.TestCase):
             self.assertFalse(k.startswith(('SensorBlock', 'OffensiveCombat', 'FlightMovement', 'DefensiveCombat', 'BasicMission')), k)
         full = ship(False).shape_summary()
         unseen = {k for k, (n, c) in full.items() if c in ('guess', 'from-source')}
-        self.assertEqual(unseen, {'SensorBlock/LargeBlockSensor', 'OffensiveCombatBlock/LargeOffensiveCombat', 'FlightMovementBlock/LargeFlightMovement'})
+        self.assertEqual(unseen, {'SensorBlock/LargeBlockSensor', 'OffensiveCombatBlock/LargeOffensiveCombat', 'FlightMovementBlock/LargeFlightMovement', 'GravityGenerator/'})
 
     def test_validates_every_grid(self):
         for lite in (False, True):
@@ -157,7 +157,7 @@ class LoadoutTests(unittest.TestCase):
         a = sorted((b['sub'] or b['xtype']) for b in full.blocks)
         b = sorted((b['sub'] or b['xtype']) for b in lite.blocks)
         extra = [x for x in a if x not in b or a.count(x) != b.count(x)]
-        self.assertEqual(sorted(set(extra)), ['LargeBlockSensor', 'LargeFlightMovement', 'LargeOffensiveCombat'])
+        self.assertEqual(sorted(set(extra)), ['LargeBlockSensor', 'LargeFlightMovement', 'LargeOffensiveCombat', 'MyObjectBuilder_GravityGenerator'])
 
 class ConveyorTests(unittest.TestCase):
     def test_one_network_reaches_every_consumer(self):
