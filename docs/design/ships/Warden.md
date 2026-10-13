@@ -340,6 +340,7 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 6. Slab sides and hard sponson edges make the silhouette boxy next to a hand-built ship; no `Armor2x1` or round blocks are used.
 7. The thumbnail written by `build_all` shows the ship grid only (the pod is a second grid).
 8. Terminal groups with multi-cell weapons (`B1`, `PD`, `Main Turrets`, `Weapons`) store the block-local cell (0, 0, 0) of each member, because the game's own `Center` cell of the large rail / turret definitions is not in any sample (32 notes in `bp.notes`); the game should resolve any cell of a block, unverified. If a group comes up short of members, re-add them by hand.
+9. The generator writes no `<ConveyorLines>` (game saves store one `MyObjectBuilder_ConveyorLine` per adjacent ported pair, `docs/xml-notes.md`). The junction network may therefore not connect until the game rebuilds the lines: after the first paste, check that a thruster shows fuel from the tank; if not, grind and rebuild one junction per branch (or cut and paste the ship once). Not emitted because it needs a change inside sebp's grid writer; a later tool task.
 
 ## 11. In-game checks (first paste)
 
