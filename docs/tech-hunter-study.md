@@ -64,6 +64,12 @@ drones left). Raw runs: `docs/tech-hunter/runs/*.runs.jsonl.gz`; `python3 -I too
 
 ## 4. Results
 
+> **Correction (turret ranges).** Sections 3-5 were run with every turret reaching its ammo range (artillery 2000 m, assault
+> cannon 1400 m). In the game an AI turret on its own only targets within its Range setting, at most 800 m for every large-grid
+> turret (MaxRangeMeters in CubeBlocks); only a working AI combat block or a pilot's target lock unlocks the ammo range, and the
+> Tech Hunter has no AI combat block. The simulator now models that (and the per-turret turn rates: artillery 0.2 rad/s, assault
+> cannon 0.4, gatling 1.5). Section 7 has the confirmation set re-run that way; it changes the fleet advice (Longbow S survives).
+
 **Nothing of 10 drones or fewer knocks the Tech Hunter out in 10 minutes** (0 % in all 1,280 runs). Its 76 turrets decide it:
 
 | Model | median time alive | why |
@@ -119,3 +125,23 @@ Confirmation on the final scripts: Longbow L 0.75 -> 1.16, Longbow S 0.01 -> 0.1
 - Hydrogen and uranium never run out; the 6 rotor turret pods (24 small gatlings) are not simulated.
 - Subsystem targeting in the game: which block a turret picks, whether it needs line of sight, how decoys interfere, and whether
   `GetTargetedEntity().HitPosition` is set are unknown. The sim picks the nearest functional block of the group.
+
+## 7. Re-run with the game's turret ranges
+
+Confirmation set (`tech_hunter_confirm.txt`, 10 seeds, 10-minute cap), turrets as in the game (800 m without an AI block, per-type
+turn rates). Table: `docs/tech-hunter/confirm_game_turret_ranges.md`; runs `docs/tech-hunter/runs/confirm_*_game_ranges.runs.jsonl.gz`.
+
+| Fleet | power / turrets / thrusters destroyed, current aim | same with BREACH | drones left |
+|---|---|---|---|
+| 10 x Longbow L | 11.6 / 7.6 / 11.3 | 13.0 / 2.0 / 15.3 | 10 of 10 |
+| 10 x Longbow S | 0.8 / 3.1 / 4.9 | **4.2** / 0.7 / **11.0** | 10 of 10 (was 3.6) |
+| 5 x Longbow S + 5 x Longbow L | 7.0 / 5.1 / 9.5 | 8.6 / 1.6 / 13.3 | 10 of 10 |
+| 10 x Hornet / Gnat / Basilisk | 0-0.2 / 0-2.6 / 0-0.3 | about the same | 0 (dead in 50-70 s) |
+
+Per drone (power blocks): Longbow L 1.07 -> 1.33 with BREACH, Longbow S 0.12 -> 0.40. Still no knockout in 10 minutes.
+
+What changes: **Longbow S now outranges the ship too** (1400 m railgun vs 800 m turrets) and survives every fight, so a sniper
+fleet can be Longbow L and Longbow S. BREACH helps Longbow S most (power x3.3, thrusters x2.2). Hornets, Gnats and Basilisks are
+unchanged: their own guns reach 800 m at most, so they must enter the turrets' reach. If the enemy has a working AI combat block
+(or a pilot target-locks), its artillery and assault cannons reach 2 km / 1.4 km again and the original results (sections 4-5) apply.
+

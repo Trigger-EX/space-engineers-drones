@@ -18,6 +18,10 @@ Longbow L / Basilisk).
   not beat BREACH; the in-game API behaviour is the open question (test 23).
 - Finding for fleet building: against a turret-heavy capital ship only Longbow L survives (2 km = artillery range); Hornets, Gnats and
   Basilisks die in under 70 s whatever they aim at. Nothing of 10 drones or fewer knocked the Tech Hunter out in 10 minutes.
+- Simulator turret ranges as in the game: an AI turret on its own targets within its Range setting, at most 800 m for every
+  large-grid turret (artillery and assault cannon included), 600 m small grid; a working AI Offensive/Defensive block on its grid
+  unlocks the ammo range (artillery 2 km, assault cannon 1.4 km). Turn rates and elevation limits per turret type from the data
+  (artillery 0.2 rad/s). Re-run vs Tech Hunter: Longbow S now survives too; with BREACH 10 of them destroy 4.2 power blocks (0.8 before).
 - Simulator: turrets need power; only railguns have a capacitor (artillery / assault-cannon capacitors starved every turret of a big
   ship); turret targeting groups + Azimuth/Elevation API; enemy vitals in the results; `--enemy-fleets`.
 
