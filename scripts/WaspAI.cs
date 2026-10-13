@@ -2163,7 +2163,7 @@ void FireRockets(bool gate)
         if (!g.IsFunctional) continue;
         double nx; if (_nextShot.TryGetValue(g.EntityId, out nx) && _now < nx) continue;
         if (FriendCheck) { CheckLineOfFire(_gunPos, _gunFwd, _impactDist); if (_now < _holdFireUntil) return; }
-        g.ApplyAction("ShootOnce");
+        g.ShootOnce();
         _nextShot[g.EntityId] = _now + RocketInterval;
         _lastShot = _now; _showFire = true;
         if (++_salvoCount >= SalvoSize) { _salvoCount = 0; _salvoPauseUntil = _now + SalvoPause; }

@@ -2010,7 +2010,7 @@ void Control(double dt)
                     else if (!FriendCheck || LineClear(gunPos, gunFwd, dist))
                     {
                         gun.AmmoAtShot = Ammo(gun.B); gun.PendingAt = _now; gun.SawShoot = false;
-                        gun.B.ApplyAction("ShootOnce");
+                        gun.B.ShootOnce();
                         _tgt.ShotsAt++; _tgt.LastShotT = _now;
                         _settled = 0; _calmSince = -1;
                     }
