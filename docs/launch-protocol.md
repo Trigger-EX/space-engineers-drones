@@ -161,3 +161,17 @@ different opponent mix).
   Gyros are held at zero rate; no gyro sign convention is used.
 * **Test**: `sim/dock_launch_test.sh Hornet Harrier Gnat Wasp Lancer Aegis` all 10/10 ('DOCK-LAUNCH ALL OK' each). Mantis and Longbow S need the printer latch (`with_latch`) in the test blueprint; the
   stock blueprints have none, so they are not covered by the shipped script (see the lead's scratch run in section 7).
+
+## 10. Cradle bays (M5: a merge-block cradle on a ship or pod, not a printer)
+
+`scripts/CradleBayAI.cs` (Pod PB, the Corsair's `[Bay]` PB) is the launch-protocol printer side for drones that are pasted already built and clamped to a host merge block, section 6 cut down:
+per bay, in order: drone batteries Recharge until 90 % -> `[Launch]` Custom Data (`Auto=true`, `Away X/Y/Z` = the bay's `Away`, given in the HOST grid's axes (0,0,-1 = the cradle's nose direction) and turned into world space,
+`Armed=true`) + `TryRun("armed")` on the drone PB -> one `<TAG>_JOIN` "join" and FLEET `join` (repeated every 2 s for 8 s after the split) -> batteries Auto, host merge off, drone merge off -> split check within 3 s (`FUSED`).
+No Recompile is sent (the pasted drone's PB is a normal compiled PB, unlike a welded one; if `armed` is refused the bay says so and relies on trigger 1 and the JOIN). The drone's LAUNCH block does the rest (trigger 1: the PB sees the split).
+The bay PB's Custom Data holds a `[Hive Mother]` marker section: v1.1's `LnReady()` then holds a drone whose grid still contains the bay PB (a FUSED drone never burns the host).
+Test: `bash sim/dock_launch_test.sh --cradle [SEEDS]` (`SimHost.exe dock-launch --cradle --model "Cradle Pod Test"|"Cradle Test" ...`, `sim/src/Run/DockLaunchCradle.cs`): a real host blueprint (GridFuse merges the touching CubeGrids into one body) instead of the
+code-built dummy printer. Rebuild first: `python3 -I tools/build_all.py --only "Cradle Pod Test" "Cradle Test" Hornet --no-zip`. 10 seeds on each of the 2-slot Cradle Pod (two Hornets) and Corsair Wing Lite (real Helm, Staff and Bay scripts): all 20 pass, drones split
+0.52-0.67 s after `release all`, the second 2.00 s after the first, burn 0.0-1.1 degrees off the lane axis, lateral drift at 12 m <= 0.71 m, no drone block ever inside an occupied host cell, final mode GUARD; controls: a spinning host and a lane aimed into
+the wall wait, `force` skips the gate, 30 % charge waits in CHARGING, a drone bridged to the pod by an armour block is reported `FAULT FUSED` 3 s after the merge-off while the other drone leaves, `Run Staff release 1` releases exactly drone 1.
+The sim never charges a battery and never splits a bridged grid by mount-point rules unless told to (`--fuse-bridge` switches `SplitByMountPoints` off for that run); the merge-off to split delay (0.2 s here) and the burn are sim values.
+

@@ -295,3 +295,5 @@ but removes mass and the attachment points of the interior; it is not part of th
 * Renders for this design record: `scratchpad/ship_renders/Leviathan/` (`leviathan_iso_fl / iso_fr / iso_rear / belly / top / side / front / section / deck / lane .png`, `leviathan_sheet.png` is the contact sheet; `v1..v6`
   the design iterations).
 * Shapes: sample-derived XML for every block (`sebp.shape_summary()`); see limit 5 for the exceptions.
+
+M5: the starboard pod's PB has `[Pod] First Bay=5` (`cradle_pod(first_bay=5)`), so `release 5` is the first drone of the starboard pod and `release all` is sent as `release 1-4 0` and `release 5-8 20` (20 s pod gap); Helm/Staff Custom Data carry `Block Prefix=[SH]`.

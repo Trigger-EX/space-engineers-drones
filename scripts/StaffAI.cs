@@ -16,7 +16,7 @@
 //     at once and then 'hunt'. ROLL CALL: the drones' <TYPE>_SWARM beats (gridId, pos, vel, targetId, flags) are collected; alive = heard in the last 3 s, engaged = has a target.
 //     HUD PAGE 2 = the roll call (order, counts, per-drone range / speed / target) on cockpit surface 'Wing Surface' (default 2) and on LCDs named '...Wing Display...'; 'page' / 'page 2'
 //     flips the PB's own screen between page 1 (status) and 2.
-//   * BAYS (M5, scripts/CradleBayAI.cs on the pod PB / the Corsair's [Bay] PB): release <n|all|a-b> [delay_s] [force], hold n, unhold n, recall, doors open|close [n].
+//   * BAYS (M5, scripts/CradleBayAI.cs on the pod PB / the Corsair's [Bay] PB): release <n|all|a-b> [delay_s] [force], hold n, unhold n, recall, doors open|close.
 //     The words go out as a string on "<Ship Tag>.S2P" and the bay PBs answer "<Ship Tag>.P2S" (MyTuple<int bay, string state, long droneId, float charge>; bay 0 = the ack of a
 //     command). A pod docked by connectors is another construct (C3/C4, unverified), so each command is repeated until a bay acks it: ConnectedConstructs, then AntennaRelay,
 //     then a unicast to the pod PB when the grid terminal system lists it ([Hangar n] Pod=), 6 tries; the note says which and, if nobody answers, to use the Timer R(n) by hand.
@@ -57,7 +57,7 @@ class BayRec { public string St = "?"; public long Id, Src; public float Ch; pub
 class Hangar { public string Group = "", Pod = ""; }
 Dictionary<int, BayRec> _bay = new Dictionary<int, BayRec>(); List<Hangar> _hg = new List<Hangar>(); List<IMyDoor> _doors = new List<IMyDoor>();
 List<string> _rq = new List<string>(), _rqDone = new List<string>(); string _pendRel = "", _rqRoute = "";
-double _rqT, _rqNext, _pendT, _closeAt, _recallAt = -1; int _rqN; bool _doorsAuto; IMyBroadcastListener _p2s;
+double _rqT, _rqNext, _pendT, _closeAt, _recallAt = -1; int _rqN; bool _doorsAuto; IMyBroadcastListener _p2s; string _lsnKey = "", _rqNote = "";
 
 // FLEET LINK (shared block, send side): FleetLoad(false) in the constructor, FleetSendHome / FleetSendCmd / FleetSend below.
 
@@ -204,9 +204,13 @@ bool Own(IMyTerminalBlock b) { return b.IsSameConstructAs(Me) && (BlkPre == "" |
 
 void Listen()
 {
-    _hb = IGC.RegisterBroadcastListener(Ship + ".HB"); _h2s = IGC.RegisterBroadcastListener(Ship + ".H2S"); _pil = IGC.RegisterBroadcastListener(Ship + ".PILOT");
-    _hb.SetMessageCallback("hb");   // the beat is stamped the moment it arrives, not at the next Update10
-    _p2s = IGC.RegisterBroadcastListener(Ship + ".P2S"); _p2s.SetMessageCallback("p2s");
+    if (_lsnKey != Ship)
+    {   // (a 'reload' with a new Ship Tag registers the listeners again)
+        _lsnKey = Ship; foreach (var l in new[] { _hb, _h2s, _pil, _p2s }) if (l != null) IGC.DisableBroadcastListener(l);
+        _hb = IGC.RegisterBroadcastListener(Ship + ".HB"); _h2s = IGC.RegisterBroadcastListener(Ship + ".H2S"); _pil = IGC.RegisterBroadcastListener(Ship + ".PILOT");
+        _hb.SetMessageCallback("hb");   // the beat is stamped the moment it arrives, not at the next Update10
+        _p2s = IGC.RegisterBroadcastListener(Ship + ".P2S"); _p2s.SetMessageCallback("p2s");
+    }
     SwarmListen();
 }
 
@@ -333,11 +337,11 @@ void Command(string a)
         case "wing": Wing(rest); break;
         case "page": _page = rest == "2" ? 2 : rest == "1" ? 1 : 3 - _page; _note = "page " + _page; break;
         case "fleet": FleetSendCmd(rest); _note = "fleet " + rest; break;
-        case "release": Release(rest); break;
+        case "release": _note = "release " + rest; Release(rest); break;
         case "hold": case "unhold": Bays(c); break;
         case "recall": Bays("recall"); Wing("rtb"); _recallAt = _t + RecallWait; _note = "recall: wing rtb, satellite in " + RecallWait.ToString("0") + " s, bays cancelled"; break;
         case "doors": Doors(rest); break;
-        case "reload": Load(); FleetLoad(false); Blocks(); SwarmListen(); break;
+        case "reload": Load(); FleetLoad(false); Blocks(); Listen(); break;
         case "status": _note = "status"; Show(); break;
         default: Fwd(c); break;
     }
@@ -370,7 +374,7 @@ void Doors(string a)
 
 void Release(string rest)
 {
-    if (_doors.Count > 0 && !DoorsOpen()) { foreach (var d in _doors) d.OpenDoor(); _doorsAuto = true; _pendRel = rest; _pendT = _t; _note = "release " + rest + ": opening the hangar doors"; return; }
+    if (_doors.Count > 0 && !DoorsOpen()) { foreach (var d in _doors) d.OpenDoor(); _doorsAuto = true; _pendRel = rest; _pendT = _t; _rqNote = "release " + rest + ": opening the hangar doors"; return; }
     SendRelease(rest);
 }
 
@@ -405,7 +409,7 @@ void SendBays()
     _rqRoute = uni ? "unicast to the pod PB" : r == 1 ? "AntennaRelay" : "ConnectedConstructs";
     if (!uni) foreach (var c in _rq) if (!_rqDone.Contains(c)) IGC.SendBroadcastMessage(Ship + ".S2P", c, r == 1 ? TransmissionDistance.AntennaRelay : TransmissionDistance.ConnectedConstructs);
     _rqN++; _rqNext = _t + (_rqN < 3 ? 0.8 : 1.5);
-    _note = _rq[0] + (_rq.Count > 1 ? " +" + (_rq.Count - 1) : "") + ": sent via " + _rqRoute + (_rqN > 1 ? " (try " + _rqN + ")" : "");
+    _rqNote = _rq[0] + (_rq.Count > 1 ? " +" + (_rq.Count - 1) : "") + ": sent via " + _rqRoute + (_rqN > 1 ? " (try " + _rqN + ")" : "");
 }
 
 void BayStep()
@@ -413,23 +417,23 @@ void BayStep()
     if (_recallAt > 0 && _t >= _recallAt) { _recallAt = -1; Wing("satellite"); }
     if (_rq.Count > 0)
     {
-        if (_rqDone.Count >= _rq.Count) { _note = _rq[0] + (_rq.Count > 1 ? " +" + (_rq.Count - 1) : "") + ": the bays answered"; _rq.Clear(); }
+        if (_rqDone.Count >= _rq.Count) { _rqNote = _rq[0] + (_rq.Count > 1 ? " +" + (_rq.Count - 1) : "") + ": the bays answered"; _rq.Clear(); }
         else if (_t >= _rqNext)
         {
-            if (_rqN >= 6) { _note = _rq[0] + ": NO BAY ANSWERED after 6 tries (pod PB running? C3/C4: IGC across the connector) - hand launch: its Timer R(n) / cockpit slot"; _rq.Clear(); }
+            if (_rqN >= 6) { _rqNote = _rq[0] + ": NO BAY ANSWERED after 6 tries (pod PB running? C3/C4: IGC across the connector) - hand launch: its Timer R(n) / cockpit slot"; _rq.Clear(); }
             else SendBays();
         }
     }
     if (_pendRel != "" && (DoorsOpen() || _t - _pendT > DoorWait))
     {
-        if (!DoorsOpen()) _note = "doors still not open after " + DoorWait.ToString("0") + " s: releasing anyway";
+        if (!DoorsOpen()) _rqNote = "doors still not open after " + DoorWait.ToString("0") + " s: releasing anyway";
         string r = _pendRel; _pendRel = ""; SendRelease(r);
     }
     if (_doorsAuto && _pendRel == "")
     {
         bool busy = _rq.Count > 0; foreach (var b in _bay.Values) if (_t - b.Seen < 5 && (b.St == "CHARGING" || b.St == "READY" || b.St == "ARMING" || b.St == "RELEASED")) busy = true;
         if (busy) _closeAt = _t + DoorClose;
-        else if (_t >= _closeAt) { foreach (var d in _doors) d.CloseDoor(); _doorsAuto = false; _note = "hangar doors closing"; }
+        else if (_t >= _closeAt) { foreach (var d in _doors) d.CloseDoor(); _doorsAuto = false; _rqNote = "hangar doors closing"; }
     }
 }
 
@@ -484,7 +488,7 @@ string Text()
     int m = _md; b.Append("MODE  ").Append(m >= 0 && m < ModeNames.Length ? ModeNames[m] : "?").Append(_seat == 1 ? "  pilot aboard" : "").Append((_fl & 16) != 0 ? "  FIRING" : "").Append((_fl & 128) != 0 ? "  DEGRADED" : "").Append('\n');
     if (_tId != 0 && _t - _h2sT < 2) b.Append("TGT   ").Append(Vector3D.Distance(_tPos, Me.GetPosition()).ToString("0")).Append(" m  v ").Append(_tVel.Length().ToString("0")).Append('\n');
     else b.Append("TGT   none\n");
-    b.Append(BayText());
+    b.Append(BayText()); if (_rqNote != "") b.Append(_rqNote).Append('\n');
     b.Append("PWR ").Append((_batt * 100).ToString("0")).Append("%  DEADMAN ").Append((_fl & 64) != 0 ? "armed" : "-").Append("  WING ").Append(string.Join(",", Types)).Append(' ').Append(Alive()).Append(" up\n");
     if (_menuOn) { var it = MenuItems.Split(','); b.Append("MENU > ").Append(it[_menuI % it.Length].Trim()).Append(' ').Append(_menuI % it.Length + 1).Append('/').Append(it.Length).Append('\n'); }
     if (_note != "") b.Append(_note).Append('\n');

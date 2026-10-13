@@ -3,7 +3,7 @@
 //   python3 -I tools/build_all.py --only "Shrike Test" "Shrike Staff Test" --no-zip
 // Run: SimHost.exe selftest m2   (also part of `selftest all`; the section skips when the blueprints are missing).
 //   1 link          heartbeat / mode / target / seat reach the Staff over IGC (CurrentConstruct); the link is OFF on a ship without a Staff PB, ON/OFF by Custom Data
-//   2 commands      Staff:hunt/guard/manual/auto are forwarded to the Helm, wing / release verbs answer, the argument-less Run menu of the Staff
+//   2 commands      Staff:hunt/guard/manual/auto are forwarded to the Helm, wing / release verbs answer (since M5 'release' goes out to the bay PBs), the argument-less Run menu of the Staff
 //   b dead-man      KillPb Helm at 15 s with overrides on: the Staff releases every gyro / thruster override within Trip Time (1.5 s) + one Update10 step,
 //                   guns off, dampeners on; a PB that only pauses (disablepb / enablepb) is followed by "Helm back"
 //   c Timer D + EC  Helm killed in AUTO: Timer D fires 5 s later; Helm killed in MANUAL: it does not; Helm killed while a pilot sits: the Event Controller
@@ -168,7 +168,7 @@ namespace SeSim.Run
         // ------------------------------------------------------------------------------------------------------------------ 2 commands
         static void TestCommands()
         {
-            Console.WriteLine("-- 2 commands: Staff forwards verbs to the Helm over IGC, wing / release stubs, Run menu --");
+            Console.WriteLine("-- 2 commands: Staff forwards verbs to the Helm over IGC, wing / release (M5: sent to the bays, nobody answers on this ship), Run menu --");
             int ok = 0;
             for (int seed = 0; seed < 3; seed++)
             {
@@ -187,7 +187,7 @@ namespace SeSim.Run
                     if (t == 13 * 60) menu1 = Fld<bool>(staff, "_menuOn");
                     if (t == 15 * 60 + 30) { menu2 = Fld<bool>(staff, "_menuOn"); note3 = Fld<string>(staff, "_note"); }
                 });
-                bool o = m1 == "HUNT" && m2 == "GUARD" && man1 && !man2 && n1 == "wing satellite" && n2.Contains("M5") && menu1 && !menu2 && note3 == "wing satellite";
+                bool o = m1 == "HUNT" && m2 == "GUARD" && man1 && !man2 && n1 == "wing satellite" && n2.Contains("release 1") && menu1 && !menu2 && note3 == "wing satellite";
                 if (o) ok++;
                 Info("seed " + seed + ": hunt->" + m1 + ", guard->" + m2 + ", manual->" + man1 + ", auto->" + !man2 + ", wing note '" + n1 + "', release note '" + n2 + "', menu open " + menu1 + " then executed " + !menu2 + " ('" + note3 + "')");
             }

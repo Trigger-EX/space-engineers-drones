@@ -710,7 +710,7 @@ MODELS = {NAME: corsair, NAME + ' Wing': corsair_wing}
 _COMMON = ('Catamaran-hammerhead corvette (small grid, 33 m x 26.5 m x 12 m): charcoal hull with orange accents, hammer crossbar at the bow carrying two assault cannons '
            'and two autocannons, a dorsal ridge with two small railguns (B1), a stepped bridge tower with the cockpit, four point-defence gatling turrets and an assault '
            'turret (Full), 14 large hydrogen thrusters on 10 full tanks (7.1 m/s2 forward, 3.6 m/s2 in the other directions), 20 gyros, a 14.75 MW reactor and four charged '
-           'batteries, two Programmable Blocks ("[Helm] Corsair", "[Staff] Corsair"), dead-man timer, hand-flyable. Two cradle pods on outrigger pylons, each a 9 x 8 x 9 cell '
+           'batteries, three Programmable Blocks ("[Helm] Corsair", "[Staff] Corsair", "[Bay] Corsair" for the cradles), dead-man timer, hand-flyable. Two cradle pods on outrigger pylons, each a 9 x 8 x 9 cell '
            'bay for a Hornet-class drone (Hornet, Wasp, Watcher, Harrier, Lancer, Aegis), nose forward, 24-cell launch lane; the bay merge blocks are "[SH] [Bay n] Merge ...". '
            'Limitation: the assault cannons hold 3 shells, the autocannons 3 clips (48 rounds) and the railguns 6 slugs; there is no conveyor feed (port positions are not known), '
            'so those guns run dry after a short fight. ')

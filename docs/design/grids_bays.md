@@ -168,6 +168,8 @@ No bay by default. A Gnat (4x5x5 cells, 1941 kg, belly merge) can physically han
 - Release call sequence (reused from HiveMotherAI `Release`): set drone batteries `Auto` -> `DPb.TryRun("armed")` -> host merge `Enabled=false` -> drone merge `Enabled=false` (the drone does it too) -> verify `Me.CubeGrid != drone grid` within 3 s else `FAULT FUSED`. The LAUNCH block takes over (trigger 1, no message needed).
 - Hand launch: cockpit toolbar slot -> Staff PB `Run` with argument `release all` (sebp cannot write populated toolbars yet, timers_pbs.md 4.1); until then 1 `Timer Block` per slot with toolbar action "merge block On/Off -> Off" (Timer R(n) backup, already planned, 25 PCU each) wired by hand or by a generator fix.
 
+**As built (M5, `scripts/CradleBayAI.cs`, `docs/design/control_arch.md` "M5 as built", `docs/design/ships/Pod.md` section 7):** the bay PB listens on control_arch D4's `<Tag>.S2P` and answers on `<Tag>.P2S` (not `<ShipTag>_BAY`); the states are EMPTY / DOCKED / RELEASING (CHARGING, READY, ARMING, RELEASED) / COOLDOWN / FAULT, the Corsair has its own `[Bay]` PB, and a release waits for charge, a clear lane, a quiet ship (turn < 0.1 rad/s, acceleration < 1 m/s2).
+
 ### 6.2 IGC range
 `TransmissionDistance.CurrentConstruct` will NOT reach a connector-docked pod (docked = different construct, GTS page). Staff and Bay must use `ConnectedConstructs` [rec 85%, API enum exists] or both carry an antenna with a private tag. While the drones are still merged to a grid, they are in `CurrentConstruct`; after release they use the FLEET channel as today.
 

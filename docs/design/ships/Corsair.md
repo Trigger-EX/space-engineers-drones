@@ -120,7 +120,7 @@ Each pod is an H-slot: bore interior 9 x 8 cells (x 15..23, y 3..10) and 10 deep
 9 x 8 prism for 24 more cells forward (z 32..55); `check_cradles()` asserts nothing is in bore or lane but the merge block (also registered as `bp.reserve`). Lane axis is 9.5 m from the centre line
 (hull flank at 3 m), the hammer tip is 1 m from the lane edge. Bay 1 = port, Bay 2 = starboard; merge blocks `[SH] [Bay 1] Merge Port`, `[SH] [Bay 2] Merge Starboard` (kind `cradle`, not `merge`, because
 `build_all` runs the drone-style `check_docking` on kind `merge`, which requires the merge block to be the outermost block of the whole grid; the host-side check is `check_cradles` / `check_wing`).
-Staff Custom Data holds `[Bay n]` with `Merge`, `Drone Box Min/Max` (host cells), `Drone Prefix`, `Away X/Y/Z` (0, 0, -1). Hand launch: cockpit slots 5 and 6 switch the bay merge Off.
+The `[Bay] Corsair` PB (third Programmable Block, M5; script `CradleBayAI.cs`; the design had the bay table in the Staff data, but the Staff script does not manage bays, so the table moved) holds `[Bay n]` with `Merge`, `Drone Box Min/Max` (host cells), `Drone Prefix`, `Away` (0,0,-1); the Staff reaches it with `<Tag>.S2P` (`release 1`, `release all`, `recall`). Hand launch: cockpit slots 5 and 6 switch the bay merge Off.
 Drone exhaust fires into the wall 1 cell + merge away (test C5). Name rule: every host block starts `[SH] `, so Helm/Staff can ignore the merged drones' blocks (grids_bays 6.3).
 
 **Corsair Wing**: the same ship plus two Hornet (Lite: Hornet Lite) CubeGrids placed with `Blueprint.dock()` on the merge faces: identity orientation, positions on the 0.5 m lattice
@@ -131,7 +131,7 @@ Drone exhaust fires into the wall 1 cell + merge away (test C5). Name rule: ever
 
 | item | names / tags |
 |---|---|
-| PBs | `[Helm] Corsair` (Custom Data: `[Ship]`, `[Battery 1..3]`, `[Cockpit]`), `[Staff] Corsair` (`[Wing]`, `[Bay 1]`, `[Bay 2]`); scripts `CorsairHelmAI.cs`, `CorsairStaffAI.cs` if present |
+| PBs | `[Helm] Corsair` (Custom Data: `[Ship]`, `[Battery 1..3]`, `[Cockpit]`), `[Staff] Corsair` (`[Staff] Ship Tag/Block Prefix`, `[Wing]`), `[Bay] Corsair` (M5: `[Pod] Tag`, `[Bay 1]`, `[Bay 2]`: the bay table moved here from the Staff data); scripts `CorsairHelmAI.cs`, `CorsairStaffAI.cs` if present, `CradleBayAI.cs` in the Bay PB |
 | fire control | `[B1]` 2 railguns (RAIL), `[B2]` 2 assault cannons (SHELL), `[B3]` 2 autocannons (BALLISTIC), `[PD]` 4 gatling turrets (point defence, Full only), `Assault Turret`; terminal groups with the same names |
 | groups | `[SH] Thrusters`, `[SH] Weapons`, `[SH] Gyros`, `[SH] Bay Merges` |
 | control | `[SH] Cockpit [Helm Seat]` (main cockpit), `[SH] Remote Control`, `[SH] Timer D (deadman)` (5 s, silent; toolbar thrusters + weapons Off), `[SH] EC Cockpit (configure in game)` (placed, unconfigured: event number never seen, test K4) |

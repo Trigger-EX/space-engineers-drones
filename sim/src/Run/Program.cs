@@ -126,8 +126,8 @@ namespace SeSim.Run
                     bool strict = groups.Remove("strict");
                     SelfTestSkips.Count = 0;
                     foreach (string g in groups)
-                        if (g != "physics" && g != "api" && g != "combat" && g != "runner" && g != "audit" && g != "m0" && g != "m1" && g != "m2" && g != "m3" && g != "m4" && g != "scenario" && g != "all")
-                            throw new ArgumentException("unknown selftest group '" + g + "' (physics, api, combat, runner, audit, m0, m1, m2, m3, m4, scenario, all)");
+                        if (g != "physics" && g != "api" && g != "combat" && g != "runner" && g != "audit" && g != "m0" && g != "m1" && g != "m2" && g != "m3" && g != "m4" && g != "m5" && g != "scenario" && g != "all")
+                            throw new ArgumentException("unknown selftest group '" + g + "' (physics, api, combat, runner, audit, m0, m1, m2, m3, m4, m5, scenario, all)");
                     bool all = groups.Count == 0 || groups.Contains("all") || (groups.Count == 1 && groups.Contains("scenario"));
                     int f = 0;
                     if (all || groups.Contains("physics")) f += SeSim.Core.SelfTestA.Run();
@@ -140,6 +140,7 @@ namespace SeSim.Run
                     if (all || groups.Contains("m2")) f += SelfTestM2.Run(simDir, FindRepoRoot(null));
                     if (all || groups.Contains("m3")) f += SelfTestM3.Run(simDir, FindRepoRoot(null));
                     if (all || groups.Contains("m4")) f += SelfTestM4.Run(simDir, FindRepoRoot(null));
+                    if (all || groups.Contains("m5")) f += SelfTestM5.Run(simDir, FindRepoRoot(null));
                     if (groups.Contains("scenario") || groups.Contains("all")) f += SelfTestD.RunScenarioTests(simDir, FindRepoRoot(null));
                     if (strict && SelfTestSkips.Count > 0) { Console.WriteLine("SELFTEST --strict: " + SelfTestSkips.Count + " section(s) skipped"); f++; }
                     Console.WriteLine(f == 0 ? "SELFTEST OK" + (SelfTestSkips.Count > 0 ? " (" + SelfTestSkips.Count + " sections skipped; --strict fails on that)" : "") : "SELFTEST FAILURES: " + f);

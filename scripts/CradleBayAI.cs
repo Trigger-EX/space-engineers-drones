@@ -81,6 +81,7 @@ void LoadConfig()
     JoinSecs = C(S, "Join Seconds", JoinSecs); LaneCheck = C(S, "Lane Check", LaneCheck); LaneCells = (int)C(S, "Lane Cells", (double)LaneCells); MatchR = C(S, "Match Radius", MatchR);
     string fc = C(S, "Fleet Channel", FleetCh).Trim().ToUpperInvariant(), fs = C(S, "Fleet Secret", "").Trim().ToUpperInvariant();
     FleetCh = fc == "" ? "" : (fs == "" ? fc : fc + "_" + fs);
+    C("Hive Mother", "Note", "marker for the drones' LAUNCH block: a PB with this section on its grid means 'still fused to a bay', so a drone that failed to separate never burns the host's thrusters (launch-protocol s6)");
     var nb = new List<Bay>();
     for (int n = 1; n <= MaxBays; n++)
     {
@@ -439,7 +440,8 @@ void Command(string a, bool ig)
                 hit++;
                 if (b.State == "EMPTY") FindDrone(b);
                 if (b.State == "EMPTY" && b.Found && b.Merge != null && b.Merge.IsConnected) Go(b, "DOCKED");
-                if (b.Req || (b.State != "DOCKED" && b.State != "EMPTY")) continue;      // already on its way: a repeated command (a retry) changes nothing
+                if (b.Req) { if (force) b.Force = true; continue; }      // already queued: a repeated command (a retry) changes nothing, except that 'force' is taken over
+                if (b.State != "DOCKED" && b.State != "EMPTY") continue;
                 if (b.Held) { b.Msg = "held"; continue; }
                 b.Req = true; b.Force = force; b.ReqAt = _now + delay; b.ReqT0 = b.ReqAt; b.Msg = delay > 0 ? "release in " + delay.ToString("0") + " s" : "";
             }

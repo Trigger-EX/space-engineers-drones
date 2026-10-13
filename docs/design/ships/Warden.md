@@ -265,7 +265,7 @@ Every ship block is named `[SH] ...`; the PBs `[Helm][SH] Warden Helm` and `[Sta
 Cockpit toolbar (hand flight, page 1): slot 1 `B1` Shoot, 2 `Main Turrets` on/off, 3 `PD` on/off, 4 `Decoys` on/off, 5 `[Hangar 1]` Open_On, 6 Open_Off, 7 Run Helm, 8 Run Staff
 (PB `Run` without argument is the one action never seen in a game file, section 11). Timer D, the cockpit toolbar and EC Core use only seen action ids except `Run`.
 
-Control hooks (control_arch): Helm collects weapons / thrusters / gyros by `[SH]` AND grid; Staff finds the pod PB by name and talks over `ConnectedConstructs`; the hangar group is `[Hangar 1]`.
+Control hooks (control_arch): Helm collects weapons / thrusters / gyros by `[SH]` AND grid; Staff finds the pod PB by name and talks over `ConnectedConstructs`; the hangar group is `[Hangar 1]`. M5: `[Link] Block Prefix=[SH]` (Helm) and `[Staff] Block Prefix=[SH]` are in the PBs' Custom Data (the scripts take only blocks whose name starts with it); the Staff tries `ConnectedConstructs`, `AntennaRelay`, then a unicast to `[Hangar 1] Pod=` (see Pod.md section 7); `release all` opens the 8 doors first (sim: 2.7 s) and closes them 10 s after the last drone.
 
 ## 5. Weapons and point defence
 
