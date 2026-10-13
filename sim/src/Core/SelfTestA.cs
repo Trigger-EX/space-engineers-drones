@@ -884,7 +884,9 @@ namespace SeSim.Core
                     if (!Directory.Exists(Path.Combine(bpDir, name))) continue;
                     var data = BlueprintLoader.Get(bpDir, name);
                     var wx = NewWorld(11);
-                    var bl = GridFactory.Spawn(wx, data, 0, 0, Place(Vector3D.Zero), null)[0];
+                    var spawned = GridFactory.Spawn(wx, data, 0, 0, Place(Vector3D.Zero), null);
+                    if (spawned.Count < data.Grids.Count) continue;   // merge-fused Wing models: the sim body is ship + drones, MODELS.md lists the ship grid
+                    var bl = spawned[0];
                     // accel column: "F6.5 B6.5 U6.5 D6.5 L6.5 R6.5"
                     string accel = c[7];
                     double[] exp = new double[6]; int ok = 0;
