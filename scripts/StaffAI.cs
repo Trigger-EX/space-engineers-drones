@@ -348,6 +348,8 @@ void Command(string a)
         case "fleet": FleetSendCmd(rest); _note = "fleet " + rest; break;
         case "release": _note = "release " + rest; Release(rest); break;
         case "launch": Launch(rest); break;
+        case "dock": Bays("recall"); Wing("rtb"); Doors("open"); _note = "dock: wing rtb, hangar doors open (no automatic cradle docking yet)"; break;
+        case "deploy": _depSat = true; Launch("all"); break;   // one button: every bay lets go, then the wing takes up the satellite ring
         case "hold": case "unhold": Bays(c); break;
         case "recall": Bays("recall"); Wing("rtb"); _recallAt = _t + RecallWait; _note = "recall: wing rtb, satellite in " + RecallWait.ToString("0") + " s, bays cancelled"; break;
         case "doors": Doors(rest); break;
@@ -383,13 +385,13 @@ void Doors(string a)
 }
 
 // launch: park the Helm (IDLE) while the bays let go, then give it its mode back
-string _lchBack = ""; double _lchT; List<int> _lchSet = new List<int>(); bool _lchOn;
+bool _depSat; string _lchBack = ""; double _lchT; List<int> _lchSet = new List<int>(); bool _lchOn;
 void Launch(string rest)
 {
     if (rest == "" || rest.StartsWith("force")) rest = ("all " + rest).Trim();   // (launch, launch force)
     string[] p = rest.Split(' ')[0].Split('-'); int a, b = -1; _lchSet.Clear();
     foreach (var k in _bay.Keys) if (p[0] == "all" || (int.TryParse(p[0], out a) && k >= a && k <= (p.Length > 1 && int.TryParse(p[1], out b) ? b : a))) _lchSet.Add(k);
-    _lchBack = _md == 1 || _md == 2 || _md == 4 ? ModeNames[_md].ToLowerInvariant() : "";
+    _lchBack = _md == 1 || _md == 2 || _md == 4 || _md == 7 ? ModeNames[_md].ToLowerInvariant() : "";
     if (_lchBack != "") Fwd("idle");
     Release(rest); _lchT = _t; _lchOn = true; _note = "launch " + rest + (_lchBack != "" ? ": Helm idle until the bays have let go" : "");
 }
@@ -450,7 +452,7 @@ void BayStep()
     {
         bool left = _t - _lchT > 3 && _pendRel == "" && _rq.Count == 0;
         foreach (var n in _lchSet) { BayRec r; if (left && _bay.TryGetValue(n, out r) && _t - r.Seen < 6 && r.St != "EMPTY" && r.St != "COOLDOWN" && r.St != "FAULT") left = false; }
-        if (left || _t - _lchT > 90) { _lchOn = false; if (_lchBack != "" && _md == 0) Fwd(_lchBack); _rqNote = "launch over: Helm " + (_lchBack != "" && _md == 0 ? _lchBack : "unchanged"); }
+        if (left || _t - _lchT > 90) { _lchOn = false; if (_depSat) { _depSat = false; _recallAt = _t + 4; } if (_lchBack != "" && _md == 0) Fwd(_lchBack); _rqNote = "launch over: Helm " + (_lchBack != "" && _md == 0 ? _lchBack : "unchanged"); }
     }
     if (_pendRel != "" && (DoorsOpen() || _t - _pendT > DoorWait))
     {
@@ -478,7 +480,7 @@ int Alive() { int n = 0; foreach (var m in _mates.Values) if (_t - m.Seen < 3) n
 void Fwd(string cmd) { IGC.SendBroadcastMessage(Ship + ".S2H", new MyTuple<string, Vector3D, double>(cmd, Me.CubeGrid.WorldVolume.Center, Me.CubeGrid.WorldVolume.Radius), TransmissionDistance.CurrentConstruct); _note = "to Helm: " + cmd; }
 
 // ---- display -----------------------------------------------------------------------------------------------------------------------------------
-static readonly string[] ModeNames = { "IDLE", "GUARD", "HUNT", "FOLLOW", "RTB", "MANUAL", "ASSIST" };
+static readonly string[] ModeNames = { "IDLE", "GUARD", "HUNT", "FOLLOW", "RTB", "MANUAL", "ASSIST", "REACT" };
 
 // page 2: the wing roll call. alive = heard within 3 s; the list is sorted by range, at most 8 rows
 string WingText()

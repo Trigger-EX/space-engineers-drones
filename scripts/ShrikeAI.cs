@@ -12,7 +12,7 @@
 //     fire on their own (a ship with turrets runs the turret-only mode: the fixed batteries refuse a track none of them can hit)
 //   * optional: a Timer whose name contains "Deadman" (5 s, Silent; its toolbar cuts thrusters and weapons), cameras, sensor, AI blocks tagged [AI]
 //
-//  MODES  AUTO = the Hornet modes (_mode: guard hunt assist rtb idle; Start Mode default GUARD, saved in Storage), MANUAL = somebody sits in the seat
+//  MODES  AUTO = the Hornet modes (_mode: react guard hunt assist rtb idle; Start Mode default REACT, saved in Storage), MANUAL = somebody sits in the seat
 //   (held >= Seat Debounce 0.4 s) or "manual" was sent. The tick the seat is taken every gyro / thruster override is released, the dampener switch goes back to the
 //   pilot's own state, the AI blocks go off; tracking, sensors, turrets and the lock keep running. Seat empty >= Release Delay 1.5 s: back to _mode, the turn-rate cap
 //   ramps from the present rate to Max Turn over 2 s. No script output while MANUAL touches the guns (Auto Fire In Manual = false).
@@ -21,7 +21,7 @@
 //   assist hud | fbw | off           HUD: lead pip + fire window on the cockpit surface; FBW: fly-by-wire blend (stick rate + PD rate to the lead point, lock needed)
 //   assist (no word)                 the Hornet ASSIST mode (script aims and fires, you fly)
 //   Run with NO argument             menu: each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (HUD shows it)
-//  CUSTOM DATA  [Shrike] = the Hornet keys (IGC Tag default SHRIKE, Start Mode default GUARD); [Manual] Seat Debounce, Release Delay, Assist (OFF/HUD/FBW),
+//  CUSTOM DATA  [Shrike] = the Hornet keys (IGC Tag default SHRIKE, Start Mode default REACT, also accepts GUARD/HUNT/ASSIST/IDLE/RTB); [Manual] Seat Debounce, Release Delay, Assist (OFF/HUD/FBW),
 //   Assist Max Rate, Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale, Pilot Priority Rate, Auto Fire In Manual, Scan In Manual, Run Menu, Run Menu Wait,
 //   Deadman Timer Name, Seat Exclude (name part, default "gunnery": a seat with that word in its name does not switch the Helm to MANUAL), HUD Surface (cockpit text surface, -1 off); [Battery] Primary (AUTO/B1..B4), Standoff By Weapons, Turret Only (AUTO/ON/OFF), Auto Max Turn
 //   (AUTO/ON/OFF); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
@@ -66,10 +66,10 @@ double RtbBattery = 0.15;    // fraction
 double SepRange = 70, SepSpeed = 25;   // wingmate separation: push away from hive mates closer than this (m) at up to this speed (m/s)
 bool TargetLarge = true, TargetSmall = true, TargetChars = false, TargetNeutral = false;
 bool AutoScan = true, ShareTargets = true, Jink = true, FriendCheck = true, InheritVel = true;
-string StartMode = "GUARD";   // a Shrike guards until told otherwise (and again whenever the pilot leaves the seat)
+string StartMode = "REACT";   // a Shrike is combat-ready but passive (REACT) until told otherwise (and again whenever the pilot leaves the seat)
 
 // ---------------- state ----------------------------------------------
-enum Mode { IDLE, GUARD, HUNT, ASSIST, RTB }
+enum Mode { IDLE, GUARD, HUNT, ASSIST, RTB, REACT }
 Mode _mode = Mode.IDLE;
 MyIni _ini = new MyIni();
 double _now = 0;
@@ -1158,7 +1158,7 @@ string BatStatus()
 // >>> HELMLINK v1.1 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
 // The Helm sends, with TransmissionDistance.CurrentConstruct (never leaves the ship, no secret needed), on "<Ship Tag>.<suffix>" (Ship Tag default SHIP, [Link] in Custom Data):
 //   .HB     long tick                                                   heartbeat every "Heartbeat (s)" (0.5): the Staff releases every override when it stays silent for 1.5 s
-//   .H2S    MyTuple<int flags, long tgtId, Vector3D tgtPos, Vector3D tgtVel, float tgtRadius, float batt>   5 Hz: flags bit0-2 mode (0 IDLE 1 GUARD 2 HUNT 4 RTB 5 MANUAL 6 ASSIST),
+//   .H2S    MyTuple<int flags, long tgtId, Vector3D tgtPos, Vector3D tgtVel, float tgtRadius, float batt>   5 Hz: flags bit0-2 mode (0 IDLE 1 GUARD 2 HUNT 4 RTB 5 MANUAL 6 ASSIST 7 REACT),
 //           bit3 pilot seated, bit4 firing, bit6 dead-man timer armed, bit7 degraded (no thruster or no gyro)
 //   .PILOT  MyTuple<int mode, int seated>                               on change
 // and listens on .S2H  MyTuple<string cmd, Vector3D rally, double radius>   (cmd = any Command() verb; rally / radius are for the wing, unused here).
@@ -1194,7 +1194,7 @@ void HlkTick()
     }
     var cc = TransmissionDistance.CurrentConstruct;
     if (_tick % Math.Max(1, (int)(HlkHb * 60)) == 3) IGC.SendBroadcastMessage(HlkShip + ".HB", (long)_tick, cc);
-    int md = Man ? 5 : _mode == Mode.ASSIST ? 6 : (int)_mode, seat = _occ ? 1 : 0;
+    int md = Man ? 5 : _mode == Mode.ASSIST ? 6 : _mode == Mode.REACT ? 7 : (int)_mode, seat = _occ ? 1 : 0;
     if (md != _hlkMd || seat != _hlkSeat) { _hlkMd = md; _hlkSeat = seat; IGC.SendBroadcastMessage(HlkShip + ".PILOT", new MyTuple<int, int>(md, seat), cc); }
     if (_tick % 12 == 5)
     {
@@ -1264,7 +1264,7 @@ Mode ParseMode(string s, Mode def)
     switch (s.Trim().ToUpperInvariant())
     {
         case "IDLE": return Mode.IDLE; case "GUARD": return Mode.GUARD; case "HUNT": return Mode.HUNT;
-        case "ASSIST": return Mode.ASSIST; case "RTB": return Mode.RTB; default: return def;
+        case "ASSIST": return Mode.ASSIST; case "RTB": return Mode.RTB; case "REACT": return Mode.REACT; default: return def;
     }
 }
 
@@ -1309,7 +1309,7 @@ void Tick(string arg, UpdateType src)
     if (_tick % 6 == 0) PollDesignators();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
-    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT) && (!Man || ManScan) && !Hot()) AutoScanStep();
+    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.HUNT || Gd && !Calm) && (!Man || ManScan) && !Hot()) AutoScanStep();
     if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0 && !Hot()) ShareTarget();
 
     ManTick(); HlkTick();
@@ -1327,6 +1327,7 @@ void Command(string a)
     switch (w[0])
     {
         case "guard": SetMode(Mode.GUARD); break;
+        case "react": SetMode(Mode.REACT); break;
         case "hunt": SetMode(Mode.HUNT); break;
         case "assist": SetMode(Mode.ASSIST); break;
         case "rtb": SetMode(Mode.RTB); break;
@@ -1372,8 +1373,6 @@ void LoadConfig()
     OrbitSpeed = Cfg(S, "Orbit Speed", OrbitSpeed);
     Jink = Cfg(S, "Evasive Jinking", Jink);
     AutoScan = Cfg(S, "Auto Camera Scan", AutoScan);
-    TargetLarge = Cfg(S, "Target Large Grids", TargetLarge);
-    TargetSmall = Cfg(S, "Target Small Grids", TargetSmall);
     ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
     FriendCheck = Cfg(S, "Friendly Fire Check", FriendCheck);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
@@ -1381,9 +1380,6 @@ void LoadConfig()
     AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
     BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
-    RtbBattery = Cfg(S, "RTB Battery Fraction", RtbBattery);
-    AimKp = Cfg(S, "Aim Kp", AimKp);
-    AimKd = Cfg(S, "Aim Kd", AimKd);
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
     ManCfg(); HlkCfg(); BatCfg();
     string out1 = _ini.ToString();
@@ -1704,7 +1700,7 @@ void PruneAndSelect()
     foreach (var t in _contacts.Values)
     {
         Vector3D p = t.P(_now);
-        if (_mode == Mode.GUARD && !Man && Vector3D.Distance(p, home) > GuardRadius && !KzLive(t.Id)) continue;
+        if (Gd && !Man && Vector3D.Distance(p, home) > GuardRadius && !KzLive(t.Id)) continue;
         Vector3D d = p - me; double dist = d.Length();
         double ang = Math.Acos(MathHelper.Clamp(Vector3D.Dot(d / Math.Max(dist, 1), fwd), -1, 1)) * 57.2958;
         double closing = Vector3D.Dot(t.V(_now) - myVel, -d / Math.Max(dist, 1));
@@ -1816,11 +1812,11 @@ void Control(double dt)
             Vector3D fwd = _rc.WorldMatrix.Forward;
             Vector3D toHome = Home() - me;
             if (_mode == Mode.RTB && toHome.LengthSquared() > 400) fwd = Vector3D.Normalize(toHome);
-            else if (myVel.LengthSquared() > 100 && _mode != Mode.GUARD && !(_now - _hitDirT < 10 && AutoScan)) fwd = Vector3D.Normalize(myVel);
+            else if (myVel.LengthSquared() > 100 && !Gd && !(_now - _hitDirT < 10 && AutoScan)) fwd = Vector3D.Normalize(myVel);
             else
             {
                 // radar sweep: yaw round and nod up/down so the camera cone covers all around
-                if (AutoScan) fwd = SweepDir(up);
+                if (AutoScan && !Calm) fwd = SweepDir(up);
             }
             Aim(fwd, up, Vector3D.Zero, dt);
         }
@@ -1862,7 +1858,7 @@ void Control(double dt)
         }
         double orbit = dist < Math.Max(MaxFireRange, Standoff) * 1.2 ? OrbitSpeed : 0;
         want = tv + dir * vr + tan * orbit * _orbitSign + (Jink ? _jink : Vector3D.Zero) + Evade() + Separation(me);
-        if (_mode == Mode.GUARD && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
+        if (Gd && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
     }
     double cap = _tgt != null && _mode != Mode.RTB ? MaxSpeed : CruiseSpeed;
     want = KzWant(want, me, cap);   // KAMIKAZE DEFENCE: back away / break sideways
@@ -2540,7 +2536,11 @@ string AiStatus()
     if (_ai.Count == 0) return OwnAlert ? "AI alarm: searching\n" : "";
     return AiGateStatus() + "AI: " + (_aiOn ? "searching" : _agT0 >= 0 ? "own search" : "standby") + " (" + _ai.Count + " blocks)" + (OwnAlert ? "  ALARM" : "") + "\n";
 }
-bool AiModeOk() { return _mode == Mode.GUARD || _mode == Mode.HUNT; }
+bool AiModeOk() { return _mode == Mode.HUNT || Gd && !Calm; }
+// REACT: weapons, tracking and turrets live, but the ship does not sweep, scan or hand itself to the AI blocks until something wakes it:
+// an AI block alarm ("aialert" from an AI Defensive block, or a mate's alarm), damage taken, or a target already held.
+bool Gd { get { return _mode == Mode.GUARD || _mode == Mode.REACT; } }
+bool Calm { get { return _mode == Mode.REACT && _tgt == null && !Alerted && !UnderFire && _now - _hitDirT >= 10; } }
 
 // =====================================================================
 //  v1.8: PRINTER SUPPORT

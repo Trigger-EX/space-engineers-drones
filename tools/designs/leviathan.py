@@ -639,11 +639,13 @@ def _groups_and_toolbars(S):
     # hand flight: page 1 = weapons, then Helm / Staff and the doors
     cock = [TB.group('B1', 'Shoot'), TB.group('Main Turrets', 'OnOff'), TB.group('PD', 'OnOff')]
     if rockets: cock.append(TB.group('Rockets', 'OnOff'))
-    cock += [TB.group('Decoys', 'OnOff'), TB.group('[Hangar 1]', 'Open_On'), TB.group('[Hangar 1]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff)]
+    cock += [TB.group('Decoys', 'OnOff'), TB.group('[Hangar 1]', 'Open_On'), TB.group('[Hangar 1]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff),
+             TB.run(S.staff, 'deploy', experimental=True), TB.run(S.staff, 'dock', experimental=True)]
     bp.set_toolbars(S.cockpit, toolbar=cock)
     gun = [TB.group('B1', 'Shoot'), TB.group('Artillery', 'OnOff'), TB.group('Assault', 'OnOff'), TB.group('PD', 'OnOff')]
     if rockets: gun.append(TB.group('Rockets', 'OnOff'))
-    gun += [TB.group('[Hangar 2]', 'Open_On'), TB.group('[Hangar 2]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff)]
+    gun += [TB.group('[Hangar 2]', 'Open_On'), TB.group('[Hangar 2]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff),
+            TB.run(S.staff, 'deploy', experimental=True), TB.run(S.staff, 'dock', experimental=True)]
     bp.set_toolbars(S.gunner, toolbar=gun)
     bp.set_toolbars(S.ec_core, toolbar=[TB.block(S.staff, 'Run')])
     S.ec_core['settings'] = TB.event_settings('integrity', 0.4, invert=True)

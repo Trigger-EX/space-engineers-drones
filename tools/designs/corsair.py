@@ -593,6 +593,8 @@ def add_systems(bp, res, env, lite):
     if pd:
         tb[6] = TB.group('[PD]', 'OnOff')
     if not lite:
+        tb[7] = TB.run(pb_s, 'deploy', experimental=True)    # launch every drone and send it to the satellite ring
+        tb[8] = TB.run(pb_s, 'dock', experimental=True)      # call them back
         for i, arg in enumerate(('auto', 'manual', 'assist hud', 'hunt', 'rtb', 'lock', 'next', 'unlock')):
             tb[9 + i] = TB.run(pb_h, arg, experimental=True)
         for i, arg in enumerate(('wing satellite', 'wing hunt', 'wing rtb', 'release 1', 'release 2', 'release all', 'recall')):

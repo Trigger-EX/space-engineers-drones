@@ -47,6 +47,7 @@ class Bay
     public int N, Slots; public string State = "EMPTY", Msg = "", MergeName = "", TimerName = "", Prefix = "", DTag = "HORNET", TagKey = "", BoxRaw = "|";
     public IMyShipMergeBlock Merge, DMerge; public IMyProgrammableBlock DPb; public IMyTimerBlock Timer;
     public List<IMyBatteryBlock> DBats = new List<IMyBatteryBlock>();
+    public List<IMyThrust> DThr = new List<IMyThrust>();
     public bool HasBox, Req, Force, Held, Armed, Written, Relatched, Found; public Vector3I BMin, BMax; public Vector3D Away = new Vector3D(0, 0, -1);
     public double T, ReqAt, ReqT0, OffT, JoinUntil, JoinNext, LaneT; public string LaneWhy = "", Sent = ""; public double SentT; public long DroneId; public float Charge; public int Count;
 }
@@ -54,7 +55,7 @@ List<Bay> _bays = new List<Bay>();
 List<IMyShipController> _ctl = new List<IMyShipController>();
 List<IMyProgrammableBlock> _pbs = new List<IMyProgrammableBlock>();
 List<IMyShipMergeBlock> _mgs = new List<IMyShipMergeBlock>();
-List<IMyBatteryBlock> _bts = new List<IMyBatteryBlock>();
+List<IMyBatteryBlock> _bts = new List<IMyBatteryBlock>(); List<IMyThrust> _ths = new List<IMyThrust>();
 List<IMyTimerBlock> _tms = new List<IMyTimerBlock>();
 IMyBroadcastListener _s2p;
 StringBuilder _sb = new StringBuilder();
@@ -218,7 +219,7 @@ bool Mine(Bay b, IMyTerminalBlock x, bool box)
 
 void FindDrone(Bay b)
 {
-    b.DPb = null; b.DMerge = null; b.DBats.Clear();
+    b.DPb = null; b.DMerge = null; b.DBats.Clear(); b.DThr.Clear();
     if (b.Merge == null) { b.Found = false; return; }
     for (int pass = 0; pass < 2; pass++)
     {
@@ -229,6 +230,8 @@ void FindDrone(Bay b)
         if (b.DPb == null && b.DMerge == null) continue;
         GridTerminalSystem.GetBlocksOfType(_bts, x => Mine(b, x, box));
         b.DBats.AddRange(_bts);
+        GridTerminalSystem.GetBlocksOfType(_ths, x => Mine(b, x, box));
+        b.DThr.AddRange(_ths);
         break;
     }
     b.Found = b.DPb != null || b.DMerge != null;
@@ -308,6 +311,7 @@ void Step(Bay b)
             else if (b.Msg == "" || b.Msg.StartsWith("re-latching")) b.Msg = b.Merge.IsConnected ? "" : "merge open, no drone (C1: did the paste lock?)";
             break;
         case "DOCKED": case "CHARGING": case "READY":
+            if (_tick % 30 == 2) Thr(b, false);
             if (_tick % 6 == 1) FindDrone(b);
             if (!b.Found || !b.Merge.IsConnected)
             {
@@ -399,9 +403,13 @@ void Join(Bay b, bool repeat)
     if (FleetCh != "") IGC.SendBroadcastMessage(FleetCh + "_CMD", "join");
 }
 
+// a docked drone burns nothing: its thrusters are off while it is clamped (DOCKED / CHARGING / READY) and come on when it is armed or released
+void Thr(Bay b, bool on) { foreach (var x in b.DThr) { try { if (x.Enabled != on) x.Enabled = on; } catch (Exception) { } } }
+
 void Separate(Bay b)
 {
     foreach (var x in b.DBats) { try { if (x.ChargeMode != ChargeMode.Auto) x.ChargeMode = ChargeMode.Auto; } catch (Exception) { } }
+    Thr(b, true);
     if (b.Timer != null) { try { b.Timer.StopCountdown(); } catch (Exception) { } }
     b.Merge.Enabled = false; if (b.DMerge != null) b.DMerge.Enabled = false;
     b.OffT = _now; _lastOff = _now; b.Req = false; b.Force = false; b.JoinNext = 0; b.Msg = "";

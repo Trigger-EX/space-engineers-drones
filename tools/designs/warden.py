@@ -465,7 +465,8 @@ def _groups_and_toolbars(S):
     bp.set_toolbars(S.timer, toolbar=[TB.group('Thrusters', 'OnOff_Off'), TB.group('Weapons', 'OnOff_Off')])
     # hand flight: page 1 = weapons, then Helm / Staff / doors
     bp.set_toolbars(S.cockpit, toolbar=[TB.group('B1', 'Shoot'), TB.group('Main Turrets', 'OnOff'), TB.group('PD', 'OnOff'), TB.group('Decoys', 'OnOff'),
-                                       TB.group('[Hangar 1]', 'Open_On'), TB.group('[Hangar 1]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff)])
+                                       TB.group('[Hangar 1]', 'Open_On'), TB.group('[Hangar 1]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff),
+                                       TB.run(S.staff, 'deploy', experimental=True), TB.run(S.staff, 'dock', experimental=True)])
     bp.set_toolbars(S.ec_core, toolbar=[TB.block(S.staff, 'Run')])
     S.ec_core['settings'] = TB.event_settings('integrity', 0.4, invert=True)
     S.ec_core['links'] = {'selected': R['reactor']}
