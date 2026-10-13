@@ -1350,6 +1350,8 @@ public void Main(string arg, UpdateType src)
 }
 int _errRun, _okRun; bool _rcOut;
 
+bool Hot() { return Runtime.CurrentInstructionCount > Runtime.MaxInstructionCount * 0.6; }   // instruction guard: above 60% of the limit the optional stages (scans, polls, sharing) wait for the next tick
+
 void Tick(string arg, UpdateType src)
 {
     if ((src & (UpdateType.Trigger | UpdateType.Terminal | UpdateType.Script | UpdateType.Mod)) != 0 && !string.IsNullOrWhiteSpace(arg))
@@ -1367,17 +1369,16 @@ void Tick(string arg, UpdateType src)
     _rcOut = false;
 
     ReadIGC(); FollowStep(); ReadSwarm();
-    ReadIGC(); ReadSwarm();
     if (_tick % 6 == 3) BroadcastStatus();
-    StepSlimScan();
+    if (!Hot()) StepSlimScan();
     if (_tick % 20 == 7) CheckDamage();
     if (_tick % 6 == 0) PollDesignators();
-    if (_tick % 10 == 5) PollSensors();
+    if (_tick % 10 == 5 && !Hot()) PollSensors();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
-    if (_mode != Mode.IDLE) OmniScan();
-    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT || _mode == Mode.FOLLOW)) AutoScanStep();
-    if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0) ShareTarget();
+    if (_mode != Mode.IDLE && !Hot()) OmniScan();
+    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT || _mode == Mode.FOLLOW) && !Hot()) AutoScanStep();
+    if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0 && !Hot()) ShareTarget();
 
     if (!AiStep()) Control(dt);
     _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);

@@ -1022,6 +1022,8 @@ public void Main(string arg, UpdateType src)
 }
 int _errRun, _okRun; bool _rcOut;
 
+bool Hot() { return Runtime.CurrentInstructionCount > Runtime.MaxInstructionCount * 0.6; }   // instruction guard: above 60% of the limit the optional stages (scans, polls, sharing) wait for the next tick
+
 void Tick(string arg, UpdateType src)
 {
     if ((src & (UpdateType.Trigger | UpdateType.Terminal | UpdateType.Script | UpdateType.Mod)) != 0 && !string.IsNullOrWhiteSpace(arg))
@@ -1038,19 +1040,19 @@ void Tick(string arg, UpdateType src)
     _rcOut = false;
 
     ReadIGC();
-    StepSlimScan();
+    if (!Hot()) StepSlimScan();
     if ((_tick & 1) == 1) CheckDamage();   // every 2nd tick: the drone turns fast, the hit direction must be read in its attitude of the moment
     if (_tick % 6 == 0) { Broadcast(); PollDesignators(); }
-    if (_tick % 10 == 5) PollSensors();
+    if (_tick % 10 == 5 && !Hot()) PollSensors();
     if (_tick % 10 == 0) { Housekeeping(); PowerAndHealth(); }
     MaintainLock();
-    if (_mode != Mode.IDLE) OmniScan();
+    if (_mode != Mode.IDLE && !Hot()) OmniScan();
     bool raid = RaidOn;
     if (raid && !_raidActive) { _raidMe = _rc.GetPosition(); _raidPass = 0; }
     _raidActive = raid;
-    if (raid) RaidScan();
-    else if (_tgt == null && !_aiOn && AutoScan && _mode != Mode.IDLE && _mode != Mode.RTB) AutoScanStep();
-    if (_tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen < 1.0 && _tick % 30 == 0) ShareTarget();
+    if (raid) { if (!Hot()) RaidScan(); }
+    else if (_tgt == null && !_aiOn && AutoScan && _mode != Mode.IDLE && _mode != Mode.RTB && !Hot()) AutoScanStep();
+    if (_tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen < 1.0 && _tick % 30 == 0 && !Hot()) ShareTarget();
     if (LaunchStep(dt, _mode == Mode.IDLE, StartMode, _dynHomeT > 0, _dynHome, Command)) { }   // automatic take-off after the release from a printer (LAUNCH block); Command('guard') = join the hive
     else if (!AiStep()) Control(dt);
     _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
