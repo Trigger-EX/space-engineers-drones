@@ -271,6 +271,7 @@ class Blueprint:
         self.name, self.grid, self.blocks = name, grid, []
         self.rng = random.Random(seed)
         self.reserve = {}       # cell -> reason (must stay empty: exhaust, camera view, muzzle)
+        self.conveyor_pairs = []   # [(cell A, cell B)] face-adjacent ported cells of two blocks: written as <ConveyorLines> like the game's own saves
         self.groups = {}        # block group name -> [block dicts]; written as <BlockGroups> (see group())
         self.owner = owner          # nonzero: blocks carry Owner/BuiltBy and the game re-owns them to the pasting player. 0 leaves them 'Nobody' (seen in game: user's PB showed Owner: Nobody)
                                     # per block: add(..., owner=<id>) overrides it (0 = none); the default is the identity id of the owner's Starburst save (DEFAULT_OWNER)
@@ -806,6 +807,22 @@ class Blueprint:
                     if note not in self.notes: self.notes.append(note)
         return ser(TB.block_groups_element(self.groups, self.group_cell), 5)
 
+    def _conveyor_xml(self):
+        """<ConveyorLines>: one MyObjectBuilder_ConveyorLine per face-adjacent pair of conveyor ports (the game stores them for direct port-to-port contact too);
+        without them a pasted junction network / tank-to-thruster contact may not carry hydrogen until the game rebuilds it"""
+        if not self.conveyor_pairs: return ''
+        names = {tuple(v): k for k, v in DIR.items()}
+        out = ['          <ConveyorLines>\n']
+        for a, b in self.conveyor_pairs:
+            d = tuple(b[i] - a[i] for i in range(3))
+            assert d in names, f'{self.name}: conveyor pair {a} {b} is not face-adjacent'
+            out.append('            <MyObjectBuilder_ConveyorLine>\n'
+                       f'              <StartPosition x="{a[0]}" y="{a[1]}" z="{a[2]}" />\n              <StartDirection>{names[d]}</StartDirection>\n'
+                       f'              <EndPosition x="{b[0]}" y="{b[1]}" z="{b[2]}" />\n              <EndDirection>{names[tuple(-v for v in d)]}</EndDirection>\n'
+                       '              <Sections />\n              <ConveyorLineType>LARGE_LINE</ConveyorLineType>\n            </MyObjectBuilder_ConveyorLine>\n')
+        out.append('          </ConveyorLines>\n')
+        return ''.join(out)
+
     def _grid_xml(self, gid, display, world):
         """one <CubeGrid> element (8-space indent) at world pose `world`; ids must be assigned already"""
         po = ser(world.element('PositionAndOrientation'), 5)
@@ -817,7 +834,7 @@ class Blueprint:
           <GridSizeEnum>{self.grid}</GridSizeEnum>
           <CubeBlocks>
 {self._blocks_body()}          </CubeBlocks>
-{self._groups_xml()}          <DisplayName>{escape(display)}</DisplayName>
+{self._conveyor_xml()}{self._groups_xml()}          <DisplayName>{escape(display)}</DisplayName>
           <DestructibleBlocks>true</DestructibleBlocks>
           <IsRespawnGrid>false</IsRespawnGrid>
           <LocalCoordSys>0</LocalCoordSys>

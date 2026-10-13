@@ -295,6 +295,14 @@ def _bridge(S, full):
         S.add('ai', 'MyObjectBuilder_OffensiveCombatBlock', 'LargeOffensiveCombat', (-1, 9, 23), 'Forward', 'Up', nm('AI Offensive [AI]'), toward='Down', kind='ai')
         S.add('ai', 'MyObjectBuilder_FlightMovementBlock', 'LargeFlightMovement', (1, 9, 23), 'Forward', 'Up', nm('AI Flight [AI]'), toward='Down', kind='ai')
 
+def _walkways(S, res):
+    """entry + walkways: a slide door in each side of the tower stem (x = +-2, y 7, reached from the deck at (+-3, 7, 21)) opens on a 1-cell passage to the stem's
+    centre shaft (x = 0, z = 21), which climbs to the bridge (row z 21 between the seats and the PBs) and drops through the hangar roof into the hangar"""
+    path = [(x, 7, 21) for x in range(-2, 3)] + [(0, 8, 21), (0, 6, 21), (0, 5, 21)]
+    C.carve_walkway(S, res, path, doors={(2, 7, 21): 'Entry S', (-2, 7, 21): 'Entry P'}, name='Warden walkway', namer=nm)
+    rooms = [(0, 9, 21), (-1, 9, 21), (1, 9, 21), (0, 4, 21), (0, 3, 21), (0, 2, 21), (0, 1, 21)] + [(0, y, z) for y in (1, 2, 3, 4) for z in range(HANGAR_Z[0], HANGAR_Z[1] + 1)]
+    C.walk_check(S, (3, 7, 21), [(0, 9, 21), (0, 4, 21)], path + rooms, 'Warden walkway')
+
 def _hangar(S, full):
     bp = S.bp
     conns = []
@@ -527,8 +535,10 @@ def warden(lite=False, with_pod=True, lock=False, name=None, wing=0):
     _bridge(S, full)
     _sensing(S, full)
     _decoys(S, res)
+    _walkways(S, res)
     _conveyors(S, res, vol)
     res.check()                                   # hulls: every remaining hull block still meets the hull with its mount faces
+    C.link_conveyors(bp, [(c, n) for c, r, n in _terminals(S)])   # <ConveyorLines> for the junction network and its terminals
     _groups_and_toolbars(S)
     bp.ship = S
     bp.hull = res

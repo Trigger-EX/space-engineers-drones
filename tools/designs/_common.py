@@ -243,3 +243,124 @@ def run_module(models, min_acc=1.0, argv=None, required_axes=None):
             ok, t = report_line(label, bp, min_acc, (required_axes or {}).get(name))
             print(t); bad += (not ok)
     return 1 if bad else 0
+
+# ---- walkways (a crew member must be able to walk from the entry door to the bridge seats and the hangar) ----
+WALK_DOOR = ('MyObjectBuilder_AirtightSlideDoor', 'LargeBlockSlideDoor')   # 1x1x1, non-DLC, mounts on all six faces
+WALK_LADDER = ('MyObjectBuilder_Ladder2', 'LadderShaft')                  # 1x1x1, non-DLC, climbable shaft cell
+
+def carve_walkway(S, res, cells, doors=(), ladders=(), name='Walkway', namer=lambda s: s):
+    """Clear `cells` (large-grid cells, the corridor) of hull blocks so somebody can walk through them.  Only hull blocks (res.cell_block) may be
+    removed; anything else in the way is a design error.  `doors` = {cell: label} get a slide door (the cell stays walkable); `ladders` = cells that get
+    a ladder shaft (vertical climbs).  The free corridor cells are then reserved so the conveyor router and later placements keep out.
+    Returns the corridor cell set (doors and ladders included)."""
+    bp = S.bp
+    cells = [tuple(c) for c in cells]
+    for c in cells:
+        old = S.occ.get(c)
+        if old is None: continue
+        assert res.cell_block.get(c) is old and old['kind'] in ('armor', 'hull', 'plate', 'accent') or old['sub'].endswith('ArmorBlock') or 'Armor' in old['sub'], \
+            f'{bp.name}: {name}: cell {c} is occupied by {old["name"] or old["sub"]}, not a hull block'
+        assert len(bp.cells(old)) == 1, f'{bp.name}: {name}: {old["sub"]} at {c} spans several cells'
+        bp.blocks.remove(old)
+        if old in res.blocks: res.blocks.remove(old)
+        res.cell_block.pop(c, None)
+        del S.occ[c]
+    for c, label in dict(doors).items():
+        assert c in cells, f'{name}: door cell {c} is not in the corridor'
+        S.add('walkdoor', WALK_DOOR[0], WALK_DOOR[1], tuple(c), 'Forward', 'Up', namer(f'Door {label}'), kind='door')
+    for c in ladders:
+        S.add('ladder', WALK_LADDER[0], WALK_LADDER[1], tuple(c), 'Forward', 'Up', namer(f'Ladder {c[1]}'), kind='ladder', toward=None)
+    for c in cells:
+        if c not in S.occ: bp.reserve[c] = f'{name} (walkway)'
+    return set(cells)
+
+def walk_check(S, start, goals, passable, name='walkway'):
+    """BFS over `passable` cells (the corridor and the rooms it joins) that holds no block except doors / ladders: every cell of `goals` must be reached from
+    `start` (the outside cell in front of the entry door).  Returns the number of cells reached."""
+    seen = {tuple(start)}
+    todo = [tuple(start)]
+    pas = {tuple(c) for c in passable} | seen
+    while todo:
+        c = todo.pop()
+        for d in DIR.values():
+            n = (c[0] + d[0], c[1] + d[1], c[2] + d[2])
+            if n in seen or n not in pas: continue
+            b = S.occ.get(n)
+            if b is not None and b['kind'] not in ('door', 'ladder'): continue
+            seen.add(n); todo.append(n)
+    miss = [tuple(g) for g in goals if tuple(g) not in seen]
+    assert not miss, f'{S.bp.name}: {name}: cannot walk from {tuple(start)} to {miss}'
+    return len(seen)
+
+# ---- conveyor lines (the game's own saves list every face-adjacent pair of conveyor ports; see sebp.Blueprint._conveyor_xml) ----
+def link_conveyors(bp, terminals=()):
+    """Fill bp.conveyor_pairs: (1) every face-adjacent pair of junction cubes (kind 'conv'); (2) hydrogen thrusters (kind 'thr') whose back-face centre cell touches
+    a junction or a tank (kind 'tank'): the pair is (the thruster's port cell, the neighbour's cell); (3) `terminals` = [(junction cell, block name)]: the cell of
+    the named block that touches that junction.  Returns the number of pairs."""
+    occ = bp.occupancy()
+    pairs = set()
+    def add(a, b):
+        pairs.add((a, b) if a <= b else (b, a))
+    conv = {c for c, b in occ.items() if b['kind'] == 'conv'}
+    for c in conv:
+        for d in DIR.values():
+            n = (c[0] + d[0], c[1] + d[1], c[2] + d[2])
+            if n in conv: add(c, n)
+    for b in bp.blocks:
+        if b['kind'] != 'thr': continue
+        cs = bp.cells(b)
+        lo = [min(c[i] for c in cs) for i in range(3)]; hi = [max(c[i] for c in cs) for i in range(3)]
+        mid = [(lo[i] + hi[i]) // 2 for i in range(3)]
+        d = DIR[b['fwd']]                                   # exhaust direction; the port is on the opposite (Back) face centre
+        port = list(mid); out = list(mid)
+        for i in range(3):
+            if d[i] > 0: port[i] = lo[i]; out[i] = lo[i] - 1
+            elif d[i] < 0: port[i] = hi[i]; out[i] = hi[i] + 1
+        n = occ.get(tuple(out))
+        if n is not None and n['kind'] in ('conv', 'tank'): add(tuple(port), tuple(out))
+    by_name = {}
+    for c, b in occ.items(): by_name.setdefault(b['name'], []).append(c)
+    for j, name in terminals:
+        for d in DIR.values():
+            n = (j[0] + d[0], j[1] + d[1], j[2] + d[2])
+            if n in by_name.get(name, ()) and occ[n]['kind'] != 'conv': add(j, n); break
+    bp.conveyor_pairs = sorted(pairs)
+    return len(pairs)
+
+def route_walkway(S, res, env, waypoints, avoid=(), armour_cost=5):
+    """Cells of a corridor through the hull from waypoint to waypoint (each leg a Dijkstra over 6-neighbour steps): a free cell inside `env` costs 1, a
+    1-cell hull armour block whose faces are not exposed to space costs `armour_cost` (it will be carved), everything else (machinery, windows, skin, reserved
+    cells, `avoid`) is a wall.  The waypoints themselves are always allowed.  Returns the ordered unique cells."""
+    import heapq
+    bp = S.bp
+    env = set(env); avoid = {tuple(c) for c in avoid}
+    resv = set()
+    for v in res.reserved.values(): resv |= set(v.cells)
+    wps = [tuple(w) for w in waypoints]
+    def cost(c):
+        if c in wps: return 1
+        if c in avoid or c in bp.reserve or c in resv or c not in env: return None
+        b = S.occ.get(c)
+        if b is None: return 1
+        if res.cell_block.get(c) is b and len(bp.cells(b)) == 1 and (b['sub'].endswith('ArmorBlock') or b['kind'] in ('armor', 'plate', 'dark', 'accent', 'stripe')) \
+                and not res.exposure.get(c) and not res.flush.get(c):
+            return armour_cost
+        return None
+    out = [wps[0]]
+    for a, b in zip(wps, wps[1:]):
+        dist = {a: 0}; prev = {}; h = [(0, a)]; found = False
+        while h:
+            d0, c = heapq.heappop(h)
+            if c == b: found = True; break
+            if d0 > dist.get(c, 1e9): continue
+            for dv in DIR.values():
+                n = (c[0] + dv[0], c[1] + dv[1], c[2] + dv[2])
+                k = cost(n)
+                if k is None: continue
+                if d0 + k < dist.get(n, 1e9): dist[n] = d0 + k; prev[n] = c; heapq.heappush(h, (d0 + k, n))
+        assert found, f'{bp.name}: no walkway route from {a} to {b}'
+        leg = [b]
+        while leg[-1] != a: leg.append(prev[leg[-1]])
+        for c in reversed(leg[:-1]):
+            if c not in out: out.append(c)
+    return out
