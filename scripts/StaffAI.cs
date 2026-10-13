@@ -161,6 +161,7 @@ void Load()
     MenuItems = Cfg(S, "Run Menu", MenuItems); MenuWait = Cfg(S, "Run Menu Wait", MenuWait); DispName = Cfg(S, "Display Name", DispName).ToLowerInvariant();
     WingSurf = (int)Cfg(S, "Wing Surface", (double)WingSurf); WingName = Cfg(S, "Wing Display Name", WingName).ToLowerInvariant();
     Types = Cfg("Wing", "Types", string.Join(",", Types)).ToUpperInvariant().Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+    if (Types.Length == 0) Types = new[] { "HORNET" };   // an empty list would crash the roll-call page
     string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
 }
 
