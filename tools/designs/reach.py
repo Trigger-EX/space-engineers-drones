@@ -66,6 +66,8 @@ def block_label(b):
     return (b['name'] or b['sub']) + ('' if b['name'] else '@' + ','.join(str(v) for v in b['min']))
 
 TIER_A = 4                     # FAMILY[:TIER_A] (tip and tip-1 centres, both radii) must hold wherever a legal welder position can do it
+EXIT_CHECK = 18                 # cells of exit lane / nose lane the verifier walks (printer_lib.EXIT_LEN and FRONT_LEN)
+FRONT_CHECK = 16
 
 def neighbours26(c):
     x, y, z = c
@@ -239,17 +241,28 @@ def verify_bay(bp, bay, margin_m=None, backoff=None, strict_camera=False, family
             continue
         prob.append(f'bay {bay["n"]}: {why} blocked by printer {o["name"] or o["sub"]} at {w}')
     # 4b. exit lane: the drone leaves along bay['design'].exit (default: straight away from the merge block); nothing of the printer may stand
-    #     in the swept footprint for 14 cells, or the drone is boxed in by its own welders (found by the geometry review)
+    #     in the swept footprint for EXIT_CHECK cells, or the drone is boxed in by its own welders (found by the geometry review)
     des = bay.get('design')
     mbs = [b for b in drone.blocks if b['kind'] == 'merge']
     if des is not None and len(mbs) == 1:
         e = tuple(getattr(des, 'exit', None) or tuple(-v for v in DIR[merge_clamp_dir(drone, mbs[0])]))
         blockers = {}
         for c in dcells:
-            for k in range(1, 15):
+            for k in range(1, EXIT_CHECK + 1):
                 o = occ.get((c[0] + e[0] * k, c[1] + e[1] * k, c[2] + e[2] * k))
                 if o is not None: blockers[o['name'] or o['sub']] = k
         if blockers: prob.append(f'bay {bay["n"]}: exit lane {e} blocked by ' + ', '.join(f'{n} (step {k})' for n, k in list(blockers.items())[:4]))
+        # nose lane: the drone's own Forward (printer_lib.front_prism).  A problem when the bay was solved with it, a note when the solver had to give it up
+        fv = DIR['Forward']
+        if tuple(des.c) != fv:
+            fb = {}
+            for c in dcells:
+                for k in range(1, FRONT_CHECK + 1):
+                    o = occ.get((c[0] + fv[0] * k, c[1] + fv[1] * k, c[2] + fv[2] * k))
+                    if o is not None: fb[o['name'] or o['sub']] = k
+            if fb and getattr(des, 'front', False):
+                prob.append(f'bay {bay["n"]}: nose lane blocked by ' + ', '.join(f'{n} (step {k})' for n, k in list(fb.items())[:4]))
+            elif fb: st['nose_lane_blocked'] = len([n for n in fb if 'Welder' in n])
     # 5. weld coverage
     st['welders'] = len(bay_welders(bp, bay['n'])); st['drone_blocks'] = len(drone.blocks)
     if family and margin_m is None and backoff is None:

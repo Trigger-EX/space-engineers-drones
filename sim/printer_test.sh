@@ -10,7 +10,7 @@ run() { # name, extra args...
   local name="$1"; shift
   local o; o=$($H "$@" 2>&1)
   if echo "$o" | grep -q "^PRINTER OK"; then echo "PASS  $name"; else echo "FAIL  $name"; fail=1; fi
-  echo "$o" | grep -E "^RESULT|^FIRST THROW|^  throw site|^LAST ERROR" | sed 's/^/        /'
+  echo "$o" | grep -E "^RESULT|^TIMER CHAIN|^FIRST THROW|^  throw site|^LAST ERROR" | sed 's/^/        /'
 }
 run "plain sim projector, no ERROR allowed"             --seconds 320 --fault none --expect-clean
 run "no projection at all (counters throw NRE)"          --seconds 320 --fault noproj
@@ -20,6 +20,7 @@ run "projector stuck off"                                --seconds 320 --fault p
 run "IsProjecting throws for 3 s at 40 s"                --seconds 320 --fault isproj --fault-at 40
 run "welder 1 of every bay removed at 50 s"              --seconds 320 --fault welderclosed --fault-at 50
 run "bay 1 halfload + bay 3 projlost + welders closed"   --seconds 320 --fault all --fault-at 45
+run "timer chain: Timer Build started by hand, script yields" --seconds 120 --timer-chain --fault none
 if [ "$1" = "--old" ]; then
   tmp="$(mktemp -d)"
   git -C "$ROOT" show c144d8c:scripts/HiveMotherAI.cs > "$tmp/v20.cs"
