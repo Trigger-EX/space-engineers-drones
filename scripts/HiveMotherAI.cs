@@ -126,7 +126,7 @@ void Err(Exception ex, Bay b)
     string frame = "";
     try
     {
-        string st = ex.StackTrace;
+        string st = ex.ToString();
         if (st != null)
         {
             string f = null;
@@ -139,7 +139,7 @@ void Err(Exception ex, Bay b)
         }
     }
     catch (Exception) { }
-    string text = ex.GetType().Name + ": " + ex.Message + " | at: " + _where + (b != null ? " | bay " + b.N + " state " + b.State : "") + (frame != "" ? " | in " + frame : "");
+    string text = ex.GetType().FullName + ": " + ex.Message + " | at: " + _where + (b != null ? " | bay " + b.N + " state " + b.State : "") + (frame != "" ? " | in " + frame : "");
     _errTotal++;
     if (_errs.Count > 0 && _errs[_errs.Count - 1].Text == text) { _errs[_errs.Count - 1].N++; _errs[_errs.Count - 1].Last = _now; }
     else { _errs.Add(new ErrRec { Text = text, T = _now, Last = _now }); if (_errs.Count > 3) _errs.RemoveAt(0); }
@@ -161,7 +161,7 @@ void BayFail(Bay b, Exception ex)
     try
     {
         if (b.State != "FAULT") { b.State = "FAULT"; b.T = _now; b.Faults++; }
-        b.Msg = "EXCEPTION " + ex.GetType().Name + ": " + ex.Message + " (at " + _where + ")";
+        b.Msg = "EXCEPTION " + ex.GetType().FullName + ": " + ex.Message + " (at " + _where + ")";
         b.KickW = null;
     }
     catch (Exception) { }
@@ -182,10 +182,10 @@ bool SetOn(IMyFunctionalBlock x, bool on)
 }
 
 // projector members are read through these: a projector with no projection (or a removed one) may throw or give nonsense
-bool Projecting(Bay b) { try { return b.Proj != null && b.Proj.IsProjecting; } catch (Exception ex) { b.ProjErr = ex.GetType().Name + " reading IsProjecting"; Err(ex, b); return false; } }
-int RemainingOf(Bay b) { try { return b.Proj.RemainingBlocks; } catch (Exception ex) { b.ProjErr = ex.GetType().Name + " reading RemainingBlocks"; Err(ex, b); return -1; } }
-int TotalOf(Bay b) { try { return b.Proj.TotalBlocks; } catch (Exception ex) { b.ProjErr = ex.GetType().Name + " reading TotalBlocks"; Err(ex, b); return -1; } }
-int BuildableOf(Bay b) { try { return b.Proj.BuildableBlocksCount; } catch (Exception ex) { b.ProjErr = ex.GetType().Name + " reading BuildableBlocksCount"; Err(ex, b); return -1; } }
+bool Projecting(Bay b) { try { return b.Proj != null && b.Proj.IsProjecting; } catch (Exception ex) { b.ProjErr = ex.GetType().FullName + " reading IsProjecting"; Err(ex, b); return false; } }
+int RemainingOf(Bay b) { try { return b.Proj.RemainingBlocks; } catch (Exception ex) { b.ProjErr = ex.GetType().FullName + " reading RemainingBlocks"; Err(ex, b); return -1; } }
+int TotalOf(Bay b) { try { return b.Proj.TotalBlocks; } catch (Exception ex) { b.ProjErr = ex.GetType().FullName + " reading TotalBlocks"; Err(ex, b); return -1; } }
+int BuildableOf(Bay b) { try { return b.Proj.BuildableBlocksCount; } catch (Exception ex) { b.ProjErr = ex.GetType().FullName + " reading BuildableBlocksCount"; Err(ex, b); return -1; } }
 int RemNow(Bay b) { return Projecting(b) ? Math.Max(-1, RemainingOf(b)) : -1; }
 
 void LoadConfig()
@@ -220,6 +220,12 @@ void LoadConfig()
     Relay = C(S, "Relay Turret Targets To All Tags", Relay);
     Printing = C(S, "Auto Start", Printing);
     string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+}
+// persist Hold: GetBlocks re-reads the ini every 10 s, so a runtime-only flag would be overwritten
+void SetHold(Bay b, bool v)
+{
+    b.Held = v;
+    try { MyIniParseResult r; if (_ini.TryParse(Me.CustomData ?? "", out r)) { _ini.Set("Bay " + b.N, "Hold", v); string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o; } } catch (Exception ex) { Err(ex, b); }
 }
 string C(string s, string k, string d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToString(d); }
 double C(string s, string k, double d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToDouble(d); }
@@ -479,7 +485,7 @@ void StepBay(Bay b, ref int building, ref int docked)
             _where = "bay " + b.N + " CHARGE find drone";
             FindDrone(b);
             _where = "bay " + b.N + " CHARGE recompile drone PB";
-            if (DoRecompile && !b.Recompiled && b.DPb != null) { try { b.DPb.Enabled = true; b.DPb.ApplyAction("Recompile"); } catch (Exception ex) { Err(ex, b); b.Msg = "drone PB recompile failed: " + ex.GetType().Name; } b.Recompiled = true; b.T = _now; t = 0; }
+            if (DoRecompile && !b.Recompiled && b.DPb != null) { try { b.DPb.Enabled = true; b.DPb.ApplyAction("Recompile");   /* a terminal button, not an action: probably a no-op, the welded PB compiles itself; ARM's TryRun is the real test */ } catch (Exception ex) { Err(ex, b); b.Msg = "drone PB recompile failed: " + ex.GetType().FullName; } b.Recompiled = true; b.T = _now; t = 0; }
             if (b.DMerge == null && t > 8) { Fault(b, "no drone merge block found (prefix " + b.Prefix + ")"); break; }
             _where = "bay " + b.N + " CHARGE batteries";
             bool ready = t > (b.Recompiled ? RecompileWait : 0) && DroneCharged(b);
@@ -509,7 +515,7 @@ void StepBay(Bay b, ref int building, ref int docked)
                     if (b.FusedT <= 0) b.FusedT = _now;
                     SetOn(b.Merge, false); SetOn(b.DMerge, false);
                     b.Msg = "separating... drone still on the printer grid";
-                    if (_now - b.FusedT > FusedGrace) { Fault(b, "FUSED: drone is still on the printer grid " + FusedGrace + " s after merge off - grind the drone's merge stalk by hand; see docs"); b.Held = true; }
+                    if (_now - b.FusedT > FusedGrace) { Fault(b, "FUSED: drone is still on the printer grid " + FusedGrace + " s after merge off - grind the drone's merge stalk by hand; see docs"); SetHold(b, true); }
                     break;
                 }
                 b.FusedT = 0; b.Msg = "";
@@ -624,7 +630,7 @@ bool ScanBox(Bay b, int rem)
         catch (Exception ex)
         {   // one unreadable cell must not stop the scan; it counts as unfinished so the drone is not released on a guess
             Err(ex, b); b.PBad++;
-            if (b.PBadL.Count < 3) b.PBadL.Add("cell " + x + "," + y + "," + z + " unreadable (" + ex.GetType().Name + ")");
+            if (b.PBadL.Count < 3) b.PBadL.Add("cell " + x + "," + y + "," + z + " unreadable (" + ex.GetType().FullName + ")");
         }
     }
     if (b.ScanIdx < total) return false;
@@ -843,13 +849,13 @@ bool Arm(Bay b)
         _where = "bay " + b.N + " ARM run drone PB";
         b.DPb.Enabled = true;
         bool ok = b.DPb.TryRun("armed");
-        if (!ok) b.Msg = "ARM: drone PB did not run (not compiled?) - relying on the JOIN broadcast";
+        if (!ok) b.Msg = "ARM: drone PB did not run (TryRun false: not compiled or not working yet?) - relying on the JOIN broadcast";
         else b.Msg = "";
         return ok;
     }
     catch (Exception ex)
     {   // arming is best effort: the release must still happen (JOIN / auto take-off cover it)
-        Err(ex, b); b.Msg = "ARM failed (" + ex.GetType().Name + ") - relying on the JOIN broadcast"; b.DPb = null; return false;
+        Err(ex, b); b.Msg = "ARM failed (" + ex.GetType().FullName + ") - relying on the JOIN broadcast"; b.DPb = null; return false;
     }
 }
 
@@ -907,8 +913,8 @@ void Command(string a)
             foreach (var b in _bays)
                 if ((b.State == "DOCKED" || b.State == "CHARGE") && (w.Length < 2 || (int.TryParse(w[1], out n) && n == b.N))) Release(b);
             break;
-        case "hold": if (w.Length > 1 && int.TryParse(w[1], out n)) foreach (var b in _bays) if (b.N == n) b.Held = true; break;
-        case "unhold": if (w.Length > 1 && int.TryParse(w[1], out n)) foreach (var b in _bays) if (b.N == n) { b.Held = false; if (b.State == "FAULT") b.State = "IDLE"; } break;
+        case "hold": if (w.Length > 1 && int.TryParse(w[1], out n)) foreach (var b in _bays) if (b.N == n) SetHold(b, true); break;
+        case "unhold": if (w.Length > 1 && int.TryParse(w[1], out n)) foreach (var b in _bays) if (b.N == n) { SetHold(b, false); if (b.State == "FAULT") b.State = "IDLE"; } break;
         case "relay": Relay = w.Length < 2 || w[1] != "off"; break;
         case "reload": LoadConfig(); GetBlocks(); _errs.Clear(); _errTotal = 0; break;
     }
@@ -938,7 +944,7 @@ void Show()
             }
             if (b.Msg != "") _sb.Append("\n   ").Append(b.Msg);
         }
-        catch (Exception ex) { _sb.Append("(display error ").Append(ex.GetType().Name).Append(')'); Err(ex, b); }
+        catch (Exception ex) { _sb.Append("(display error ").Append(ex.GetType().FullName).Append(')'); Err(ex, b); }
         _sb.Append('\n');
     }
     if (_bays.Count == 0) _sb.Append("No bays: name a projector, welders and\na merge block with [Bay 1]\n");
