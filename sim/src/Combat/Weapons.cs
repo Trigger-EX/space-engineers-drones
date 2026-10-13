@@ -309,7 +309,9 @@ namespace SeSim.Combat
             ulong salt = b.EntityId != 0 ? (ulong)b.EntityId : (ulong)((b.Body != null ? b.Body.Id : 0) * 100003L + b.Index + 17);
             u.Rng = new DetRng(DetRng.Mix(DetRng.Mix(w.Seed, 0xC0DE), salt));
             u.CapacitorFull = WeaponUnit.CapacityOf(s, d.Large);   // small 20 s, large 59 s with the data numbers (EntityComponents.sbc)
-            if (u.Mode == ProjectileSystem.ModeSlug)
+            // only railguns have a capacitor (EntityCapacitorComponent); artillery / assault cannon shells are penetrating "slugs" too
+            // but reload by time only (giving them a capacitor in the Defense power group starved every turret on a big ship)
+            if (u.Mode == ProjectileSystem.ModeSlug && d.Subtype.Contains("Railgun"))
             {
                 double init = b.Src != null ? b.Src.PropNum("StoredPower", double.NaN) : double.NaN;
                 u.CapacitorMWh = double.IsNaN(init) ? u.CapacitorFull * Math.Max(0, Math.Min(1, s.RailgunInitialCharge)) : Math.Min(init, u.CapacitorFull);

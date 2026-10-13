@@ -27,6 +27,10 @@ namespace SeSim.Combat
         public MyDetectedEntityInfo Target;   // Detection.FromBody at refresh time
         public double Azimuth, Elevation;     // radians, in block frame
         public bool IsAimed;
+        /// <summary>Targeting group ("" = the target's centre; "PowerSystems", "Weapons", "Propulsion"): with
+        /// SimSettings.TurretSubsystemTargeting the turret aims at the nearest functional block of that group on its target.</summary>
+        public string TargetingGroup = "";
+        BlockInst _sub; long _subTick = -1;
 
         // slot C internals
         public Vector3D AimDirWorld;
@@ -57,6 +61,11 @@ namespace SeSim.Combat
             var s = w.Settings;
             var wp = Weapon;
             Vector3D aimPoint = Decoys.AimPoint(w, TargetBody, muz, b.EntityId);   // nearest working decoy, else the body centre
+            if (TargetingGroup.Length > 0 && s.TurretSubsystemTargeting && aimPoint == TargetBody.Position)   // a decoy still wins
+            {
+                if (refresh || _sub == null || _sub.Destroyed || !_sub.IsFunctional || !ReferenceEquals(_sub.Body, TargetBody)) _sub = Subsystem(TargetBody, muz);
+                if (_sub != null) aimPoint = TargetBody.LocalToWorld(_sub.LocalCenter);
+            }
             Vector3D rel = aimPoint - muz;
             double dist = rel.Length();
             Vector3D tv = TargetBody.LinearVelocity;
@@ -95,6 +104,33 @@ namespace SeSim.Combat
             IsAimed = cosErr >= cone;
             double rangeToHull = dist - TargetBody.BoundRadius;
             wp.ShootOn = IsAimed && rangeToHull <= Range;
+        }
+
+        /// <summary>Block types of the vanilla targeting groups (TargetGroups.sbc, approximated by block kind).</summary>
+        public static bool InGroup(BlockInst x, string group)
+        {
+            string k = x.Def.Kind;
+            switch (group)
+            {
+                case "PowerSystems": return k == "Reactor" || k == "BatteryBlock" || k == "HydrogenEngine" || k == "SolarPanel" || k == "WindTurbine";
+                case "Propulsion": return k == "Thrust";
+                case "Weapons": return x.Def.Weapon != null || k == "LargeTurretBase" || k == "WeaponBlock";
+                default: return false;
+            }
+        }
+
+        BlockInst Subsystem(Body t, Vector3D from)
+        {
+            BlockInst best = null; double bd = double.MaxValue;
+            var bl = t.Blocks;
+            for (int i = 0; i < bl.Count; i++)
+            {
+                var x = bl[i];
+                if (x.Destroyed || !x.IsFunctional || !InGroup(x, TargetingGroup)) continue;
+                double d = (t.LocalToWorld(x.LocalCenter) - from).LengthSquared();
+                if (d < bd) { bd = d; best = x; }
+            }
+            return best;
         }
 
         void Drop()

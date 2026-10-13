@@ -24,6 +24,12 @@ namespace SeSim.Api
             set { var u = Unit; if (u != null) u.Range = float.IsNaN(value) || value < 0f ? 0f : value; }
         }
         public bool AIEnabled { get { return true; } }
+        /// <summary>Game convention (VRageMath CreateFromAzimuthAndElevation): local aim = (-sin az cos el, sin el, -cos az cos el);
+        /// TurretUnit keeps az with the opposite sign, so it is negated here.</summary>
+        public float Azimuth { get { var u = Unit; return u != null ? (float)(-u.Azimuth) : 0f; } }
+        public float Elevation { get { var u = Unit; return u != null ? (float)u.Elevation : 0f; } }
+        public string GetTargetingGroup() { var u = Unit; return u != null ? u.TargetingGroup : ""; }
+        public void SetTargetingGroup(string groupSubtypeId) { var u = Unit; if (u != null) u.TargetingGroup = groupSubtypeId ?? ""; }
 
         protected override void Register(TerminalRegistry r)
         {

@@ -76,6 +76,10 @@ namespace SeSim.Run
                 KN(sb, "blocks_start", s.BlocksStart); KN(sb, "blocks_end", s.BlocksEnd);
                 KN(sb, "weapons_start", s.WeaponsStart); KN(sb, "weapons_end", s.WeaponsEnd);
                 KN(sb, "thrusters_start", s.ThrustersStart); KN(sb, "thrusters_end", s.ThrustersEnd);
+                KN(sb, "power_start_mw", Math.Round(s.PowerStartMW, 2)); KN(sb, "power_end_mw", Math.Round(s.PowerEndMW, 2));
+                KN(sb, "power_blocks_start", s.PowerBlocksStart); KN(sb, "power_blocks_end", s.PowerBlocksEnd);
+                KN(sb, "armed_start", s.ArmedStart); KN(sb, "armed_end", s.ArmedEnd);
+                KN(sb, "power_zero_at_s", Math.Round(s.PowerZeroAtS, 2)); KN(sb, "armed_zero_at_s", Math.Round(s.ArmedZeroAtS, 2));
                 KN(sb, "blocks_lost", s.BlocksLost); KN(sb, "blocks_killed", s.BlocksKilled);
                 KN(sb, "mass_lost_frac", Math.Round(s.MassLostFraction, 4));
                 KN(sb, "time_on_target_s", Math.Round(s.TimeOnTargetS, 2));

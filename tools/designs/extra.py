@@ -176,7 +176,7 @@ def mantis(lite=False):
     return finalize(bp)
 
 # ---------------------------------------------------------------------------------------------
-def basilisk(lite=False):
+def basilisk(lite=False, seeker=False):
     """BASILISK: LARGE-grid armoured gunship (2.5 m cells).  x = Right, y = Up, z = Backward; nose at -z.
       front wall  z=-1   6x LargeHeavyBlockArmorBlock (3.3 t each)       nose cameras at (0,0..1,-2) between the launchers
       launchers   z=-3..-2  4x LargeMissileLauncher at (+-1, 0..1)        keep 2 cells (5 m) clear in front
@@ -184,7 +184,7 @@ def basilisk(lite=False):
       engines     2 mains (z=3), 2 brakes on the flanks, 2+2 strafe, 2 dive (flanks), 2 lift (belly): 2 per axis
       top deck    LargeGatlingTurret (Full only) centred on the roof, compact antenna + up camera behind it
     Everything is 3 cells wide so every block has a face on the hull; the grid is one connected piece (validated)."""
-    name = "Basilisk Lite" if lite else "Basilisk"
+    name = ("Basilisk Seeker" if seeker else "Basilisk") + (" Lite" if lite else "")
     bp = Blueprint(name, "Large", seed=seed_for(name))
     HEAVY = "LargeHeavyBlockArmorBlock"
     for x in (-1, 0, 1):
@@ -223,14 +223,20 @@ def basilisk(lite=False):
     cam(bp, (0, -1, -1), "Down", "Forward", f"{name} Camera Down")
     cam(bp, (-2, 1, 1), "Left", "Up", f"{name} Camera Left")
     cam(bp, (2, 1, 1), "Right", "Up", f"{name} Camera Right")
+    if not lite or seeker:      # the Seeker Lite keeps the turret (it is the point of the ship)
+        t = bp.add("MyObjectBuilder_LargeGatlingTurret", "", (-1, 2, -1), "Forward", "Up", f"{name} Gatling Turret" + (" [Seeker]" if seeker else ""), GUN, kind="turret")
     if not lite:
-        t = bp.add("MyObjectBuilder_LargeGatlingTurret", "", (-1, 2, -1), "Forward", "Up", f"{name} Gatling Turret", GUN, kind="turret")
         bp.add("MyObjectBuilder_SensorBlock", "LargeBlockSensor", (0, -1, 0), "Down", "Forward", f"{name} Sensor", kind="sensor")
         bp.add("MyObjectBuilder_OffensiveCombatBlock", "LargeOffensiveCombat", (0, -1, 1), name=f"{name} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", "LargeFlightMovement", (0, -1, 2), name=f"{name} AI Flight [AI]", kind="ai")
     return finalize(bp)
 
-MODELS = {"Harrier": harrier, "Aegis": aegis, "Mantis": mantis, "Basilisk": basilisk}
+def basilisk_seeker(lite=False):
+    """Option-4 test ship: the Full Basilisk whose roof turret is named [Seeker]. The script sets it to the targeting group in
+    Custom Data (Seeker Group, default PowerSystems) and drills where it points. Lite keeps the turret but drops sensor + AI blocks."""
+    return basilisk(lite=lite, seeker=True)
+
+MODELS = {"Harrier": harrier, "Aegis": aegis, "Mantis": mantis, "Basilisk": basilisk, "Basilisk Seeker": basilisk_seeker}
 
 if __name__ == "__main__":
     sys.exit(C.run_module(MODELS))

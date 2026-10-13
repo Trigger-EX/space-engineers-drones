@@ -87,6 +87,14 @@ namespace SeSim.Core
         public double TurretSlewRadPerSec = 1.0;                 // [I] large turret azimuth/elevation speed
         public double TurretMinElevationDeg = -10;               // [I] large turret elevation lower limit
         public double TurretFireConeDeg = 1.0;                   // turret fires when aim error is below this
+        /// <summary>Large turrets are Defense power sinks like in the game: a ship whose reactors, engines and batteries are all gone has
+        /// silent turrets. False = turrets work without power (old model).</summary>
+        public bool TurretsNeedPower = true;
+        public double TurretIdlePowerMW = 0.002;                 // [I] per turret when the definition has no power value
+        /// <summary>Turrets honour the targeting group ("Weapons", "Propulsion", "PowerSystems"; set in the terminal or by
+        /// IMyLargeTurretBase.SetTargetingGroup): they aim at the nearest functional block of that group on their target instead of
+        /// its centre (a working decoy still wins). Default "" = the centre, as before.</summary>
+        public bool TurretSubsystemTargeting = true;
         public double PirateCruiseSpeed = 40, PirateOrbitSpeed = 25, PirateOrbitRange = 700, PirateMaxTurnRate = 0.5;   // [I] pirate brain
         /// <summary>Pirate evasive manoeuvres (like the vanilla AI's "evasive" option): strafe at PirateEvasiveSpeed across the line
         /// of sight, flipping every 2-5 s, on top of its orbit. Off by default (the matrix results so far are without it).</summary>

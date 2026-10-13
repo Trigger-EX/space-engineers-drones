@@ -29,6 +29,10 @@ namespace SeSim.Run
         public bool Alive, Capable, EverCapable;
         public int BlocksStart, BlocksEnd;
         public int WeaponsStart, WeaponsEnd, ThrustersStart, ThrustersEnd;   // functional guns/turrets and working thrusters
+        /// <summary>Vital-systems view (large enemy ships): power = reactor/engine output + discharge capacity of charged batteries (MW);
+        /// armed = turrets/guns that are functional AND powered; first time each reached zero (-1 = never).</summary>
+        public double PowerStartMW, PowerEndMW, PowerZeroAtS = -1, ArmedZeroAtS = -1;
+        public int ArmedStart, ArmedEnd, PowerBlocksStart, PowerBlocksEnd;
         public string Script = "";
         public double BlockMassLostKg, InitialMassKg;
         public double WeaponRange;
@@ -137,6 +141,7 @@ namespace SeSim.Run
                 var sh = Ships[i]; var st = _st[i];
                 st.BlocksStart = sh.InitialBlocks; st.InitialMassKg = sh.InitialMass; st.WeaponRange = sh.WeaponRange;
                 CountUnits(sh.Bodies, out st.WeaponsStart, out st.ThrustersStart);
+                Vitals(sh.Bodies, out st.PowerStartMW, out st.PowerBlocksStart, out st.ArmedStart);
                 var sb = new System.Text.StringBuilder();
                 var seen = new List<string>();
                 for (int k = 0; k < sh.Pbs.Count; k++) { string nm = sh.Pbs[k].ScriptName ?? "?"; if (!seen.Contains(nm)) seen.Add(nm); }
@@ -289,6 +294,28 @@ namespace SeSim.Run
             }
         }
 
+        static void Vitals(List<Body> bodies, out double powerMW, out int powerBlocks, out int armed)
+        {
+            powerMW = 0; powerBlocks = 0; armed = 0;
+            for (int k = 0; k < bodies.Count; k++)
+            {
+                var b = bodies[k];
+                if (b.Power != null) powerMW += b.Power.GeneratorMW();
+                for (int i = 0; i < b.Generators.Count; i++) if (b.Generators[i].IsFunctional) powerBlocks++;
+                for (int i = 0; i < b.Batteries.Count; i++)
+                {
+                    var bt = b.Batteries[i];
+                    if (bt.Block.IsFunctional) powerBlocks++;
+                    if (bt.CanDischarge) powerMW += bt.MaxOutputMW;
+                }
+                for (int i = 0; i < b.Weapons.Count; i++)
+                {
+                    var bl = b.Weapons[i].Block;
+                    if (bl.IsFunctional && (bl.Api == null || bl.Api.IsWorking)) armed++;
+                }
+            }
+        }
+
         static void CountUnits(List<Body> bodies, out int weapons, out int thrusters)
         {
             weapons = 0; thrusters = 0;
@@ -344,7 +371,7 @@ namespace SeSim.Run
                 for (int i = 0; i < tu.Count; i++)
                 {
                     var t = tu[i];
-                    if (!t.IsController && t.Block.Body == b && t.Block.IsFunctional) return true;
+                    if (!t.IsController && t.Block.Body == b && t.Block.IsFunctional && (t.Block.Api == null || t.Block.Api.IsWorking)) return true;
                 }
                 var wh = w.Combat.Warheads;
                 for (int i = 0; i < wh.Count; i++)
@@ -379,6 +406,9 @@ namespace SeSim.Run
                 sh.CombatCapable = cap;
                 st.Capable = cap; st.BlocksEnd = blocks; st.Alive = blocks > 0;
                 CountUnits(list, out st.WeaponsEnd, out st.ThrustersEnd);
+                Vitals(list, out st.PowerEndMW, out st.PowerBlocksEnd, out st.ArmedEnd);
+                if (st.PowerZeroAtS < 0 && st.PowerStartMW > 0 && st.PowerEndMW <= 0) st.PowerZeroAtS = now;
+                if (st.ArmedZeroAtS < 0 && st.ArmedStart > 0 && st.ArmedEnd == 0) st.ArmedZeroAtS = now;
                 if (cap) { st.EverCapable = true; _teamCap[sh.Team] = true; }
                 else if (st.EverCapable && !sh.Disabled) { sh.Disabled = true; sh.DisabledAt = now; st.DisabledAtS = now; }
                 if (!sh.Destroyed && (blocks == 0 || (sh.InitialMass > 0 && mass < 0.1 * sh.InitialMass))) { sh.Destroyed = true; sh.DestroyedAt = now; st.DestroyedAtS = now; }

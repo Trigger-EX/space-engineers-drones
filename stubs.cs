@@ -70,6 +70,8 @@ namespace VRageMath {
     public double LengthSquared() { return X * X + Y * Y + Z * Z; }
     // Like VRageMath: returns the old length; a zero vector becomes NaN.
     public double Normalize() { double l = Math.Sqrt(X * X + Y * Y + Z * Z); double i = 1.0 / l; X *= i; Y *= i; Z *= i; return l; }
+    /// <summary>VRageMath: Transform(Forward, CreateFromYawPitchRoll(azimuth, elevation, 0)) = (-sin a cos e, sin e, -cos a cos e).</summary>
+    public static void CreateFromAzimuthAndElevation(double azimuth, double elevation, out Vector3D direction) { double ce = Math.Cos(elevation); direction = new Vector3D(-Math.Sin(azimuth) * ce, Math.Sin(elevation), -Math.Cos(azimuth) * ce); }
     public static Vector3D Normalize(Vector3D v) { double i = 1.0 / Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z); return new Vector3D(v.X * i, v.Y * i, v.Z * i); }
     public static double Dot(Vector3D a, Vector3D b) { return a.X * b.X + a.Y * b.Y + a.Z * b.Z; }
     public double Dot(Vector3D b) { return X * b.X + Y * b.Y + Z * b.Z; }
@@ -498,7 +500,8 @@ namespace Sandbox.ModAPI.Ingame {
   public interface IMyShipWelder : IMyShipToolBase {}
   public interface IMyUserControllableGun : IMyFunctionalBlock { bool IsShooting {get;} }
   public interface IMySmallMissileLauncher : IMyUserControllableGun {}
-  public interface IMyLargeTurretBase : IMyUserControllableGun { bool HasTarget {get;} MyDetectedEntityInfo GetTargetedEntity(); bool IsAimed {get;} float Range {get;set;} bool AIEnabled {get;} }
+  public interface IMyLargeTurretBase : IMyUserControllableGun { bool HasTarget {get;} MyDetectedEntityInfo GetTargetedEntity(); bool IsAimed {get;} float Range {get;set;} bool AIEnabled {get;}
+    float Azimuth {get;} float Elevation {get;} string GetTargetingGroup(); void SetTargetingGroup(string groupSubtypeId); }
   public interface IMyLargeConveyorTurretBase : IMyLargeTurretBase {}
   public interface IMyCameraBlock : IMyFunctionalBlock {
     bool EnableRaycast {get;set;} double AvailableScanRange {get;} bool IsActive {get;} float RaycastConeLimit {get;} double RaycastDistanceLimit {get;} float RaycastTimeMultiplier {get;}
