@@ -1,3 +1,14 @@
+### v2.8 (unreleased): BALLISTA railgun drone, probe foundry, Peeper probe, Spotter
+- **Ballista** (`tools/designs/ballista.py`, large grid, `Ballista` / `Ballista Lite`): 27 Large Railguns, 16 large hydrogen thrusters (31 m/s2 fore / aft, 16 m/s2 elsewhere), 12 gyros, no armour beyond a breech wall;
+  about 7,150 PCU with its foundry (8,100 with a live probe). Runs the Warden's Helm recipe with `Aim Point=BREACH`. Design record `docs/design/ships/Ballista.md`.
+- **Peeper** (`tools/designs/peeper.py`, `scripts/PeeperAI.cs`): 4.6 t unarmed probe with one ammunition-free small turret; orbits the Ballista's target, cycles the turret targeting group power / weapons / power /
+  propulsion, reports vital blocks in the target's own frame.
+- **Spotter** (`scripts/SpotterAI.cs`, second PB of the Ballista): per-target memory of every reported vital (merged, expired, saved in Storage), feeds the best one (power first) to the Helm, starts and stops the
+  probe foundry when a big target is engaged, locks the foundry connectors.
+- **Probe Foundry** (printer, `printers.py`): one-bay Peeper printer; the Ballista carries it docked on two connector pairs (`ballista.dock_foundry`, `check_foundry`).
+- **ShrikeAI**: reads `<Tag>_AIM` = (target id, vital in the target frame) and makes it the BREACH point (+550 characters, 80,529 now). The Helm character budget is now 80,600 (was 80,000; hard cap 85,000): `SCRIPT_LIMITS`, `minify_check.sh`, `test_m6.py`.
+- Tests: `tools/tests/test_ballista.py` (20). Nothing of this has run in the game or the simulator; the printed-drone separation risk (audit printers-01) applies to the foundry.
+
 ### v2.7 (unreleased): WARSHIPS Shrike, Corsair, Warden, Leviathan (new package `Warships_v2.7_Full` / `_Lite`)
 - **Helm default mode REACT** (`ShrikeAI.cs`, mode 7 in the `.H2S` flags, `StaffAI.cs` shows it): combat-ready but passive until an AI alarm, a mate's alarm, damage or a held target wakes it. `Start Mode` default is REACT (the key name is unchanged). Four rarely used Custom Data keys were dropped to make room (`Target Large/Small Grids`, `Aim Kp/Kd`, `RTB Battery Fraction`); the Helm is 79,977 of 80,000.
 - **Cockpit buttons `deploy` / `dock`** (Staff) on Warden, Leviathan and Corsair; the cradle bay PB keeps a docked drone's thrusters off and switches them on at release.

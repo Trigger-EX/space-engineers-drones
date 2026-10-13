@@ -55,6 +55,7 @@ DRONES = {
     'Aegis':      ('extra',   'Aegis',     'AEGIS',    False),
     'Mantis':     ('extra',   'Mantis',    'MANTIS',   True),
     'Stinger':    ('stinger', 'Stinger',   'STINGER',  False),
+    'Peeper':     ('peeper',  'Peeper',    'PEEPER',   False),
 }
 _DRONE_CACHE = {}
 
@@ -124,6 +125,8 @@ SPECS = [
          doc='4 Gnat bays and 4 ion thrusters per direction: keeps up with its brood.'),
     dict(name='Static Nest',     groups=[('Gnat', 6, (3, 2))], max=18, per_dir=0,
          doc='6 Gnat bays, no thrusters: a stationary hive (still a DYNAMIC grid; never convert it to a station).'),
+    dict(name='Probe Foundry',   groups=[('Peeper', 1, (1, 1))], max=1, per_dir=0,
+         doc='1 bay, prints Peeper vitals probes (a stationary foundry: the Ballista carries one docked on connectors).'),
     dict(name='Stinger Rack',    groups=[('Stinger', 4, (2, 2))], max=4, per_dir=2, rack=True,
          doc='RACK MODE: 4 Stingers stay docked; one is released per enemy sighting and told to launch.'),
 ]

@@ -92,7 +92,7 @@ IMyTextSurface _lcd;
 IMyTerminalBlock _aimRef;
 
 // IGC
-IMyBroadcastListener _lTgt, _lCmd, _lHome;
+IMyBroadcastListener _lTgt, _lCrit, _lCmd, _lHome;
 string ListenTags = "HORNET,SHRIKE,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER";   // other fleets' target feeds ("<TAG>_TGT"), same tuple on every fleet
 List<IMyBroadcastListener> _lFeed = new List<IMyBroadcastListener>();
 void RegisterFeeds()
@@ -1241,6 +1241,7 @@ public Program()
         _lTgt = IGC.RegisterBroadcastListener(Tag + "_TGT");
         _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
         _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
+        _lCrit = IGC.RegisterBroadcastListener(Tag + "_AIM");
         RegisterFeeds();
         _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
     }
@@ -1500,6 +1501,17 @@ void ReadIGC()
     {
         var msg = _lHome.AcceptMessage();
         if (msg.Data is Vector3D) { _dynHome = (Vector3D)msg.Data; _dynHomeT = _now; }
+    }
+    // SPOTTER feed: <Tag>_AIM = (target id, vital block in the target frame) from the Spotter PB: it becomes the breach point, drilled along the line of fire
+    while (_lCrit.HasPendingMessage)
+    {
+        var msg = _lCrit.AcceptMessage();
+        if (!(msg.Data is MyTuple<long, Vector3D>)) continue;
+        var d = (MyTuple<long, Vector3D>)msg.Data; Track t;
+        Vector3D fl;
+        if (!_contacts.TryGetValue(d.Item1, out t) || !t.HasOri || (fl = t.P(_now) - Me.GetPosition()).LengthSquared() < 1) continue;
+        if (_bId != t.Id) { _bId = t.Id; _bOn = false; _bBad.Clear(); }
+        if (!BreachBad(d.Item2) && (!_bOn || (_bS - d.Item2).LengthSquared() > 25)) BreachSet(d.Item2, Vector3D.TransformNormal(Vector3D.Normalize(fl), MatrixD.Transpose(t.O)));   // (a stalled point is in _bBad: it is not fed back in)
     }
     FleetPump(Command, p => { if (!HlkOn || (p - Me.GetPosition()).LengthSquared() > 2500) { _dynHome = p; _dynHomeT = _now; } });   // (the Staff of my own ship broadcasts HOME = my own position: not a home)
 }

@@ -16,11 +16,13 @@ All checks pass on `main`: compile_check, blocks_sync, minify_check, tools/tests
 
 - Gyro boost (post-v2.7, zips not rebuilt): Corsair 20->40, Warden 8->24, Leviathan 72->144 gyros (generators in `tools/designs/{corsair,warden,leviathan}.py`, notes in the ship docs). Small drones untouched: their turn rate is capped by the scripts (MaxTurn 5 rad/s), not by gyro torque. ShrikeAI's Auto Max Turn calibration picks up the new authority; not run in the sim (no SimHost build here).
 
+- Ballista (post-v2.7, zips not rebuilt): large-grid railgun drone (27 rails, ~7,150 PCU with its docked Probe Foundry), Peeper probe, `SpotterAI.cs` (vitals memory, feed to the Helm, foundry control), ShrikeAI `<Tag>_AIM` hook (Helm budget now 80,600 chars). `docs/design/ships/Ballista.md`, `tools/tests/test_ballista.py`. Not run in game or sim; the printed-probe separation risk (audit printers-01) applies.
+
 ## Open questions
 In-game tests first: `packages/README_Warships.md` ranked list, `packages/tests.md` 24-35 (merge clamp face T1, cockpit toolbar Run argument K3, cockpit surface indices, gyro/stick feel, IGC across docked pods, ammo/hydrogen feed). Printers remain no-go as designed (docs/audit/printers.md).
 
 ## Next step
-Run the in-game tests, then fix what they show. Known weak spots: lone Shrike (2/5 vs a Hornet), Lite ships have no AI blocks and find nothing alone, drone recovery into cradles (phase 2), `pc/reference` and `docs/RESULTS.md` need regenerating after the sim fidelity changes.
+Run the in-game tests (Ballista list: `docs/design/ships/Ballista.md` section 8, starting with `SeekerProbe.cs`), then fix what they show. Known weak spots: lone Shrike (2/5 vs a Hornet), Lite ships have no AI blocks and find nothing alone, drone recovery into cradles (phase 2), `pc/reference` and `docs/RESULTS.md` need regenerating after the sim fidelity changes.
 
 ## Chat
 Base name: ultracode drone audit ships
