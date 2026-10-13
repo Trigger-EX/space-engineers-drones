@@ -821,18 +821,33 @@ def build_hull(bp, envelope, *, fill=None, reserved=None, clear=None, skin_aroun
         _fillets(res, zones, sty, support, clear_set)
 
     # ---- windows must attach: a glass block with no neighbour through its thin mounts goes back to armour ----
-    if wins:
-        adj = bp.attachment()
-        for c, (kind, st) in wins.items():
-            b = res.cell_block[c]
-            if adj[id(b)]:
-                continue
-            bp.blocks.remove(b)
-            res.blocks.remove(b)
-            res.counts[res.cell_kind[c]] -= 1
-            ec, ign = E[c]
-            del res.cell_block[c], res.cell_kind[c]
-            _emit(res, c, kind, ec, st, ign)
+    #      (and a glass block's thin mounts must not be the only link that holds a cluster of armour to the rest)
+    def _revert(c):
+        kind, st = wins.pop(c)
+        b = res.cell_block[c]
+        bp.blocks.remove(b)
+        res.blocks.remove(b)
+        res.counts[res.cell_kind[c]] -= 1
+        ec, ign = E[c]
+        del res.cell_block[c], res.cell_kind[c]
+        _emit(res, c, kind, ec, st, ign)
+
+    while wins:
+        adj = fast_attachment(bp)
+        bad = {c for c in wins if not adj[id(res.cell_block[c])]}
+        if not bad and require_connected:
+            comps = bp.components(adj)
+            if len(comps) > 1:
+                comps.sort(key=len, reverse=True)
+                loose = {id(b) for comp in comps[1:] for b in comp}
+                for c in wins:
+                    if id(res.cell_block[c]) in loose or any(
+                            id(res.cell_block.get(_add(c, d))) in loose for d in FACES):
+                        bad.add(c)
+        if not bad:
+            break
+        for c in bad:
+            _revert(c)
     if check:
         res.check()
     return res

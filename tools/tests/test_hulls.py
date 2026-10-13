@@ -70,7 +70,7 @@ class VolumeTests(unittest.TestCase):
         cone = Volume.cylinder('x', 0, 6, (0.0, 0.0), (3, 3), radii_end=(1, 1))
         self.assertGreater(len(cone.clip(x=(0, 2))), len(cone.clip(x=(4, 6))))
         tri = Volume.prism([(0, 0), (6, 0), (0, 6)], 'z', 0, 2)     # u=x, v=y, extruded along z
-        self.assertEqual(len(tri), 2 * sum(range(1, 7)) - 2 * 3 + 2 * 3 - 0 if False else len(tri))
+        self.assertEqual(len(tri), 2 * sum(range(1, 7)))                  # rows of 6,5,..,1 cells, two layers
         self.assertTrue((0, 0, 0) in tri and (5, 0, 1) in tri and (5, 5, 0) not in tri)
 
     def test_mirror_translate_rotate(self):
@@ -98,7 +98,7 @@ class VolumeTests(unittest.TestCase):
         self.assertEqual(len(b.surface()), 64 - 8)
         self.assertEqual(sum(len(e) for e in b.exposed().values()), 6 * 16)
         self.assertEqual(len(b.erode(1)), 8)
-        self.assertEqual(len(b.dilate(1)), 6 ** 3 - 8 * 1 - 12 * 4 // 1 * 0 - 0 if False else len(b.dilate(1)))
+        self.assertEqual(len(b.dilate(1)), 4 ** 3 + 6 * 4 * 4)            # face dilation adds one 4x4 layer per side
         self.assertEqual(len(Volume.box((0, 0, 0), (1, 1, 1)).dilate(1, 'face')), 7)
         self.assertEqual(len(Volume.box((0, 0, 0), (1, 1, 1)).dilate(1, 'edge')), 19)
         self.assertEqual(len(Volume.box((0, 0, 0), (1, 1, 1)).dilate(1, 'box')), 27)
@@ -303,6 +303,16 @@ class MapperTests(unittest.TestCase):
         # a window block with no neighbour to hold it is turned back into armour
         bp, res = build(Volume.box((0, 0, 0), (3, 1, 3)), windows=lambda c: c == (1, 0, 1))
         res.validate()
+        self.assertFalse(any('Window' in b['sub'] for b in bp.blocks))
+
+    def test_windows_never_split_the_hull(self):
+        # glass has tiny mount areas: windows must not be the only link between a cluster of armour and the rest (found by
+        # fuzzing: a 5x6x4 box with windows everywhere above y=2 came out as separate pieces on Large and Small)
+        for grid in ('Small', 'Large'):
+            bp, res = build(Volume.box((4, 3, 1), (9, 9, 5)), grid, windows=H.region(y=(2, None)), fillets=True)
+            res.validate(fast=False)
+            bp, res = build(Volume.box((0, 0, 0), (6, 3, 6)), grid, windows=lambda c: c[1] >= 1 or c[0] in (2, 3))
+            res.validate(fast=False)
 
     def test_big_hulls_every_orientation_case(self):
         """a rough ship: every produced block passes the mount check, both grids"""
@@ -348,6 +358,18 @@ class MountCheckTests(unittest.TestCase):
         corner['fwd'], corner['up'] = ('Backward', 'Down') if (corner['fwd'], corner['up']) != ('Backward', 'Down') else ('Forward', 'Up')
         with self.assertRaises(HullError):
             res.check()
+
+    def test_reserved_and_clear_overlap_refused(self):
+        with self.assertRaises(HullError):
+            build(Volume.box((0, 0, 0), (4, 4, 4)), reserved=[(1, 1, 1)], clear=[(1, 1, 1)])
+
+    def test_fast_validate_rejects_unattached_and_dlc(self):
+        bp, res = build(Volume.box((0, 0, 0), (3, 3, 3)))
+        bp.add('MyObjectBuilder_CubeBlock', 'LargeBlockArmorBlock', (9, 9, 9))
+        with self.assertRaises(AssertionError):
+            H.fast_validate(bp)
+        with self.assertRaises(AssertionError):
+            bp.validate()
 
     def test_mapper_refuses_instead_of_emitting(self):
         # a kind whose open faces cannot be realised by any orientation: ask for slope open on three faces
