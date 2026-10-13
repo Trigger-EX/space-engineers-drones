@@ -54,6 +54,7 @@ class Item:
         kind = kind.replace('MyObjectBuilder_', '')
         self.raw = raw         # PhysicalContent element of an item of a kind we cannot size (only set when READING a file)
         if kind not in KINDS and raw is None: raise InventoryError(f'unsupported item kind {kind!r}; supported: {KINDS}')
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)): raise InventoryError(f'{kind}/{sub}: amount must be a number, got {amount!r}')
         if not (amount > 0) or math.isnan(amount) or math.isinf(amount): raise InventoryError(f'{kind}/{sub}: amount must be > 0, got {amount}')
         if kind in INTEGER_KINDS and raw is None and abs(amount - round(amount)) > 1e-9:
             raise InventoryError(f'{kind}/{sub}: amount must be a whole number, got {amount}')
@@ -171,6 +172,7 @@ def allowed_items(key):
     Weapons take only the magazines of their weapon definition; reactors only their fuel ingot."""
     d = stats()['blocks'].get(key)
     if not d: return None
+    if d['type'] == 'OxygenTank': return ('GasContainerObject', set())      # gas tanks take gas bottles only; no bottle kind is supported, so nothing can be pre-loaded
     w = d.get('stats', {}).get('weapon')
     if w: return ('AmmoMagazine', set(w['magazines']))
     f = d['raw'].get('FuelInfos.FuelInfo.Id.SubtypeId')
@@ -187,7 +189,7 @@ def check_fit(label, limits, items, key=None):
     if ok:
         for it in items:
             if it.kind != ok[0] or it.sub not in ok[1]:
-                raise InventoryError(f'{label}: the game only accepts {ok[0]} {sorted(ok[1])} here, not {it.kind}/{it.sub}')
+                raise InventoryError(f'{label}: the game only accepts {ok[0]} {sorted(ok[1]) or "(not supported by the generator)"} here, not {it.kind}/{it.sub}')
     litres = sum(i.litres() for i in items)
     if litres > vol_m3 * 1000 * (1 + 1e-6) + 1e-9:       # the game's own full inventories exceed their Volume by up to 2e-7 (float rounding)
         raise InventoryError(f'{label}: {litres:.4g} L of items do not fit into {vol_m3 * 1000:.4g} L '
@@ -230,6 +232,9 @@ def apply_state(label, xtype, key, state, items, cc, capacitor_full=None):
     out = []
     bad = [k for k in state if k not in STATE_KEYS]
     if bad: raise InventoryError(f'{label}: unknown state key(s) {bad}; known: {STATE_KEYS}')
+    for k, v in state.items():          # NaN passes every `v < 0 or v > max` range test and would be written as "nan"
+        if v not in ('full',) and (isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)):
+            raise InventoryError(f'{label}: state[{k!r}] must be a finite number or \'full\', got {v!r}')
     def need(k, types):
         if k in state and t not in types: raise InventoryError(f'{label}: state[{k!r}] applies to {types}, not {t}')
     need('capacitor', ('SmallMissileLauncherReload',)); need('fuel', ('HydrogenEngine', 'Reactor'))
@@ -248,6 +253,8 @@ def apply_state(label, xtype, key, state, items, cc, capacitor_full=None):
     if t == 'Reactor':
         ur = sum(i.amount for i in items if i.kind == 'Ingot' and i.sub == 'Uranium')
         v = ur if 'fuel' not in state else (ur if state['fuel'] == 'full' else float(state['fuel']))
+        if abs(v - ur) > 1e-6 * max(1.0, ur):      # the game's Capacity is the uranium in the inventory (every reactor in the samples)
+            raise InventoryError(f'{label}: reactor fuel {v} kg does not match the {ur:g} kg of uranium in its items (the game writes both equal)')
         out.append(E('Capacity', v))                 # the game writes the uranium kg here (Red Ship: 104.68 kg in the inventory, Capacity 104.68)
     elif t == 'HydrogenEngine':
         cap = raw.get('FuelCapacity')

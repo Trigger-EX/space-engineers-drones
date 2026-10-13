@@ -166,6 +166,29 @@ class TestInventoryBlocks(unittest.TestCase):
         with self.assertRaises(InventoryError): single(T('Gyro'), 'LargeBlockGyro', state={'filled': 1})            # wrong block type
         with self.assertRaises(InventoryError): single(T('BatteryBlock'), 'LargeBlockBatteryBlock', state={'nonsense': 1})
 
+    def test_review_negative_cases_inventory_and_state(self):
+        # bool is an int in Python: True must not pass for "1 magazine"
+        with self.assertRaises(InventoryError): Item.ammo('NATO_25x184mm', True)
+        with self.assertRaises(InventoryError): Item.ingot('Uranium', '5')
+        # NaN passes every `< 0 or > max` range test: it must be refused, not written as "nan"
+        with self.assertRaises(InventoryError): single(T('SmallMissileLauncherReload'), 'SmallRailgun', state={'capacitor': float('nan')})
+        with self.assertRaises(InventoryError): single(T('OxygenTank'), 'LargeHydrogenTank', state={'filled': float('nan')})
+        with self.assertRaises(InventoryError): single(T('BatteryBlock'), 'LargeBlockBatteryBlock', state={'stored_power': float('inf')})
+        with self.assertRaises(InventoryError): single(T('HydrogenEngine'), 'SmallHydrogenEngine', state={'fuel': float('nan')})
+        # reactor: the game writes Capacity == uranium kg in the inventory; a different number is not a state the game produces
+        with self.assertRaises(InventoryError): single(T('Reactor'), 'LargeBlockLargeGenerator', items=[Item.ingot('Uranium', 100)], state={'fuel': 50})
+        with self.assertRaises(InventoryError): single(T('Reactor'), 'LargeBlockLargeGenerator', state={'fuel': 50})
+        single(T('Reactor'), 'LargeBlockLargeGenerator', items=[Item.ingot('Uranium', 100)], state={'fuel': 'full'})
+        # a gas tank holds gas bottles only
+        with self.assertRaises(InventoryError): single(T('OxygenTank'), 'LargeHydrogenTank', items=[Item.ingot('Iron', 1)])
+        with self.assertRaises(InventoryError): single(T('OxygenTank'), 'SmallHydrogenTankSmall', items=[Item.component('SteelPlate', 1)])
+        # a rejected pre-load changes nothing on the block (items and state are stored together or not at all)
+        bp, b = single(T('Reactor'), 'LargeBlockLargeGenerator', items=[Item.ingot('Uranium', 10)])
+        with self.assertRaises(InventoryError): bp.preload(b, items=[Item.ingot('Uranium', 20)], state={'fuel': 5})
+        self.assertEqual(bp.items_of(b), [Item.ingot('Uranium', 10)]); self.assertFalse(b.get('state'))
+        with self.assertRaises(InventoryError): bp.preload(b, items=[Item.ingot('Iron', 1)])
+        self.assertEqual(bp.items_of(b), [Item.ingot('Uranium', 10)])
+
     def test_welder_and_cargo_components(self):
         bp, b = single(T('CargoContainer'), 'LargeBlockLargeContainer',
                        items=[Item.ammo('LargeCalibreAmmo', 51), Item.ammo('AutocannonClip', 1), Item.component('PowerCell', 33), Item.ingot('Uranium', 100)])

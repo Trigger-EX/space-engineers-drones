@@ -482,17 +482,21 @@ class Blueprint:
         """set the pre-loaded `items` (replaces) and/or the stored `state` (merged) of block b.  Same arguments as add(); validated now."""
         label = self.label(b)
         cc = self._container(b)
+        its = b.get('items') or []
         if items is not None:
             its = INV.as_items(items)
             if its:
                 if cc is None:
                     raise InventoryError(f'{label}: this block has no inventory in its shape ({self.shape(b)[1]}); items cannot be written')
                 INV.check_fit(label, INV.inventory_limits(cc), its, b['key'])
-            b['items'] = its
+        st = dict(b.get('state') or {})
         if state:
-            st = dict(b.get('state') or {}); st.update(state)
-            INV.apply_state(label, b['xtype'], b['key'], st, b.get('items') or [], cc, self.shape(b)[0].get('capacitor_full'))   # validates (the patched copy is thrown away)
-            b['state'] = st
+            st.update(state)
+            INV.apply_state(label, b['xtype'], b['key'], st, its, cc, self.shape(b)[0].get('capacitor_full'))   # validates (the patched copy is thrown away)
+        elif items is not None and st:
+            INV.apply_state(label, b['xtype'], b['key'], st, its, cc, self.shape(b)[0].get('capacitor_full'))   # new items against the state already set
+        if items is not None: b['items'] = its          # nothing is stored unless everything validated
+        if state: b['state'] = st
         return b
 
     def fill_ammo(self, b, sub=None, count='full'):
