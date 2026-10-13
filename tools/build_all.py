@@ -286,6 +286,14 @@ def scoped(name, kinds, number=False):
         out.append(f'{n}. {text}' if number else f'- {text}')
     return '\n'.join(out)
 
+def model_note(model):
+    """README note of a model: this file's MODEL_NOTES, else the MODEL_NOTES dict of a design module (warship modules bring their own)"""
+    if model in MODEL_NOTES: return MODEL_NOTES[model]
+    for m in designs.DRONE_MODULES:
+        d = getattr(_MODS.get(m), 'MODEL_NOTES', {}) if _MODS.get(m) else {}
+        if model in d: return d[model]
+    return ''
+
 def model_docs(kind, model):
     if kind == 'printer':
         for m in ('printers',):
@@ -310,7 +318,7 @@ def model_sections(rows):
             extra = f', {r["bays"]} bays / {r["welders"]} welders' if r['bays'] else ''
             out.append(f'* **{r["label"]}**: {r["blocks"]} blocks, {r["mass"]:.0f} kg, {"x".join(str(d) for d in r["dims"])} m, '
                        f'accel {fmt_acc(r)} m/s2, PCU {r["pcu"]}{extra}; script: {sc}; cost {cost_str(r)}')
-        if m in MODEL_NOTES: out += ['', f'Note: {MODEL_NOTES[m]}']
+        if model_note(m): out += ['', f'Note: {model_note(m)}']
         out.append('')
     return '\n'.join(out)
 

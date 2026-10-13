@@ -369,6 +369,7 @@ SCRIPTS = ['CradleBayAI.cs']
 def _model(lite):
     return cradle_pod(4, lite=lite)
 
+MODEL_NOTES = {'Cradle Pod': MODEL_NOTES_POD}
 MODELS = {'Cradle Pod': _model}
 
 if __name__ == '__main__':

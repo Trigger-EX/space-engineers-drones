@@ -611,6 +611,7 @@ MODEL_NOTES_WARDEN = ('Large grid, paste only (delete the old blueprint folder f
                       'flyable by hand from the bridge cockpit. The pod is a second grid docked by two connector pairs: press Lock on both hangar connectors if it did not lock '
                       '(docs/design/ships/Warden.md, C1..C4). Drones are added by pasting them against the pod\'s merge blocks.')
 
+MODEL_NOTES = {'Warden': MODEL_NOTES_WARDEN}          # shown in the README by build_all.model_note
 MODELS = {'Warden': warden}
 
 if __name__ == '__main__':

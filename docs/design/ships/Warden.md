@@ -13,7 +13,7 @@ Nothing of this has been pasted in the game yet (section 11 lists what to look a
 | mass | 2,147 t | **2,563 t blocks + 26.5 t ammunition = 2,589 t** (+21 %) | hangar blister and 8 doors (63 t), tower stem, flank armour belt, 101 junctions (53 t), 8 gyros; Lite 2,587 t |
 | forward accel | 3.4 m/s2 (7.2 MN) | **4.03 m/s2** (10.44 MN = 1 large + 3 small hydrogen thrusters) (+19 %) | four engines at the stern as briefed |
 | other axes | 1.5 m/s2 (3 small per axis) | **1.67 m/s2** (4 small per axis, 4.32 MN) (+11 %) | |
-| angular accel | 0.15 rad/s2 (5 gyros) | about 0.16 rad/s2 yaw, 0.14 pitch (8 gyros, 269 MN m, box inertia 1.7e9 / 1.9e9 kg m2) | 3 more gyros than the catalogue for the longer, heavier hull |
+| angular accel | 0.15 rad/s2 (5 gyros) | about 0.16 rad/s2 yaw, 0.14 pitch (8 gyros, 269 MN m, solid-box inertia 1.7e9 / 1.9e9 kg m2; summing the real block masses gives 0.9e9 about yaw and pitch, i.e. up to 0.30 rad/s2, so the box figure is the pessimistic end) | 3 more gyros than the catalogue for the longer, heavier hull |
 | PCU | 9,664 | **8,654 ship + 1,643 pod = 10,297** (+7 %); Lite 8,554 + 1,643 | doors 920, junctions 1,010, connectors 250 |
 | armour HP | 8.8 M | 12.4 M (all blocks, 632 heavy + 354 light armour blocks, 20 windows) | |
 | weapons | 2 rail, 2 artillery, 4 assault, 8 gatling, 6 decoys | the same | sustained data DPS 18,354 (catalogue 18.4 k) |
@@ -285,8 +285,11 @@ Rounds per gun with the pre-load: rail 6 (6 min at the 61 s cycle), artillery 6 
 * Electricity: 6 x 15 MW = 90 MW against 2 x 38 MW railgun recharge (76 MW) and about 0.14 MW of the rest; hydrogen thrusters draw no electricity. Surplus 14 MW; batteries 24 MWh / 96 MW carry both
   railguns for 19 min with every reactor dead. Uranium 600 kg = 6.7 h at 90 MW.
 * Thrust (N): forward 10.44 MN, every other axis 4.32 MN (table in the numbers: `warden.numbers`). Loaded accelerations 4.03 / 1.67 m/s2.
+* Centre of thrust against centre of mass (independent check, loaded, COM on the centreline, y 9.7 m, z 46.0 m from the grid origin): forward thrust acts 2.0 m above the COM (pitch torque 21 MN m = 8 % of
+  the 269 MN m of the gyros), the Dive/Lift/Brake groups give 6..21 MN m of pitch (Dive 21: its 8 thrusters sit at z 16, 2.4 cells ahead of the COM), the strafe pairs 6.4 MN m yaw and 4.3 MN m roll
+  (2 % of the gyros), sideways COT offsets are 0.02 m. All inside what the gyros and the dampeners absorb; nothing turns the ship noticeably under thrust.
 * Hydrogen: 30 ML in two tanks; full forward burn 7,230 L/s = 69 min; the catalogue combat need is 4.3 ML per 30 min.
-* Ammunition and fuel masses are in the 26.5 t of pre-load (items are not in the block-mass accel figures of `build_all`, which therefore prints F4.0).
+* Ammunition and fuel masses are in the 26.5 t of pre-load (items are not in the block-mass accel figures of `build_all`, which therefore prints F4.1).
 
 ## 7. Fuel and ammunition network
 
@@ -315,7 +318,7 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 * Inside: the pod frame spans 19.0 x 5.5 x 7.5 m in a 20.0 x 7.5 x 10.0 m hangar: 0.5 m free at both ends, 1.0 m at the sides, 2.5 m between the nose ring and the doors. `warden.check_hangar` asserts all of it
   at build time (0.3 m minimum, 0.07 m at the connector plane), plus the lane.
 * **Launch lane**: straight down (-y) from the door plane: 7.5 m wide, the full 20 m hangar length, 12 m deep, nothing in it (the hanging gatlings are at z 28..30, the recessed ones at z 9..11, the sensors
-  at x +-4; lift thrusters stand at z 9 and 29). Drone noses point down the lane; the pod's `Away` is (0, 0, -1) in pod cells = ship Down.
+  at x +-4; lift thrusters stand at z 9 and 28). Drone noses point down the lane; the pod's `Away` is (0, 0, -1) in pod cells = ship Down.
 * Drones are not in the file: `Warden` = ship + EMPTY pod. Add up to four: paste Hornets so that each stern merge block touches a pod merge block (positions in `Pod.md`, or build them with `pods.attach_drone`).
 * Locked variant: `warden.warden(lite, lock=True)` writes both connector pairs in the Venture locked form (`sebp_multi`), unlocked is the default (the Tech Hunter form, the form that was seen to paste).
   No `Warden` model is registered for it.
