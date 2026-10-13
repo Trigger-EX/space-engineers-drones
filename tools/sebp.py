@@ -343,7 +343,16 @@ class Blueprint:
         return tuple(g)
 
     def mount_rects(self, b):
-        """grid-space mount rectangles: (axis, plane_coord, normal_sign, lo(2), hi(2), excl, prop), shrunk like the game."""
+        """grid-space mount rectangles: (axis, plane_coord, normal_sign, lo(2), hi(2), excl, prop), shrunk like the game.
+        Cached on the block (validate() / attachment() ask for every block again on each call; the cache key is everything the result depends on)."""
+        sig = (b['key'], tuple(b['min']), b['fwd'], b['up'])
+        hit = b.get('_mount_rects')
+        if hit is not None and hit[0] == sig: return hit[1]
+        out = self._mount_rects(b)
+        b['_mount_rects'] = (sig, out)
+        return out
+
+    def _mount_rects(self, b):
         X, Y, Z = b['size']
         mps = b['mounts']
         if mps is None:   # no MountPoints element = full mount on every face

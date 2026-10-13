@@ -1011,6 +1011,20 @@ def model_xml(name):
     bp = build_model(name)
     return bp.build_xml(bp.name)
 
+class TestMountRectCache(unittest.TestCase):
+    def test_cache_follows_the_block_when_it_is_moved_or_turned(self):
+        bp = Blueprint('t', 'Small', seed=1)
+        bp.armor(0, 0, 0)
+        g = bp.armor(1, 0, 0)
+        first = bp.mount_rects(g)
+        self.assertIs(bp.mount_rects(g), first)                       # cached
+        self.assertTrue(bp.attachment()[id(g)])                        # touches the armour
+        g['min'] = (5, 0, 0)
+        self.assertFalse(bp.attachment()[id(g)])                       # moved away: the old rectangles must not be used
+        g['min'] = (1, 0, 0); g['fwd'], g['up'] = 'Left', 'Up'                # armour is symmetric; the point is the key, not the geometry
+        g['sub'] = 'x'; g['mounts'] = bp.blocks[0]['mounts']
+        self.assertEqual(bp.mount_rects(g), bp._mount_rects(g))        # turned: recomputed, equal to a fresh computation
+
 class TestLegacyBuilds(unittest.TestCase):
     def test_legacy_shape_table_is_the_pinned_one(self):
         self.assertEqual(len([k for k in sebp.SHAPES if not k.startswith('_')]) >= 40, True)
