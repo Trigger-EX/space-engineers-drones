@@ -114,7 +114,7 @@ the same orientation.
 | `stepped_deck(lo, hi, steps, inset, rise)` | bridge/superstructure pyramid; the step edges become slopes/windows |
 | `hardpoints(volume, normals, footprint, height, margin, spacing, where, avoid, mirror, pairs)` | surface sites with outward normals on flat hull (each base cell exposes exactly the normal, so it stays a cube), symmetric pairs with `.mirror`; `Hardpoint.cells`, `.column(h)` for `reserved=` |
 | `greeble(res, kind='panel'/'slab', pattern='scatter'/'grid'/'lines', ...)` | thin `ArmorPanel` or `HalfArmorBlock` slab in the free cell outside single-face cubes, deterministic by `seed`, never on reserved/occupied cells; checked with the same mount check |
-| windows | `windows=` of `build_hull` (predicate/Volume/list): `Window1x1Slope` on slope cells, `Window1x1Flat` on single-face cells; a window with no attached neighbour reverts to armour |
+| windows | `windows=` of `build_hull` (predicate/Volume/list): `Window1x1Slope` on slope cells, `Window1x1Flat` on single-face cells; a window with no attached neighbour, or whose thin glass mounts are the only link to a cluster of armour, reverts to armour |
 
 ## 7. Report and speed
 
