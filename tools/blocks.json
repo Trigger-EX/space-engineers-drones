@@ -1,0 +1,5 @@
+{
+  "_doc": "Shared in-game script blocks kept identical by tools/blocks_sync.py (control_arch D8). One entry per block: file = the block text (marker comments included), scripts = the scripts/*.cs files that carry it, anchor = regex of the line the block is inserted before when a script has none yet (default ^public Program\\(\\)), name = the marker word (markers are '// >>> NAME v...' and '// <<< NAME v...'). The seven blocks that predate this file keep their own tools/*_sync.py (lists inside); blocks_sync.py --check runs them too, so ONE command checks every shared block. New blocks (MANUAL, BATTERY, HELMLINK, ...) are added here, not as an eighth hard-coded sync script.",
+  "legacy": ["lead_sync.py", "ai_gate_sync.py", "fleet_sync.py", "follow_sync.py", "kz_sync.py", "launch_sync.py", "aim_sync.py"],
+  "blocks": {}
+}

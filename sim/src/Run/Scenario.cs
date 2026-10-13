@@ -262,7 +262,7 @@ namespace SeSim.Run
                 }
                 if (spec.Model == "Midge") w.Brains.Add(new VanillaAiBrain(sh.Main));
                 else if (spec.Model == "Pirate") w.Brains.Add(new PirateBrain(sh.Main));
-                else if (ScenarioGen.IsEnemy(spec.Model)) { if (w.Settings.EnemyScripted) { } else if (ScenarioGen.EnemyBrain == "pirate") w.Brains.Add(new PirateBrain(sh.Main)); else sh.Main.DampenersOn = true; }
+                else if (ScenarioGen.IsEnemy(spec.Model)) { if (w.Settings.EnemyScripted) { if (HasAiBlocks(sh.Main)) w.Brains.Add(new VanillaAiBrain(sh.Main) { ScriptShip = true }); } else if (ScenarioGen.EnemyBrain == "pirate") w.Brains.Add(new PirateBrain(sh.Main)); else sh.Main.DampenersOn = true; }
                 else if (HasAiBlocks(sh.Main)) w.Brains.Add(new VanillaAiBrain(sh.Main) { ScriptShip = true });   // v1.8 hybrid search: the script toggles the AI blocks
             }
 

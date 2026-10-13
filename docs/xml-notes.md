@@ -269,3 +269,13 @@ the file says what to look at after each paste. Nothing of the extension has bee
   gatling turret), `SmallDecoy`, large/medium conveyor sorters, merge blocks other than the small one, `LargeBlockSensor`/`SmallBlockSensor`, `Large/SmallWarhead`.
 * Sensor block detection fields, AI combat blocks, projector with a pre-loaded `ProjectedGrids`, conveyor line routing (`ConveyorLines` is not written; conveyor blocks are placed only).
 * `LargeMissileTurret`'s `TargetingGroup` etc. keep the sample's targeting flags (`Flags`), which are the owner's settings (assault/artillery turrets: characters off).
+
+### 7.7 M0 additions (docs/design/control_arch.md M0): second PB, cockpit, test ships, placeholder events
+
+* **A generated Programmable Block is now ON.** The sample-derived `MyProgrammableBlock/SmallProgrammableBlock` shape came from a PB that was switched off in the Pond Hopper sample (`<Enabled>false</Enabled>`), so every non-legacy ship with a script would have pasted with its PB off. `Blueprint.add(..., enabled=None)`: `None` = the shape's value except for a PB, which is on; `enabled=False` still switches it off. Legacy ships are unchanged (golden hashes pass).
+* **Two PBs on one grid** work out of the box (`NumberInGrid` counts per type, distinct ids, names `[Helm] ...` / `[Staff] ...`): see `tools/designs/testships.py` `Twin PB Test`, the button panel whose slot Runs the Staff PB (`sebp_toolbar.run(pb)`, no argument).
+* **Cockpit**: `Cockpit/SmallBlockCockpit` (3x3x3, 4 text surfaces) sits on the Hornet deck in `Hornet Pilot Test`; its toolbar takes `weapon()` and `block()` slots. Shapes for Cockpit, ButtonPanel, TimerBlock, EventControllerBlock, Door, PB exist (seen); **TextPanel does not** (the only exemplar, Starburst's `LargeLCDPanel`, carries a third-party inventory-manager text and mod storage; `extract_shapes.py` leaves `TextPanel` out until a clean sample exists).
+* **Event Controller events without a seen number** (`cockpit` occupied, `power` stored fraction, `merge` connected): `sebp_toolbar.event_settings('cockpit', experimental=True)` writes the simulator's PLACEHOLDER ids 101/102/103 (`EVENTS_PLACEHOLDER`) and `bp.notes` says so. The game does not know these numbers (test K4 must save one real sample); they exist so a generated blueprint and the sim agree until then. Never ship a blueprint that carries them.
+* **Test ships** (`tools/designs/testships.py`, kind `test`: built by `build_all.py --only ...`, never packaged, no Lite variant): `Hornet Pilot Test`, `Twin PB Test`.
+* `tools/blocks_sync.py` + `tools/blocks.json`: one driver for all shared script blocks (new blocks are listed in the json; `--check` also runs the seven older `*_sync.py`).
+

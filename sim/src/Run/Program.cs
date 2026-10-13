@@ -329,6 +329,7 @@ namespace SeSim.Run
             if (name == null) throw new ArgumentException("one needs --scenario NAME (see `list`)");
             Scenario sc = null;
             foreach (var s in ScenarioGen.All()) if (s.Name == name) { sc = s; break; }
+            if (sc == null) sc = ScenarioGen.Custom(name, Path.Combine(Path.Combine(repo, "out"), "Blueprints"));      // M0: "kind/A-vs-B" with any blueprint folder
             if (sc == null) throw new ArgumentException("no scenario named '" + name + "' (try: list --filter ...)");
             if (o.Has("cap-seconds")) { sc.MaxTicks = (int)(o.Dbl("cap-seconds", 300) * SimSettings.TicksPerSecond); settings.MaxTicks = sc.MaxTicks; }
             ApplyScenarioOverrides(o, new List<Scenario> { sc });

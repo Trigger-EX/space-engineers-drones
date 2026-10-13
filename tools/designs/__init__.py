@@ -18,7 +18,8 @@ for _p in (HERE, TOOLS):
 
 DRONE_MODULES = ('core', 'wasp', 'support', 'extra', 'pods', 'shrike', 'corsair', 'warden', 'leviathan')   # the last four: the warships (docs/design/)
 PRINTER_MODULES = ('printers',)
-ALL_MODULES = DRONE_MODULES + PRINTER_MODULES
+TEST_MODULES = ('testships',)      # sim/generator test ships (kind 'test'): built into out/Blueprints, never packaged or listed in MODELS.md
+ALL_MODULES = DRONE_MODULES + PRINTER_MODULES + TEST_MODULES
 
 def load(names=ALL_MODULES):
     """import the design modules; returns ({name: module}, [names whose file does not exist])"""
@@ -30,9 +31,9 @@ def load(names=ALL_MODULES):
     return mods, missing
 
 def iter_models(mods):
-    """yield (kind, module name, model name, builder) in a stable order; kind is 'drone' or 'printer'"""
+    """yield (kind, module name, model name, builder) in a stable order; kind is 'drone', 'printer' or 'test'"""
     for n in ALL_MODULES:
         if n not in mods: continue
-        kind = 'drone' if n in DRONE_MODULES else 'printer'
+        kind = 'drone' if n in DRONE_MODULES else 'test' if n in TEST_MODULES else 'printer'
         for model, fn in mods[n].MODELS.items():
             yield kind, n, model, fn

@@ -43,6 +43,15 @@ EVENTS_SEEN = {
     14: 'welder (selected ShipWelder, actions OnOff_On/Off) [inferred]',
 }
 EVENT_ALIASES = {'cargo_fill': 1, 'integrity': 2, 'connector': 7, 'welder': 14}
+# Events the warship design needs (docs/design/control_arch.md s5) whose SelectedEvent number NO sample shows (test K4 is open).  The ids below are
+# PLACEHOLDERS shared with the simulator (SimSettings.EcEventIds: cockpit=101, power=102, merge=103): a blueprint carrying them only makes sense in
+# the sim.  event_settings() writes them only with experimental=True and records a note; replace them by the real numbers after K4.
+EVENTS_PLACEHOLDER = {
+    101: 'cockpit occupied [PLACEHOLDER id, K4 open]',
+    102: 'battery stored power fraction [PLACEHOLDER id, K4 open]',
+    103: 'merge block connected [PLACEHOLDER id, K4 open]',
+}
+EVENT_PLACEHOLDER_ALIASES = {'cockpit': 101, 'power': 102, 'merge': 103}
 
 class ToolbarError(ValueError):
     pass
@@ -190,9 +199,17 @@ def block_groups_element(groups, cell_of):
 # ---------------------------------------------------------------------------------------------------------------
 # event controller helper
 # ---------------------------------------------------------------------------------------------------------------
-def event_settings(event, threshold=None, invert=False, and_gate=False):
+def event_settings(event, threshold=None, invert=False, and_gate=False, experimental=False):
     """`settings=` dict for an EventControllerBlock: event is a SelectedEvent id seen in the samples (EVENTS_SEEN) or an alias
     (EVENT_ALIASES).  Select the watched blocks with links={'selected': [blocks]}; the actions go into toolbar=[...]."""
+    if event in EVENT_PLACEHOLDER_ALIASES or event in EVENTS_PLACEHOLDER:
+        if not experimental:
+            raise ToolbarError(f'event {event!r} has no number seen in any game file (K4 is open); pass experimental=True to write the simulator\'s PLACEHOLDER id '
+                               f'({EVENT_PLACEHOLDER_ALIASES.get(event, event)}); the real game will not understand it')
+        ev = EVENT_PLACEHOLDER_ALIASES.get(event, event)
+        s = {'SelectedEvent': ev, 'ConditionInvert': bool(invert), 'ANDGate': bool(and_gate)}
+        if threshold is not None: s['Threshold'] = float(threshold)
+        return s
     ev = EVENT_ALIASES.get(event, event)
     if ev not in EVENTS_SEEN: raise ToolbarError(f'event {event!r} was not seen in any sample; seen ids: {sorted(EVENTS_SEEN)} (aliases {sorted(EVENT_ALIASES)})')
     s = {'SelectedEvent': ev, 'ConditionInvert': bool(invert), 'ANDGate': bool(and_gate)}

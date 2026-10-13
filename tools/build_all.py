@@ -80,7 +80,7 @@ COMMAND_DOC = {
 }
 HIVE_DOC = {'stop': 'stop printing, all welders off'}
 PAL_ALL = dict(C.PAL, welder=(70, 190, 90), proj=(150, 90, 40), cargo=(120, 100, 70))
-CPU_HEAVY_FIRST = {'printer': 0, 'drone': 1}
+CPU_HEAVY_FIRST = {'printer': 0, 'drone': 1, 'test': 1}
 
 # ---------------------------------------------------------------------------------------------
 # build + validate one model (runs in a pool worker)
@@ -300,7 +300,7 @@ def model_docs(kind, model):
             d = getattr(_MODS.get(m), 'DOCS', {}) if _MODS.get(m) else {}
             if model in d: return d[model]
         return ''
-    for m in designs.DRONE_MODULES:                                   # warship modules bring their own DOCS
+    for m in designs.DRONE_MODULES + designs.TEST_MODULES:            # warship and test modules bring their own DOCS
         d = getattr(_MODS.get(m), 'DOCS', {}) if _MODS.get(m) else {}
         if model in d: return d[model]
     return DRONE_DOCS.get(model, '')
@@ -394,7 +394,9 @@ def main(argv):
     tasks = []
     for kind, modname, model, _fn in designs.iter_models(mods):
         if a.only and model not in a.only: continue
-        for lite in (False, True): tasks.append((kind, modname, model, lite, a.out))
+        for lite in (False, True):
+            if lite and model in getattr(mods[modname], 'NO_LITE', ()): continue      # test ships have one variant
+            tasks.append((kind, modname, model, lite, a.out))
     names = [(t[2], t[3]) for t in tasks]
     assert len(set(names)) == len(names), 'duplicate model name across design modules'
     bp_root = os.path.join(a.out, 'Blueprints')

@@ -285,7 +285,7 @@ class Blueprint:
         self.notes = []             # things worth reporting (unverified actions, dropped pre-loads)
 
     def add(self, xtype, sub, mn, fwd='Forward', up='Up', name=None, color=(0, -0.8, -0.3), extra='', kind='armor', mass=0,
-            custom_data=None, settings=None, links=None, items=None, state=None, toolbar=None, toolbars=None, owner=None, built_by=None):
+            custom_data=None, settings=None, links=None, items=None, state=None, toolbar=None, toolbars=None, owner=None, built_by=None, enabled=None):
         """Place a block.  Extensions over the original signature (all keyword, all optional):
           items    inventory pre-load: [Item.ammo('NATO_25x184mm', 24), Item.ingot('Uranium', 100), ('Component','SteelPlate',50), ...]
                    (volume / mass / allowed-item checks raise sebp_inv.InventoryError at once)
@@ -294,7 +294,9 @@ class Blueprint:
           toolbar  slots of the block's main toolbar (Timer, Button Panel, Event Controller, cockpit, ...): list or {index: item} of
                    sebp_toolbar.block()/group()/weapon()/run();  toolbars={'BuildToolbar': [...], 'OnLockedToolbar': [...]} for the others
           owner    Owner/BuiltBy identity id for this block only (default: the blueprint's owner; 0 = write none)
-          built_by BuiltBy only (default: the owner)"""
+          built_by BuiltBy only (default: the owner)
+          enabled  <Enabled> of a functional block: None = the shape's value, except a Programmable Block, which is ON (the Pond Hopper sample the PB shape comes from
+                   had its PB switched off: a generated ship with a script must run it)"""
         k = defkey(xtype, sub)
         assert k, f'{self.name}: unknown block {xtype}/{sub}'
         d = DEFS[k]
@@ -306,6 +308,7 @@ class Blueprint:
                  settings=settings or {}, links=links or {}, id=0)
         if owner is not None: b['owner'] = owner
         if built_by is not None: b['built_by'] = built_by
+        if enabled is not None: b['enabled'] = bool(enabled)
         self.blocks.append(b)
         if items is not None or state:
             self.preload(b, items=items, state=state)
@@ -704,10 +707,17 @@ class Blueprint:
         key = (b['xtype'], b['sub'])
         counters[key] = counters.get(key, 0) + 1
         o.append(E('NumberInGrid', counters[key]))
-        if level == 'func': o.append(E('Enabled', spec.get('enabled', True)))
+        if level == 'func':
+            en = b.get('enabled')
+            if en is None: en = True if b['xtype'].endswith('MyProgrammableBlock') else spec.get('enabled', True)
+            o.append(E('Enabled', en))
         tail = frag(spec['tail']) if spec.get('tail') else []
         # overrides: legacy raw `extra` XML first, then explicit settings (tag -> text)
         ov = frag(b['extra']) if b['extra'] else []
+        ph = (b['settings'] or {}).get('SelectedEvent')
+        if ph in TB.EVENTS_PLACEHOLDER:
+            note = f'{b.get("name") or "event controller"}: SelectedEvent {ph} = {TB.EVENTS_PLACEHOLDER[ph]}; the game does not know this number'
+            if note not in self.notes: self.notes.append(note)
         for tag, val in (b['settings'] or {}).items():
             if isinstance(val, ET.Element): ov.append(val)
             elif isinstance(val, str) and val.lstrip().startswith('<'): ov.extend(frag(val))

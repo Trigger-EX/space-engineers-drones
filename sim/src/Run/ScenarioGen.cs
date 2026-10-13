@@ -50,12 +50,12 @@ namespace SeSim.Run
         /// <summary>--enemy-scripted (M0): the enemy blueprints from --enemies run their OWN Programmable Block scripts (start commands "Helm:hunt" and
         /// "Staff:wing satellite"), keep every grid that fuses with the main one (merge pairs), and use no Pirate / hold brain.</summary>
         public static bool EnemyScripted;
-        static List<string> _enemies;
+        static List<string> _enemies; static string _enemiesDir;
 
         /// <summary>Blueprint folders (containing bp.sbc) in EnemyDir, sorted; empty when EnemyDir is unset.</summary>
         public static List<string> Enemies()
         {
-            if (_enemies != null) return _enemies;
+            if (_enemies != null && _enemiesDir == EnemyDir) return _enemies;
             var l = new List<string>();
             if (!string.IsNullOrEmpty(EnemyDir))
             {
@@ -65,7 +65,7 @@ namespace SeSim.Run
                 l.Sort(StringComparer.Ordinal);
                 if (l.Count == 0) throw new System.IO.FileNotFoundException("--enemies " + EnemyDir + ": no <Name>/bp.sbc blueprint folders inside");
             }
-            _enemies = l;
+            _enemies = l; _enemiesDir = EnemyDir;
             return l;
         }
 
@@ -121,6 +121,36 @@ namespace SeSim.Run
             }
             if (l.Count == 0) throw new ArgumentException("empty fleet '" + spec + "'");
             return l.ToArray();
+        }
+
+        /// <summary>M0: an ad-hoc scenario for `one --scenario "kind/A-vs-B"` where A and B are '+'-separated blueprint folder names of out/Blueprints
+        /// (optional "Nx" count prefix), e.g. "pilot/Hornet Pilot Test-vs-Hornet", "1v1/Twin PB Test-vs-2xHornet". Null when a name is not a blueprint folder.</summary>
+        public static Scenario Custom(string name, string bpDir)
+        {
+            int slash = name.IndexOf('/');
+            int vs = name.IndexOf("-vs-", StringComparison.Ordinal);
+            if (slash <= 0 || vs < slash) return null;
+            string kind = name.Substring(0, slash);
+            var a = ParseSide(name.Substring(slash + 1, vs - slash - 1), bpDir);
+            var b = ParseSide(name.Substring(vs + 4), bpDir);
+            if (a == null || b == null) return null;
+            var sc = Build(kind, a, b);
+            if (sc.Name != name) sc.Name = name;
+            return sc;
+        }
+
+        static string[] ParseSide(string side, string bpDir)
+        {
+            var l = new List<string>();
+            foreach (string part in side.Split('+'))
+            {
+                string p = part.Trim(); int n = 1;
+                int x = p.IndexOf('x'); int parsed;
+                if (x > 0 && int.TryParse(p.Substring(0, x), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out parsed) && parsed >= 1 && parsed <= 64) { n = parsed; p = p.Substring(x + 1).Trim(); }
+                if (p != "Pirate" && !IsEnemy(p) && !System.IO.File.Exists(System.IO.Path.Combine(System.IO.Path.Combine(bpDir, p), "bp.sbc"))) return null;
+                for (int i = 0; i < n; i++) l.Add(p);
+            }
+            return l.Count == 0 ? null : l.ToArray();
         }
 
         public static List<Scenario> EnemyScenarios()

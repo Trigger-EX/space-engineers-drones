@@ -578,6 +578,7 @@ namespace SeSim.Run
             if (!File.Exists(Path.Combine(bpDir, "Hornet Pilot Test", "bp.sbc")) || !File.Exists(Path.Combine(bpDir, "Twin PB Test", "bp.sbc")) || !File.Exists(Path.Combine(bpDir, "Hornet", "bp.sbc")))
             { SelfTestSkips.Note("M0 integration (build: python3 -I tools/build_all.py --only \"Hornet Pilot Test\" \"Twin PB Test\" Hornet)"); return; }
             IntegrationPilotHornet(bpDir);
+            IntegrationDeadman(bpDir);
             IntegrationTwinPb(bpDir);
             IntegrationEnemyScripted(bpDir);
         }
@@ -618,6 +619,43 @@ namespace SeSim.Run
             }
         }
 
+        static int EnabledThrusters(Body b) { int n = 0; foreach (var t in b.Thrusters) if (t.Enabled) n++; return n; }
+
+        static void IntegrationDeadman(string bpDir)
+        {
+            // the dead-man backup of control_arch s2.6 from the GENERATED XML: EC Cockpit (placeholder event) -> Timer D (5 s) -> group 'Thrusters' off;
+            // the Button Panel switches them on again; the cockpit toolbar slot 1 is Trigger Now on Timer D
+            Func<string, double, int[]> run = (pilot, until) =>
+            {
+                var sc = Duel("Hornet Pilot Test", "Hornet", pilot, null);
+                var res = new List<int>(); int total = 0;
+                var s = new SimSettings(); s.MaxTicks = (int)(until * 60) + 5;
+                var opt = new RunOptions { SimDir = _simDir };
+                opt.OnTick = (w, host, ships) =>
+                {
+                    if (w.Tick % 30 == 0 && w.Tick / 30 <= 2 * until) res.Add(EnabledThrusters(ships[0].Main));
+                    total = ships[0].Main.Thrusters.Count;
+                };
+                var r = ScenarioRunner.RunOne(sc, 0, 1UL, s, _repo, opt);
+                if (r.Error != null) Console.WriteLine("  ERROR " + r.Error);
+                res.Add(total);
+                return res.ToArray();
+            };
+            // sit 1 s .. 3 s, leave: EC slot 1 starts Timer D at ~3 s, it expires at ~8 s and the thrusters go off; the panel (at 11 s) switches them on again
+            int[] a = run("1:sit;3:leave;11:button Hornet Pilot Test Panel 0", 13);
+            int ntot = a[a.Length - 1];
+            Func<int, int> atSecond = sec => a[sec * 2];
+            Check(atSecond(2) == ntot && atSecond(6) == ntot, "empty seat: Timer D counts down, thrusters still on at 6 s (" + atSecond(6) + "/" + ntot + ")");
+            Check(atSecond(9) == 0, "Timer D expired (5 s after the pilot left): the toolbar switched the thrusters off at 9 s (" + atSecond(9) + "/" + ntot + ")");
+            Check(atSecond(12) == ntot, "Button Panel slot 0 (group Thrusters OnOff_On) switched them on again (" + atSecond(12) + "/" + ntot + ")");
+            // a pilot who stays seated never trips it
+            int[] b = run("1:sit", 12);
+            Check(b[b.Length - 2] == b[b.Length - 1], "seated pilot: the dead-man never fires (" + b[b.Length - 2] + "/" + b[b.Length - 1] + " thrusters on at 12 s)");
+            // cockpit toolbar slot 1 = Trigger Now on Timer D: cuts the thrusters at once
+            int[] c = run("1:sit;4:press 1", 6);
+            Check(c[2] == c[c.Length - 1] && c[c.Length - 2] == 0, "cockpit toolbar 'press 1' (TriggerNow Timer D) switched the thrusters off (" + c[c.Length - 2] + " of " + c[c.Length - 1] + " on at 6 s)");
+        }
+
         static void IntegrationTwinPb(string bpDir)
         {
             // per-PB commands and CustomData: two PBs on one ship ([Helm] runs HornetDroneAI, [Staff] runs the same script here only as a probe)
@@ -652,8 +690,9 @@ namespace SeSim.Run
                 File.Copy(Path.Combine(bpDir, "Hornet", "bp.sbc"), Path.Combine(tmp, "Hornet Enemy", "bp.sbc"));
                 ScenarioGen.EnemyDir = tmp; ScenarioGen.EnemyScripted = true;
                 var sc = ScenarioGen.Build("enemy", new[] { "Hornet Enemy" }, new[] { "Hornet" });
-                Check(sc.Ships[0].Commands.Count == 1 && sc.Ships[0].Commands[0].Value == "Helm:hunt", "enemy-scripted default commands: 'Helm:hunt' (and 'Staff:wing satellite' when a Staff PB exists)");
-                var s = new SimSettings(); s.EnemyScripted = true; s.MaxTicks = 40 * 60;
+                Check(sc.Ships[0].Commands.Count == 2 && sc.Ships[0].Commands[0].Value == "Helm:hunt" && sc.Ships[0].Commands[1].Value == "Staff:wing satellite", "enemy-scripted default commands: 'Helm:hunt' and 'Staff:wing satellite' (dropped at spawn when no [Staff] PB exists)");
+                sc.StartDistanceMin = sc.StartDistanceMax = 700; sc.MaxTicks = 50 * 60;
+                var s = new SimSettings(); s.EnemyScripted = true; s.MaxTicks = 50 * 60;
                 int pbs = 0; long runs = 0; bool brain = true; int shots = 0;
                 var opt = new RunOptions { SimDir = _simDir };
                 opt.Inspect = (w, host, ships) => { pbs = ships[0].Pbs.Count; foreach (var r in ships[0].Pbs) runs += r.Runs; brain = ships[0].HasBrain; };
