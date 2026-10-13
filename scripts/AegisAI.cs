@@ -1310,6 +1310,7 @@ void Command(string a)
         case "ai": if (w.Length > 1) AiAssist = w[1] == "on"; break;
         case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;
         case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;
+        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;
         case "focus": SplitFocus = false; break;
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
@@ -1387,6 +1388,7 @@ void LoadConfig()
     BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);
     BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);
     SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();
+    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
     AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
     AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
@@ -2572,9 +2574,10 @@ void AimMissed(Track t)
 // that group). Twice a second the script reads where that turret points (lead removed), raycasts that line with its cameras, and
 // the hull point hit - right over the subsystem - becomes the breach point; the hole is then drilled along the turret's line.
 // What the turret reports is shown on the status screen ("Seek:" line), so an in-game test shows whether it works.
-// Decoys pull turrets (and the seeker) onto themselves first; static guns are never distracted.
+// Decoys pull turrets (and the seeker) onto themselves first; static guns are never distracted. "seeker off" ignores the turret.
+// The turret must reach the target: gatling / rocket turrets about 800 m, assault cannon 1400 m, artillery 2000 m.
 bool BreachAuto = true; double BreachMinRadius = 25, BreachStall = 30, BreachProbe = 30;
-string SeekerGroup = "PowerSystems"; double SeekerShotSpeed = 800;
+string SeekerGroup = "PowerSystems"; bool SeekerOn = true;
 long _bId; bool _bOn, _bSeek; Vector3D _bS, _bDir; double _bDepth, _bProgT; int _bMiss;
 List<Vector3D> _bBad = new List<Vector3D>();
 List<IMyLargeTurretBase> _skT = new List<IMyLargeTurretBase>();
@@ -2638,6 +2641,7 @@ string AimInfo()
 void SeekerSetup()
 {
     _skT.Clear();
+    if (!SeekerOn) { _skLog = ""; return; }
     GridTerminalSystem.GetBlocksOfType(_skT, b => b.CubeGrid == Me.CubeGrid && b.CustomName.Contains("[Seeker]"));
     if (_skT.Count == 0) _skLog = ""; else if (_skLog == "") _skLog = "ready, group " + SeekerGroup;   // (re-scans keep the last report)
     foreach (var tu in _skT)
@@ -2648,7 +2652,7 @@ void SeekerSetup()
 }
 void SeekerTick(Track t)
 {
-    if (_skT.Count == 0 || _now - _skT0 < 0.5) return;
+    if (!SeekerOn || _skT.Count == 0 || _now - _skT0 < 0.5) return;
     _skT0 = _now;
     foreach (var tu in _skT)
     {
@@ -2668,7 +2672,7 @@ void SeekerTick(Track t)
             if (D < 5) { _skLog = "turret points away"; continue; }
             // turrets lead their target; take the lead off again (bullets inherit our velocity)
             Vector3D rv = t.V(_now) - _rc.GetShipVelocities().LinearVelocity;
-            q = o + d * D - rv * (D / SeekerShotSpeed);
+            q = o + d * D - rv * (D / SeekerShotSpeed(tu));
         }
         var cam = CamFor(q, 0);
         if (cam == null) { _skLog = "no camera charge/angle"; continue; }
@@ -2683,6 +2687,14 @@ void SeekerTick(Track t)
         _skLog = (hp ? "block pos given" : "aim ray") + ", " + (q - e.HitPosition.Value).Length().ToString("0") + " m under hull";
         return;
     }
+}
+// muzzle speed of the turret's ammunition (m/s), to take its lead off again
+double SeekerShotSpeed(IMyLargeTurretBase tu)
+{
+    string st = tu.BlockDefinition.SubtypeName;
+    if (st.Contains("Calibre")) return 500;               // artillery / assault cannon shells
+    if (tu is IMyLargeMissileTurret) return 200;          // rockets (mean speed over a few hundred metres)
+    return 800;                                            // gatling, autocannon, interior turret
 }
 // <<< BREACH + SEEKER <<<
 

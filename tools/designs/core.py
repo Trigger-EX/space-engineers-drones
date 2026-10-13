@@ -114,9 +114,9 @@ def gnat(lite=False):
     return gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name)
 
 # ---------------------------------------------------------------------------------------------
-def longbow_frame(grid, script, lite=False):
+def longbow_frame(grid, script, lite=False, seeker=False):
     L = grid == "Large"
-    tag = ("Longbow L" if L else "Longbow S") + (" Lite" if lite else "")
+    tag = ("Longbow L" if L else "Longbow S") + (" Seeker" if seeker else "") + (" Lite" if lite else "")
     bp = Blueprint(tag, grid, seed=11 if L else 12)
     ACC = (0.12, 0.55, 0.15)
     sub = lambda s, l: l if L else s
@@ -163,6 +163,10 @@ def longbow_frame(grid, script, lite=False):
     cam(bp, (0, 2, -1), "Up", "Backward", f"{tag} Camera Up")
     cam(bp, (-2, -1, 0), "Left", "Up", f"{tag} Camera Left")
     cam(bp, (2, -1, 0), "Right", "Up", f"{tag} Camera Right")
+    if seeker:
+        # option-4 test: an artillery turret (2 km, the railgun's reach) on the railgun's back, named [Seeker]: the script sets it to
+        # the targeting group and drills where it points
+        bp.add("MyObjectBuilder_LargeMissileTurret", "LargeCalibreTurret", (-1, 2, -4), "Forward", "Up", f"{tag} Artillery [Seeker]", DARK, kind="turret")
     if not lite:
         bp.add("MyObjectBuilder_SensorBlock", sub("SmallBlockSensor", "LargeBlockSensor"), (-1, -3, -3), "Down", "Forward", f"{tag} Sensor", kind="sensor")
         bp.add("MyObjectBuilder_OffensiveCombatBlock", sub("SmallOffensiveCombat", "LargeOffensiveCombat"), (1, -3, -3), name=f"{tag} AI Offensive [AI]", kind="ai")
@@ -172,7 +176,11 @@ def longbow_frame(grid, script, lite=False):
 def longbow_s(lite=False): return longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite)
 def longbow_l(lite=False): return longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite)
 
-MODELS = {"Hornet": hornet, "Gnat": gnat, "Longbow S": longbow_s, "Longbow L": longbow_l}
+def longbow_l_seeker(lite=False):
+    """Option-4 test ship: Longbow L + artillery turret named [Seeker] on its back (large grid, paste only)."""
+    return longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite, seeker=True)
+
+MODELS = {"Hornet": hornet, "Gnat": gnat, "Longbow S": longbow_s, "Longbow L": longbow_l, "Longbow L Seeker": longbow_l_seeker}
 
 # The Gnat is a point-and-burn drone (gyro steering, two axial thrusters): only Forward/Backward thrust is required.
 REQUIRED_AXES = {"Gnat": ("Forward", "Backward")}
