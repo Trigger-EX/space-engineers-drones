@@ -1305,9 +1305,15 @@ Mode ParseMode(string s, Mode def)
 // =====================================================================
 public void Main(string arg, UpdateType src)
 {
-    try { Tick(arg, src); }
-    catch (Exception ex) { _crash = ex.Message; Echo("Script error: " + ex.Message); if (_lcd != null) _lcd.WriteText("SCRIPT ERROR\n" + ex.Message + "\nSend this text to Claude."); }
+    try { Tick(arg, src); if (_errRun > 0 && ++_okRun >= 300) { _errRun = 0; _crash = ""; } }
+    catch (Exception ex)
+    {   // a repeating error: hand the ship back once (no stale overrides), then report on change or at 1 Hz only (not 60 text writes a second)
+        _okRun = 0;
+        if (_errRun++ == 0) { try { Release(); } catch (Exception) { } }
+        if (_crash != ex.Message || _errRun % 60 == 1) { _crash = ex.Message; Echo("Script error: " + ex.Message); if (_lcd != null) _lcd.WriteText("SCRIPT ERROR\n" + ex.Message + "\nSend this text to Claude."); }
+    }
 }
+int _errRun, _okRun;
 
 void Tick(string arg, UpdateType src)
 {
