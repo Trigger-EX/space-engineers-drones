@@ -323,7 +323,7 @@ void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_fl
 void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
 // <<< FLEET LINK <<<
 
-// >>> AI GATE v1.0 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
+// >>> AI GATE v1.1 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
 // The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
 // default, so switching them on (Enabled) may do nothing at all. In-game report 2026-10-13: Full drones in GUARD stood still and
 // HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
@@ -334,11 +334,14 @@ void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flCha
 //    under fire the script searches. While the AI flies the ship it keeps it, up to Max AI Hold seconds. Once the AI has flown the
 //    ship it is trusted and gets the ship whenever the script wants it, as before v2.1 (sim: time-sharing a working AI cost most of
 //    its kills, 1v1 decisive 90 % -> 35 %).
+// v1.1 (opt-in, audit F-03/SL-11, default OFF = the behaviour of v1.0): "Use Typed AI Block API=true" sets IMyFlightMovementBlock.SpeedLimit
+// ("AI Flight Speed Limit (m/s)") on the AI Flight blocks and counts a block as switched on when IsAutoPilotEnabled reads true instead of
+// when the "Behavior" terminal property was found. Rests on the ModAPI documentation only (not tested in the game; unit of SpeedLimit unconfirmed).
 // Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
 // Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
 // "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
-bool AiGateOn = true, AiBehaviorSwitch = true;
-double AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
+bool AiGateOn = true, AiBehaviorSwitch = true, AiTyped = false;
+double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
 bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
 int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
 List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
@@ -350,12 +353,16 @@ void AiGateLoad()
     const string S = "AI Gate";
     if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
     if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
+    if (!ini.ContainsKey(S, "Use Typed AI Block API")) ini.Set(S, "Use Typed AI Block API", AiTyped);
+    if (!ini.ContainsKey(S, "AI Flight Speed Limit (m/s)")) ini.Set(S, "AI Flight Speed Limit (m/s)", AiSpeed);
     if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
     if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
     if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
     string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
     AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
     AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
+    AiTyped = ini.Get(S, "Use Typed AI Block API").ToBoolean(AiTyped);
+    AiSpeed = Math.Max(1, ini.Get(S, "AI Flight Speed Limit (m/s)").ToDouble(AiSpeed));
     AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
     ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
     AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
@@ -367,6 +374,8 @@ void AiGateFind(List<IMyFunctionalBlock> ai)
     int n = 0;
     foreach (var b in ai)
     {
+        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
+        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
         _agProps.Clear(); b.GetProperties(_agProps);
         ITerminalProperty<bool> sw = null;
         foreach (var p in _agProps)
@@ -376,9 +385,8 @@ void AiGateFind(List<IMyFunctionalBlock> ai)
             var bp = p.As<bool>();
             if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
         }
-        if (sw == null) continue;
-        n++;
-        if (!sw.GetValue(b)) sw.SetValue(b, true);
+        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
+        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
     }
     _agFound = n;
 }
