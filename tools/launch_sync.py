@@ -12,6 +12,7 @@ import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI", "StingerAI"]
 REQUIRED = ["HornetDroneAI", "HarrierAI"]
+EXCLUDE = ["BasiliskAI"]        # no merge block on this ship and no room: the block is deliberately NOT carried (never added, never required)
 BEGIN, END = "// >>> LAUNCH", "// <<< LAUNCH <<<"
 
 def block():
@@ -28,6 +29,7 @@ def main():
     for n in SCRIPTS:
         p = os.path.join(ROOT, "scripts", n + ".cs")
         if not os.path.exists(p): print("MISSING  ", n); continue
+        if n in EXCLUDE: print("excluded ", n); continue
         with open(p, encoding="utf-8", newline="") as f: raw = f.read()
         crlf = "\r\n" in raw
         t = raw.replace("\r\n", "\n")

@@ -142,7 +142,7 @@ different opponent mix).
 
 ## 9. Review notes (independent launch review)
 
-* **Scripts with the block**: Hornet, Harrier, Gnat, Longbow (S and L, same script), Wasp, Lancer, Aegis, Mantis, Basilisk (`launch_sync.py --check` ok for all nine).
+* **Scripts with the block**: Hornet, Harrier, Gnat, Longbow (S and L, same script), Wasp, Lancer, Aegis, Mantis (`launch_sync.py --check` ok; Basilisk is on the EXCLUDE list: it has no merge block and the block cost ~9k chars of its 100k budget; Longbow keeps it because Longbow S has a merge block and shares the script with L).
   Hooks verified by grep in each: `LaunchLoad` (constructor and `reload`), `armed/launch/disarm` in `Command`, `LaunchStep` first on the control path (Gnat: before `AiStep`/`Control`), `LaunchStatus` in the display.
 * **Not on the block (honest status)**:
   * **Stinger** (`StingerAI.cs`) is a rack missile. It has no LAUNCH block on purpose: it waits docked, and `Docked()` plus `Auto Launch When Released` start the hunt only when a target is in range
