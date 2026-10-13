@@ -1,6 +1,8 @@
 # Blueprint XML fidelity and mount-point validation (tools/sebp.py)
 
-Status of this document: written from primary sources (Keen's public `KeenSoftwareHouse/SpaceEngineers` source, snapshot
+Status of this document: sections 1-6 were written when only `ref/Starburst` existed; **section 7 (Generator extension) is current** and
+supersedes them where they disagree (shapes are now taken from all of the owner's samples, containers/inventories/toolbars/groups/multi-grid are
+written; the open items of section 6 are closed there). Written from primary sources (Keen's public `KeenSoftwareHouse/SpaceEngineers` source, snapshot
 Jan 2022; the user's `ref/Starburst/bp.sbc`, written by the current game; the game definitions in `ref/`).
 Everything below is tagged **verified** (reproduced by a command listed here), **source** (read in Keen's code, not
 run in-game) or **inferred / guess**. Nothing here has been pasted into the real game yet; section 5 is the test plan.
@@ -157,9 +159,109 @@ tail fields; the shape table in section 3 says which parts were copied from the 
 
 ## 6. Not done / open
 
-* No ammo preload for guns (shape needs a Starburst-like inventory item plus `GunBase` counts; empty guns are what the game writes for a fresh block).
+* (closed in section 7) ammo preload for guns.
 * Pre-loaded projector grids not generated (shape known from Starburst, builder not written).
 * AI block shapes (section 3) are the only blocks where the whole object is a guess.
 * `drones.py` seeds `Blueprint` with `hash(name)`, which Python randomizes per process, so entity ids differ between runs of the same build;
   harmless, but use `zlib.crc32` if reproducible bytes are wanted (not my file).
 * Mount rectangles are checked inside one grid; rotor/hinge/piston/connector links between grids are not modelled.
+
+
+## 7. Generator extension: inventories, sample-derived shapes, toolbars, block groups, multi-grid files
+
+Everything below is checked by `python3 -I tools/tests/run_all.py` against the owner's game-written blueprints (`ref/user-samples/*/bp.sbc`
+and `pc/enemies/Tech Hunter/bp.sbc`; `ref/` is not tracked: in a git worktree the tests look in the main checkout, or set `SEBP_SAMPLES`).
+Tags: **seen** = reproduced from / verified against a game-written file, **derived** = copied from a sibling class, **source** = Keen's source,
+**unseen** = no ground truth.
+
+### 7.1 What was added to `tools/sebp.py` (new modules `sebp_xml.py`, `sebp_inv.py`, `sebp_toolbar.py`, `sebp_multi.py`)
+
+| need | API |
+|---|---|
+| ammo / uranium / cargo pre-load | `bp.add(xtype, sub, mn, ..., items=[Item.ammo('NATO_25x184mm', 24), Item.ingot('Uranium', 100), ('Component', 'SteelPlate', 50)])`; `bp.fill_ammo(b, count='full')`; `bp.preload(b, items=, state=)`; `bp.max_items(b, kind, sub)`; `bp.items_of(b)` |
+| stored state | `state={'capacitor': 'full'\|MWh, 'fuel': 'full'\|L (hydrogen engine) / kg (reactor, default = the uranium in items), 'filled': 'full'\|0..1 (hydrogen tank), 'stored_power': 'full'\|MWh (battery)}` |
+| capacity check | `InventoryError` when volume (litres of the items vs the block's own `<Volume>`), mass, stack count, item type (a weapon takes only its magazines, a reactor only its fuel) or the shape (no inventory) do not allow it |
+| toolbars | `toolbar=[...]` / `{index: item}` and `toolbars={'BuildToolbar': .., 'OnLockedToolbar': ..}` with `sebp_toolbar.block(target, action, params)`, `.group(name, action)`, `.weapon(type, sub)`, `.run(pb[, argument, experimental=True])`, params `single/int32/int64/string` |
+| block groups | `bp.group('Thrusters', [blocks])` writes `<BlockGroups>` |
+| event controller | `settings=sebp_toolbar.event_settings('connector', 0.8, invert=True)`, `links={'selected': [blocks]}`, `toolbar=[...]` |
+| owner | `Blueprint(owner=id)`, `add(owner=id, built_by=id)`; 0 writes none; default `DEFAULT_OWNER` unchanged |
+| shapes | `Blueprint(legacy_shapes=True)` = the shipped drones' exact XML; default = sample-derived; `sebp.confidence_table()`, `sebp.shape_report()`, `bp.shape_summary()` |
+| several grids | `parent.attach(child, MU.Pose.axes(pos, fwd, up))`, `parent.dock(child, parent_block, child_block, gap=0, roll=0, lock=False)`, `MU.dock_candidates/dock_pose`, `sebp.load_sbc_multi(path)` / `Blueprint.from_sbc_multi` |
+| loader | `load_sbc` now also keeps `id`, `items`, `state`, `toolbars`, `groups`, `pose` per grid |
+
+### 7.2 Shapes (`tools/shapes.json` format 3, `tools/extract_shapes.py`)
+
+* `python3 -I tools/extract_shapes.py` rebuilds the file from all samples. Per block definition the exemplar is the **form the game writes most often**
+  (structure signature = level, owner, container component list, tail tag list; ties: smallest, then sample name), complete blocks only (no
+  `BuildPercent`), non-DLC, no Prototech. Instance data is reset (ids, toolbars, aim, ammo state, door/timer/connector state, pilot state, items, capacitor,
+  `HudText`, timer delay -> 10000); `src` names the sample; `container_generic` says whether a `Type/*` container may serve unseen subtypes.
+* **Four of the "samples" are not game files**: `Gnat`, `Hornet Drone`, `Longbow L`, `Longbow S` are old output of this very generator (no container,
+  no owner on a ship with dozens of functional blocks). They are detected (`looks_generated`) and never used as ground truth.
+* Sections: `shapes` (136 entries: 102 exact `Type/Subtype`, the rest `Type/*`) and `legacy` (the 40 Starburst-era entries, pinned verbatim).
+  `Blueprint(legacy_shapes=True)` reads only `legacy` + the hand-written table + generic = byte-identical XML for the shipped drones; every call
+  site in `tools/designs/*.py` and `probe_blueprints.py` passes it. `tools/tests/golden_hashes.json` pins the sha256 of eight shipped ships.
+* Lookup order (default): exact subtype sample -> `Type/*` sample (container kept only if `container_generic`, then with the definition's inventory
+  `Volume` and default magazine; otherwise omitted, which the game accepts: it builds the default components) -> legacy -> hand-written (`from-source`)
+  -> generic (`guess`). `InteriorTurret` (no sample anywhere) is **derived** from `LargeGatlingTurret`: both are `MyObjectBuilder_LargeTurretBase`
+  subclasses in the 2022 source. `SensorBlock`, `Warhead` stay hand-written (from-source), the four AI blocks stay guesses.
+* Inventory `Volume` of an unseen subtype: `InventoryMaxVolume`, else `InventorySize` X*Y*Z, else (cargo) cells x cell volume. All three rules were
+  verified against every sample shape that has one. Cockpit and connector volumes (1, 8, 1.152, 0.064 m3) are not derivable and only exist for seen subtypes.
+* Optional fields the game writes only when non-default are inserted where the samples put them (`sebp.TAIL_AFTER`): connector `ThrowOut`,
+  `CollectAll` (first after `Enabled`), `Strength` (between `MasterToSlaveTransform` and `MasterToSlaveGrid`), turret `Range` (after `MaxFov`),
+  cockpit `IsMainCockpit`, door `State`, projector `ProjectedGrids`.
+
+### 7.3 Inventories (seen)
+
+* Item = `Amount`, `PhysicalContent xsi:type=MyObjectBuilder_<Kind>` (`SubtypeName`; magazines add `ProjectilesCount 0`), `ItemId`; `nextItemId` = count.
+  Reproduced element for element for AmmoMagazine, Ingot, Component, Ore. Equal stacks are merged. PhysicalGunObject / ConsumableItem / OxygenContainerObject
+  etc. are read (kept raw) but cannot be written or sized.
+* **Volume tables are checked against 274 game-written inventories**: none exceeds its `<Volume>` (max 1.0000002), and 68 of them the game filled to the
+  brim (ore, ingots, components) come out at exactly 100 %. That pins the ingot table, the 0.37 L/kg ore and **Scrap ore = 0.254 L/kg** (a fitted value).
+* Railgun capacitor: an empty one is `<Component xsi:type="MyObjectBuilder_EntityCapacitorComponent" />` (no `StoredPower`); full is 0.016 (small) and 0.5
+  (large) MWh, 0.00667 was seen mid-charge. Reactor `<Capacity>` = uranium kg in the inventory; hydrogen engine `<Capacity>` = litres, no inventory
+  (full = definition `FuelCapacity` 100000 / 5000); tank `<FilledRatio>`; battery `CurrentStoredPower` / `MaxStoredPower`.
+* `tools/tests` regenerates the inventory, capacitor, `Capacity` of every loaded weapon, turret, reactor, cargo container, welder, tank and engine in the
+  samples from `items=` / `state=` read off the same block and compares (Volume, Mass, MaxItemCount, stacks, charge): all agree.
+* Catalogue check (docs/design/systems_catalogue.md 2.6 / 3.3): `fill_ammo` holds 24 gatling turret boxes, 4 small gatling, 3 autocannon, 6 railgun /
+  artillery / assault turret magazines, 5 small gatling turret, 2 small rocket turret, 768 interior-turret magazines, ... (test `test_fill_ammo_matches_the_catalogue`).
+
+### 7.4 Toolbars and block groups (seen, except the PB Run slot)
+
+* Slot forms (all reproduced from the samples): `ToolbarItemTerminalBlock` (Action, [Parameters], [CustomIconTitle], BlockEntityId),
+  `ToolbarItemTerminalGroup` (Action, [Parameters], [CustomIconTitle], GridEntityId 0, BlockEntityId, GroupName), `ToolbarItemWeapon` (DefinitionId Type/Subtype).
+  Parameter types seen: Single, Int32, Int64. 48 distinct `Action` ids occur in the samples (`sebp_toolbar.SEEN_ACTIONS`); other ids are written as given and
+  listed in `bp.notes`.
+* **A group slot's `BlockEntityId` is the EntityId of the block that owns the toolbar** (155 of 155 group slots), not a member of the group.
+* **`<BlockGroups>` holds `<Vector3I>` cells, not EntityIds**: `MyObjectBuilder_BlockGroup/Name` + `Blocks/Vector3I{X,Y,Z}`. The cell is the definition's `Center`
+  cell of the block (hangar door (0,2,0), 3x3x3 hydrogen thruster (1,1,2), small gatling gun (0,0,3), large welder (0,0,1), ...), derived from the samples
+  into `shapes.json` `_centers` (35 definitions; checked by cross-validation: learned on half the files, 100 % correct on the other half). Definitions without a
+  sample use the block-local cell (0,0,0): **unverified** that the game resolves any cell of a multi-cell block (it should: cube lookup), so test groups of
+  turrets/railguns in game.
+* Event Controller `SelectedEvent` ids in the samples: 1 (cargo containers, Threshold 0.5), 2 (guns/cameras/hinges, 0.99, invert), 6 (unresolvable), 7
+  (connectors), 14 (welder). The names are inferred from the selected blocks (`sebp_toolbar.EVENTS_SEEN`), not read from the game.
+* **PB `Run` slot: never seen in any file.** `run(pb)` writes `<Action>Run</Action>` + `BlockEntityId` (action id from the game source; the item shape is the seen
+  terminal-block one). `run(pb, 'arg', experimental=True)` additionally writes `<Parameters>` with one `TypeCode String` parameter by analogy with the seen
+  Single/Int32/Int64 parameters: **unverified**, noted in `bp.notes` and in `confidence_table()` as UNSEEN.
+
+### 7.5 Several grids in one file (seen: Venture - Expedition End, Small Grid 8000)
+
+* One `<CubeGrid>` per grid, each with a **world** `PositionAndOrientation` (Position, Forward, Up, Orientation quaternion). Verified on every grid of the samples:
+  frame columns = (Forward x Up, Up, -Forward), standard quaternion of that matrix. Cell (i,j,k) has its centre at (i,j,k) x cell size, block frame origin =
+  centre of the block's cell box.
+* Connector pair geometry, recomputed from the two grids' poses and the block cells: the stored `MasterToSlaveTransform` (slave block frame in master block
+  frame) is reproduced to 3 mm / 0.2 deg on both Venture pairs; `MasterToSlaveGrid.PositionOffset` = master grid origin - slave block origin in the slave block
+  frame (1e-2 m); `OrientationOffset` (= `OrientationAsVector`) = quaternion of slaveBlockRot^-1 x masterGridRot.
+* Saved locks are not face-to-face exact: gaps along the normal 0.0707 m (ConnectorMedium on Connector, faces 1.75 m apart) and 0.1322 m (two Connectors), lateral
+  < 1 cm. `dock_pose` places the faces `gap` metres apart (default 0) and picks one of the four axis-aligned rolls about the normal.
+* Writer: `attach`/`dock` -> extra `<CubeGrid>` elements (ids unique across grids; toolbars/groups may refer across grids by block). **Connectors are written
+  unlocked by default** (Tech Hunter form: `MasterToSlaveTransform`/`MasterToSlaveGrid` nil, `IsConnecting false`); `lock=True` writes the Venture form (both blocks:
+  `ConnectedEntityId` right after `Enabled`, same `MasterToSlaveTransform`, `IsApproaching`/`IsConnecting true`, `TimeOfConnection` 60000 [arbitrary]; master = the child's
+  block with `MasterToSlaveGrid`). Whether a paste restores the lock is **unverified** (test C2 of docs/design/grids_bays.md). Merge blocks store no lock.
+
+### 7.6 Still open
+
+* In-game paste of any new shape (turrets, reactor, cargo with items, cockpit, locked connectors, toolbars with groups) has not been done.
+* Unseen subtypes: see `sebp.shape_report()`; notably 6 thrusters, 7 cockpits (container omitted), the small turrets and interior turret (container from the large
+  gatling turret), `SmallDecoy`, large/medium conveyor sorters, merge blocks other than the small one, `LargeBlockSensor`/`SmallBlockSensor`, `Large/SmallWarhead`.
+* Sensor block detection fields, AI combat blocks, projector with a pre-loaded `ProjectedGrids`, conveyor line routing (`ConveyorLines` is not written; conveyor blocks are placed only).
+* `LargeMissileTurret`'s `TargetingGroup` etc. keep the sample's targeting flags (`Flags`), which are the owner's settings (assault/artillery turrets: characters off).
