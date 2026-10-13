@@ -68,8 +68,14 @@ def ant_extra(r):
     return f"<BroadcastRadius>{r}</BroadcastRadius><ShowShipName>true</ShowShipName><EnableBroadcasting>true</EnableBroadcasting>"
 
 def script_text(filename):
-    """read scripts/<filename> at call time"""
-    return open(os.path.join(ROOT, 'scripts', filename), encoding='utf-8').read()
+    """read scripts/<filename> at call time, minified (comments/whitespace only): a Programmable Block takes at most 100,000
+    characters, the commented sources are larger. tools/minify_check.sh proves the minified text compiles to the same IL."""
+    import sys as _s
+    _s.path.insert(0, os.path.join(ROOT, 'tools'))
+    from minify_cs import minify
+    t = minify(open(os.path.join(ROOT, 'scripts', filename), encoding='utf-8').read())
+    if len(t) > 100000: raise ValueError(f"{filename}: {len(t)} characters after minifying; the PB limit is 100,000")
+    return t
 
 # ---- block helpers ----
 def thr(bp, mn, fwd, up, name, sub=None):

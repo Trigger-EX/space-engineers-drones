@@ -1,6 +1,8 @@
 ## Install
 
-1. Unzip this package anywhere. You get `Blueprints/<Name>/{bp.sbc,thumb.png}`, `Scripts/*.cs` and this README.
+1. Unzip this package anywhere. You get `Blueprints/<Name>/{bp.sbc,thumb.png}`, `Scripts/*.cs` and this README. The scripts in
+   `Scripts/` are compacted (no comments) so they fit the Programmable Block's 100,000-character limit: paste those. The commented
+   originals in `Scripts/Source/` are for reading only and are too long to paste.
 2. **Delete the old blueprint folders first.** Open `%AppData%\SpaceEngineers\Blueprints\local\`, and remove every folder of an earlier
    version of these ships (Hornet, Gnat, Longbow ..., also their `bp.sbcB5` files). The game caches a binary `bp.sbcB5` next to `bp.sbc`
    and keeps loading the stale copy if it is still there. This package never ships a `.sbcB5`.

@@ -1,4 +1,9 @@
 ### v2.6 (this package): BREACH aim against big ships; SEEKER test ships
+- **Script length fix (important).** A Programmable Block takes at most 100,000 characters; since v2.2 every armed drone script
+  was over it (Hornet 155,629, Basilisk 175,054 characters with comments), so a pasted drone's PB could not hold its script. The
+  blueprints and the zips' `Scripts/` folder now carry minified scripts (comments and whitespace removed only; `tools/minify_cs.py`,
+  proven identical by compiling both and comparing the IL, `tools/minify_check.sh`; largest now Basilisk 97,721). The commented
+  originals are in `Scripts/Source/`, for reading only: they are too long to paste. The build refuses a script over the limit.
 Question from the user: against large battleships (their *Tech Hunter*) the drones "can't figure out where vital components are and
 just shoot the hull". Study: `docs/tech-hunter-study.md` (1,280 simulated fights, fleets of up to 10 Hornet / Gnat / Longbow S /
 Longbow L / Basilisk).

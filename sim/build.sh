@@ -38,6 +38,9 @@ for f in "$ROOT"/scripts/*.cs; do
     # key = sha1 of the script text with CR removed and trailing whitespace trimmed (ScriptCompiler.ScriptKey)
     key=$(python3 -I -c 'import sys,hashlib; t=open(sys.argv[1],encoding="utf-8").read().replace("\r","").rstrip(); print(hashlib.sha1(t.encode("utf-8")).hexdigest())' "$f")
     printf '%s\t%s.dll\n' "$key" "$n" >> "$SC/manifest.tsv"
+    # blueprints carry the minified text (tools/minify_cs.py: comments/whitespace only, same IL - tools/minify_check.sh): same dll
+    mkey=$(python3 -I -c 'import sys,hashlib; sys.path.insert(0, sys.argv[2]); from minify_cs import minify; t=minify(open(sys.argv[1],encoding="utf-8").read()).replace("\r","").rstrip(); print(hashlib.sha1(t.encode("utf-8")).hexdigest())' "$f" "$ROOT/tools")
+    printf '%s\t%s.dll\n' "$mkey" "$n" >> "$SC/manifest.tsv"
     echo "  ok $n"
   else
     echo "  FAIL $n"; grep -E 'error' "$WRAP/$n.log" | head -20; rc=1
