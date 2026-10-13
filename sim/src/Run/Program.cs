@@ -9,6 +9,7 @@
 //         --face (ships start pointing at the enemy), --custom-data "INI with \n" (PB CustomData of the script drones)
 //   summarize --in runs.jsonl [--out summary.csv]    rebuild summary.csv from a runs.jsonl
 //   dock-launch [--model Hornet] [--seconds 30] [--release-at 3] ...   printed drone merged to a dummy printer, merge off, no _JOIN (sim/src/Run/DockLaunch.cs)
+//   printer-test [--model "Mobile Hive"] [--fault none|noproj|halfload|...] [--script-file F]   Hive Mother on the real printer blueprint with real-game-like faulty projectors (sim/src/Run/PrinterTest.cs)
 //   follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] ...   FOLLOW mode vs a moving owner (sim/src/Run/FollowTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
 //   --seeds defaults to DefaultSeeds (a quick check). Pick the count the task needs (CLAUDE.md "Simulations"); the big matrices
@@ -150,6 +151,8 @@ namespace SeSim.Run
                 }
                 case "dock-launch":
                     return DockLaunch.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
+                case "printer-test":
+                    return PrinterTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "follow-test":
                     return FollowTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "compile-scripts":
