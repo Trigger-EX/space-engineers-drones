@@ -22,6 +22,9 @@ namespace SeSim.Blueprint
         public float BatteryMaxMWh, BatteryMaxOutMW, BatteryMaxInMW, BatteryInitialRatio;
         public float GeneratorMW;                      // reactors / hydrogen engines: constant output (fuel not modelled)
         public float SensorMaxRange, TurretControlRange;
+        /// <summary>Large turrets (CubeBlocks.sbc): MaxRangeMeters (the AI's own targeting range and the Range slider's maximum),
+        /// RotationSpeed / ElevationSpeed (rad/ms in the file, stored here in rad/s), elevation limits (deg). 0 / NaN = not given.</summary>
+        public float TurretMaxRange, TurretRotRadS, TurretElevRadS, TurretMinElevDeg = float.NaN, TurretMaxElevDeg = float.NaN;
         public float WarheadRadius, WarheadDamage;
         public float InventoryVolume;
         public WeaponDef Weapon;                          // null for non-weapons
@@ -131,6 +134,15 @@ namespace SeSim.Blueprint
                 d.IsTerminal = d.Kind != "CubeBlock";
                 d.InventoryVolume = 0;
 
+                var raw = MiniJson.Obj(e, "raw");
+                if (raw != null && d.Kind == "LargeTurretBase")
+                {
+                    d.TurretMaxRange = (float)MiniJson.Num(raw, "MaxRangeMeters", 0);
+                    d.TurretRotRadS = (float)(MiniJson.Num(raw, "RotationSpeed", 0) * 1000.0);          // MyLargeTurretBase: speed * elapsed ms
+                    d.TurretElevRadS = (float)(MiniJson.Num(raw, "ElevationSpeed", MiniJson.Num(raw, "RotationSpeed", 0)) * 1000.0);
+                    d.TurretMinElevDeg = (float)MiniJson.Num(raw, "MinElevationDegrees", double.NaN);
+                    d.TurretMaxElevDeg = (float)MiniJson.Num(raw, "MaxElevationDegrees", double.NaN);
+                }
                 var st = MiniJson.Obj(e, "stats");
                 if (st != null)
                 {

@@ -22,7 +22,9 @@ namespace SeSim.Combat
         public BlockInst Block;
         public bool IsController;             // TurretControlBlock: designator only
         public WeaponUnit Weapon;             // large turret's gun (null for controllers)
-        public float Range;
+        public float Range;                   // the terminal Range setting (<= MaxRange)
+        public float MaxRange = 800f, AmmoRange = 800f;   // definition MaxRangeMeters; the ammo's max trajectory
+        bool _extended;                       // a working AI combat block on the grid lets the turret use AmmoRange
         public Body TargetBody;               // null = no target
         public MyDetectedEntityInfo Target;   // Detection.FromBody at refresh time
         public double Azimuth, Elevation;     // radians, in block frame
@@ -50,7 +52,7 @@ namespace SeSim.Combat
             bool working = b.IsFunctional && CombatUtil.BlockEnabled(b) && (b.Api == null || b.Api.IsWorking);
             if (!working) { Drop(); return; }
             Vector3D muz = body.LocalToWorld(b.LocalCenter);
-            if (refresh) Acquire(w, body, muz);
+            if (refresh) { _extended = Extended(w, body); Acquire(w, body, muz); }
             else if (TargetBody != null && (!TargetBody.Alive || TargetBody.Blocks.Count == 0)) Drop();
             if (TargetBody == null) { IsAimed = false; if (Weapon != null) Weapon.ShootOn = false; return; }
 
@@ -84,15 +86,20 @@ namespace SeSim.Combat
             double azD = Math.Atan2(l.X, -l.Z);
             double yy = l.Y < -1 ? -1 : (l.Y > 1 ? 1 : l.Y);
             double elD = Math.Asin(yy);
-            double minEl = s.TurretMinElevationDeg * Math.PI / 180.0;
+            var def = b.Def;
+            bool data = s.TurretLimitsFromData;
+            double minEl = (data && !float.IsNaN(def.TurretMinElevDeg) ? def.TurretMinElevDeg : s.TurretMinElevationDeg) * Math.PI / 180.0;
+            double maxEl = (data && !float.IsNaN(def.TurretMaxElevDeg) ? Math.Min(90.0, def.TurretMaxElevDeg) : 90.0) * Math.PI / 180.0;
             if (elD < minEl) elD = minEl;
-            double step = s.TurretSlewRadPerSec * dt;
+            if (elD > maxEl) elD = maxEl;
+            double step = (data && def.TurretRotRadS > 0 ? def.TurretRotRadS : s.TurretSlewRadPerSec) * dt;
+            double stepEl = (data && def.TurretElevRadS > 0 ? def.TurretElevRadS : s.TurretSlewRadPerSec) * dt;
             double dAz = azD - Azimuth;
             while (dAz > Math.PI) dAz -= 2 * Math.PI;
             while (dAz < -Math.PI) dAz += 2 * Math.PI;
             Azimuth += dAz > step ? step : (dAz < -step ? -step : dAz);
             double dEl = elD - Elevation;
-            Elevation += dEl > step ? step : (dEl < -step ? -step : dEl);
+            Elevation += dEl > stepEl ? stepEl : (dEl < -stepEl ? -stepEl : dEl);
             double ce = Math.Cos(Elevation);
             var aimLocal = new Vector3D(Math.Sin(Azimuth) * ce, Math.Sin(Elevation), -Math.Cos(Azimuth) * ce);
             Vector3D ag = Vector3D.TransformNormal(aimLocal, _rot);
@@ -102,8 +109,8 @@ namespace SeSim.Combat
             double cosErr = AimDirWorld.X * want.X + AimDirWorld.Y * want.Y + AimDirWorld.Z * want.Z;
             double cone = Math.Cos(s.TurretFireConeDeg * Math.PI / 180.0);
             IsAimed = cosErr >= cone;
-            double rangeToHull = dist - TargetBody.BoundRadius;
-            wp.ShootOn = IsAimed && rangeToHull <= Range;
+            // MyLargeTurretBase: fires only while the target's position is inside the shooting range (centre distance, not the hull)
+            wp.ShootOn = IsAimed && (TargetBody.WorldBoundCenter - muz).Length() < EffectiveRange(w);
         }
 
         /// <summary>Block types of the vanilla targeting groups (TargetGroups.sbc, approximated by block kind).</summary>
@@ -133,6 +140,28 @@ namespace SeSim.Combat
             return best;
         }
 
+        /// <summary>Range the turret works at now: the ammo range (old model, or a working AI combat block on its grid), else Range.</summary>
+        public float EffectiveRange(World w)
+        {
+            if (IsController) return Range;
+            if (w.Settings.TurretRangeFromAmmo || _extended) return Math.Max(Range, AmmoRange);
+            return Range;
+        }
+
+        /// <summary>A functional, enabled AI Offensive / Defensive block on the turret's grid (refreshed with the target).</summary>
+        bool Extended(World w, Body body)
+        {
+            if (IsController || !w.Settings.TurretAiBlockExtendsRange) return false;
+            var bl = body.Blocks;
+            for (int i = 0; i < bl.Count; i++)
+            {
+                var g = bl[i].Api as SimGenericFunctional;
+                if (g == null || bl[i].Destroyed || !bl[i].IsFunctional) continue;
+                if ((g.AiKind == "OffensiveCombat" || g.AiKind == "DefensiveCombat") && g.EnabledValue) return true;
+            }
+            return false;
+        }
+
         void Drop()
         {
             TargetBody = null; IsAimed = false; Target = default(MyDetectedEntityInfo);
@@ -143,6 +172,17 @@ namespace SeSim.Combat
         {
             Body best = null; double bestD = double.MaxValue; bool bestHas = false;
             bool prefer = w.Settings.DecoysFunctional && w.Settings.DecoyPreferTarget;
+            float eff = EffectiveRange(w);
+            // MyLargeTurretBase keeps tracking its target out to the search range (shooting range + 100 m, centre distance); only a
+            // body with a working decoy (when the current one has none) takes it away
+            bool keep = false, keepHasDecoy = false;
+            if (TargetBody != null && TargetBody.Alive && TargetBody.Blocks.Count > 0 && (TargetBody.WorldBoundCenter - from).Length() < eff + 100)
+            {
+                long to = Detection.EffectiveOwner(TargetBody);
+                keep = to != 0 && w.Teams.Relation(Block.OwnerId, to) == MyRelationsBetweenPlayerAndBlock.Enemies;
+                keepHasDecoy = keep && prefer && Decoys.HasWorking(w, TargetBody);
+                if (keep && (!prefer || keepHasDecoy)) return;
+            }
             var bodies = w.Bodies;
             long owner = Block.OwnerId;
             for (int i = 0; i < bodies.Count; i++)
@@ -154,8 +194,9 @@ namespace SeSim.Combat
                 if (w.Teams.Relation(owner, eo) != MyRelationsBetweenPlayerAndBlock.Enemies) continue;
                 double dx = o.WorldBoundCenter.X - from.X, dy = o.WorldBoundCenter.Y - from.Y, dz = o.WorldBoundCenter.Z - from.Z;
                 double d = Math.Sqrt(dx * dx + dy * dy + dz * dz);
-                if (d - o.BoundRadius > Range) continue;
+                if (d - o.BoundRadius > eff) continue;            // new targets: grid AABB distance (bound sphere here)
                 bool has = prefer && Decoys.HasWorking(w, o);
+                if (keep && !has) continue;                          // only a decoy body replaces the kept target
                 if (bestHas && !has) continue;                       // a body with a working decoy beats any body without
                 if (has == bestHas && d >= bestD) continue;
                 // line of sight: first block hit must belong to an enemy body
@@ -171,6 +212,7 @@ namespace SeSim.Combat
                 }
                 best = o; bestD = d; bestHas = has;
             }
+            if (keep && best == null) return;                     // no decoy body found: stay on the kept target
             if (!ReferenceEquals(best, TargetBody))
             {
                 TargetBody = best;

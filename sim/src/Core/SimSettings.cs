@@ -42,9 +42,16 @@ namespace SeSim.Core
         /// <summary>false (default): thrust acts through the centre of mass like the game (MyEntityThrustComponent applies the summed
         /// thrust at CenterOfMassWorld, so thruster placement never turns a ship). true: per-thruster r x F torque.</summary>
         public bool ThrusterTorque = false;
-        /// <summary>[I] Large turret engagement range = its ammo's max range (artillery 2000 m, assault cannon 1400 m) when true;
-        /// a flat 800 m (the turret blocks' MaxRangeMeters) when false. Gatling/rocket turrets are 800 m either way.</summary>
-        public bool TurretRangeFromAmmo = true;
+        /// <summary>Large turret range model. false (default, the game): an AI turret on its own picks and fires at targets only inside
+        /// its Range setting (blueprint "Range", capped at the definition's MaxRangeMeters: 800 m for every large-grid turret including
+        /// artillery and assault cannon, 600 m small grid); a working AI Offensive/Defensive block on its grid lets it use the ammo's
+        /// full range (TurretAiBlockExtendsRange; a player's target lock does the same in the game, never in the sim).
+        /// true: every turret always reaches its ammo range (artillery 2000 m, assault cannon 1400 m), the old worst case.</summary>
+        public bool TurretRangeFromAmmo = false;
+        public bool TurretAiBlockExtendsRange = true;
+        /// <summary>Turn rates and elevation limits per turret type from the definitions (artillery 0.2 rad/s, assault cannon 0.4,
+        /// gatling 1.5, missile 1.0; elevation e.g. artillery -15..60 deg). false = TurretSlewRadPerSec / TurretMinElevationDeg for all.</summary>
+        public bool TurretLimitsFromData = true;
         public bool GyroscopicTerm = false;                      // add -w x (I w) to the angular acceleration (design: off, Havok-like approximation not needed)
         public double CollisionRestitution = 0.2;                // body-body contact impulse restitution
         public int CollisionMinBlocks = 4;                       // bodies with fewer live blocks (debris) do not collide

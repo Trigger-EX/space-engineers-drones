@@ -24,7 +24,8 @@ raycasts that line with the drone's cameras and drills into the hull point it hi
 
 1. Build or paste any ship of yours with a turret. Rename the turret so its name contains `[Seeker]`. Put `SeekerProbe.cs` in a
    Programmable Block on the same grid and press Run once.
-2. Get an **enemy** ship (pirate, or one of your ships given to an enemy NPC faction) within the turret's range.
+2. Get an **enemy** ship (pirate, or one of your ships given to an enemy NPC faction) within the turret's range (800 m for a
+   large-grid turret, 600 m small grid, unless an AI combat block on your ship is on).
 3. Read the PB screen (it updates every second):
    - `group PowerSystems` means the script could set the targeting group. `SET FAILED: ...` means it could not: send the text.
    - `target <name> ... aimed True`: the turret has locked on.
@@ -40,7 +41,13 @@ raycasts that line with the drone's cameras and drills into the hull point it hi
 
 ## Test B: the Longbow L Seeker in a fight
 
-1. Paste a `Longbow L Seeker` 1.5 to 2 km from an enemy ship and load artillery shells into its turret. Run `hunt`.
+**Range:** an AI-controlled turret on its own only picks targets within its Range setting, at most **800 m** for every large-grid
+turret (artillery included; 600 m small grid). Its ammo reaches further (artillery 2 km) only when an AI Offensive / Defensive
+block on the ship is working, or a pilot target-locks. The drone script switches its AI blocks off once it has its own lock, so
+for this test either fight inside 800 m, or keep the AI Offensive block switched on (AI Behavior ticked) and watch whether the
+turret then engages from 1.5-2 km. Either result is useful: say which you did.
+
+1. Paste a `Longbow L Seeker` 700 m (or, with the AI block on, 1.5-2 km) from an enemy ship and load artillery shells into its turret. Run `hunt`.
 2. Its PB screen shows `Aim: BREACH (N hull pts) hole N m (seeker)` once the seeker drives the aim, and a `Seek:` line:
    - `aim ray, N m under hull` or `block pos given, ...`: working.
    - `turret has no target (group ...)`: the turret has not picked the ship (out of range, no ammo, or not an enemy).

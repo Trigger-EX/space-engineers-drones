@@ -267,9 +267,14 @@ namespace SeSim.Combat
                     b.Weapon = u; Weapons.Add(u);
                     if (d.Kind == "LargeTurretBase")
                     {
-                        float range = 800f;
-                        if (w.Settings.TurretRangeFromAmmo && d.Weapon.Ammo != null && d.Weapon.Ammo.MaxTrajectory > 0) range = d.Weapon.Ammo.MaxTrajectory;
+                        // Range setting: the blueprint's <Range>, capped at the definition's MaxRangeMeters (default = the cap)
+                        float cap = d.TurretMaxRange > 0 ? d.TurretMaxRange : 800f;
+                        float range = b.Src != null ? (float)b.Src.PropNum("Range", cap) : cap;
+                        if (range > cap || range <= 0) range = cap;
                         var t = new TurretUnit(b, u, range);
+                        t.MaxRange = cap;
+                        t.AmmoRange = d.Weapon.Ammo != null && d.Weapon.Ammo.MaxTrajectory > 0 ? (float)d.Weapon.Ammo.MaxTrajectory : cap;
+                        if (w.Settings.TurretSubsystemTargeting && b.Src != null) t.TargetingGroup = b.Src.Prop("TargetingGroup", "") ?? "";
                         b.Turret = t; Turrets.Add(t);
                     }
                     break;

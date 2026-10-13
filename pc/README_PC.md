@@ -20,7 +20,7 @@ If a line fails, send `results\machine.txt` and the failing `results\<name>\log.
 ## Your own ship vs the drones ("1vX", `plans/enemy.plan`)
 `enemies\Tech Hunter\bp.sbc` is shipped. The plan pits it alone against 1, 2, 3, 4, 6, 8, 12, 16 and 24 of every armed drone model and the 4 mixed teams:
 main run (ship flown like the pirate: closes in, circles at 700 m), a "holds position" run, 15-minute fights against the Longbow snipers,
-an 800 m turret-range robustness run, and three traces. Roughly 2-5 hours on a 14-core PC; resumable like the default plan.
+a full-ammo-range turret robustness run (turrets as if a pilot target-locked: artillery 2 km), and three traces. Roughly 2-5 hours on a 14-core PC; resumable like the default plan.
 - Windows: open a command prompt in the pack folder and run `run.bat -Plan plans\enemy.plan`, then `pack_results.bat`.
 - Linux Mint: `./run_mint.sh plans/enemy.plan` (packs `SE_results.zip` at the end).
 - Another ship: copy its blueprint folder (with `bp.sbc`) from `%AppData%\SpaceEngineers\Blueprints\local` into `enemies\`. Every folder there is used.

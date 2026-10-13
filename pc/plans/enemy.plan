@@ -12,8 +12,9 @@ enemy-main | run --enemies enemies --kind enemy --enemy-counts 1,2,3,4,6,8,12,16
 enemy-hold | run --enemies enemies --kind enemy --enemy-brain hold --enemy-counts 1,2,3,4,6,8,12,16,24 --seeds 50 --resume --out {OUT}
 # --- 3. long fights for the snipers (Longbows outrange the turrets: 5 minutes ends in a draw) ---
 enemy-long | run --enemies enemies --kind enemy --filter "Longbow" --enemy-counts 1,2,3,4,6,8,12,16,24 --cap-seconds 900 --seeds 30 --resume --out {OUT}
-# --- 4. robustness: all large turrets limited to 800 m instead of their ammo range (artillery 2000 m, assault cannon 1400 m) ---
-enemy-turret800 | run --enemies enemies --kind enemy --enemy-counts 1,3,6,12 --turret-range-from-ammo false --seeds 50 --resume --out {OUT}
+# --- 4. robustness: turrets reach their full ammo range (artillery 2000 m, assault cannon 1400 m), as if a pilot's target lock or an
+#        AI combat block directed them. Default since v2.6 = the game's own AI turret range: 800 m (MaxRangeMeters) without an AI block ---
+enemy-turretammo | run --enemies enemies --kind enemy --enemy-counts 1,3,6,12 --turret-range-from-ammo true --seeds 50 --resume --out {OUT}
 # --- 5. trajectories (small CSVs I can plot) ---
 trace-th-6hornet | one --enemies enemies --scenario "enemy/Tech Hunter-vs-6xHornet" --seed-index 0 --trace {OUT}/t.csv --trace-every 6
 trace-th-12gnat | one --enemies enemies --scenario "enemy/Tech Hunter-vs-12xGnat" --seed-index 0 --trace {OUT}/t.csv --trace-every 6

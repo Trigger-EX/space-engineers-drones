@@ -66,10 +66,29 @@ namespace SeSim.Combat
             Guarded("sim-fix: collision damage and contact episodes", TestCollisionFix);
             Guarded("sim-fix: decoys", TestDecoys);
             Guarded("sim-fix: unique hit ids, railgun capacitor data, AI search range", TestSimFixMisc);
+            Guarded("turret limits from the definitions (range, turn rate, elevation)", TestTurretLimits);
             Guarded("determinism", TestDeterminism);
             Guarded("speed", TestSpeed);
             Console.WriteLine(_fail == 0 ? "SelfTestC passed (" + _pass + " checks, " + sw.ElapsedMilliseconds + " ms)" : "SelfTestC FAILED: " + _fail + " of " + (_pass + _fail));
             return _fail;
+        }
+
+        /// <summary>CubeBlocks.sbc: every large-grid AI turret targets out to 800 m (MaxRangeMeters), small-grid 600 m; the ammo goes
+        /// further (artillery 2000 m, assault cannon 1400 m), which only a working AI combat block (or a player lock) unlocks.</summary>
+        static void TestTurretLimits()
+        {
+            var db = Defs();
+            var art = db.Get("LargeMissileTurret", "LargeCalibreTurret");
+            var ac = db.Get("LargeMissileTurret", "LargeBlockMediumCalibreTurret");
+            var gat = db.Get("LargeGatlingTurret", "");
+            var sg = db.Get("LargeGatlingTurret", "SmallGatlingTurret");
+            Check(art.TurretMaxRange == 800 && ac.TurretMaxRange == 800 && gat.TurretMaxRange == 800, "large turrets MaxRangeMeters 800 (artillery " + art.TurretMaxRange + ", assault cannon " + ac.TurretMaxRange + ")");
+            Check(sg.TurretMaxRange == 600, "small gatling turret MaxRangeMeters 600 (" + sg.TurretMaxRange + ")");
+            Check(Math.Abs(art.Weapon.Ammo.MaxTrajectory - 2000) < 1 && Math.Abs(ac.Weapon.Ammo.MaxTrajectory - 1400) < 1, "ammo reach artillery 2000 / assault cannon 1400");
+            Check(Math.Abs(art.TurretRotRadS - 0.2) < 1e-4 && Math.Abs(ac.TurretRotRadS - 0.4) < 1e-4 && Math.Abs(gat.TurretRotRadS - 1.5) < 1e-4, "turn rates (rad/ms x 1000): artillery 0.2, assault cannon 0.4, gatling 1.5 rad/s");
+            Check(art.TurretMinElevDeg == -15 && art.TurretMaxElevDeg == 60, "artillery elevation -15..60 deg");
+            var s = new SimSettings();
+            Check(!s.TurretRangeFromAmmo && s.TurretAiBlockExtendsRange && s.TurretLimitsFromData, "defaults: game range model, AI block extends, limits from data");
         }
 
         static void Guarded(string name, Action a)
