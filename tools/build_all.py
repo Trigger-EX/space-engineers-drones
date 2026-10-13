@@ -26,7 +26,7 @@ import designs                                   # noqa: E402  (puts tools/desig
 import sebp                                      # noqa: E402
 import _common as C                              # noqa: E402
 
-VERSION = '2.5'
+VERSION = '2.6'
 PKG_DIR = os.path.join(ROOT, 'packages')
 SCRIPTS_DIR = os.path.join(ROOT, 'scripts')
 AXES = ('Forward', 'Backward', 'Up', 'Down', 'Left', 'Right')
@@ -70,7 +70,7 @@ COMMAND_DOC = {
     'guard': 'hold the home point, engage anything inside Guard Radius', 'hunt': 'chase and engage any target, actively scan',
     'assist': 'you fly, the script aims and fires', 'rtb': 'fly home, then idle', 'idle': 'release all control (`stop` is an alias)',
     'lock': 'raycast-lock whatever the nose camera points at', 'unlock': 'drop the current target', 'next': 'ignore the current target for 60 s',
-    'split': 'split targets across the hive', 'focus': 'focus fire', 'ai': '`ai on|off` AI-block search assist', 'aim': '`aim <mode>` aim point',
+    'split': 'split targets across the hive', 'focus': 'focus fire', 'ai': '`ai on|off` AI-block search assist', 'aim': '`aim <mode>` aim point (AUTO / BREACH / ENGINES / FACING / SPREAD / CENTER)', 'breach': '`breach on|off` AUTO drills one hole into big ships (v2.6)', 'seeker': '`seeker on|off` let a [Seeker] turret guide the aim (v2.6, experimental)',
     'aialert': 'treat the AI-block alert as raised', 'home': 'set the home point to the current position', 'range': '`range <m>` set the standoff',
     'reload': 're-read Custom Data and re-scan blocks', 'start': 'start printing',
     'max': '`max <n>` set Max Drones', 'release': '`release [bay]` release finished drones', 'hold': '`hold <bay>` keep a bay paused',
