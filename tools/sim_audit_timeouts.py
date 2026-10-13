@@ -6,9 +6,7 @@ rows = [json.loads(l) for l in open(path)]
 
 def cls(r):
     """Classify a timeout by what the armed ships did."""
-    armed = [s for s in r['ships'] if s['shots'] > 0 or s['capable'] or s['model'] not in ('Watcher',)]
     tot_shots = sum(s['shots'] for s in r['ships'])
-    mind = min(s['min_enemy_dist_m'] for s in r['ships'])
     if tot_shots == 0:
         return 'no shot fired (never in range)'
     return 'shots fired but no kill'

@@ -1,6 +1,6 @@
 """Extract game-written block shapes from a real blueprint into tools/shapes.json.
 
-  python3 -I tools/extract_shapes.py ref/Starburst/bp.sbc tools/shapes.json
+  python3 -I tools/extract_shapes.py ref/user-samples/Starburst/bp.sbc tools/shapes.json
 
 For every block type we use that the game itself serialized in the reference ship, keep what the game writes
 AFTER the instance fields (everything instance specific is removed): the ComponentContainer, DeformationRatio,
@@ -8,7 +8,7 @@ and the derived-class fields after <Enabled>.  Entity ids, toolbars, waypoints, 
 result is a clean "freshly placed block" template.  Keys are "Type/Subtype" (subtype of the smallest exemplar)
 plus "Type/*" (smallest exemplar of the type).  Exemplars from nested <ProjectedGrids> are ignored.
 """
-import sys, os, json, re
+import sys, os, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import xml.etree.ElementTree as ET
 import sebp

@@ -417,7 +417,7 @@ def _f(v):
 
 
 def write_md(res, path):
-    b, wd, am, mg, K = res['blocks'], res['weapons'], res['ammo'], res['magazines'], res['constants']
+    b, wd, K = res['blocks'], res['weapons'], res['constants']
     L = []
     w = L.append
     w('# Block and weapon stats (generated)')
@@ -445,7 +445,6 @@ def write_md(res, path):
     def row(k, extra=''):
         e = b[k]
         i = e['integrity']
-        crit = i['integrity_before_critical_component']
         return '| `%s` | %s | %s | %s | %s | %s | %s%s | %s |' % (
             k, 'x'.join(str(x) for x in e['size_cells']), _f(e['mass_kg']), _f(e['pcu']), _f(e['build_time_s']),
             _f(i['sum_of_components']), _f(i['explicit_MaxIntegrity_override']) if i['explicit_MaxIntegrity_override'] else '',

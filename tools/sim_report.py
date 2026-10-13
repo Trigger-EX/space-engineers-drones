@@ -204,7 +204,6 @@ def section_groups(runs):
         rows = []
         for name, l in sorted(by_scenario(rs).items()):
             n, wa, wb, dr, to, er, tt = scenario_row(name, l)
-            r0 = l[0]
             rows.append([name.split("/", 1)[1], n, pct(wa, n), pct(wb, n), pct(dr, n), pct(to, n), er,
                          fnum(tt), fnum(hits_per_shot(l, 0) and hits_per_shot(l, 0) * 100) , fnum(hits_per_shot(l, 1) and hits_per_shot(l, 1) * 100)])
         out.append(table(["scenario (A-vs-B)", "runs", "A wins", "B wins", "draw", "timeout", "err", "median ttk s", "A hit%", "B hit%"], rows))

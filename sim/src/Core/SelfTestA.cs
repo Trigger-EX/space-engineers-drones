@@ -12,6 +12,13 @@ using SeSim.Blueprint;
 
 namespace SeSim.Core
 {
+    /// <summary>Counts self-test sections that did not run (missing blueprints, scripts, ...); `selftest --strict` fails when it is not 0.</summary>
+    public static class SelfTestSkips
+    {
+        public static int Count;
+        public static void Note(string msg) { Count++; Console.WriteLine("  SKIP " + msg); }
+    }
+
     public static class SelfTestA
     {
         static int _fail, _pass;
@@ -784,7 +791,7 @@ namespace SeSim.Core
             BlockDef gat = defs.Get("SmallGatlingGun", "");
             Check(gat.Weapon != null && gat.Weapon.RateOfFireRpm == 700 && gat.Weapon.Ammo.MassDamage == 90 && !gat.Weapon.Ammo.IsMissile && gat.Weapon.MagazineCapacity == 140, "DefDb: gatling 700 rpm, 90 dmg/hit, magazine 140");
             Check(defs.Get("Projector", "SmallProjector") != null, "DefDb: MyObjectBuilder_ prefixed keys resolve (Projector)");
-            if (!Directory.Exists(bpDir)) { Info("out/Blueprints missing: blueprint tests skipped (python3 -I tools/build_all.py)"); return; }
+            if (!Directory.Exists(bpDir)) { SelfTestSkips.Note("out/Blueprints missing: blueprint tests skipped (python3 -I tools/build_all.py)"); return; }
             var sw = Stopwatch.StartNew();
             var bp = BlueprintLoader.Get(bpDir, "Hornet");
             Info("Hornet bp loaded in " + sw.ElapsedMilliseconds + " ms");
@@ -896,7 +903,7 @@ namespace SeSim.Core
                 }
                 Check(rows >= 20 && bad == 0, "all " + rows + " Full models of out/dist/MODELS.md: block count, mass and six-direction acceleration match the python tools" + (firstBad != null ? " (first mismatch: " + firstBad + ")" : ""));
             }
-            else Info("out/dist/MODELS.md missing: model cross-check skipped");
+            else SelfTestSkips.Note("out/dist/MODELS.md missing: model cross-check skipped");
 
             // engine cost: Hornet with script-like gyro writes and thruster commands
             {

@@ -1,6 +1,6 @@
 """Space Engineers blueprint builder with real-definition validation and game-shaped XML.
 
-Public API (backward compatible with tools/drones.py): Blueprint(name, grid, seed), .add(), .armor(),
+Public API (the old tools/drones.py shim was removed): Blueprint(name, grid, seed), .add(), .armor(),
 .keep_clear(), .validate(), .write(outdir, display), .stats(), .thumb(path, title, subtitle, palette).
 New: Blueprint.from_sbc(path) / load_sbc(path) (read any game-written blueprint), .attachment(),
 .dlc_used(), .build_xml(), per-block `settings={}` and `links`, see docs/xml-notes.md.

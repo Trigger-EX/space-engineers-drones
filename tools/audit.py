@@ -126,7 +126,7 @@ if __name__ == '__main__':
         controls([x for x in sys.argv[1:] if not x.startswith('--')][0]); sys.exit(0)
     if '--shape' in sys.argv:
         a = [x for x in sys.argv[1:] if not x.startswith('--')]
-        ref = a[1] if len(a) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ref', 'Starburst', 'bp.sbc')
+        ref = a[1] if len(a) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ref', 'user-samples', 'Starburst', 'bp.sbc')
         print(f'shape check {a[0]} against {ref}')
         sys.exit(1 if shape_diff(a[0], ref) else 0)
     args = [a for a in sys.argv[1:] if os.path.isfile(a) or a.startswith('--')]

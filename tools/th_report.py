@@ -7,7 +7,7 @@ Per fleet and mode: mean over seeds of what the drones destroyed on the enemy sh
 engines, batteries), powered weapons, thrusters, all blocks; whether it was knocked out (not combat capable); drones left.
 Also a least-squares split of "power blocks destroyed" into a per-drone contribution of each model (all modes pooled per mode).
 """
-import json, sys, collections, re
+import json, sys, collections
 
 def load(d):
     rows = []

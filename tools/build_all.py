@@ -9,13 +9,13 @@
    defs_stats.json, the written XML (well formed, no <DLC>, no <IsStatic>, block count, unique block ids and names, Program present for
    scripted ships) and a reload of the written file through sebp.load_sbc (every CubeGrid, projected ones included, must validate),
    plus cross-checks (unique folder names and blueprint ids),
-4. writes out/dist/MODELS.md and the zips  Drones_v2.0_Full / Drones_v2.0_Lite / Printers_v2.0_Full / Printers_v2.0_Lite /
-   SpaceEngineers_Drones_v2.0_All  (Blueprints/, Scripts/, README.md).  README text comes from packages/*.md and *.tmpl.
+4. writes out/dist/MODELS.md and the zips  Drones_v<VERSION>_Full / Drones_v<VERSION>_Lite / Printers_v<VERSION>_Full / Printers_v<VERSION>_Lite /
+   SpaceEngineers_Drones_v<VERSION>_All  (Blueprints/, Scripts/, README.md).  README text comes from packages/*.md and *.tmpl.
 
 Exit code 1 if any model fails or any check fails.  The printers dominate the run time (bay solver), so models are built in parallel
 (fork pool; --jobs, default = CPU count).
 """
-import sys, os, re, json, time, zipfile, argparse, traceback
+import sys, os, re, time, zipfile, argparse, traceback
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
@@ -288,8 +288,7 @@ def scoped(name, kinds, number=False):
 
 def model_docs(kind, model):
     if kind == 'printer':
-        mod = _MODS.get('printers')
-        for m in ('printers', 'printers_timer'):
+        for m in ('printers',):
             d = getattr(_MODS.get(m), 'DOCS', {}) if _MODS.get(m) else {}
             if model in d: return d[model]
         return ''

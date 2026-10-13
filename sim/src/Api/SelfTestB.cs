@@ -495,7 +495,7 @@ namespace SeSim.Api
             string root = System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(SelfTestB).Assembly.Location), "..", ".."));
             string bpDir = System.IO.Path.Combine(root, "out/Blueprints"), defs = System.IO.Path.Combine(root, "defs_stats.json");
             if (!System.IO.File.Exists(System.IO.Path.Combine(bpDir, "Hornet/bp.sbc")) || !System.IO.File.Exists(defs))
-            { _skips++; Console.WriteLine("  SKIP out/Blueprints/Hornet missing (run tools/build_all.py): blueprint section not run"); return; }
+            { _skips++; SeSim.Core.SelfTestSkips.Count++; Console.WriteLine("  SKIP out/Blueprints/Hornet missing (run tools/build_all.py): blueprint section not run"); return; }
             var w = new World(new SimSettings(), DefDb.Load(defs), 3UL, true);
             w.Teams.Init(2);
             var bp = BlueprintLoader.Get(bpDir, "Hornet");

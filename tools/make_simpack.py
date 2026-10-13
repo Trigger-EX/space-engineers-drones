@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds releases/SE_SimPack_<rev>.zip: precompiled simulator + blueprints + data + plans + runners (see pc/README_PC.md).
 Run after: bash sim/build.sh && python3 -I tools/build_all.py"""
-import os, sys, zipfile, subprocess, glob
+import os, zipfile, subprocess, glob
 R = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 rev = subprocess.run(["git", "-C", R, "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip() or "dev"
 out = os.path.join(R, "releases", f"SE_SimPack_{rev}.zip")

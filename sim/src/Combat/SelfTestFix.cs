@@ -156,7 +156,7 @@ namespace SeSim.Combat
 
             // AI search range: a Midge at 3000 m sees nothing with the data range 2500, sees the dummy with VanillaSearchRange 3500
             string bpDir = Path.Combine(Root(), "out", "Blueprints");
-            if (!File.Exists(Path.Combine(bpDir, "Midge", "bp.sbc"))) { Info("out/Blueprints/Midge missing: search range test skipped"); return; }
+            if (!File.Exists(Path.Combine(bpDir, "Midge", "bp.sbc"))) { SeSim.Core.SelfTestSkips.Note("out/Blueprints/Midge missing: search range test skipped"); return; }
             foreach (double range in new[] { 2500.0, 3500.0 })
             {
                 var s = new SimSettings { VanillaSearchRange = range, VanillaSearchIntervalS = 2 };

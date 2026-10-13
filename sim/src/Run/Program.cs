@@ -54,8 +54,8 @@ namespace SeSim.Run
             public double Dbl(string k, double d) { string v; if (!Kv.TryGetValue(k, out v)) return d; double r; if (!double.TryParse(v, NumberStyles.Float, Inv, out r)) throw new ArgumentException("--" + k + " needs a number"); return r; }
         }
 
-        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights" };
+        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless", "allow-mismatch" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -116,8 +116,11 @@ namespace SeSim.Run
                 {
                     // groups: physics (A), api (B), combat (C), runner (D), scenario (3 real duels end to end), all.
                     // No group = physics+api+combat+runner; "scenario" alone = those four plus the duels (old behaviour).
+                    // --strict: a section that could not run (missing blueprints / scripts / ilcount) counts as a failure
                     var groups = new HashSet<string>();
                     for (int i = 1; i < args.Length; i++) groups.Add(args[i].TrimStart('-').ToLowerInvariant());
+                    bool strict = groups.Remove("strict");
+                    SelfTestSkips.Count = 0;
                     foreach (string g in groups)
                         if (g != "physics" && g != "api" && g != "combat" && g != "runner" && g != "audit" && g != "scenario" && g != "all")
                             throw new ArgumentException("unknown selftest group '" + g + "' (physics, api, combat, runner, audit, scenario, all)");
@@ -129,7 +132,8 @@ namespace SeSim.Run
                     if (all || groups.Contains("audit")) f += SeSim.Core.SelfTestAudit.Run();
                     if (all || groups.Contains("runner")) f += SelfTestD.Run(simDir);
                     if (groups.Contains("scenario") || groups.Contains("all")) f += SelfTestD.RunScenarioTests(simDir, FindRepoRoot(null));
-                    Console.WriteLine(f == 0 ? "SELFTEST OK" : "SELFTEST FAILURES: " + f);
+                    if (strict && SelfTestSkips.Count > 0) { Console.WriteLine("SELFTEST --strict: " + SelfTestSkips.Count + " section(s) skipped"); f++; }
+                    Console.WriteLine(f == 0 ? "SELFTEST OK" + (SelfTestSkips.Count > 0 ? " (" + SelfTestSkips.Count + " sections skipped; --strict fails on that)" : "") : "SELFTEST FAILURES: " + f);
                     return f == 0 ? 0 : 1;
                 }
                 case "list":
@@ -271,11 +275,20 @@ namespace SeSim.Run
 
         static List<RunResult> LoadRuns(string path)
         {
+            // a retried error run appends a second line for the same scenario and seed: the last line wins
             var rs = new List<RunResult>();
+            var at = new Dictionary<string, int>();
             foreach (string line in File.ReadLines(path))
             {
                 if (line.Length < 2) continue;
-                try { rs.Add(JsonOut.ParseRun(line)); } catch (Exception e) { Console.Error.WriteLine("skipping unreadable line: " + e.Message); }
+                try
+                {
+                    var r = JsonOut.ParseRun(line);
+                    string k = ParallelRunner.RunKey(r.Scenario, r.SeedIndex);
+                    int i;
+                    if (at.TryGetValue(k, out i)) rs[i] = r; else { at[k] = rs.Count; rs.Add(r); }
+                }
+                catch (Exception e) { Console.Error.WriteLine("skipping unreadable line: " + e.Message); }
             }
             return rs;
         }
@@ -392,10 +405,11 @@ namespace SeSim.Run
             if (o.Has("resume") && File.Exists(runsPath))
             {
                 skip = new HashSet<string>();
-                foreach (var r in LoadRuns(runsPath)) skip.Add(ParallelRunner.RunKey(r.Scenario, r.SeedIndex));
-                Console.Error.WriteLine("resume: " + skip.Count + " runs already in " + runsPath);
+                int retry = 0;
+                foreach (var r in LoadRuns(runsPath)) { if (r.Outcome == "error") retry++; else skip.Add(ParallelRunner.RunKey(r.Scenario, r.SeedIndex)); }
+                Console.Error.WriteLine("resume: " + skip.Count + " runs already in " + runsPath + (retry > 0 ? ", " + retry + " error runs will be run again" : ""));
             }
-            WriteMeta(Path.Combine(outDir, "meta.json"), args, settings, repo, simDir, scenarios.Count, jobs.Count, seeds, baseSeed, threads, shard);
+            SetMeta(o, skip != null, Path.Combine(outDir, "meta.json"), args, settings, repo, simDir, scenarios.Count, jobs.Count, seeds, baseSeed, threads, shard);
             Console.Error.WriteLine(scenarios.Count + " scenarios x " + seeds + " seeds = " + jobs.Count + " runs on " + threads + " threads -> " + outDir);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             ParallelRunner.Run(jobs, threads, baseSeed, settings, repo, outDir, skip, o.Has("quiet"));
@@ -417,8 +431,8 @@ namespace SeSim.Run
             Directory.CreateDirectory(outDir);
             string runsPath = Path.Combine(outDir, "runs.jsonl");
             var skip = new HashSet<string>();
-            if (File.Exists(runsPath)) foreach (var r in LoadRuns(runsPath)) skip.Add(ParallelRunner.RunKey(r.Scenario, r.SeedIndex));
-            WriteMeta(Path.Combine(outDir, "meta.json"), args, settings, repo, simDir, scenarios.Count, -1, -1, baseSeed, threads, null);
+            if (File.Exists(runsPath)) foreach (var r in LoadRuns(runsPath)) if (r.Outcome != "error") skip.Add(ParallelRunner.RunKey(r.Scenario, r.SeedIndex));
+            SetMeta(o, File.Exists(runsPath), Path.Combine(outDir, "meta.json"), args, settings, repo, simDir, scenarios.Count, -1, -1, baseSeed, threads, null);
             Console.Error.WriteLine(scenarios.Count + " matchups, endless, " + threads + " threads -> " + outDir + (skip.Count > 0 ? " (continuing after " + skip.Count + " earlier fights)" : ""));
             Console.Error.WriteLine("Press Enter to stop: fights in progress finish and everything is saved. Press Enter twice to stop at once.");
             ParallelRunner.RunEndless(scenarios, seedStart, threads, baseSeed, settings, repo, outDir, skip);
@@ -471,12 +485,77 @@ namespace SeSim.Run
             Directory.CreateDirectory(fsr.OutDir);
             string runsPath = Path.Combine(fsr.OutDir, "runs.jsonl");
             var earlier = File.Exists(runsPath) ? LoadRuns(runsPath) : new List<RunResult>();
-            WriteMeta(Path.Combine(fsr.OutDir, "meta.json"), args, settings, repo, simDir, 0, -1, -1, fsr.BaseSeed, fsr.Threads, null);
+            SetMeta(o, File.Exists(runsPath), Path.Combine(fsr.OutDir, "meta.json"), args, settings, repo, simDir, 0, -1, -1, fsr.BaseSeed, fsr.Threads, null);
             fsr.Run(earlier);
             return 0;
         }
 
-        static void WriteMeta(string path, string[] args, SimSettings s, string repo, string simDir, int scenarios, int jobs, int seeds, ulong baseSeed, int threads, string shard)
+        // Run provenance. Resuming into a runs.jsonl made with other scripts, blueprints, engine settings or scenario overrides would
+        // mix incomparable runs, so meta.json records them and --resume (and endless / search, which always resume) refuses on a mismatch
+        // unless --allow-mismatch is given. Not part of it: seeds, seed-start, jobs, shard, filter, out and the other run-control options.
+        static readonly HashSet<string> NotProvenance = new HashSet<string> { "filter", "kind", "seeds", "seed-start", "jobs", "shard", "out", "batch", "resume", "quiet", "no-summary", "profile",
+            "trace", "trace-every", "echo", "echo-every", "echo-ship", "repo", "in", "endless", "scenario", "seed-index", "allow-mismatch" };
+
+        sealed class Prov { public string Head, ScriptsHash, BlueprintsHash, Key; public List<string> Overrides = new List<string>(); }
+
+        static string Fnv(IEnumerable<byte[]> parts)
+        {
+            ulong h = 14695981039346656037UL;
+            foreach (var b in parts) { for (int i = 0; i < b.Length; i++) { h ^= b[i]; h *= 1099511628211UL; } h ^= 0xFF; h *= 1099511628211UL; }
+            return h.ToString("x16", Inv);
+        }
+
+        static Prov MakeProv(Opts o, SimSettings s, string repo, string simDir)
+        {
+            var p = new Prov();
+            p.Head = "unknown";
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("git", "-C \"" + repo + "\" rev-parse HEAD") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+                using (var pr = System.Diagnostics.Process.Start(psi)) { string h = pr.StandardOutput.ReadToEnd().Trim(); pr.WaitForExit(); if (pr.ExitCode == 0 && h.Length > 0) p.Head = h; }
+            }
+            catch (Exception) { }
+            var parts = new List<byte[]>();
+            foreach (var kv in ScriptRegistry.ManifestEntries(simDir)) { parts.Add(Encoding.UTF8.GetBytes(kv.Key)); parts.Add(Encoding.UTF8.GetBytes(kv.Value)); }
+            p.ScriptsHash = Fnv(parts);
+            parts.Clear();
+            string bpDir = Path.Combine(Path.Combine(repo, "out"), "Blueprints");
+            if (Directory.Exists(bpDir))
+            {
+                string[] files = Directory.GetFiles(bpDir, "*.sbc", SearchOption.AllDirectories);
+                Array.Sort(files, StringComparer.Ordinal);
+                foreach (string f in files) { parts.Add(Encoding.UTF8.GetBytes(f.Substring(bpDir.Length))); parts.Add(File.ReadAllBytes(f)); }
+            }
+            p.BlueprintsHash = Fnv(parts);
+            var keys = new List<string>(o.Kv.Keys);
+            keys.Sort(StringComparer.Ordinal);
+            foreach (string k in keys) if (!NotProvenance.Contains(k)) p.Overrides.Add(k + "=" + o.Kv[k]);
+            p.Key = Fnv(new List<byte[]> { Encoding.UTF8.GetBytes(s.Hash()), Encoding.UTF8.GetBytes(p.ScriptsHash), Encoding.UTF8.GetBytes(p.BlueprintsHash), Encoding.UTF8.GetBytes(string.Join("\n", p.Overrides)) });
+            return p;
+        }
+
+        /// <summary>Writes meta.json for a fresh output directory. When resuming it keeps the existing meta.json (the first run's record) after checking
+        /// that this run has the same provenance; an old meta.json without provenance only gives a warning.</summary>
+        static void SetMeta(Opts o, bool resuming, string path, string[] args, SimSettings s, string repo, string simDir, int scenarios, int jobs, int seeds, ulong baseSeed, int threads, string shard)
+        {
+            var prov = MakeProv(o, s, repo, simDir);
+            if (resuming && File.Exists(path))
+            {
+                string old = null;
+                try { old = MiniJson.Str(MiniJson.Parse(File.ReadAllText(path)), "provenance_key", null); } catch (Exception) { }
+                if (old == null) { Console.Error.WriteLine("resume: meta.json has no provenance record (older run), cannot check that scripts, blueprints and settings are unchanged"); return; }
+                if (old != prov.Key)
+                {
+                    string msg = "resume: this run differs from the one that started " + Path.GetDirectoryName(path) + " (scripts, blueprints, engine settings or scenario options changed; now git " + prov.Head + ", scripts " + prov.ScriptsHash + ", blueprints " + prov.BlueprintsHash + ")";
+                    if (!o.Has("allow-mismatch")) throw new ArgumentException(msg + ". Use a new --out, or --allow-mismatch to mix them anyway");
+                    Console.Error.WriteLine("WARNING: " + msg + "; continuing because of --allow-mismatch");
+                }
+                return;
+            }
+            WriteMeta(path, args, s, repo, simDir, scenarios, jobs, seeds, baseSeed, threads, shard, prov);
+        }
+
+        static void WriteMeta(string path, string[] args, SimSettings s, string repo, string simDir, int scenarios, int jobs, int seeds, ulong baseSeed, int threads, string shard, Prov prov)
         {
             var sb = new StringBuilder();
             sb.Append("{\n");
@@ -486,6 +565,10 @@ namespace SeSim.Run
               .Append(", \"base_seed\": ").Append(baseSeed.ToString(Inv)).Append(", \"threads\": ").Append(threads).Append(",\n");
             sb.Append("  \"shard\": "); Q(sb, shard); sb.Append(",\n");
             sb.Append("  \"settings_hash\": "); Q(sb, s.Hash()); sb.Append(",\n");
+            sb.Append("  \"git_head\": "); Q(sb, prov.Head); sb.Append(",\n");
+            sb.Append("  \"scripts_hash\": "); Q(sb, prov.ScriptsHash); sb.Append(", \"blueprints_hash\": "); Q(sb, prov.BlueprintsHash); sb.Append(",\n");
+            sb.Append("  \"overrides\": ["); for (int i = 0; i < prov.Overrides.Count; i++) { if (i > 0) sb.Append(", "); Q(sb, prov.Overrides[i]); } sb.Append("],\n");
+            sb.Append("  \"provenance_key\": "); Q(sb, prov.Key); sb.Append(",\n");
             sb.Append("  \"settings\": {");
             bool first = true;
             foreach (string line in s.Describe().Split('\n'))

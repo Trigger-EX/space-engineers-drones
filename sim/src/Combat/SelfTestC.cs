@@ -645,12 +645,12 @@ namespace SeSim.Combat
         static void TestBlueprints()
         {
             string bpDir = Path.Combine(Root(), "out", "Blueprints");
-            if (!Directory.Exists(bpDir)) { Info("out/Blueprints missing: skipped"); return; }
+            if (!Directory.Exists(bpDir)) { SeSim.Core.SelfTestSkips.Note("out/Blueprints missing: weapon unit test skipped"); return; }
             string[] names = { "Aegis", "Basilisk", "Gnat", "Harrier", "Hornet", "Lancer", "Longbow L", "Longbow S", "Mantis", "Midge", "Wasp", "Watcher", "Stinger Rack" };
             int missing = 0, total = 0;
             foreach (var name in names)
             {
-                if (!File.Exists(Path.Combine(bpDir, name, "bp.sbc"))) { Info(name + ": blueprint missing, skipped"); continue; }
+                if (!File.Exists(Path.Combine(bpDir, name, "bp.sbc"))) { SeSim.Core.SelfTestSkips.Note(name + ": blueprint missing, skipped"); continue; }
                 var w = NewWorld(1, true, null);
                 var bp = BlueprintLoader.Get(bpDir, name);
                 var at = new SpawnPlacement { Origin = Vector3D.Zero, Forward = Vector3D.Forward, Up = Vector3D.Up };
@@ -751,7 +751,7 @@ namespace SeSim.Combat
         static void TestVanilla()
         {
             string bpDir = Path.Combine(Root(), "out", "Blueprints");
-            if (!File.Exists(Path.Combine(bpDir, "Midge", "bp.sbc"))) { Info("out/Blueprints/Midge missing: vanilla AI smoke test skipped"); return; }
+            if (!File.Exists(Path.Combine(bpDir, "Midge", "bp.sbc"))) { SeSim.Core.SelfTestSkips.Note("out/Blueprints/Midge missing: vanilla AI smoke test skipped"); return; }
             var s = new SimSettings { VanillaSearchIntervalS = 2 };
             var sink = new Sink();
             var w = NewWorld(31, true, sink, s);

@@ -16,8 +16,8 @@ ROOT = os.path.normpath(os.path.join(TOOLS, '..'))
 for _p in (HERE, TOOLS):
     if _p not in sys.path: sys.path.insert(0, _p)
 
-DRONE_MODULES = ('core', 'wasp', 'stinger', 'support', 'extra')
-PRINTER_MODULES = ('printers', 'printers_timer')
+DRONE_MODULES = ('core', 'wasp', 'support', 'extra')
+PRINTER_MODULES = ('printers',)
 ALL_MODULES = DRONE_MODULES + PRINTER_MODULES
 
 def load(names=ALL_MODULES):

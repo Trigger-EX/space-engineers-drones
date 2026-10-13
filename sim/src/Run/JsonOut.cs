@@ -60,6 +60,7 @@ namespace SeSim.Run
             if (timing) { KN(sb, "wall_ms", Math.Round(r.WallMs, 1)); KN(sb, "cpu_ms", Math.Round(r.CpuMs, 1)); }
             KS(sb, "settings_hash", r.SettingsHash);
             if (r.Error != null) KS(sb, "error", r.Error);
+            if (r.CaughtExceptions > 0) { KN(sb, "caught_exceptions", r.CaughtExceptions); KS(sb, "first_caught", r.FirstCaught); }
             Key(sb, "ships"); sb.Append('[');
             for (int i = 0; i < r.Ships.Count; i++)
             {
@@ -111,6 +112,7 @@ namespace SeSim.Run
             r.DurationS = SeSim.Core.MiniJson.Num(o, "duration_s", 0); r.TimeToKillS = SeSim.Core.MiniJson.Num(o, "ttk_s", -1);
             r.WallMs = SeSim.Core.MiniJson.Num(o, "wall_ms", 0); r.CpuMs = SeSim.Core.MiniJson.Num(o, "cpu_ms", 0);
             r.SettingsHash = SeSim.Core.MiniJson.Str(o, "settings_hash", ""); r.Error = SeSim.Core.MiniJson.Str(o, "error", null);
+            r.CaughtExceptions = (int)SeSim.Core.MiniJson.Num(o, "caught_exceptions", 0); r.FirstCaught = SeSim.Core.MiniJson.Str(o, "first_caught", null);
             var arr = SeSim.Core.MiniJson.Arr(o, "ships");
             if (arr != null)
                 for (int i = 0; i < arr.Count; i++)
@@ -161,7 +163,8 @@ namespace SeSim.Run
         /// then mutual_kills,stuck_runs,avg_time_on_target_A,avg_time_on_target_B,ttk_p10_s,ttk_p90_s.
         /// A = team 0 (first-named side), B = team 1. draws = mutual-kill + no-contest; timeouts are counted separately;
         /// avg_hits_per_shot = total hits / total shots of the side over all runs; avg_dmg_taken = damage taken by the side per run;
-        /// p50_ttk_s = median time until the loser was beaten over decisive wins; exceptions = script exceptions summed over runs.</summary>
+        /// p50_ttk_s = median time until the loser was beaten over decisive wins; exceptions = script exceptions (caught per tick) summed over runs.
+        /// Runs that ended in an engine error are counted in runs and errors only: every average and total uses the error-free runs.</summary>
         public static void WriteSummaryCsv(string path, IList<RunResult> results)
         {
             var groups = new List<string>(); var byName = new Dictionary<string, List<RunResult>>();
@@ -178,20 +181,20 @@ namespace SeSim.Run
             {
                 var l = byName[g];
                 int wa = 0, wb = 0, dr = 0, to = 0, er = 0, ff = 0, mk = 0, stuck = 0; long exc = 0;
-                double dur = 0, cpu = 0;
+                double dur = 0, cpu = 0; int ok = 0;
                 double[] shots = new double[2], hits = new double[2], dmg = new double[2], tot = new double[2];
                 var ttk = new List<double>();
                 for (int i = 0; i < l.Count; i++)
                 {
                     var r = l[i];
-                    dur += r.DurationS; cpu += r.CpuMs;
+                    if (r.Outcome == "error") { er++; continue; }
+                    ok++; dur += r.DurationS; cpu += r.CpuMs;
                     switch (r.Outcome)
                     {
                         case "win": if (r.WinnerTeam == 0) wa++; else if (r.WinnerTeam == 1) wb++; if (r.TimeToKillS >= 0) ttk.Add(r.TimeToKillS); break;
                         case "timeout": to++; break;
                         case "mutual-kill": dr++; mk++; break;
                         case "no-contest": dr++; break;
-                        case "error": er++; break;
                         default: dr++; break;
                     }
                     bool f = false, st = false;
@@ -204,7 +207,7 @@ namespace SeSim.Run
                     if (f) ff++; if (st) stuck++;
                 }
                 ttk.Sort();
-                int n = l.Count;
+                int n = Math.Max(1, ok);
                 sb.Append(Csv(g)).Append(',').Append(Csv(l[0].Kind)).Append(',').Append(n).Append(',').Append(wa).Append(',').Append(wb).Append(',').Append(dr).Append(',')
                   .Append(to).Append(',').Append(er).Append(',').Append(F(dur / n)).Append(',').Append(ttk.Count > 0 ? F(Pct(ttk, 0.5)) : "").Append(',')
                   .Append(shots[0] > 0 ? F(hits[0] / shots[0]) : "").Append(',').Append(shots[1] > 0 ? F(hits[1] / shots[1]) : "").Append(',')

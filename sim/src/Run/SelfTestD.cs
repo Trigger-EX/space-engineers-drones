@@ -45,7 +45,8 @@ namespace SeSim.Run
             string repo = null;
             string d = simDir;
             for (int i = 0; i < 6 && d != null; i++) { if (File.Exists(Path.Combine(d, "defs_stats.json"))) { repo = d; break; } d = Path.GetDirectoryName(d); }
-            if (repo == null) { Console.WriteLine("  skip script key test (repo root not found)"); return; }
+            if (repo == null) { SeSim.Core.SelfTestSkips.Note("script key test (repo root not found)"); return; }
+            if (!Directory.Exists(Path.Combine(repo, "scripts"))) { SeSim.Core.SelfTestSkips.Note("script key test (no scripts/ directory in " + repo + ")"); return; }
             int n = 0, bad = 0;
             foreach (string f in Directory.GetFiles(Path.Combine(repo, "scripts"), "*.cs"))
             {
@@ -69,7 +70,7 @@ namespace SeSim.Run
         /// <summary>il_profiler: the block-counting rewriter reproduces Keen's counting rules on a script whose count is known by hand.</summary>
         static void TestInstructionCount(string simDir)
         {
-            if (!File.Exists(IlInstrument.RewriterPath(simDir))) { Console.WriteLine("  skip instruction-count test (run tools/ilcount/build.sh to enable)"); return; }
+            if (!File.Exists(IlInstrument.RewriterPath(simDir))) { SeSim.Core.SelfTestSkips.Note("instruction-count test (run tools/ilcount/build.sh to enable)"); return; }
             // blocks entered: Main 1, for body 10, if body 5, else body 5, Helper (called once) 1 + its while body 3, lambda called 4 times 4, try/catch: catch 1 = 30
             string txt = "int _r; public Program() { } void Helper() { int k = 0; while (k < 3) { k++; } }\n"
                        + "public void Main(string a, UpdateType u) { for (int i = 0; i < 10; i++) { if (i % 2 == 0) _r++; else _r--; } Helper();\n"
@@ -234,7 +235,7 @@ namespace SeSim.Run
         {
             _fail = 0;
             Console.WriteLine("SelfTestD scenarios (end to end)");
-            if (!Directory.Exists(Path.Combine(Path.Combine(repo, "out"), "Blueprints"))) { Console.WriteLine("  skip: out/Blueprints missing"); return 0; }
+            if (!Directory.Exists(Path.Combine(Path.Combine(repo, "out"), "Blueprints"))) { SeSim.Core.SelfTestSkips.Note("scenario duels: out/Blueprints missing"); return 0; }
             var settings = new SimSettings();
             var opt = new RunOptions { SimDir = simDir };
             string[] names = { "1v1/Hornet-vs-Hornet", "1v1/Gnat-vs-Midge", "1v1/Stinger-vs-Wasp" };
@@ -249,7 +250,7 @@ namespace SeSim.Run
                 results.Add(r);
                 if (r.Outcome == "error" && r.Error != null && r.Error.Contains("NotImplementedException"))
                 {
-                    Console.WriteLine("  skip " + nm + ": another slot is not implemented yet: " + FirstLine(r.Error, 3));
+                    SeSim.Core.SelfTestSkips.Note(nm + ": another slot is not implemented yet: " + FirstLine(r.Error, 3));
                     continue;
                 }
                 Check(r.Outcome != "error", nm + " runs without engine error (" + r.Outcome + " after " + r.DurationS.ToString("F1") + " s, " + r.WallMs.ToString("F0") + " ms)" + (r.Error != null ? "\n" + r.Error : ""));
@@ -265,7 +266,7 @@ namespace SeSim.Run
                 foreach (var s in ScenarioGen.Matrix1v1()) if (s.Name == names[0]) sc = s;
                 sc.MaxTicks = 10 * 60;
                 var a = ScenarioRunner.RunOne(sc, 7, 1, settings, repo, opt);
-                if (a.Outcome == "error" && a.Error != null && a.Error.Contains("NotImplementedException")) Console.WriteLine("  skip determinism: engine not complete yet");
+                if (a.Outcome == "error" && a.Error != null && a.Error.Contains("NotImplementedException")) SeSim.Core.SelfTestSkips.Note("determinism: engine not complete yet");
                 else
                 {
                     var b = ScenarioRunner.RunOne(sc, 7, 1, settings, repo, opt);
