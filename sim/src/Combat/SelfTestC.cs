@@ -614,7 +614,7 @@ namespace SeSim.Combat
             var enemy = Spawn(w, 1, 1, new Vector3D(0, 0, -500), null, Bd("BatteryBlock", "SmallBlockSmallBatteryBlock", 0, 0, 0), Heavy(1, 0, 0), Heavy(2, 0, 0));
             var ctl = me.Blocks[0];
             Check(ctl.Turret != null && ctl.Turret.IsController && Math.Abs(ctl.Turret.Range - 600) < 1e-3, "controller: designator with range 600");
-            Run(w, 30);
+            Run(w, 110);   // turrets retarget every 100 ticks
             var api = ctl.Api as SeSim.Api.SimTurretControlBlock;
             Check(api != null && api.IsWorking, "controller API object working");
             Check(ctl.Turret.TargetBody == enemy, "enemy at 500 m designated");
@@ -625,12 +625,12 @@ namespace SeSim.Combat
                 Check(!info.IsEmpty() && info.EntityId == enemy.EntityId && info.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies, "GetTargetedEntity: enemy grid id and relationship");
             }
             enemy.Position = new Vector3D(0, 0, -900); enemy.UpdateWorldMatrix();
-            Run(w, 30);
+            Run(w, 110);   // turrets retarget every 100 ticks
             Check(ctl.Turret.TargetBody == null, "enemy beyond 600 m dropped at the next refresh");
             // line of sight blocked by a third body
             enemy.Position = new Vector3D(0, 0, -500); enemy.UpdateWorldMatrix();
             var shield = Spawn(w, 2, 2, new Vector3D(-5, -5, -100), null, Wall(40, 40, 2, true).ToArray());
-            Run(w, 30);
+            Run(w, 110);   // turrets retarget every 100 ticks
             Check(ctl.Turret.TargetBody != enemy, "target behind a neutral-team wall is not visible (target " + (ctl.Turret.TargetBody != null ? ctl.Turret.TargetBody.DisplayName + "#" + ctl.Turret.TargetBody.Id : "none") + ")");
         }
 

@@ -470,12 +470,12 @@ namespace SeSim.Core
                 double th = 20 * Math.PI / 180;
                 if (!got || !Near(seen, F * Math.Cos(th) + U * Math.Sin(th), 1e-9)) badP++;
                 got = false; cam.Raycast(100, 0f, 20f);
-                if (!got || !Near(seen, F * Math.Cos(th) - R * Math.Sin(th), 1e-9)) badY++;
+                if (!got || !Near(seen, F * Math.Cos(th) + R * Math.Sin(th), 1e-9)) badY++;
                 SimCamera.DebugCast = null;
             }
             Check(bad == 0, "Raycast(d,0,0) fires along the block Forward for all 24 mountings on a rotated ship (" + bad + " bad" + (firstBad != null ? ": " + firstBad : "") + ")");
             Check(badP == 0, "Raycast pitch +20 tilts the ray toward block Up (" + badP + " bad)");
-            Check(badY == 0, "Raycast yaw +20 tilts the ray toward block Left (MatrixD.CreateRotationY convention) (" + badY + " bad)  [sign inferred, see docs/sim-validation.md]");
+            Check(badY == 0, "Raycast yaw +20 tilts the ray toward block Right (game: rotation about WorldMatrix.Down) (" + badY + " bad)");
 
             // charge, cone, hit chain on one camera
             var w2 = NewWorld(true);
@@ -505,7 +505,12 @@ namespace SeSim.Core
             double c2 = cam2.AvailableScanRange;
             var e45 = cam2.Raycast(100, 45f, 0f); var e46 = cam2.Raycast(100, 45.5f, 0f);
             Check(Math.Abs(cam2.AvailableScanRange - (c2 - 100)) < 1e-9, "pitch 45 deg allowed (charge used), 45.5 deg refused (no charge)");
-            Check(cam2.CanScan(100, F2(camFwd, fr.ToWorld(Vector3D.Right), 44.5)) && !cam2.CanScan(100, F2(camFwd, fr.ToWorld(Vector3D.Right), 45.5)), "CanScan(distance, direction): cone is the angle to Forward, 44.5 ok / 45.5 not");
+            Check(cam2.CanScan(100, F2(new Vector3D(0, 0, -1), Vector3D.Right, 44.5)) && !cam2.CanScan(100, F2(new Vector3D(0, 0, -1), Vector3D.Right, 45.5)), "CanScan(distance, direction) (camera-local): cone is the angle to Forward, 44.5 ok / 45.5 not");
+            // direction overloads take a camera-LOCAL vector: the local Forward hits, the same vector read as world misses (GnatSwarmAI RaidScan bug class)
+            var viaLocal = cam2.Raycast(1000, new Vector3D(0, 0, -1));
+            Check(!viaLocal.IsEmpty() && viaLocal.EntityId == tgt.EntityId, "Raycast(distance, local Forward) hits the target ahead");
+            Check(cam2.CanScan(10, new Vector3D(0, 0, -1)) && !cam2.CanScan(10, camFwd), "CanScan(distance, world camFwd) is outside the cone (the vector is camera-local)");
+            Check(cam2.Raycast(1000, camFwd).IsEmpty(), "Raycast(distance, world vector) misses on a rotated ship");
             Check(cam2.TimeUntilScan(cam2.AvailableScanRange + 666) == 333 || cam2.TimeUntilScan(cam2.AvailableScanRange + 666) == 334, "TimeUntilScan = ceil(missing / 2 m per ms): " + cam2.TimeUntilScan(cam2.AvailableScanRange + 666));
         }
         static Vector3D F2(Vector3D f, Vector3D side, double deg) { double t = deg * Math.PI / 180; return f * Math.Cos(t) + side * Math.Sin(t); }

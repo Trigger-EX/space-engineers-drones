@@ -45,6 +45,27 @@ namespace SeSim.Core
             return any;
         }
 
+        /// <summary>Nearest hit over all live bodies including the caller's own, skipping only the block 'skip' (a camera: the game
+        /// ignores just the camera block itself, so the first own block in front of the lens is returned).</summary>
+        public static bool RayWorldSkipBlock(World w, Vector3D from, Vector3D dir, double maxDist, BlockInst skip, out RayHit hit)
+        {
+            hit = default(RayHit);
+            bool any = false;
+            double best = maxDist;
+            var bodies = w.Bodies;
+            for (int i = 0; i < bodies.Count; i++)
+            {
+                var b = bodies[i];
+                if (!b.Alive) continue;
+                RayHit h; int cnt = 0;
+                if (Trace(b, from, dir, best, false, null, ref cnt, out h, skip) && h.Distance <= best)
+                {
+                    best = h.Distance; hit = h; any = true;
+                }
+            }
+            return any;
+        }
+
         /// <summary>All distinct blocks along the ray on all bodies, sorted by distance (railgun penetration). Returns count written.</summary>
         public static int RayWorldAll(World w, Vector3D from, Vector3D dir, double maxDist, Body ignore, RayHit[] buffer)
         {
@@ -69,7 +90,7 @@ namespace SeSim.Core
 
         /// <summary>Trace through one body. all=false: stop at the first block (result in 'first'); all=true: append every distinct
         /// block to buf starting at count (until buf is full).</summary>
-        static bool Trace(Body b, Vector3D from, Vector3D dir, double maxDist, bool all, RayHit[] buf, ref int count, out RayHit first)
+        static bool Trace(Body b, Vector3D from, Vector3D dir, double maxDist, bool all, RayHit[] buf, ref int count, out RayHit first, BlockInst skip = null)
         {
             first = default(RayHit);
             var cells = b.Cells;
@@ -145,7 +166,7 @@ namespace SeSim.Core
             for (;;)
             {
                 int bi = cells[ix + nx * (iy + ny * iz)];
-                if (bi >= 0 && bi != lastBlock)
+                if (bi >= 0 && bi != lastBlock && (skip == null || !ReferenceEquals(blocks[bi], skip)))
                 {
                     var h = new RayHit();
                     h.Body = b; h.Block = blocks[bi]; h.Distance = sCur * b.CellSize;
@@ -162,7 +183,7 @@ namespace SeSim.Core
                     if (count >= buf.Length) return true;
                     lastBlock = bi;
                 }
-                else if (bi < 0) lastBlock = -1;
+                else if (bi < 0) lastBlock = -1;   // (a skipped block's cell is passed through)
                 // advance to the next cell
                 if (tmx < tmy && tmx < tmz)
                 {

@@ -16,7 +16,8 @@ namespace SeSim.Api
 {
     public sealed class SimSensor : SimFunctionalBlock, IMySensorBlock
     {
-        public const float MinExtend = 0.1f;
+        public const float MinExtend = 0.1f;   // old model; SimSettings.SensorMinExtent1m raises it to 1 m (game slider limits)
+        float MinExt { get { return World.Settings.SensorMinExtent1m ? 1f : MinExtend; } }
         public float L = 5, R = 5, T = 5, B = 5, F = 5, Bk = 5;    // extends (m)
         public bool DetectSmallShips, DetectLargeShips, DetectStations, DetectPlayers, DetectAsteroids, DetectFloatingObjects, DetectSubgrids;
         public bool DetectOwner, DetectFriendly, DetectNeutral, DetectEnemy;
@@ -55,9 +56,10 @@ namespace SeSim.Api
         }
         float Clamp(float v)
         {
-            if (float.IsNaN(v)) return MinExtend;
+            float mn = MinExt;
+            if (float.IsNaN(v)) return mn;
             float max = MaxRange;
-            return v < MinExtend ? MinExtend : (v > max ? max : v);
+            return v < mn ? mn : (v > max ? max : v);
         }
 
         public void DetectedEntities(List<MyDetectedEntityInfo> l) { l.Clear(); l.AddRange(Detected); }
@@ -79,10 +81,11 @@ namespace SeSim.Api
             switch (rel)
             {
                 case MyRelationsBetweenPlayerAndBlock.Owner: return DetectOwner;
+                case MyRelationsBetweenPlayerAndBlock.NoOwnership: if (World.Settings.SensorNoOwnershipIsFriendly) return DetectFriendly; return DetectNeutral;
                 case MyRelationsBetweenPlayerAndBlock.FactionShare:
                 case MyRelationsBetweenPlayerAndBlock.Friends: return DetectFriendly;
                 case MyRelationsBetweenPlayerAndBlock.Enemies: return DetectEnemy;
-                default: return DetectNeutral;   // NoOwnership, Neutral
+                default: return DetectNeutral;   // Neutral
             }
         }
 
@@ -147,12 +150,12 @@ namespace SeSim.Api
         {
             base.Register(r);
             const float dflt = 5f;
-            AddFloat(r, "Left", b => ((SimSensor)b).L, (b, v) => ((SimSensor)b).LeftExtend = v, dflt, MinExtend, 50f);
-            AddFloat(r, "Right", b => ((SimSensor)b).R, (b, v) => ((SimSensor)b).RightExtend = v, dflt, MinExtend, 50f);
-            AddFloat(r, "Bottom", b => ((SimSensor)b).B, (b, v) => ((SimSensor)b).BottomExtend = v, dflt, MinExtend, 50f);
-            AddFloat(r, "Top", b => ((SimSensor)b).T, (b, v) => ((SimSensor)b).TopExtend = v, dflt, MinExtend, 50f);
-            AddFloat(r, "Back", b => ((SimSensor)b).Bk, (b, v) => ((SimSensor)b).BackExtend = v, dflt, MinExtend, 50f);
-            AddFloat(r, "Front", b => ((SimSensor)b).F, (b, v) => ((SimSensor)b).FrontExtend = v, dflt, MinExtend, 50f);
+            AddFloat(r, "Left", b => ((SimSensor)b).L, (b, v) => ((SimSensor)b).LeftExtend = v, dflt, 1f, 50f);
+            AddFloat(r, "Right", b => ((SimSensor)b).R, (b, v) => ((SimSensor)b).RightExtend = v, dflt, 1f, 50f);
+            AddFloat(r, "Bottom", b => ((SimSensor)b).B, (b, v) => ((SimSensor)b).BottomExtend = v, dflt, 1f, 50f);
+            AddFloat(r, "Top", b => ((SimSensor)b).T, (b, v) => ((SimSensor)b).TopExtend = v, dflt, 1f, 50f);
+            AddFloat(r, "Back", b => ((SimSensor)b).Bk, (b, v) => ((SimSensor)b).BackExtend = v, dflt, 1f, 50f);
+            AddFloat(r, "Front", b => ((SimSensor)b).F, (b, v) => ((SimSensor)b).FrontExtend = v, dflt, 1f, 50f);
             AddBool(r, "Detect Players", b => ((SimSensor)b).DetectPlayers, (b, v) => ((SimSensor)b).DetectPlayers = v, true);
             AddBool(r, "Detect Floating Objects", b => ((SimSensor)b).DetectFloatingObjects, (b, v) => ((SimSensor)b).DetectFloatingObjects = v, true);
             AddBool(r, "Detect Small Ships", b => ((SimSensor)b).DetectSmallShips, (b, v) => ((SimSensor)b).DetectSmallShips = v, true);

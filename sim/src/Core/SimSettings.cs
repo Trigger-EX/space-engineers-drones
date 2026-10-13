@@ -79,6 +79,18 @@ namespace SeSim.Core
         public double CameraDistanceLimit = -1;                  // -1 = unlimited (RaycastDistanceLimit)
         public double CameraMaxCharge = double.MaxValue;         // [I] no cap documented
         public int SensorUpdateTicks = 10;
+        /// <summary>Camera Raycast(distance, Vector3D) / CanScan(distance, Vector3D) take a camera-LOCAL direction like the game
+        /// (MyCameraBlock transforms it by the block's WorldMatrix); false = the old model (world direction).</summary>
+        public bool CameraDirectionLocal = true;
+        /// <summary>Camera rays also hit the camera's own grid, skipping only the camera block itself (game behaviour [KS]); false = the
+        /// whole own grid is invisible to the camera (old model).</summary>
+        public bool CameraHitsOwnBody = false;
+        /// <summary>Camera Raycast(distance, pitch, yaw): +yaw turns RIGHT like the game (MatrixD.Down rotation); false = mirrored (old model).</summary>
+        public bool CameraYawRight = true;
+        /// <summary>Sensor field extents are at least 1 m (game slider SetLimits(1, MaxRange)); false = 0.1 m (old model).</summary>
+        public bool SensorMinExtent1m = true;
+        /// <summary>Sensor relation flags like the game: NoOwnership counts as Friendly (and FactionShare); false = NoOwnership is Neutral.</summary>
+        public bool SensorNoOwnershipIsFriendly = true;
         public int IgcMaxWaitingMessages = 25;                   // [I]
         public bool IgcRequireAntenna = true;
 
@@ -86,7 +98,12 @@ namespace SeSim.Core
         public bool InfiniteAmmo = true;                         // research.md 4: creative world default
         public bool FriendlyFire = true;
         public double ExplosionFalloffPower = 1.0;               // damage * (1 - d/r)^p  [I]
-        public double TurretTargetRefreshTicks = 10;
+        public double TurretTargetRefreshTicks = 100;            // MyLargeTurretBase.UpdateAfterSimulation100 (was 10 in the old model)
+        /// <summary>Each turret retargets on its own random phase (hash of world seed and EntityId) instead of EntityId % period.</summary>
+        public bool TurretRandomPhase = true;
+        /// <summary>Opt-in: large turrets pick the nearest functional terminal BLOCK of the nearest enemy and aim at it (like
+        /// MyLargeTurretBase) instead of the body centre. Default off (matrix results so far use the centre).</summary>
+        public bool TurretBlockTargeting = false;
         public double RailgunInitialCharge = 1.0;                // [I] capacitor fraction at spawn (drones sit charged before a fight)
         public bool SpreadUniformInAngle = false;                // [I] false: shots uniform in solid angle inside the cone; true: uniform in elevation angle
         public double ProjectileShooterIgnoreS = 0.2;            // projectiles pass through the shooter's own body for this long

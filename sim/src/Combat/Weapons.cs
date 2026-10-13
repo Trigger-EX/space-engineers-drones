@@ -337,7 +337,8 @@ namespace SeSim.Combat
             {
                 var t = Turrets[i];
                 if (t.Block.Destroyed) { Turrets.RemoveAt(i--); continue; }
-                bool refresh = ((tick + (t.Block.EntityId % period) + period) % period) == 0;
+                long phase = World.Settings.TurretRandomPhase ? (long)(DetRng.Mix(World.Seed, (ulong)t.Block.EntityId) % (ulong)period) : t.Block.EntityId % period;
+                bool refresh = ((tick + phase + period) % period) == 0;
                 t.Update(World, dt, refresh);
             }
         }

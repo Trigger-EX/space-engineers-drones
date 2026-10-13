@@ -339,6 +339,7 @@ namespace SeSim.Api
             Check(l.Count == 1 && l[0].EntityId == tgt.EntityId && s.IsActive, "enemy small ship 30 m ahead detected");
             s.FrontExtend = 20; w.Tick += 10; s.Poll(); s.DetectedEntities(l); Check(l.Count == 0, "outside the box: not detected");
             s.FrontExtend = 50; s.DetectEnemy = false; w.Tick += 10; s.Poll(); s.DetectedEntities(l); Check(l.Count == 0, "Detect Enemy off filters");
+            s.LeftExtend = 0.2f; Check(Math.Abs(s.LeftExtend - 1f) < 1e-6, "sensor extent minimum is 1 m");
             s.DetectEnemy = true; s.DetectSmallShips = false; w.Tick += 10; s.Poll(); s.DetectedEntities(l); Check(l.Count == 0, "Detect Small Ships off filters");
             s.DetectSmallShips = true; w.Tick += 3; s.Poll(); s.DetectedEntities(l); Check(l.Count == 0, "poll is rate-limited (list unchanged within 10 ticks)");
             w.Tick += 10; s.Poll(); s.DetectedEntities(l); Check(l.Count == 1, "detected again after the poll interval");

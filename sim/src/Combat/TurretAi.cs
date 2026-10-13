@@ -1,5 +1,5 @@
 // SLOT C. Turret AI for large turrets (pirate ship) and target designation for Custom Turret Controllers (drones).
-// Target refresh every TurretTargetRefreshTicks (staggered by EntityId): nearest Enemies-relation body with a functional terminal
+// Target refresh every TurretTargetRefreshTicks (100 like UpdateAfterSimulation100; random per-turret phase, SimSettings.TurretRandomPhase): nearest Enemies-relation body with a functional terminal
 // block within Range (distance to the target's bounding sphere), line of sight checked with Raycast.RayWorld from the turret to the
 // target's bound centre (the first thing hit must be the target or another enemy). Large turrets: azimuth/elevation slew at
 // SimSettings.TurretSlewRadPerSec [I] (azimuth unlimited, elevation >= TurretMinElevationDeg), lead = first-order intercept with the
@@ -63,9 +63,10 @@ namespace SeSim.Combat
             var s = w.Settings;
             var wp = Weapon;
             Vector3D aimPoint = Decoys.AimPoint(w, TargetBody, muz, b.EntityId);   // nearest working decoy, else the body centre
-            if (TargetingGroup.Length > 0 && s.TurretSubsystemTargeting && aimPoint == TargetBody.Position)   // a decoy still wins
+            bool grp = TargetingGroup.Length > 0 && s.TurretSubsystemTargeting;
+            if ((grp || s.TurretBlockTargeting) && aimPoint == TargetBody.Position)   // a decoy still wins
             {
-                if (refresh || _sub == null || _sub.Destroyed || !_sub.IsFunctional || !ReferenceEquals(_sub.Body, TargetBody)) _sub = Subsystem(TargetBody, muz);
+                if (refresh || _sub == null || _sub.Destroyed || !_sub.IsFunctional || !ReferenceEquals(_sub.Body, TargetBody)) _sub = Subsystem(TargetBody, muz, !grp);
                 if (_sub != null) aimPoint = TargetBody.LocalToWorld(_sub.LocalCenter);
             }
             Vector3D rel = aimPoint - muz;
@@ -126,14 +127,16 @@ namespace SeSim.Combat
             }
         }
 
-        BlockInst Subsystem(Body t, Vector3D from)
+        /// <summary>Nearest functional block of the targeting group; with no group (TurretBlockTargeting) the nearest functional
+        /// terminal block (the game's "fat block").</summary>
+        BlockInst Subsystem(Body t, Vector3D from, bool any)
         {
             BlockInst best = null; double bd = double.MaxValue;
             var bl = t.Blocks;
             for (int i = 0; i < bl.Count; i++)
             {
                 var x = bl[i];
-                if (x.Destroyed || !x.IsFunctional || !InGroup(x, TargetingGroup)) continue;
+                if (x.Destroyed || !x.IsFunctional || (any ? x.Api == null : !InGroup(x, TargetingGroup))) continue;
                 double d = (t.LocalToWorld(x.LocalCenter) - from).LengthSquared();
                 if (d < bd) { bd = d; best = x; }
             }
