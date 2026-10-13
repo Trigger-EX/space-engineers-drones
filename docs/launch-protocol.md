@@ -17,7 +17,7 @@ dock-launch Hornet:  RESULT split 3.02 s, first movement never, max dist 2.3 m, 
 dock-launch Harrier: RESULT split 3.02 s, first movement never, max dist 2.3 m, max speed 0.0 m/s, final mode IDLE (since 0.5 s)   LAUNCH FAILED
 ```
 
-## 2. What the drone does now (LAUNCH block v1.0)
+## 2. What the drone does now (LAUNCH block v1.1)
 
 State machine, evaluated from the top of `Control()` (`LaunchStep`), at most 6 checks per second, none of them heavy:
 
@@ -105,6 +105,8 @@ HornetDroneAI and HarrierAI are integrated this way (v2.2).
   run `armed`. All of these are best effort; the drone's own detection does not depend on them.
 * Switch the printer-side merge block off (and the drone-side one, optional). The drone-side block is also switched off by the drone.
 * Keep sending `_JOIN` / `join` (cheap insurance) and release only when the drone is complete and charged: the drone cannot wait for a charge.
+
+v1.1 (audit printers-03): `LnReady()` refuses to start the burn while the PB's grid also holds a `[Bay` block or a Programmable Block whose Custom Data has a `[Hive Mother]` section (a drone still fused to its printer would otherwise burn the printer's thrusters and gyros). The PB screen says "Launch: held, this grid holds a printer".
 
 ## 7. Simulator test
 

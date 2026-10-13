@@ -1018,7 +1018,7 @@ string KzStatus()
 }
 // <<< KAMIKAZE DEFENCE <<<
 
-// >>> LAUNCH v1.0 (shared block: identical in every drone script, see docs/launch-protocol.md) >>>
+// >>> LAUNCH v1.1 (shared block: identical in every drone script, see docs/launch-protocol.md) >>>
 // Automatic take-off for drones that were printed on (merged to) a printer. A drone must leave and start working WITHOUT depending on one message:
 //   * it notices on its own that the merge pair opened (no connected merge block on its grid any more, or the grid changed) and then
 //   * burns away from the printer for "Burst Seconds" (gyros held at zero rate, thrusters pushed along the Away vector, dampeners off),
@@ -1036,7 +1036,7 @@ string KzStatus()
 // The block needs the script's fields: Tag (IGC tag) and _flChan (FLEET LINK block); everything else is its own.
 const string LnSec = "Launch";
 int _lnS;                                   // 0 free, 1 docked and armed (waiting for the separation), 2 take-off burn, 3 launched
-bool _lnAuto = true, _lnArmed, _lnHold, _lnForce, _lnLocOk, _lnDock, _lnHomeOk, _lnPending;
+bool _lnFused, _lnAuto = true, _lnArmed, _lnHold, _lnForce, _lnLocOk, _lnDock, _lnHomeOk, _lnPending;
 double _lnBurst = 4, _lnClear = 8, _lnSpeed = 25, _lnClock, _lnT, _lnJoinT = -999;
 string _lnModeCfg = "GUARD", _lnMsg = "", _lnJKey = "";
 Vector3D _lnAwayCfg, _lnAwayLoc, _lnDir, _lnP0, _lnHome;
@@ -1161,10 +1161,13 @@ void LnPrep()
     if (_lnCtl == null && ctrls.Count > 0) _lnCtl = ctrls[0];
 }
 
-// the release is only complete when the grid has split: while the printer's merge block is still on this grid the thrusters/gyros found here may be the printer's
+// the release is only complete when the grid has split (and this grid is no printer): while the printer's merge block is still on this grid the thrusters/gyros found here may be the printer's
 bool LnReady()
 {
     var g = Me.CubeGrid;
+    // still fused to a printer (the Hive Mother PB or a [Bay block is on this grid): the thrusters and gyros found here are the printer's, never burn
+    var pr = new List<IMyTerminalBlock>(); GridTerminalSystem.GetBlocksOfType(pr, b => b.CubeGrid == g && b != Me && (b.CustomName.Contains("[Bay") || (b is IMyProgrammableBlock && b.CustomData.Contains("[Hive Mother]"))));
+    _lnFused = pr.Count > 0; if (_lnFused) return false;
     GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g);
     if (_lnMg.Count < 2 || ++_lnWait > 9) return true;       // (gives up waiting after ~1.7 s)
     _lnPending = true; return false;
@@ -1273,6 +1276,7 @@ string LaunchStatus()
     if (_lnS == 1) return "Launch: docked, waiting for the release\n";
     if (_lnS == 2) return "Launch: take-off burn " + _lnT.ToString("0.0") + " s\n";
     if (_lnS == 3) return _lnMsg != "" ? "Launch: " + _lnMsg + "\n" : "";
+    if (_lnFused) return "Launch: held, this grid holds a printer\n";
     return _lnArmed ? "Launch: armed\n" : "";
 }
 // <<< LAUNCH <<<
