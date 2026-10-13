@@ -1089,6 +1089,11 @@ class Hardpoint:
     def __init__(self, cell, normal, base, cells):
         self.cell, self.normal, self.base, self.cells, self.mirror = cell, normal, base, cells, None
 
+    def column(self, height):
+        """the footprint extended `height` layers outward (the cells a turret of that height occupies)"""
+        n = self.normal
+        return [(c[0] + n[0] * k, c[1] + n[1] * k, c[2] + n[2] * k) for c in self.cells for k in range(height)]
+
     def __repr__(self):
         return f'Hardpoint({self.cell}, {DNAME[self.normal]})'
 
