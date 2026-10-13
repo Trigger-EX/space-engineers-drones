@@ -230,7 +230,6 @@ class TestInventoryBlocks(unittest.TestCase):
             try:
                 b = bp.add(xt, sub, (0, 0, 0), items=items or None, state=state or None)
             except (InventoryError, AssertionError) as e:
-                if 'capacitor' in str(e) and state.get('capacitor', 0) > 0: continue           # the sample was mid-charge above the recorded full charge? no: report
                 problems.append((name, k, str(e)[:120])); continue
             mine = block_element(bp, b)
             mi, si = component(mine, 'MyInventoryBase'), inv
