@@ -25,6 +25,9 @@ namespace SeSim.Combat
         // result of the last slug block hit (ApplyProjectile does not emit for slugs; ProjectileSystem sums per body)
         [ThreadStatic] public static Body LastSlugBody;
         [ThreadStatic] public static float LastSlugDamage;
+        // set by ProjectileSystem before each slug block hit (ShellRicochet): the shell's direction and whether this is its first block
+        [ThreadStatic] public static Vector3D SlugDir;
+        [ThreadStatic] public static bool SlugFirstHit;
 
         /// <summary>Returns damage actually absorbed (<= amount).</summary>
         public static float ApplyToBlock(World w, BlockInst b, float amount, int attackerShip, DamageKind kind, Vector3D at)
@@ -57,6 +60,23 @@ namespace SeSim.Combat
             // penetrating slug
             BlockInst blk = hit.Block;
             if (blk.Destroyed) return false;
+            if (w.Settings.ShellRicochet && SlugFirstHit && ammo.RicochetDamage > 0 && ammo.RicochetMaxProb > 0 && w.Projectiles != null)
+            {
+                // angle from the surface normal: below RicochetMinAngle never, from RicochetMaxAngle on RicochetMaxProb, linear in between (min prob at the min angle)
+                double c = -Vector3D.Dot(SlugDir, hit.NormalWorld);
+                double ang = Math.Acos(c > 1 ? 1 : (c < -1 ? -1 : c)) * 180.0 / Math.PI;
+                double p = 0;
+                if (ang >= ammo.RicochetMaxAngle) p = ammo.RicochetMaxProb;
+                else if (ang >= ammo.RicochetMinAngle && ammo.RicochetMaxAngle > ammo.RicochetMinAngle)
+                    p = ammo.RicochetMinProb + (ammo.RicochetMaxProb - ammo.RicochetMinProb) * (ang - ammo.RicochetMinAngle) / (ammo.RicochetMaxAngle - ammo.RicochetMinAngle);
+                if (p > 0 && w.Projectiles.Rng.NextDouble() < p)
+                {   // ricochet: only RicochetDamage reaches the block and the shell is spent
+                    float rg = ApplyCore(w, blk, ammo.RicochetDamage, attackerShip, attackerOwner, DamageKind.Railgun, hit.Point, false);
+                    LastSlugBody = blk.Body; LastSlugDamage = rg;
+                    healthPool = 0;
+                    return true;
+                }
+            }
             float hp = blk.Hp;
             float want = hp < healthPool ? hp : healthPool;
             float got = ApplyCore(w, blk, want, attackerShip, attackerOwner, DamageKind.Railgun, hit.Point, false);
@@ -114,6 +134,8 @@ namespace SeSim.Combat
                 }
                 else EmitHit(w, attackerShip, friendly, body.ShipIndex, absorbed, at);
             }
+            var wh0 = b.Warhead;
+            if (wh0 != null && absorbed > 0f && w.Settings.WarheadWeaponDetonate && wh0.Armed && !wh0.Exploded && kind != DamageKind.Collision) wh0.DetonateQueued = true;   // weapon fire sets an armed warhead off
             if (b.Hp <= 0f)
             {
                 var wh = b.Warhead;

@@ -132,6 +132,49 @@ namespace SeSim.Core
         public bool TurretBlockTargeting = false;
         public double RailgunInitialCharge = 1.0;                // [I] capacitor fraction at spawn (drones sit charged before a fight)
         public bool SpreadUniformInAngle = false;                // opt-in true = the game (MyUtilRandomVector3ByDeviatingVector: theta uniform in angle, weapons-05); default false keeps the tuned results. false: shots uniform in solid angle inside the cone; true: uniform in elevation angle
+        // ---- weapons fidelity (docs/audit/weapons.md; defaults = wiki/source supported, opt-ins = unverified in game, tests W2/W3 pending) ----
+        /// <summary>true (default): guns fire at most every ceil(int(1000 / (rpm / 60)) / 16.667) ticks counted from the LAST shot, no phase lock
+        /// (MySmallGatlingGun.CanShoot: ShootIntervalInMiliseconds = (int)(1000 / (RateOfFire / 60)) against wall-clock ms at 60 Hz, so the
+        /// 700 rpm gatling fires every 6 frames = 600 rpm, wiki "600 RPM"). false: 60 / rpm seconds, phase locked (old). weapons-02.</summary>
+        public bool GunCadenceFrames = true;
+        /// <summary>true (default): after ShotsInBurst shots a weapon waits ReloadTimeMs in every ammo mode (infinite ammo, turrets, large launcher,
+        /// artillery / assault shells, wiki Block_Weapons Fire Rate / Reload columns); with finite ammo a magazine swap is then free (the burst
+        /// reload models it). false: ReloadTimeMs only at a finite-ammo magazine swap (old). weapons-03.</summary>
+        public bool BurstReload = true;
+        /// <summary>Bullet range = MaxTrajectory * U(min, max) per shot (wiki Block_Weapons: "range randomized between 80 % and 100 % of the printed
+        /// value on every shot" for gatling, autocannon and their turrets; rockets and slugs are not affected). 1 / 1 = fixed range (old). weapons-04.</summary>
+        public double BulletRangeMin = 0.8, BulletRangeMax = 1.0;
+        /// <summary>true (default): projectiles inherit the grid's LinearVelocity (MyGunBase.Shoot(Parent.Physics.LinearVelocity)); false: the
+        /// velocity at the muzzle including the rotation w x r (old). weapons-06.</summary>
+        public bool ProjectileLinearVelocity = true;
+        /// <summary>true (default): a projectile ignores only the block that fired it (m_shootIgnoreEntities = { gun }), so the own hull in front of
+        /// the muzzle stops it; false: the whole shooter body for ProjectileShooterIgnoreS (old). weapons-12.</summary>
+        public bool ProjectileIgnoreFiringBlockOnly = true;
+        /// <summary>true (default): a fixed gun needs electricity (MyUserControllableGun.CanShoot: OutOfPower; 10/50000 MW) like a turret; false:
+        /// fixed guns fire without power (old). weapons-10.</summary>
+        public bool FixedGunsNeedPower = true;
+        public double FixedGunPowerMW = 0.0002;                  // MAX_REQUIRED_POWER_SHIP_GUN
+        /// <summary>Opt-in (default false, unverified in the current game): explosions are occluded like MyGridExplosion / MyExplosion.ApplyVolumetriDamageToGrid:
+        /// from each block centre in the radius a ray runs to the blast centre; the blocks on it, nearest the blast first, form a stack with
+        /// factor = 1 - (d_block - d_prev) / (R - d_prev), damage to a block = remaining * factor * DeformationRatio,
+        /// remaining = max(0, remaining * factor - Hp / DeformationRatio). The auditor measured -74 % rocket damage on Wasp vs Wasp. weapons-01.</summary>
+        public bool ExplosionOcclusion = false;
+        /// <summary>Opt-in (default false, unverified): an armed warhead detonates when it takes bullet / slug / explosion damage (wiki Warhead
+        /// page: "set off by weapon fire", "explode very easily after just one shot"). weapons-07.</summary>
+        public bool WarheadWeaponDetonate = false;
+        /// <summary>Opt-in (default false, unverified, old source MyWarhead.ContactPointCallback): an armed warhead within CollisionDamagePatchM of a
+        /// contact whose closing speed exceeds WarheadContactSpeed (5 m/s) detonates. weapons-07.</summary>
+        public bool WarheadContactDetonate = false;
+        public double WarheadContactSpeed = 5;
+        /// <summary>Opt-in (default false, unverified): artillery / assault-cannon shells ricochet. At the first block hit the angle between the
+        /// shell direction and the surface normal is compared with MissileMin/MaxRicochetAngle: below min never, above max probability
+        /// MissileMaxRicochetProbability, linear between (min probability at min angle; wiki: artillery 85 % at 0-10 deg surface angle, 25 % at 40 deg).
+        /// A ricochet deals MissileRicochetDamage to the block and ends the shell. weapons-08.</summary>
+        public bool ShellRicochet = false;
+        /// <summary>Opt-in (default false, optional): bullets that pass within RocketHitRadiusM of an enemy rocket detonate it (MyMissile is a
+        /// destroyable object). Bullets only, no rocket-rocket or explosion chain. weapons-14.</summary>
+        public bool BulletsHitRockets = false;
+        public double RocketHitRadiusM = 0.25;
         public double ProjectileShooterIgnoreS = 0.2;            // projectiles pass through the shooter's own body for this long
         public bool ProjectileSweepBodies = true;                // test the segment in the target's pose at tick start..end (no tick-quantised lag)
         public double TurretSlewRadPerSec = 1.0;                 // [I] large turret azimuth/elevation speed

@@ -27,7 +27,10 @@ namespace SeSim.Combat
         public float[] HealthPool;              // railgun penetration budget
         public byte[] Mode;
         public long[] ShotId;                   // unique id per spawned projectile (Hit events carry it: unique-hit metric)
+        public BlockInst[] ShooterBlock;        // the gun block (ProjectileIgnoreFiringBlockOnly: the only block the projectile passes through)
+        public double[] MaxTraj;                // per-projectile range (bullets: MaxTrajectory * random factor)
         public Vector3D[] Head, Inh;            // rockets: barrel direction (zero = accelerate along the velocity) and inherited ship velocity (RocketInherit 2)
+        public DetRng Rng;                      // ricochet rolls
         long _nextShotId;
         public long TotalSpawned, TotalHits, TotalExpired;
 
@@ -43,6 +46,7 @@ namespace SeSim.Combat
         public ProjectileSystem(World w, int capacity)
         {
             World = w;
+            Rng = new DetRng(DetRng.Mix(w.Seed, 0x91C0));
             if (capacity < 16) capacity = 16;
             Alloc(capacity);
         }
@@ -50,7 +54,7 @@ namespace SeSim.Combat
         void Alloc(int n)
         {
             Pos = new Vector3D[n]; Vel = new Vector3D[n]; Travelled = new double[n]; Age = new double[n];
-            Ammo = new AmmoDef[n]; ShooterShip = new int[n]; ShooterBody = new Body[n]; HealthPool = new float[n]; Mode = new byte[n]; ShotId = new long[n]; Head = new Vector3D[n]; Inh = new Vector3D[n];
+            Ammo = new AmmoDef[n]; ShooterShip = new int[n]; ShooterBody = new Body[n]; HealthPool = new float[n]; Mode = new byte[n]; ShotId = new long[n]; Head = new Vector3D[n]; Inh = new Vector3D[n]; ShooterBlock = new BlockInst[n]; MaxTraj = new double[n];
         }
 
         void Grow()
@@ -59,6 +63,7 @@ namespace SeSim.Combat
             Array.Resize(ref Pos, n); Array.Resize(ref Vel, n); Array.Resize(ref Travelled, n); Array.Resize(ref Age, n);
             Array.Resize(ref Ammo, n); Array.Resize(ref ShooterShip, n); Array.Resize(ref ShooterBody, n);
             Array.Resize(ref HealthPool, n); Array.Resize(ref Mode, n); Array.Resize(ref ShotId, n); Array.Resize(ref Head, n); Array.Resize(ref Inh, n);
+            Array.Resize(ref ShooterBlock, n); Array.Resize(ref MaxTraj, n);
         }
 
         public static byte ModeOf(AmmoDef a)
@@ -73,6 +78,12 @@ namespace SeSim.Combat
         /// shooter's velocity and is kept as is (SimSettings.RocketInherit 2). Zero head = the old model (speed grows along the velocity).</summary>
         public void Spawn(Vector3D pos, Vector3D vel, AmmoDef ammo, Body shooter, int shooterShip, Vector3D head, Vector3D inh)
         {
+            Spawn(pos, vel, ammo, shooter, shooterShip, head, inh, null, ammo.MaxTrajectory);
+        }
+
+        /// <summary>gun: the firing block (ignored by the projectile for good when SimSettings.ProjectileIgnoreFiringBlockOnly); maxTraj: this shot's range.</summary>
+        public void Spawn(Vector3D pos, Vector3D vel, AmmoDef ammo, Body shooter, int shooterShip, Vector3D head, Vector3D inh, BlockInst gun, double maxTraj)
+        {
             if (Count == Pos.Length) Grow();
             int i = Count++;
             Pos[i] = pos; Vel[i] = vel; Travelled[i] = 0; Age[i] = 0; Ammo[i] = ammo;
@@ -80,7 +91,7 @@ namespace SeSim.Combat
             HealthPool[i] = ammo.MissileHealthPool;
             Mode[i] = ModeOf(ammo);
             ShotId[i] = ++_nextShotId;
-            Head[i] = head; Inh[i] = inh;
+            Head[i] = head; Inh[i] = inh; ShooterBlock[i] = gun; MaxTraj[i] = maxTraj;
             TotalSpawned++;
         }
 
@@ -90,9 +101,9 @@ namespace SeSim.Combat
             if (i != last)
             {
                 Pos[i] = Pos[last]; Vel[i] = Vel[last]; Travelled[i] = Travelled[last]; Age[i] = Age[last]; Ammo[i] = Ammo[last];
-                ShooterShip[i] = ShooterShip[last]; ShooterBody[i] = ShooterBody[last]; HealthPool[i] = HealthPool[last]; Mode[i] = Mode[last]; ShotId[i] = ShotId[last]; Head[i] = Head[last]; Inh[i] = Inh[last];
+                ShooterShip[i] = ShooterShip[last]; ShooterBody[i] = ShooterBody[last]; HealthPool[i] = HealthPool[last]; Mode[i] = Mode[last]; ShotId[i] = ShotId[last]; Head[i] = Head[last]; Inh[i] = Inh[last]; ShooterBlock[i] = ShooterBlock[last]; MaxTraj[i] = MaxTraj[last];
             }
-            Ammo[last] = null; ShooterBody[last] = null;
+            Ammo[last] = null; ShooterBody[last] = null; ShooterBlock[last] = null;
         }
 
         public void Step(double dt)
@@ -100,6 +111,8 @@ namespace SeSim.Combat
             var w = World;
             int i = 0;
             double ignoreS = w.Settings.ProjectileShooterIgnoreS;
+            bool gunOnly = w.Settings.ProjectileIgnoreFiringBlockOnly;
+            if (w.Settings.BulletsHitRockets) BulletsVsRockets(dt);
             while (i < Count)
             {
                 AmmoDef ammo = Ammo[i];
@@ -135,11 +148,13 @@ namespace SeSim.Combat
                 Vector3D vavg = (v0 + v1) * 0.5;
                 double segLen = vavg.Length() * dt;
                 bool expired = false;
-                double remain = ammo.MaxTrajectory - Travelled[i];
-                if (ammo.MaxTrajectory > 0 && segLen >= remain) { segLen = remain > 0 ? remain : 0; expired = true; }
+                double maxTraj = MaxTraj[i];
+                double remain = maxTraj - Travelled[i];
+                if (maxTraj > 0 && segLen >= remain) { segLen = remain > 0 ? remain : 0; expired = true; }
                 Vector3D dir = segLen > 0 ? vavg * (1.0 / vavg.Length()) : v0;
                 Vector3D p1 = new Vector3D(p0.X + dir.X * segLen, p0.Y + dir.Y * segLen, p0.Z + dir.Z * segLen);
-                Body ignore = Age[i] < ignoreS ? ShooterBody[i] : null;
+                BlockInst ignoreBlock = gunOnly ? ShooterBlock[i] : null;
+                Body ignore = !gunOnly && Age[i] < ignoreS ? ShooterBody[i] : null;
                 Body shooter = ShooterBody[i];
                 long owner = shooter != null ? shooter.OwnerId : 0;
                 int ship = ShooterShip[i];
@@ -153,9 +168,10 @@ namespace SeSim.Combat
                     {
                         float pool = HealthPool[i];
                         int guard = 0, nacc = 0;
-                        while (guard++ < 512 && FindHit(p0, p1, ignore, owner, out hit))
+                        while (guard++ < 512 && FindHit(p0, p1, ignore, ignoreBlock, owner, out hit))
                         {
                             Damage.LastSlugBody = null; Damage.LastSlugDamage = 0;
+                            Damage.SlugDir = dir; Damage.SlugFirstHit = guard == 1 && pool >= ammo.MissileHealthPool;
                             bool done = Damage.ApplyProjectile(w, ref hit, ammo, ref pool, ship, owner);
                             // one Hit event per body the slug damaged
                             var vb = Damage.LastSlugBody; float vd = Damage.LastSlugDamage;
@@ -175,7 +191,7 @@ namespace SeSim.Combat
                         if (nacc > 0) TotalHits++;
                         HealthPool[i] = pool;
                     }
-                    else if (FindHit(p0, p1, ignore, owner, out hit))
+                    else if (FindHit(p0, p1, ignore, ignoreBlock, owner, out hit))
                     {
                         TotalHits++;
                         float pool = 0;
@@ -199,12 +215,42 @@ namespace SeSim.Combat
             }
         }
 
+        // BulletsHitRockets: a bullet whose path this tick passes within RocketHitRadiusM of an enemy rocket (closest approach of the two
+        // straight tick paths) is spent and the rocket explodes there (MyMissile is destroyable; any damage detonates it).
+        void BulletsVsRockets(double dt)
+        {
+            var w = World; double rad = w.Settings.RocketHitRadiusM, r2 = rad * rad;
+            for (int i = Count - 1; i >= 0; i--)
+            {
+                if (i >= Count || Mode[i] != ModeBullet) continue;
+                Vector3D bp = Pos[i], bv = Vel[i];
+                long bowner = ShooterBody[i] != null ? ShooterBody[i].OwnerId : 0;
+                for (int j = 0; j < Count; j++)
+                {
+                    if (Mode[j] != ModeRocket) continue;
+                    if (ShooterBody[j] != null && Damage.IsFriendly(w, bowner, ShooterBody[j]) && !w.Settings.FriendlyFire) continue;
+                    if (ReferenceEquals(ShooterBody[i], ShooterBody[j])) continue;
+                    Vector3D rp = Pos[j] - bp, rv = (Vel[j] - bv) * dt;           // rocket relative to the bullet over one tick
+                    double vv = rv.LengthSquared();
+                    double t = vv > 1e-12 ? -Vector3D.Dot(rp, rv) / vv : 0; if (t < 0) t = 0; else if (t > 1) t = 1;
+                    Vector3D d = rp + rv * t;
+                    if (d.LengthSquared() > r2) continue;
+                    Vector3D at = Pos[j] + Vel[j] * (dt * t);
+                    var ra = Ammo[j]; int rs = ShooterShip[j]; long ro = ShooterBody[j] != null ? ShooterBody[j].OwnerId : 0;
+                    TotalExpired++;
+                    if (j > i) { Remove(j); Remove(i); } else { Remove(i); Remove(j); }
+                    Explosions.Explode(w, at, ra.MissileExplosionRadius, ra.MissileExplosionDamage, rs, ro);
+                    break;
+                }
+            }
+        }
+
         // =====================================================================================================
         // swept segment test
         // =====================================================================================================
 
         /// <summary>Nearest block hit by the segment p0..p1 over all bodies (except 'ignore'; friendly bodies too when friendly fire is off).</summary>
-        bool FindHit(Vector3D p0, Vector3D p1, Body ignore, long owner, out RayHit best)
+        bool FindHit(Vector3D p0, Vector3D p1, Body ignore, BlockInst ignoreBlock, long owner, out RayHit best)
         {
             best = default(RayHit);
             var w = World;
@@ -243,7 +289,7 @@ namespace SeSim.Combat
                 if (len < 1e-9) continue;
                 var dir = new Vector3D(ex / len, ey / len, ez / len);
                 RayHit h;
-                if (!Raycast.RayBody(b, start, dir, len, out h)) continue;
+                if (!(ignoreBlock != null ? Raycast.RayBody(b, start, dir, len, ignoreBlock, out h) : Raycast.RayBody(b, start, dir, len, out h))) continue;
                 double frac = h.Distance / len;
                 if (frac < bestFrac) { bestFrac = frac; best = h; found = true; }
             }

@@ -25,6 +25,13 @@ namespace SeSim.Core
             return Trace(b, from, dir, maxDist, false, null, ref count, out hit);
         }
 
+        /// <summary>RayBody that passes through the block 'skip' (a projectile never hits the gun that fired it).</summary>
+        public static bool RayBody(Body b, Vector3D from, Vector3D dir, double maxDist, BlockInst skip, out RayHit hit)
+        {
+            int count = 0;
+            return Trace(b, from, dir, maxDist, false, null, ref count, out hit, skip);
+        }
+
         /// <summary>Nearest hit over all live bodies except 'ignore' (may be null).</summary>
         public static bool RayWorld(World w, Vector3D from, Vector3D dir, double maxDist, Body ignore, out RayHit hit)
         {

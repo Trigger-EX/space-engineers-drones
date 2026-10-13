@@ -205,6 +205,10 @@ namespace SeSim.Core
                     double tw = def.PowerMW > 0 ? def.PowerMW : s.TurretIdlePowerMW;
                     b.Sink = new PowerSink { Block = b, Group = def.PowerGroup ?? "Defense", Priority = defs.PriorityOf(def.PowerGroup ?? "Defense"), RequestMW = bd.Enabled ? tw : 0 };
                 }
+                if (b.Sink == null && def.Kind == "WeaponBlock" && def.Weapon != null && s.FixedGunsNeedPower)
+                {   // a fixed gun refuses to fire when out of power (MyUserControllableGun.CanShoot); only an electric supply is checked, the draw is tiny
+                    b.Sink = new PowerSink { Block = b, Group = def.PowerGroup ?? "Defense", Priority = defs.PriorityOf(def.PowerGroup ?? "Defense"), RequestMW = bd.Enabled ? s.FixedGunPowerMW : 0 };
+                }
                 body.Blocks.Add(b);
             }
             body.BuildCells();

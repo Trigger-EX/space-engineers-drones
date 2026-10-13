@@ -48,6 +48,7 @@ namespace SeSim.Blueprint
         public float Speed, MaxTrajectory, MassDamage, HealthDamage, ExplosiveDamageMultiplier;
         public float MissileInitialSpeed, MissileAcceleration, MissileExplosionRadius, MissileExplosionDamage, MissileHealthPool, MissileMass;
         public bool GravityEnabled;
+        public float RicochetMinAngle, RicochetMaxAngle, RicochetMinProb, RicochetMaxProb, RicochetDamage;   // degrees from the surface normal (shells); 0 = none
     }
 
     public sealed class DefDb
@@ -246,6 +247,11 @@ namespace SeSim.Blueprint
                 a.MissileExplosionDamage = (float)MiniJson.Num(md, "explosion_damage", MiniJson.Num(at, "MissileProperties.MissileExplosionDamage", 0));
                 a.MissileHealthPool = (float)MiniJson.Num(md, "health_pool", MiniJson.Num(at, "MissileProperties.MissileHealthPool", 0));
                 a.MissileMass = (float)MiniJson.Num(md, "missile_mass", MiniJson.Num(at, "MissileProperties.MissileMass", 0));
+                a.RicochetMinAngle = (float)MiniJson.Num(at, "MissileProperties.MissileMinRicochetAngle", 0);
+                a.RicochetMaxAngle = (float)MiniJson.Num(at, "MissileProperties.MissileMaxRicochetAngle", 0);
+                a.RicochetMinProb = (float)MiniJson.Num(at, "MissileProperties.MissileMinRicochetProbability", 0);
+                a.RicochetMaxProb = (float)MiniJson.Num(at, "MissileProperties.MissileMaxRicochetProbability", 0);
+                a.RicochetDamage = (float)MiniJson.Num(md, "ricochet_damage", MiniJson.Num(at, "MissileProperties.MissileRicochetDamage", 0));
                 a.GravityEnabled = MiniJson.Bool(md, "gravity_enabled", MiniJson.Bool(at, "MissileProperties.MissileGravityEnabled", false));
                 db.Ammo[ammoId + "@" + magId] = a;
                 if (!db.Ammo.ContainsKey(ammoId)) db.Ammo[ammoId] = a;

@@ -427,6 +427,11 @@ namespace SeSim.Core
                 var e = new SimEvent { Kind = EventKind.Collision, Tick = w.Tick, ShipA = host.ShipIndex, ShipB = probe.ShipIndex, Value = -vn, Position = bestPointWorld };
                 w.Events.On(ref e);
             }
+            if (s.WarheadContactDetonate && -vn > s.WarheadContactSpeed)
+            {   // armed warheads at the contact go off above the closing speed (old MyWarhead.ContactPointCallback)
+                WarheadsAt(host, bestHostBlock, bestPointWorld, s.CollisionDamagePatchM);
+                WarheadsAt(probe, bestProbeBlock, bestPointWorld, s.CollisionDamagePatchM);
+            }
             if (s.CollisionDamage)
             {
                 // kinetic energy of the closing motion at the contact: 0.5 * reducedMass * vn^2, scaled to hit points, shared by the blocks of
@@ -439,6 +444,20 @@ namespace SeSim.Core
                     CollisionDamageTo(w, host, bestHostBlock, bestPointWorld, dmg, probe.ShipIndex, s);
                     CollisionDamageTo(w, probe, bestProbeBlock, bestPointWorld, dmg, host.ShipIndex, s);
                 }
+            }
+        }
+
+        static void WarheadsAt(Body body, BlockInst deepest, Vector3D at, double patch)
+        {
+            double r2 = patch * patch;
+            var bl = body.Blocks;
+            for (int i = 0; i < bl.Count; i++)
+            {
+                var wh = bl[i].Warhead;
+                if (wh == null || !wh.Armed || wh.Exploded) continue;
+                Vector3D p = body.LocalToWorld(bl[i].LocalCenter);
+                double dx = p.X - at.X, dy = p.Y - at.Y, dz = p.Z - at.Z;
+                if (ReferenceEquals(bl[i], deepest) || dx * dx + dy * dy + dz * dz <= r2) wh.DetonateQueued = true;
             }
         }
 

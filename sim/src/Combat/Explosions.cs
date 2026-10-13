@@ -35,6 +35,7 @@ namespace SeSim.Combat
             double r2 = radius * radius, inv = 1.0 / radius;
             double pw = w.Settings.ExplosionFalloffPower;
             bool ff = w.Settings.FriendlyFire;
+            bool occl = w.Settings.ExplosionOcclusion;
             for (int bi = 0; bi < bodies.Count; bi++)
             {
                 var body = bodies[bi];
@@ -50,6 +51,7 @@ namespace SeSim.Combat
                     double f = 1.0 - Math.Sqrt(d2) * inv;
                     if (pw != 1.0) f = Math.Pow(f, pw);
                     float dm = (float)(damage * f);
+                    if (occl && dm > 0f) dm = Occluded(w, cs, body, b, center, radius, damage, skip);
                     if (dm <= 0f) continue;
                     blocks.Add(b); dmg.Add(dm);
                 }
@@ -70,6 +72,42 @@ namespace SeSim.Combat
             }
             if (curBody != null && sum > 0) Damage.EmitHit(w, attackerShip, Damage.IsFriendly(w, attackerOwner, curBody), curBody.ShipIndex, sum, at);
             blocks.Clear(); dmg.Clear(); bodies.Clear();
+        }
+
+        /// <summary>ExplosionOcclusion (MyGridExplosion / MyExplosion.ApplyVolumetriDamageToGrid stack rule): the damage block 'target' takes when the blocks
+        /// on the ray from the blast centre to its centre soak the blast first. Stack from the block nearest the blast:
+        /// factor = 1 - (d_block - d_prev) / (R - d_prev); amount = remaining * factor; the block takes amount * DeformationRatio;
+        /// remaining = max(0, amount - Hp / DeformationRatio). The damage returned is the target's (0 when the blast is used up before it).</summary>
+        static float Occluded(World w, CombatSystem cs, Body body, BlockInst target, Vector3D center, double radius, double damage, BlockInst skip)
+        {
+            Vector3D tc = body.LocalToWorld(target.LocalCenter);
+            Vector3D dv = center - tc;
+            double dist = dv.Length();
+            double dr = target.Def.DeformationRatio > 0 ? target.Def.DeformationRatio : 1.0;
+            if (dist < 1e-6) return (float)(damage * dr);
+            var buf = cs.ExpRays;
+            int n = Raycast.RayWorldAll(w, tc, dv * (1.0 / dist), dist, null, buf);
+            double remaining = damage, dPrev = 0;
+            for (int k = n - 1; k >= 0; k--)
+            {
+                BlockInst blk = buf[k].Block;
+                if (ReferenceEquals(blk, target)) break;                       // everything in front of the target has been processed
+                if (ReferenceEquals(blk, skip) || blk.Destroyed) continue;
+                double dBlock = (blk.Body.LocalToWorld(blk.LocalCenter) - center).Length();
+                if (dBlock < dPrev) dBlock = dPrev;
+                double span = radius - dPrev;
+                if (span <= 1e-9) return 0f;
+                double factor = 1.0 - (dBlock - dPrev) / span;
+                if (factor <= 0) return 0f;
+                double amount = remaining * factor;
+                double bdr = blk.Def.DeformationRatio > 0 ? blk.Def.DeformationRatio : 1.0;
+                remaining = amount - blk.Hp / bdr;
+                if (remaining <= 0) return 0f;
+                dPrev = dBlock;
+            }
+            double spanT = radius - dPrev;
+            double ft = spanT > 1e-9 ? 1.0 - (dist - dPrev) / spanT : 0;
+            return ft > 0 ? (float)(remaining * ft * dr) : 0f;
         }
     }
 

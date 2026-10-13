@@ -88,6 +88,9 @@ namespace SeSim.Combat
         public double CapacitorMWh;           // railgun: must be full to fire; recharges through PowerSink at RailgunChargeMW
         public PowerSink Sink;
         public int ShotsFired;
+        public long LastShotTick = long.MinValue / 2;   // GunCadenceFrames: tick of the last shot
+        public int BurstCount;                // shots since the last ReloadTimeMs wait (BurstReload)
+        public int CadenceTicks;              // GunCadenceFrames: ceil(int(1000 / (rpm / 60)) / 16.667)
         public bool IsShooting { get { return ShootOn || PendingShot; } }
 
         // ---- slot C internals ----
@@ -134,6 +137,8 @@ namespace SeSim.Combat
             if (!_ammoInit) InitAmmo(s);
             double t = w.Time;
             bool operational = b.IsFunctional && CombatUtil.BlockEnabled(b);
+            // a fixed gun needs electricity (FixedGunsNeedPower: its sink is created by GridFactory; turrets are gated by their own sink)
+            if (operational && s.FixedGunsNeedPower && s.PowerEnabled && b.Def.Kind == "WeaponBlock" && b.Sink != null && b.Sink.SuppliedRatio <= 0) operational = false;
             // ShootOnce is "try one shot now": the game does not queue it. API requests made since the last tick (scripts run in
             // phase 1) are valid for this tick only; any number of them means one attempt.
             bool once = ShootOnceRequests > 0;
@@ -160,11 +165,22 @@ namespace SeSim.Combat
             }
 
             if (!(ShootOn || once)) return;
-            if (t + 1e-9 < NextShotTime || t + 1e-9 < ReloadUntil) return;
+            if (t + 1e-9 < ReloadUntil) return;
+            if (s.GunCadenceFrames) { if (w.Tick - LastShotTick < CadenceTicks) return; }
+            else if (t + 1e-9 < NextShotTime) return;
             if (!TakeRound(s, t, true)) return;
             FireProjectile(w, t);
-            // phase-locked cadence while firing continuously; restart at 'now' after an idle gap
+            LastShotTick = w.Tick;
+            // old cadence: phase-locked while firing continuously; restart at 'now' after an idle gap
             if (t - NextShotTime > IntervalS) NextShotTime = t + IntervalS; else NextShotTime += IntervalS;
+            BurstDone(s, t);
+        }
+
+        // BurstReload: ReloadTimeMs after every ShotsInBurst shots, in all ammo modes
+        void BurstDone(SimSettings s, double t)
+        {
+            if (!s.BurstReload || Def == null || Def.ShotsInBurst <= 0 || Def.ReloadTimeMs <= 0) return;
+            if (++BurstCount >= Def.ShotsInBurst) { BurstCount = 0; ReloadUntil = t + Def.ReloadTimeMs * 0.001; }
         }
 
         // consumes one round; false when none left or a magazine swap delay started
@@ -175,7 +191,7 @@ namespace SeSim.Combat
             {
                 if (MagazinesLeft <= 0) return false;
                 MagazinesLeft--; RoundsLeftInMag = Def != null && Def.MagazineCapacity > 0 ? Def.MagazineCapacity : 1;
-                if (burstReload && Def != null && Def.ReloadTimeMs > 0) { ReloadUntil = t + Def.ReloadTimeMs * 0.001; return false; }
+                if (burstReload && !s.BurstReload && Def != null && Def.ReloadTimeMs > 0) { ReloadUntil = t + Def.ReloadTimeMs * 0.001; return false; }
             }
             RoundsLeftInMag--;
             return true;
@@ -211,9 +227,13 @@ namespace SeSim.Combat
             PendingShot = false;
             Emit(w, t);
             CapacitorMWh = 0;
-            double rel = Def != null ? Def.ReloadTimeMs * 0.001 : 0;
-            ReloadUntil = t + rel;
             NextShotTime = t + IntervalS;
+            if (w.Settings.BurstReload && Def != null && Def.ShotsInBurst > 1)
+            {   // artillery / assault turrets: ShotsInBurst shells at the rate of fire, then the reload
+                ReloadUntil = t;
+                BurstDone(w.Settings, t);
+            }
+            else ReloadUntil = t + (Def != null ? Def.ReloadTimeMs * 0.001 : 0);
         }
 
         void FireProjectile(World w, double t) { Emit(w, t); }
@@ -225,14 +245,19 @@ namespace SeSim.Combat
             MuzzleWorld(out pos, out dir);
             dir = CombatUtil.Deviate(Rng, dir, SpreadRad, w.Settings.SpreadUniformInAngle);
             Vector3D vel, head = default(Vector3D), inh = default(Vector3D);
+            var st = w.Settings;
+            Vector3D sv0 = st.ProjectileLinearVelocity ? body.LinearVelocity : body.VelocityAtWorld(pos);
             if (Mode == ProjectileSystem.ModeRocket)
             {
                 int m = w.Settings.RocketInherit;
-                if (m == 1 || m == 2) { Vector3D sv = body.VelocityAtWorld(pos); vel = sv + dir * Ammo.MissileInitialSpeed; head = dir; if (m == 2) inh = sv; }
+                if (m == 1 || m == 2) { Vector3D sv = sv0; vel = sv + dir * Ammo.MissileInitialSpeed; head = dir; if (m == 2) inh = sv; }
                 else vel = dir * Ammo.MissileInitialSpeed;
             }
-            else vel = body.VelocityAtWorld(pos) + dir * (Ammo.Speed > 0 ? Ammo.Speed : Ammo.MissileInitialSpeed);
-            w.Projectiles.Spawn(pos, vel, Ammo, body, body.ShipIndex, head, inh);
+            else vel = sv0 + dir * (Ammo.Speed > 0 ? Ammo.Speed : Ammo.MissileInitialSpeed);
+            double maxTraj = Ammo.MaxTrajectory;
+            if (Mode == ProjectileSystem.ModeBullet && st.BulletRangeMax > 0 && (st.BulletRangeMin != 1.0 || st.BulletRangeMax != 1.0))
+                maxTraj *= st.BulletRangeMin + Rng.NextDouble() * (st.BulletRangeMax - st.BulletRangeMin);
+            w.Projectiles.Spawn(pos, vel, Ammo, body, body.ShipIndex, head, inh, Block, maxTraj);
             ShotsFired++;
             var e = new SimEvent { Kind = EventKind.Shot, Tick = w.Tick, ShipA = body.ShipIndex, ShipB = -1, Value = Mode, Position = pos };
             w.Events.On(ref e);
@@ -250,6 +275,7 @@ namespace SeSim.Combat
         public readonly List<Body> ScratchBodies = new List<Body>();
         public readonly List<BlockInst> ExpBlocks = new List<BlockInst>();
         public readonly List<float> ExpDamage = new List<float>();
+        public readonly RayHit[] ExpRays = new RayHit[128];      // ExplosionOcclusion: blocks on one block-to-blast ray
 
         public CombatSystem(World w) { World = w; }
 
@@ -310,6 +336,7 @@ namespace SeSim.Combat
             u.TurretBarrel = Math.Max(d.SizeCells.X, Math.Max(d.SizeCells.Y, d.SizeCells.Z)) * cell * 0.5;
             u.Mode = ProjectileSystem.ModeOf(u.Ammo);
             u.IntervalS = d.Weapon.RateOfFireRpm > 0 ? 60.0 / d.Weapon.RateOfFireRpm : 1.0;
+            u.CadenceTicks = (int)Math.Ceiling((int)(1000.0 / (d.Weapon.RateOfFireRpm > 0 ? d.Weapon.RateOfFireRpm / 60.0 : 1.0)) * 0.06 - 1e-9);   // ms / 16.667 ms per frame
             u.SpreadRad = d.Weapon.DeviateShotAngleDeg * Math.PI / 180.0;
             ulong salt = b.EntityId != 0 ? (ulong)b.EntityId : (ulong)((b.Body != null ? b.Body.Id : 0) * 100003L + b.Index + 17);
             u.Rng = new DetRng(DetRng.Mix(DetRng.Mix(w.Seed, 0xC0DE), salt));

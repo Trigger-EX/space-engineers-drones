@@ -64,6 +64,8 @@ namespace SeSim.Combat
             Guarded("pirate ship", TestPirate);
             Guarded("vanilla AI (Midge)", TestVanilla);
             Guarded("sim-fix: collision damage and contact episodes", TestCollisionFix);
+            Guarded("weapons audit: cadence, burst reload, range, velocity, firing block, power", TestWeaponFidelity);
+            Guarded("weapons audit opt-ins: occlusion, warhead triggers, ricochet, bullets vs rockets", TestWeaponOptIns);
             Guarded("sim-fix: decoys", TestDecoys);
             Guarded("sim-fix: unique hit ids, railgun capacitor data, AI search range", TestSimFixMisc);
             Guarded("turret limits from the definitions (range, turn rate, elevation)", TestTurretLimits);
@@ -119,7 +121,9 @@ namespace SeSim.Combat
 
         static World NewWorld(ulong seed, bool api, IEventSink sink, SimSettings s = null)
         {
-            var w = new World(s ?? new SimSettings(), Defs(), seed, false);
+            if (s == null) s = new SimSettings();
+            s.FixedGunsNeedPower = false;           // test worlds have no batteries; the power gate has its own test (set it after NewWorld, before Spawn)
+            var w = new World(s, Defs(), seed, false);
             w.SkipApi = !api;
             w.Teams.Init(4);
             if (sink != null) w.Events = sink;
@@ -204,7 +208,7 @@ namespace SeSim.Combat
             u.ShootOn = true;
             int ticks = 7200;
             Run(w, ticks);
-            double expectShots = ticks / 60.0 * 700 / 60.0;
+            double expectShots = ticks / 60.0 * 600 / 60.0;     // GunCadenceFrames: 85 ms -> 6 frames per shot = 600 rpm (weapons-02)
             Check(Math.Abs(sink.Shots - expectShots) <= 2, "gatling fires " + sink.Shots + " rounds in 120 s (expected " + expectShots.ToString("F1") + ")");
             double L = 299.5;
             double p = AnalyticSquareHit(L, 0.5, 0.15 * Math.PI / 180, false);
@@ -304,7 +308,7 @@ namespace SeSim.Combat
         // =====================================================================================================
         static int SweepTrial(bool sweep, double dist, double speed, int trial)
         {
-            var s = new SimSettings { ProjectileSweepBodies = sweep };
+            var s = new SimSettings { ProjectileSweepBodies = sweep, BulletRangeMin = 1.0 };
             var sink = new Sink();
             var w = NewWorld((ulong)(100 + trial), false, sink, s);
             var gun = Spawn(w, 0, 0, Vector3D.Zero, null, Bd("SmallGatlingGun", "", 0, 0, 0));

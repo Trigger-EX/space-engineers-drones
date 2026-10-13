@@ -296,6 +296,9 @@ terminal block remains).
 Ammo: infinite by default (`--infinite-ammo false` uses capacities in research.md 4). Spread: uniform direction in the cone.
 Muzzle = block center + Forward * half length. Projectiles ignore the shooter body for 0.2 s, then friendly fire is possible
 (`--friendly-fire false` disables damage to Owner/FactionShare bodies). Gravity off.
+### 7.1b Weapon fidelity (docs/audit/weapons.md, SimSettings "weapons fidelity")
+Defaults (wiki / Keen source): `GunCadenceFrames` (shots every ceil(int(1000/(rpm/60))/16.667) ticks from the last shot: the 700 rpm gatling fires 600 rpm), `BurstReload` (ReloadTimeMs after every ShotsInBurst shots in all ammo modes, also artillery/assault shell bursts; finite-ammo magazine swaps are then free), `BulletRangeMin/Max` 0.8/1.0 (bullets only), `ProjectileLinearVelocity`, `ProjectileIgnoreFiringBlockOnly`, `FixedGunsNeedPower` (0.0002 MW sink; test worlds without batteries switch it off). Old behaviour: set each to false (range min/max to 1).
+Opt-in, default off, unverified in the game (in-game tests W2/W3 pending): `ExplosionOcclusion` (block-to-blast ray, stack rule with DeformationRatio), `WarheadWeaponDetonate`, `WarheadContactDetonate` (> `WarheadContactSpeed` 5 m/s), `ShellRicochet` (angle from the normal, ammo ricochet fields, `MissileRicochetDamage`), `BulletsHitRockets` (`RocketHitRadiusM`). Not done: collision deformation (weapons-09, no mechanism specified and unverifiable), warhead radius scaling.
 ### 7.2 Projectiles: SoA pool, swept segment vs `Raycast.RayWorld`; `MaxTrajectory` distance; rockets explode on hit or at range end.
 ### 7.3 Damage: bullet = full damage to the first block hit; railgun walks `RayWorldAll`, each block takes min(pool, Hp), pool
 decreases; explosion: blocks with center within r of the blast take `damage*(1-d/r)^p` (p = 1) [I, Keen falloff unpublished].
