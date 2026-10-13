@@ -137,7 +137,7 @@ void ManFly(double dt)
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
         if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
-    if (have && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
+    if (have && !ManAutoFire && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
     if (ManAutoFire) { SetFire(shoot); BatFire(have, _rc.GetShipVelocities().LinearVelocity); }
     // fly-by-wire: stick rate + the PD rate to the lead point, the stick fades the assist; no lock: full release (native feel)
     bool ov = false;

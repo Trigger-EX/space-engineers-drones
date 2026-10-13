@@ -835,7 +835,7 @@ void ManFly(double dt)
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
         if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
-    if (have && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
+    if (have && !ManAutoFire && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
     if (ManAutoFire) { SetFire(shoot); BatFire(have, _rc.GetShipVelocities().LinearVelocity); }
     // fly-by-wire: stick rate + the PD rate to the lead point, the stick fades the assist; no lock: full release (native feel)
     bool ov = false;
@@ -964,7 +964,7 @@ void BatSet(int i)
 {
     if (i != _prim)
     {
-        foreach (var g in _bat[_prim].G) if (g.IsFunctional) g.ApplyAction("Shoot_Off");
+        if (_firing || _bat[_prim].On) foreach (var g in _bat[_prim].G) if (g.IsFunctional) g.ApplyAction("Shoot_Off");   // (only what the script switched on: a pilot holding the trigger is not cut off by a pip-only primary switch)
         _bat[_prim].On = false; _firing = false; _primT = _now; _prim = i;
     }
     var b = _bat[i];

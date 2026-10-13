@@ -75,7 +75,7 @@ void BatSet(int i)
 {
     if (i != _prim)
     {
-        foreach (var g in _bat[_prim].G) if (g.IsFunctional) g.ApplyAction("Shoot_Off");
+        if (_firing || _bat[_prim].On) foreach (var g in _bat[_prim].G) if (g.IsFunctional) g.ApplyAction("Shoot_Off");   // (only what the script switched on: a pilot holding the trigger is not cut off by a pip-only primary switch)
         _bat[_prim].On = false; _firing = false; _primT = _now; _prim = i;
     }
     var b = _bat[i];
