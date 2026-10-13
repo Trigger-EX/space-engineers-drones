@@ -82,6 +82,7 @@ double EngageCap = 650;      // never plan to sit further than this (keeps the g
 bool UseGatling = true;
 double GatSpeed = 800, GatRange = 760, GatTol = 1.0; // gatling bullet speed (data: 800 m/s, 800 m), fire range, window multiplier
 double ForcedRange = 0;      // >0 overrides automatic range
+double RushOrbit = 50;   // sideways speed round the target while it closes faster than we back off (a rush from a big ship that turns slowly)
 double GuardRadius = 2000, MaxSpeed = 95, CruiseSpeed = 55, DriftSpeed = 8, JinkSpeed = 11;
 double LockRange = 3000, ScanCone = 25;
 double CloseScanRange = 200; // all-around camera scan distance
@@ -1461,6 +1462,7 @@ void LoadConfig()
     MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
     CruiseSpeed = Cfg(S, "Cruise Speed", CruiseSpeed);
     DriftSpeed = Cfg(S, "Drift Speed While Aiming", DriftSpeed);
+    RushOrbit = Cfg(S, "Rush Orbit Speed", RushOrbit);
     JinkSpeed = Cfg(S, "Jink Speed While Reloading", JinkSpeed);
     LockRange = Cfg(S, "Manual Lock Range", LockRange);
     AutoScan = Cfg(S, "Auto Camera Scan", AutoScan);
@@ -2052,7 +2054,7 @@ void Control(double dt)
     if (_mode == Mode.ASSIST) return;
     double mass = _rc.CalculateShipMass().PhysicalMass;
     double aBrake = MinAccel(mass, grav) * 0.5;
-    Vector3D want, home = Home();
+    Vector3D want, home = Home(), lat = Vector3D.Zero; double threat = 0;
     if (_mode == Mode.RTB || _tgt == null)
     {
         Vector3D d = home - me; double dist = d.Length();
@@ -2086,12 +2088,20 @@ void Control(double dt)
             }
             evade = _jink;
         }
-        want = tv + dir * vr + tan * DriftSpeed * _driftSign + evade + (aimingPhase ? Vector3D.Zero : Evade()) + Separation(me);
+        double closing = -Vector3D.Dot(tv - myVel, dir);   // m/s the target gains on us
+        if (dist < _engage * 1.5) threat = Math.Max(0, Math.Min(1, (closing - 10) / 40));
+        lat = tan * (DriftSpeed + (RushOrbit - DriftSpeed) * threat) * _driftSign;
+        want = tv + dir * vr + lat + evade + (aimingPhase ? Vector3D.Zero : Evade()) + Separation(me);
         if (_mode == Mode.GUARD && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
         if (_mode == Mode.FOLLOW && FollowFar(me)) want = FollowBack(me);   // leash: drop the fight, back to the owner
     }
     double cap = (_tgt != null && _mode != Mode.RTB) || _mode == Mode.FOLLOW ? MaxSpeed : CruiseSpeed;
     want = KzWant(want, me, cap);   // KAMIKAZE DEFENCE: back away / break sideways
+    if (threat > 0 && want.LengthSquared() > cap * cap)
+    {   // being rushed: keep the sideways swing and give up part of the speed matching instead
+        Vector3D r = want - lat; double qa = r.LengthSquared(), qb = Vector3D.Dot(r, lat), qc = lat.LengthSquared() - cap * cap;
+        want = r * (qa > 1e-6 && qc < 0 ? Math.Min(1, (-qb + Math.Sqrt(qb * qb - qa * qc)) / qa) : 0) + lat;
+    }
     if (want.LengthSquared() > cap * cap) want = Vector3D.Normalize(want) * cap;
     // gentler velocity loop while settling a shot, so thrust kicks don't shake the aim
     Vector3D acc = (want - myVel) * (aimingPhase ? 1.0 : 2.0);
