@@ -258,15 +258,17 @@ void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flCha
 // HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
 // The gate:
 //  * tries to switch "AI Behavior" on (a bool terminal property whose id contains "Behavior"; the exact id is not documented);
-//  * gives the AI blocks the ship for AI Window seconds, then runs the script's own search (camera sweep + scan rays) for
-//    Script Search Window seconds, and so on. While the AI visibly flies the ship (speeds it up or turns it) it keeps it, up to
-//    Max AI Hold seconds. Under fire the script searches unless the AI is already flying.
+//  * until the AI blocks have shown that they work (flown the ship once: sped it up or turned it), gives them the ship for
+//    AI Window seconds, then runs the script's own search (camera sweep + scan rays) for Script Search Window seconds, and so on;
+//    under fire the script searches. While the AI flies the ship it keeps it, up to Max AI Hold seconds. Once the AI has flown the
+//    ship it is trusted and gets the ship whenever the script wants it, as before v2.1 (sim: time-sharing a working AI cost most of
+//    its kills, 1v1 decisive 90 % -> 35 %).
 // Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
 // Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
 // "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
 bool AiGateOn = true, AiBehaviorSwitch = true;
 double AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
-bool _agAi = true; double _agT0 = -1, _agMoveT = -99, _agMinV = 0;
+bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
 int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
 List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
 
@@ -312,25 +314,28 @@ void AiGateFind(List<IMyFunctionalBlock> ai)
 
 bool AiGate(bool want)
 {
-    if (!want || !AiGateOn) { _agT0 = -1; return want; }
+    if (!want || !AiGateOn || _agLive) { _agT0 = -1; return want; }
     var vs = _rc.GetShipVelocities();
     double v = vs.LinearVelocity.Length();
-    if (_agT0 < 0) { _agT0 = _now; _agAi = !UnderFire; _agMoveT = -99; _agMinV = v; }
+    if (_agT0 < 0) { _agT0 = _now; _agAi = !UnderFire; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
     double age = _now - _agT0;
     if (_agAi)
     {
-        // The AI flies if it speeds the ship up again (the dampeners alone only slow it) or turns it. The first 1.5 s are
-        // ignored: the ship is still coasting and turning from the script's own control.
-        if (age < 1.5) _agMinV = v;
+        // The AI flies if it speeds the ship up again (the dampeners alone only slow it), keeps turning it, or has turned it more than
+        // 25 deg since the hand-over (it turns fast onto what it found, then may only brake; the script's own sweep coasts on for
+        // less than that). Speed and turn rate are ignored for the first 1.5 / 2.5 s while the ship coasts from the script's control.
+        if (!_agFwdSet) { _agFwd = _rc.WorldMatrix.Forward; _agFwdSet = true; }
+        if (age < 1.0) _agMinV = v;
         else
         {
             _agMinV = Math.Min(_agMinV, v);
-            if (v > _agMinV + 3 || vs.AngularVelocity.LengthSquared() > 0.0144) _agMoveT = _now;
+            if ((age > 1.5 && v > _agMinV + 3) || (age > 2.5 && vs.AngularVelocity.LengthSquared() > 0.0144) || Vector3D.Dot(_rc.WorldMatrix.Forward, _agFwd) < 0.906)
+            { _agMoveT = _now; _agLive = true; }
         }
         bool busy = _now - _agMoveT < 4 && age < AiHoldMax;
         if (!busy && (age >= AiWin || (UnderFire && age >= 1.5))) { _agAi = false; _agT0 = _now; }
     }
-    else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; }
+    else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
     return _agAi;
 }
 
@@ -338,7 +343,7 @@ string AiGateStatus()
 {
     if (_agFound < 0) return "";
     if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
-    return AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)\n" : "";
+    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
 }
 // <<< AI GATE <<<
 
