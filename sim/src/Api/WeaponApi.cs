@@ -23,6 +23,13 @@ namespace SeSim.Api
         public WeaponUnit Unit { get { return Inst.Weapon; } }
         protected SimUserGun(BlockInst inst, World world) : base(inst, world) { }
         public bool IsShooting { get { var u = Unit; return u != null && u.IsShooting; } }
+        /// <summary>Typed twins of the "Shoot_On/Shoot_Off" and "ShootOnce" actions (same rules).</summary>
+        public bool Shoot
+        {
+            get { var u = Unit; return u != null && u.ShootOn; }
+            set { if (Unit != null) Unit.ShootOn = value && EnabledValue; }
+        }
+        public void ShootOnce() { var u = Unit; if (u != null && EnabledValue && Inst.IsFunctional) u.ShootOnceRequests++; }
 
         protected override void OnEnabledChanged() { var u = Unit; if (!EnabledValue && u != null) u.ShootOn = false; }
 
@@ -50,7 +57,7 @@ namespace SeSim.Api
             r.Add(new SimAction("Shoot_On", b => { var g = (SimUserGun)b; if (g.Unit != null) g.Unit.ShootOn = g.EnabledValue; }));
             r.Add(new SimAction("Shoot_Off", b => { var g = (SimUserGun)b; if (g.Unit != null) g.Unit.ShootOn = false; }));
             r.Add(new SimAction("Shoot", b => { var g = (SimUserGun)b; if (g.Unit != null) g.Unit.ShootOn = !g.Unit.ShootOn && g.EnabledValue; }));
-            r.Add(new SimAction("ShootOnce", b => { var g = (SimUserGun)b; if (g.Unit != null && g.EnabledValue && g.Inst.IsFunctional) g.Unit.ShootOnceRequests++; }));
+            r.Add(new SimAction("ShootOnce", b => ((SimUserGun)b).ShootOnce()));
         }
     }
     public sealed class SimGatlingGun : SimUserGun, IMySmallGatlingGun { public SimGatlingGun(BlockInst i, World w) : base(i, w) { } }

@@ -214,6 +214,10 @@ namespace SeSim.Api
             ((IMyTerminalBlock)gg).ApplyAction("ShootOnce"); ((IMyTerminalBlock)gg).ApplyAction("ShootOnce"); Check(gun.Weapon.ShootOnceRequests == 2, "ShootOnce counts");
             ((IMyTerminalBlock)gg).ApplyAction("Shoot_On"); gg.Enabled = false; Check(!gun.Weapon.ShootOn, "disabling a gun stops shooting");
             ((IMyTerminalBlock)gg).ApplyAction("ShootOnce"); Check(gun.Weapon.ShootOnceRequests == 2, "ShootOnce ignored while disabled");
+            gg.Enabled = true; gg.Shoot = true; Check(gun.Weapon.ShootOn && gg.Shoot, "typed Shoot = true");
+            gg.Shoot = false; Check(!gun.Weapon.ShootOn && !gg.Shoot, "typed Shoot = false");
+            int before = gun.Weapon.ShootOnceRequests; gg.ShootOnce(); Check(gun.Weapon.ShootOnceRequests == before + 1, "typed ShootOnce");
+            gg.Enabled = false; gg.ShootOnce(); Check(gun.Weapon.ShootOnceRequests == before + 1, "typed ShootOnce ignored while disabled");
             Check(!((IMyTerminalBlock)gg).HasAction("NoSuchAction"), "unknown action absent");
             ((IMyTerminalBlock)gg).ApplyAction("NoSuchAction");   // must not throw
             Check(gg.GetInventory(0) != null && gg.GetInventory(0).CurrentVolume.RawValue == 0 && gg.GetInventory(0).MaxVolume.RawValue == 64000, "gun inventory empty/64 L in creative");

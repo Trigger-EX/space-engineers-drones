@@ -1,0 +1,9 @@
+# Official Programmable Block API member names (Keen ModAPI doc mirror, docs/audit/api_fidelity.md A-3..A-6, script_logistics.md).
+# Format: Interface Member [Member ...]. tools/compile_check.sh fails if stubs.cs declares the interface without one of them
+# (a typo or a made-up name such as the wrong-but-plausible "Delay" for the timer is caught here). Checked by name, not by signature.
+IMyUserControllableGun IsShooting Shoot ShootOnce
+IMyTimerBlock IsCountingDown Silent TriggerDelay StartCountdown StopCountdown Trigger
+IMyFlightMovementBlock SpeedLimit FlightMode PrecisionMode CollisionAvoidance IsAutoPilotEnabled LookAtPosition
+IMyOffensiveCombatBlock SelectedAttackPattern TargetPriority UpdateTargetInterval TryGetSelectedAttackPattern
+IMyOffensiveCombatStayAtRange MinimalDistance MaximalDistance EvasiveManeuvers
+IMyProgrammableBlock IsRunning TryRun

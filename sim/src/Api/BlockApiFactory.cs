@@ -4,8 +4,9 @@
 //   LargeGatlingTurret/InteriorTurret->SimLargeGatlingTurret, LargeMissileTurret->SimLargeMissileTurret, TurretControlBlock->SimTurretControlBlock,
 //   MergeBlock->SimMergeBlock, Projector->SimProjector, ShipWelder->SimShipWelder, MyProgrammableBlock->SimProgrammableBlock,
 //   RemoteControl->SimRemoteControl, RadioAntenna->SimRadioAntenna, Warhead->SimWarhead,
-//   OffensiveCombatBlock/FlightMovementBlock/DefensiveCombatBlock/BasicMissionBlock/Decoy/... (functional) -> SimGenericFunctional,
-//   TimerBlock/EventControllerBlock/CargoContainer/ButtonPanel -> SimGenericTerminal, CubeBlock (armor) / non-terminal defs -> null.
+//   OffensiveCombatBlock->SimOffensiveCombatBlock, FlightMovementBlock->SimFlightMovementBlock, TimerBlock->SimTimer (typed stubs, all derived/like SimGenericFunctional),
+//   DefensiveCombatBlock/BasicMissionBlock/Decoy/... (functional) -> SimGenericFunctional,
+//   EventControllerBlock/CargoContainer/ButtonPanel -> SimGenericTerminal, CubeBlock (armor) / non-terminal defs -> null.
 // Applies blueprint state: CustomName, CustomData, Enabled (in the classes), BroadcastRadius, EnableBroadcasting, FieldMin/Max,
 // Detect* (in the classes), ChargeMode, CurrentStoredPower (here); registers cameras/sensors in World lists, antennas and PB
 // endpoints in World.Igc.
@@ -70,7 +71,9 @@ namespace SeSim.Api
                 case "RadioAntenna": return new SimRadioAntenna(b, w);
                 case "Warhead": return new SimWarhead(b, w);
                 case "CubeBlock": return null;
-                case "TimerBlock":
+                case "TimerBlock": return new SimTimer(b, w);
+                case "FlightMovementBlock": return new SimFlightMovementBlock(b, w);
+                case "OffensiveCombatBlock": return new SimOffensiveCombatBlock(b, w);
                 case "EventControllerBlock":
                 case "CargoContainer":
                 case "ButtonPanel": return new SimGenericTerminal(b, w);

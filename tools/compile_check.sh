@@ -8,6 +8,15 @@ using System.Text.RegularExpressions; using Sandbox.ModAPI.Ingame; using Sandbox
 using SpaceEngineers.Game.ModAPI.Ingame; using VRage; using VRage.Collections; using VRage.Game;
 using VRage.Game.Components; using VRage.Game.GUI.TextPanel; using VRage.Game.ModAPI.Ingame;
 using VRage.Game.ModAPI.Ingame.Utilities; using VRage.Game.ObjectBuilders.Definitions; using VRage.ObjectBuilders; using VRageMath;'
+# stub API names vs the official PB API names (tools/pbapi_names.txt)
+while read -r iface members; do
+  case "$iface" in ""|\#*) continue;; esac
+  decl=$(awk -v re="interface $iface[ :{]" '$0 ~ re {p=1} p {print} p && /} *}[ \t]*$/ {exit}' "$ROOT/stubs.cs")
+  [ -z "$decl" ] && { echo "FAIL pbapi_names: $iface missing in stubs.cs"; rm -rf "$OUT"; exit 2; }
+  for m in $members; do
+    echo "$decl" | grep -qE "\b$m\b" || { echo "FAIL pbapi_names: $iface.$m missing in stubs.cs"; rm -rf "$OUT"; exit 2; }
+  done
+done < "$ROOT/tools/pbapi_names.txt"
 files=("$@"); [ ${#files[@]} -eq 0 ] && files=("$ROOT"/scripts/*.cs)
 rc=0
 mcs -target:library -nowarn:0169,0414,0649,0219 -out:"$OUT/stubs.dll" "$ROOT/stubs.cs" >"$OUT/stubs.log" 2>&1 \

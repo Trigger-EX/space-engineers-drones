@@ -321,6 +321,8 @@ namespace SpaceEngineers.Game.ModAPI.Ingame {
   public interface IMyShipMergeBlock : IMyFunctionalBlock { bool IsConnected {get;} }
   public interface IMyTurretControlBlock : IMyFunctionalBlock { bool HasTarget {get;} MyDetectedEntityInfo GetTargetedEntity(); bool IsAimed {get;} float Range {get;set;} bool AIEnabled {get;} }
   public interface IMySmallMissileLauncherReload : IMySmallMissileLauncher {}
+  // IMyTimerBlock: real name is TriggerDelay (float SECONDS); no Delay member (audit api_fidelity A-3)
+  public interface IMyTimerBlock : IMyFunctionalBlock { bool IsCountingDown {get;} bool Silent {get;set;} float TriggerDelay {get;set;} void StartCountdown(); void StopCountdown(); void Trigger(); }
   public interface IMySmallGatlingGun : IMyUserControllableGun {}
   public interface IMyLargeGatlingTurret : IMyLargeConveyorTurretBase {}
   public interface IMyLargeMissileTurret : IMyLargeConveyorTurretBase {}
@@ -498,11 +500,23 @@ namespace Sandbox.ModAPI.Ingame {
   public interface IMyProjector : IMyFunctionalBlock { bool IsProjecting {get;} int RemainingBlocks {get;} int TotalBlocks {get;} int BuildableBlocksCount {get;} }
   public interface IMyShipToolBase : IMyFunctionalBlock {}
   public interface IMyShipWelder : IMyShipToolBase {}
-  public interface IMyUserControllableGun : IMyFunctionalBlock { bool IsShooting {get;} }
+  public interface IMyUserControllableGun : IMyFunctionalBlock { bool IsShooting {get;} bool Shoot {get;set;} void ShootOnce(); }
   public interface IMySmallMissileLauncher : IMyUserControllableGun {}
   public interface IMyLargeTurretBase : IMyUserControllableGun { bool HasTarget {get;} MyDetectedEntityInfo GetTargetedEntity(); bool IsAimed {get;} float Range {get;set;} bool AIEnabled {get;}
     float Azimuth {get;} float Elevation {get;} string GetTargetingGroup(); void SetTargetingGroup(string groupSubtypeId); }
   public interface IMyLargeConveyorTurretBase : IMyLargeTurretBase {}
+  // AI blocks (audit api_fidelity A-4/A-5). IMyOffensiveCombatStayAtRange is NOT a block: it is the attack-pattern component
+  // returned by IMyOffensiveCombatBlock.TryGetSelectedAttackPattern. IsAutoPilotEnabled is get-only. SpeedLimit unit unconfirmed (m/s assumed).
+  public enum FlightMode { Patrol, Circle, OneWay }
+  public enum OffensiveCombatTargetPriority { Closest, Largest }
+  public interface IMyAttackPatternComponent {}
+  public interface IMyOffensiveCombatStayAtRange : IMyAttackPatternComponent { float MinimalDistance {get;set;} float MaximalDistance {get;set;} bool EvasiveManeuvers {get;set;} }
+  public interface IMyFlightMovementBlock : IMyFunctionalBlock {
+    float SpeedLimit {get;set;} FlightMode FlightMode {get;set;} bool PrecisionMode {get;set;} bool CollisionAvoidance {get;set;}
+    bool IsAutoPilotEnabled {get;} Vector3D? LookAtPosition {get;} }
+  public interface IMyOffensiveCombatBlock : IMyFunctionalBlock {
+    long SelectedAttackPattern {get;set;} OffensiveCombatTargetPriority TargetPriority {get;set;} int UpdateTargetInterval {get;set;}
+    bool TryGetSelectedAttackPattern(out IMyAttackPatternComponent pattern); }
   public interface IMyCameraBlock : IMyFunctionalBlock {
     bool EnableRaycast {get;set;} double AvailableScanRange {get;} bool IsActive {get;} float RaycastConeLimit {get;} double RaycastDistanceLimit {get;} float RaycastTimeMultiplier {get;}
     bool CanScan(double distance); bool CanScan(double distance, Vector3D direction); bool CanScan(Vector3D target); int TimeUntilScan(double distance);

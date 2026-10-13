@@ -8,6 +8,8 @@ using System.Xml;
 using VRageMath;
 using SeSim.Core;
 
+// Not parsed on purpose: <Toolbar> and <BlockGroups> (Timer/button actions, terminal groups). They are not cheap to model and no script
+// in the repo reads them; GetBlockGroups stays empty and a Timer's expiry runs nothing (SimTimer).
 namespace SeSim.Blueprint
 {
     public sealed class BlueprintData

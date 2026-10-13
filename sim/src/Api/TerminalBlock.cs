@@ -12,6 +12,7 @@ using VRage.Game.ModAPI.Ingame;
 using VRage.ObjectBuilders;
 using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI.Interfaces;
+using SpaceEngineers.Game.ModAPI.Ingame;
 using SeSim.Core;
 
 namespace SeSim.Api
@@ -225,7 +226,7 @@ namespace SeSim.Api
     }
 
     /// <summary>Functional blocks without behaviour (AI blocks when no brain is attached, lights...).</summary>
-    public sealed class SimGenericFunctional : SimFunctionalBlock
+    public class SimGenericFunctional : SimFunctionalBlock
     {
         public SimGenericFunctional(BlockInst i, World w) : base(i, w) { }
         /// <summary>The AI blocks' "AI Behavior" switch (terminal id assumed "ActivateBehavior"; off in a pasted blueprint). Only consulted
@@ -250,5 +251,65 @@ namespace SeSim.Api
                 return null;
             }
         }
+    }
+
+    /// <summary>AI Flight (FlightMovementBlock): typed settings are stored (the VanillaAiBrain does not read them yet; the sim's
+    /// flight model keeps its own speed limit). IsAutoPilotEnabled = switched on and working; LookAtPosition is not modelled (null).</summary>
+    public sealed class SimFlightMovementBlock : SimGenericFunctional, IMyFlightMovementBlock
+    {
+        public SimFlightMovementBlock(BlockInst i, World w) : base(i, w) { }
+        float _speed = 100f;
+        public float SpeedLimit { get { return _speed; } set { _speed = float.IsNaN(value) || value < 0f ? 0f : value; } }
+        public FlightMode FlightMode { get; set; }
+        public bool PrecisionMode { get; set; }
+        bool _collision = true;
+        public bool CollisionAvoidance { get { return _collision; } set { _collision = value; } }
+        public bool IsAutoPilotEnabled { get { return IsWorking && BehaviorOn; } }
+        public Vector3D? LookAtPosition { get { return null; } }
+    }
+
+    /// <summary>AI Offensive (OffensiveCombatBlock): typed settings are stored only. The attack pattern is a separate component
+    /// (IMyOffensiveCombatStayAtRange), as in the game.</summary>
+    public sealed class SimOffensiveCombatBlock : SimGenericFunctional, IMyOffensiveCombatBlock
+    {
+        public SimOffensiveCombatBlock(BlockInst i, World w) : base(i, w) { }
+        readonly SimStayAtRange _pattern = new SimStayAtRange();
+        int _interval = 3;
+        public long SelectedAttackPattern { get; set; }
+        public OffensiveCombatTargetPriority TargetPriority { get; set; }
+        public int UpdateTargetInterval { get { return _interval; } set { _interval = value < 0 ? 0 : value; } }
+        public bool TryGetSelectedAttackPattern(out IMyAttackPatternComponent pattern) { pattern = _pattern; return true; }
+    }
+
+    public sealed class SimStayAtRange : IMyOffensiveCombatStayAtRange
+    {
+        float _min = 0f, _max = 800f;
+        public float MinimalDistance { get { return _min; } set { _min = value < 0f ? 0f : value; } }
+        public float MaximalDistance { get { return _max; } set { _max = value < 0f ? 0f : value; } }
+        public bool EvasiveManeuvers { get; set; }
+    }
+
+    /// <summary>Timer Block: PB-visible API only. The countdown runs on the world tick; when it expires nothing happens (the
+    /// toolbar actions are not loaded from the blueprint, so there is nothing to run). TriggerDelay is in seconds.</summary>
+    public sealed class SimTimer : SimFunctionalBlock, IMyTimerBlock
+    {
+        long _fireTick = -1;
+        float _delay = 10f;
+        public SimTimer(BlockInst i, World w) : base(i, w) { }
+        public bool Silent { get; set; }
+        public float TriggerDelay { get { return _delay; } set { _delay = float.IsNaN(value) ? 1f : Math.Max(1f, Math.Min(value, 3600f)); } }
+        public bool IsCountingDown
+        {
+            get
+            {
+                if (_fireTick < 0) return false;
+                if (World.Tick >= _fireTick) _fireTick = -1;        // expired: actions skipped
+                return _fireTick >= 0;
+            }
+        }
+        public void StartCountdown() { if (EnabledValue && Inst.IsFunctional) _fireTick = World.Tick + (long)Math.Round(_delay * SimSettings.TicksPerSecond); }
+        public void StopCountdown() { _fireTick = -1; }
+        public void Trigger() { }
+        protected override void OnEnabledChanged() { if (!EnabledValue) _fireTick = -1; }
     }
 }

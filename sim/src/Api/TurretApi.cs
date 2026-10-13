@@ -15,6 +15,10 @@ namespace SeSim.Api
         public TurretUnit Unit { get { return Inst.Turret; } }
         protected SimLargeTurret(BlockInst inst, World world) : base(inst, world) { }
         public bool IsShooting { get { var u = Unit; return u != null && u.Weapon != null && u.Weapon.IsShooting; } }
+        /// <summary>Turrets fire on their own AI in the sim (no Shoot_On/ShootOnce action exists for them): Shoot reads the weapon's
+        /// state, the setter and ShootOnce() are accepted and ignored, exactly like ApplyAction("Shoot_On") on a turret.</summary>
+        public bool Shoot { get { return IsShooting; } set { } }
+        public void ShootOnce() { }
         public bool HasTarget { get { var u = Unit; return u != null && IsWorking && u.TargetBody != null && u.TargetBody.Alive; } }
         public MyDetectedEntityInfo GetTargetedEntity() { return HasTarget ? Unit.Target : default(MyDetectedEntityInfo); }
         public bool IsAimed { get { var u = Unit; return u != null && u.IsAimed; } }
