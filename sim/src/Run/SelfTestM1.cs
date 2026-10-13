@@ -38,6 +38,7 @@ namespace SeSim.Run
             if (!File.Exists(Path.Combine(bp, "Shrike Test", "bp.sbc")) || !File.Exists(Path.Combine(bp, "Shrike Test Rocket", "bp.sbc")) || !File.Exists(Path.Combine(bp, "Hornet", "bp.sbc")))
             { SelfTestSkips.Note("M1 (build: python3 -I tools/build_all.py --only \"Shrike Test\" \"Shrike Test Rocket\" Hornet)"); Console.WriteLine("  skipped: blueprints missing"); return 0; }
             TestHandOver();
+            TestFlicker();
             TestDampeners();
             TestPilotRate();
             TestRelease();
@@ -139,6 +140,27 @@ namespace SeSim.Run
             Check(worst <= 2, "stick in the same tick as the seat: at most " + worst + " tick(s) of override/pilot overlap (before the script's next run)");
         }
 
+        static void TestFlicker()
+        {
+            // a seat held for less than Seat Debounce (0.25 s) frees the ship but never commits MANUAL; the script flies again at once
+            int ok = 0;
+            for (int seed = 0; seed < 3; seed++)
+            {
+                bool everMan = false, hold = false, ovBefore = false, ovAfter = false; int holdTicks = 0;
+                var sc = Duel("Shrike Test", "Hornet", "10:sit;10.25:leave", 1200, false, "hunt");
+                Go(sc, seed, 13, (w, sh, prog) =>
+                {
+                    var b = sh.Main; long t = w.Tick;
+                    if (t == 10 * 60 - 1) ovBefore = AnyOverride(b);
+                    if (t >= 10 * 60 && Fld<bool>(prog, "_man")) everMan = true;
+                    if (Fld<bool>(prog, "_hold")) { hold = true; holdTicks++; if (AnyOverride(b)) everMan = true; }
+                    if (t == 12 * 60) ovAfter = AnyOverride(b);
+                });
+                if (hold && !everMan && holdTicks >= 10 && holdTicks <= 20 && ovBefore && ovAfter) ok++;
+            }
+            Check(ok == 3, "seat held 0.25 s (< debounce): ship held free while it lasts, MANUAL never committed, the script flies again afterwards (" + ok + "/3 seeds)");
+        }
+
         // ------------------------------------------------------------------------------------------------------------------ 1b dampeners
         static void TestDampeners()
         {
@@ -146,7 +168,7 @@ namespace SeSim.Run
             int ok = 0;
             for (int seed = 0; seed < 3; seed++)
             {
-                bool dAtSit = false, dAfterOff = true, dAtResit = true, autoOff = false;
+                bool dAtSit = false, dAfterOff = true, dAtResit = true, autoOff = false; string store = "";
                 var sc = Duel("Shrike Test", "Hornet", "8:sit;10:damp off;12:leave;18:sit", 1200, false, "hunt");
                 Go(sc, seed, 20, (w, sh, prog) =>
                 {
@@ -155,8 +177,12 @@ namespace SeSim.Run
                     if (w.Tick == 11 * 60) dAfterOff = b.DampenersOn;
                     if (w.Tick == 17 * 60 + 50) autoOff = !b.DampenersOn;
                     if (w.Tick == 18 * 60 + 30) dAtResit = b.DampenersOn;
+                    if (w.Tick == 11 * 60) { prog.GetType().GetMethod("Save").Invoke(prog, null); store = ((Sandbox.ModAPI.IMyGridProgram)prog).Storage; }
                 });
-                if (dAtSit && !dAfterOff && autoOff && !dAtResit) ok++;
+                var sp = store.Split(';');
+                bool stored = sp.Length == 7 && sp[0] == "HUNT" && sp[5] == "1" && sp[6] == "0";   // mode;home x;y;z;set;assist level;pilot dampener switch
+                if (dAtSit && !dAfterOff && autoOff && !dAtResit && stored) ok++;
+                if (seed == 0) Info("Storage after 'damp off': " + store);
                 Info("seed " + seed + ": dampeners after sitting " + dAtSit + " (AUTO had them off), after 'damp off' " + dAfterOff + ", AUTO flying at 17.8 s off=" + autoOff + ", after sitting again " + dAtResit);
             }
             Check(ok == 3, "dampeners: restored to the pilot's state on entry (on), his 'off' survives the auto visit and is restored on the next entry (" + ok + "/3 seeds)");

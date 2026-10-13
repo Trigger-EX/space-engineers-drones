@@ -34,14 +34,11 @@ def _drop(bp, pred):
 def _shrike_test(name, weapon_b2=None):
     bp = hornet_frame(name, '', 'MyObjectBuilder_SmallGatlingGun', script_text('ShrikeAI.cs'), ai=True, sensor=True, merge=False)
     bp.legacy_shapes = False                       # sample-derived shapes: cockpit / timer / PB (enabled)
-    # the cockpit stands on the deck: antenna, upper camera and the two dive thrusters make room; battery 4's cell takes the PB
-    _drop(bp, lambda b: any(t in (b['name'] or '') for t in ('Antenna', 'Camera Up', 'Ion Dive', ' PB', 'Battery 4')))
-    bp.add('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', (1, 1, -2), 'Forward', 'Up', f'[Helm] {name} PB',
-           extra=pb_extra(script_text('ShrikeAI.cs')), kind='ctrl')
-    seat = bp.add('MyObjectBuilder_Cockpit', 'SmallBlockCockpit', (-1, 2, -2), 'Forward', 'Up', f'{name} Seat', kind='ctrl')
-    # dive thrusters on the rear deck behind the cockpit (armour stubs on the core's back face carry them)
-    bp.armor(-1, 1, 1); bp.armor(1, 1, 1)
-    thr(bp, (-1, 2, 1), 'Up', 'Backward', f'{name} Ion Dive L'); thr(bp, (1, 2, 1), 'Up', 'Backward', f'{name} Ion Dive R')
+    # the cockpit stands on the rear deck (the antenna's place); the Hornet's cameras, dive thrusters, PB and 4 batteries stay where they are
+    _drop(bp, lambda b: 'Antenna' in (b['name'] or ''))
+    pb = [b for b in bp.blocks if b['name'] == f'{name} PB'][0]
+    pb['name'] = f'[Helm] {name} PB'
+    seat = bp.add('MyObjectBuilder_Cockpit', 'OpenCockpitSmall', (-1, 2, 0), 'Forward', 'Up', f'{name} Seat', kind='ctrl')
     timer = bp.add('MyObjectBuilder_TimerBlock', 'TimerBlockSmall', (0, 0, 1), 'Forward', 'Up', f'{name} Deadman', kind='ctrl')
     bp.group('Thrusters', [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_Thrust'])
     guns = [b for b in bp.blocks if b['kind'] == 'gun']

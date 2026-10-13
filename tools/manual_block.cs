@@ -71,6 +71,7 @@ void ManFree()
     ReleaseGyros();
     foreach (var t in _thr) t.ThrustOverridePercentage = 0;
     _prevErr = Vector3D.Zero; _havePrev = false; _asOv = false; _asG = 1;
+    BatFire(false, Vector3D.Zero);   // a continuous second battery stops too
     if (_aiOn) { _aiOn = false; _aiKick = false; foreach (var b in _ai) b.Enabled = false; }
     ManDamp(_userDamp);   // after the AI blocks: switching those off may touch the dampeners
     _patrolLeg = false;

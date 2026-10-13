@@ -1,52 +1,30 @@
 // =====================================================================
-//  HORNET DRONE AI  v2.5-hornet  - targeting, lead aiming, fire control & flight
-//  For Space Engineers (vanilla, small grid). Paste into a Programmable Block.
-// ---------------------------------------------------------------------
-//  WHAT IT DOES
-//   * Finds targets from: sensor blocks (all around, ~50 m), designators
-//     (turrets / Custom Turret Controllers), camera raycast lock, an automatic
-//     camera scan sweep that yaws and nods up/down, and
-//     targets shared over antenna (IGC) by a mothership or other drones.
-//   * Tracks each contact (position, velocity, filtered acceleration) and
-//     keeps a lock alive with predictive raycasts.
-//   * Computes a 2nd-order intercept (lead) point and steers the guns onto
-//     it with a PD gyro controller + line-of-sight-rate feed-forward.
-//   * Fires only when the lead solution is inside the target's silhouette,
-//     in range, and the line of fire is clear of friendlies.
-//   * Flies itself: standoff orbit with random jinking, guard a home point,
-//     return-to-base on low battery / no ammo. Thrust is power-limited so
-//     small batteries never brown out.
+//  SHRIKE AI  v0.1-shrike  - the Helm script of the Shrike fighter: autonomous AND hand-flyable (ONE Programmable Block)
+//  For Space Engineers (vanilla, small grid). Paste into a Programmable Block named "[Helm] ...".
+//  A Hornet (HornetDroneAI v2.6) without LAUNCH, FOLLOW and SEEKER (drone-side blocks) plus the MANUAL, BATTERY-lite and dead-man blocks of
+//  docs/design/control_arch.md (sections 2, 3). Everything that is not listed below behaves exactly like the Hornet: tracking, camera / sensor /
+//  AI-block search, LEAD solver, BREACH aiming, KAMIKAZE DEFENCE, FLEET listener, GUARD / HUNT / ASSIST / RTB / IDLE.
 //
-//  v2.1 (round 1, ported from the Harrier; details in docs/script-fix-notes.md):
-//   * AI hand-over with confirm rays down the boresight, lock upkeep (cheap rays at known hull points, ghost target, search ellipse,
-//     loss sharing), wingmate separation, stale tracks are not fired on, one-block debris counts as finished, target feeds from other fleets
-//  v2.2 (round 2, "Round 2: hornet-harrier" in docs/script-fix-notes.md):
-//   * AI confirm rays: both forward cameras fire the long (2.6 km) ray; after a fight they shorten to the last known range (a ray costs its length)
-//   * AI re-pick: an AI block that has held the nose on something for 6 s without a lock is power-cycled once (it may be stuck on a wreck)
-//   * HUNT search patrol: with nothing found for 15 s the drone cruises round a square of 1.2 km radius with listening stops for the AI blocks
-//   * two cameras that can cast in the same tick never aim at the same point; config keys with '=' in their name were renamed (MyIni splits there)
+//  WHAT THE SHIP MUST HAVE (naming rules the hull designers keep)
+//   * this PB, custom name starting with "[Helm]"; a Remote Control (the script's reference for mass, velocity, orientation) AND a flight seat
+//     (any IMyShipController that CanControlShip and is not the Remote Control; a ship with only a cockpit uses it as the reference too)
+//   * fixed guns; optional "[B1]" / "[B2]" in their names for two batteries (an untagged ballistic gun is B1, any other class B2); turrets are designators
+//   * optional: a Timer whose name contains "Deadman" (5 s, Silent; its toolbar cuts thrusters and weapons), cameras, sensor, AI blocks tagged [AI]
 //
-//  v2.5 (LEAD v1.0, shared block, docs/lead-v1.md): the lead solver predicts the target with its freshest acceleration, held only
-//   for as long as its manoeuvres usually last (an AI ship on evasive flips its strafe every 2-5 s); the hull aim point counts only
-//   across the line of fire, turns with the target's spin, and keeps "Aim Margin" x the predicted miss of known hull around it
-//
-//  COMMANDS (PB argument, toolbar, or IGC "<Tag>_CMD")
-//   guard    hold home point, engage anything inside GuardRadius
-//   follow   stay with the owner: a ship running a Mothership link, or you on foot near the drone ("escort" works too)
-//   satellite (sat, orbit)   FOLLOW, but the drones spread round a slowly turning vertical ring centred on the owner (ring size grows with their number); [Follow] section
-//   hunt     chase and engage any target, actively scan
-//   assist   you fly, script aims + fires when a target is locked
-//   rtb      fly home, then idle
-//   idle     release all control (dampeners back on)
-//   lock     raycast lock on whatever the nose camera points at
-//   unlock   drop the current target
-//   home     set home point to current position
-//   range <m>   set standoff range       reload   re-read CustomData
-//
-//  Settings live in the PB's Custom Data (written on first run).
-//  KAMIKAZE DEFENCE (v2.6-hornet; shared block tools/kz_block.cs, docs/kamikaze-defence.md): incoming swarms of small warhead drones are
-//   never written off as wrecks, become the priority target, and the drone backs away while firing and breaks sideways just
-//   before impact; spare camera rays track the swarm and the tracks are shared with the hive. Own [Kamikaze Defence] Custom Data section.
+//  MODES  AUTO = the Hornet modes (_mode: guard hunt assist rtb idle; Start Mode default GUARD, saved in Storage), MANUAL = somebody sits in the seat
+//   (held >= Seat Debounce 0.4 s) or "manual" was sent. The tick the seat is taken every gyro / thruster override is released, the dampener switch goes back to the
+//   pilot's own state, the AI blocks go off; tracking, sensors, turrets and the lock keep running. Seat empty >= Release Delay 1.5 s: back to _mode, the turn-rate cap
+//   ramps from the present rate to Max Turn over 2 s. No script output while MANUAL touches the guns (Auto Fire In Manual = false).
+//  COMMANDS (PB argument, IGC "<Tag>_CMD", toolbar)   all Hornet verbs except follow / satellite / seeker / launch / armed / disarm, and
+//   manual | auto | pilot (toggle)   MANUAL / AUTO regardless of the seat until the seat changes ("auto" with a pilot aboard = the ship flies itself with a HUD)
+//   assist hud | fbw | off           HUD: lead pip + fire window on the cockpit surface; FBW: fly-by-wire blend (stick rate + PD rate to the lead point, lock needed)
+//   assist (no word)                 the Hornet ASSIST mode (script aims and fires, you fly)
+//   Run with NO argument             menu: each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (HUD shows it)
+//  CUSTOM DATA  [Shrike] = the Hornet keys (IGC Tag default SHRIKE, Start Mode default GUARD); [Manual] Seat Debounce, Release Delay, Assist (OFF/HUD/FBW),
+//   Assist Max Rate, Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale, Pilot Priority Rate, Auto Fire In Manual, Scan In Manual, Run Menu, Run Menu Wait,
+//   Deadman Timer Name, HUD Surface (cockpit text surface, -1 off); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
+//  NOT MEASURED IN THE GAME: stick scale / sign / gyro feel (Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale: control_arch tests K1/K2), the Run-with-argument
+//   toolbar item (K3, hence the menu), Timer re-arm by Stop + Start (does Start restart a counting timer?), DampenersOverride per controller (K7).
 // =====================================================================
 
 const string VER = "0.1-shrike";
@@ -178,7 +156,6 @@ bool _firing = false;
 double _holdFireUntil = 0;
 Vector3D _jink; double _nextJink = 0; double _orbitSign = 1;
 int _scanIdx = 0;
-double _sweepYaw = 0;
 Random _rng = new Random();
 string _err = "";
 double _aimErrDeg = 0, _fireWinDeg = 0, _leadT = 0;
@@ -784,6 +761,7 @@ void ManFree()
     ReleaseGyros();
     foreach (var t in _thr) t.ThrustOverridePercentage = 0;
     _prevErr = Vector3D.Zero; _havePrev = false; _asOv = false; _asG = 1;
+    BatFire(false, Vector3D.Zero);   // a continuous second battery stops too
     if (_aiOn) { _aiOn = false; _aiKick = false; foreach (var b in _ai) b.Enabled = false; }
     ManDamp(_userDamp);   // after the AI blocks: switching those off may touch the dampeners
     _patrolLeg = false;
@@ -1164,8 +1142,6 @@ void LoadConfig()
     JinkEvery = Cfg(S, "Jink Interval (s)", JinkEvery);
     JinkEveryRand = Cfg(S, "Jink Interval Random (s)", JinkEveryRand);
     ListenTags = Cfg(S, "Listen To IGC Tags (target feeds)", ListenTags);
-    SearchTenths = (int)Cfg(S, "Search Share Tenths (stale lock)", (double)SearchTenths);
-    SearchTenthsLate = (int)Cfg(S, "Search Share Tenths (stale > 1.5 s)", (double)SearchTenthsLate);
     AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
     BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);
     BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);
@@ -1174,9 +1150,6 @@ void LoadConfig()
     AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
     AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
     AiConfirmAdaptive = Cfg(S, "AI Confirm Rays Shorten After A Fight", AiConfirmAdaptive);
-    AiSpiralMin = Cfg(S, "AI Confirm Spiral Min (deg)", AiSpiralMin);
-    AiSpiralMax = Cfg(S, "AI Confirm Spiral Max (deg)", AiSpiralMax);
-    AiSpiralPow = Cfg(S, "AI Confirm Spiral Exponent", AiSpiralPow);
     AiStaleTakeover = Cfg(S, "AI Takes Over After Stale Lock (s)", AiStaleTakeover);
     GhostTime = Cfg(S, "Ghost Target Time (s)", GhostTime);
     Stickiness = Cfg(S, "Target Stickiness (score bonus for the current target)", Stickiness);
@@ -1384,7 +1357,7 @@ double FireStaleMax = 2.0;    // never fire at a track older than this (extrapol
 int _missRun = 0, _spiralIdx = 0, _staleRay = 0;
 bool Search2nd = true;   // when two cameras can cast in the same tick at a stale lock, the second ray goes to the search ellipse
 int SearchTenths = 1, SearchTenthsLate = 3;   // of 10 rays at a stale (> 0.6 s) lock, how many go to the widening search ellipse instead of the predicted point
-double _lostFlagUntil = -1, _lastStaleShare = -9;
+double _lastStaleShare = -9;
 Vector3D _lostPos, _lostVel; double _lostT = -99, _lostRad = 3;   // last known state of the target that was dropped
 void NoteLost(Track t)
 {
@@ -1883,8 +1856,7 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("SHRIKE AI v").Append(VER).Append('\n').Append(ManHud()).Append(BatStatus());
-    _sb.Append("Cams ").Append(_cams.Count).Append(" Gyro ").Append(_gyros.Count).Append(" Thr ").Append(_thr.Count).Append(" Desig ").Append(_turrets.Count + _ctcs.Count).Append(" Sens ").Append(_sensors.Count).Append(" Guns ").Append(_guns.Count).Append('\n');
-    _sb.Append("Run ").Append(_avgMs.ToString("0.000")).Append(" ms  Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append(" peak ").Append(_peakIns).Append('\n');
+    _sb.Append("Cams ").Append(_cams.Count).Append(" Gyro ").Append(_gyros.Count).Append(" Thr ").Append(_thr.Count).Append(" Desig ").Append(_turrets.Count + _ctcs.Count).Append(" Sens ").Append(_sensors.Count).Append(" Run ").Append(_avgMs.ToString("0.000")).Append(" ms Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append(" peak ").Append(_peakIns).Append('\n');
     if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
     _sb.Append(HiveStatus()); _sb.Append(KzStatus());
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner: set ownership\n");

@@ -67,6 +67,8 @@ BAT_S = bat_extra(0.05)             # SmallBlockSmallBatteryBlock
 def ant_extra(r):
     return f"<BroadcastRadius>{r}</BroadcastRadius><ShowShipName>true</ShowShipName><EnableBroadcasting>true</EnableBroadcasting>"
 
+SCRIPT_LIMITS = {"ShrikeAI.cs": 80000}      # ship Helm scripts: <= 80,000 minified characters (control_arch s1.2), the other scripts only the PB limit
+
 def script_text(filename):
     """read scripts/<filename> at call time, minified (comments/whitespace only): a Programmable Block takes at most 100,000
     characters, the commented sources are larger. tools/minify_check.sh proves the minified text compiles to the same IL."""
@@ -74,7 +76,8 @@ def script_text(filename):
     _s.path.insert(0, os.path.join(ROOT, 'tools'))
     from minify_cs import minify
     t = minify(open(os.path.join(ROOT, 'scripts', filename), encoding='utf-8').read())
-    if len(t) > 100000: raise ValueError(f"{filename}: {len(t)} characters after minifying; the PB limit is 100,000")
+    lim = SCRIPT_LIMITS.get(filename, 100000)
+    if len(t) > lim: raise ValueError(f"{filename}: {len(t)} characters after minifying; the limit is {lim:,}" + ("" if lim == 100000 else " (ship Helm budget, control_arch s1.2; the PB limit is 100,000)"))
     return t
 
 # ---- block helpers ----
