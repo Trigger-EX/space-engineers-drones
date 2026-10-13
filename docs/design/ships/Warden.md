@@ -7,6 +7,9 @@ Nothing of this has been pasted in the game yet (section 11 lists what to look a
 
 ## 1. Numbers against the catalogue
 
+> **Gyro boost (v2.8):** gyros 8 -> 24 (x3): 806 MN m, so the angular accelerations quoted below roughly triple, less the 205 t of extra gyros (mass 2,563 -> 2,768 t, +800 PCU). The Helm's Auto Max Turn calibration measures the new authority on the first slews; no script change.
+
+
 | | catalogue 4.4 | Warden (Full) | note |
 |---|---|---|---|
 | size | 75 x 25 x 15 m (30 x 10 x 6 cells) | **85.0 x 27.5 x 40.0 m** (34 x 11 x 16 cells; hull 22.5 m wide, 12.5 m high deck; the 40 m is keel turrets to the mast) | longer and taller than the model hull: the hangar blister, the tower and the engines |
@@ -252,7 +255,7 @@ Every ship block is named `[SH] ...`; the PBs `[Helm][SH] Warden Helm` and `[Sta
 | decoys | 6 x `LargeDecoy` flush in the skin | `[SH] Decoy 1..6` | bow flanks, forecastle flanks, belly |
 | engines | 1 x `LargeBlockLargeHydrogenThrust` + 3 x `LargeBlockSmallHydrogenThrust` aft | `[SH] Main Engine (large)`, `Main Engine P/S/T (small)` | z 31..33 |
 | translation | 20 x `LargeBlockSmallHydrogenThrust` (4 lift, 4 dive, 4 brake, 8 strafe) | `[SH] Thruster Lift/Dive/Brake/Strafe ...` | belly z 9, 29; deck z 16; sponson fronts; flanks z 10, 11, 28, 29 |
-| gyros | 8 x `LargeBlockGyro` | `[SH] Gyroscope P1..4 / S1..4` | flank bays |
+| gyros | 24 x `LargeBlockGyro` (8 in the flank bays + 16 on the keel/engine-room floor) | `[SH] Gyroscope P1..4 / S1..4`, `K1..16` | flank bays, forward keel z 4-12, corridor z 29 |
 | power | 6 x `LargeBlockSmallGenerator` (100 kg uranium each), 8 x `LargeBlockBatteryBlock` (full) | `[SH] Reactor 1..6`, `[SH] Battery P1..4 / S1..4` | fore compartment, flank bays |
 | fuel | 2 x `LargeHydrogenTank` (full, 15 ML each) | `[SH] Hydrogen Tank P/S` | engine room |
 | stores | 2 x `LargeBlockLargeContainer` with spare 10 slugs, 20 artillery, 30 assault shells, 100 gatling boxes each | `[SH] Ammo Locker P/S` | fore compartment |
@@ -347,7 +350,7 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 
 ## 11. In-game checks (first paste)
 
-1. Does it paste as two grids (ship + pod) with no DLC warning; does the terminal list 8 doors, 8 gyros, 24 thrusters?
+1. Does it paste as two grids (ship + pod) with no DLC warning; does the terminal list 8 doors, 24 gyros, 24 thrusters?
 2. **Fuel**: tanks show 100 %; every thruster has hydrogen (terminal info "Hydrogen: ... filling"); fly: all five groups thrust. If not, the junction network is not connected: check one thruster's back cell and
    the tank terminal first (`[SH] Junction 1..101`).
 3. **Ammo**: assault / artillery turrets pull from the lockers (take a shell out of one turret, watch it refill). Gatlings have their own 24 boxes.
@@ -378,7 +381,7 @@ Nothing here was measured in the game; large-grid damage in the sim is optimisti
 Tech Hunter are stand-ins flown by the sim's Pirate brain, and the docked pod is held rigidly to the hull (`RigidLink`, no pod mass). Commands as in `Shrike.md` section 12; `Warden Wing` is the Warden with four Hornets in the pod.
 
 **Does the Warden need its own Helm script?** No. `ShrikeAI.cs` flies it unchanged with the class numbers below in its Custom Data; the audit points were: thrusters and gyros (the script reads mass and per-direction
-thrust from the Remote Control and the thrusters, and writes overrides to the 24 thrusters and 8 gyros: fine), `MaxTurn` calibration (the script measures the angular acceleration while the command saturates and sets
+thrust from the Remote Control and the thrusters, and writes overrides to the 24 thrusters and 24 gyros: fine), `MaxTurn` calibration (the script measures the angular acceleration while the command saturates and sets
 `0.85 sqrt(2 a 0.6 rad)`: **0.51 rad/s** against the analytic 0.85 sqrt(2 x 0.30 x 0.6) = 0.51, after the first slew from a random heading), stand-off for 2 km railguns (the two railguns are 2 of 16 weapons; the
 turrets decide, see below), turret-only mode (on: `Batt B1* RAILx2 ... TO`, the fixed rails refuse targets they cannot hit while the turrets work).
 
@@ -412,7 +415,7 @@ Class data in the Helm Custom Data: `Standoff Range=700`, `Min Range=150`, `Evas
 | 6 Gnats (400 m) | 4/5 wins (135-264 s), 1 loss (a precise Gnat swarm disabled the ship at 116 s with 76 blocks gone) | 5/5 (50-131 s) |
 | Tech Hunter (13,666 blocks, cap 300 s) | 1 seed: **out-gunned** - lost 418 blocks (23 %) in 300 s, dealt 559 k; the Hunter is down to 36 of 76 armed blocks (12,375 of 13,666 blocks), nobody dead | 1 seed: lost 352 blocks, dealt 1,410 k; the Hunter down to 42 of 76 armed blocks (11,693 blocks), nobody dead |
 
-**Manual, dead-man, wing, instructions.** `selftest m6` (2 seeds each): the Helm and the Staff hold exactly the ship's own 8 gyros, 24 thrusters, 2 fixed guns, 14 turrets, 8 batteries, the bridge seat (the `Gunnery Seat` and the Remote Control do not count: a gunner
+**Manual, dead-man, wing, instructions.** `selftest m6` (2 seeds each): the Helm and the Staff hold exactly the ship's own 24 gyros, 24 thrusters, 2 fixed guns, 14 turrets, 8 batteries, the bridge seat (the `Gunnery Seat` and the Remote Control do not count: a gunner
 in the open seat does not switch the Helm to MANUAL), 5 cameras and the `(deadman)` timer, nothing of the pod; manual flight with an idle Hornet 650 m away: 0 override-fight ticks, fixed guns quiet, the turrets kill it (54 -> 34-40 blocks),
 AUTO back after 1.5 s; Helm PB killed at 15 s: all overrides released 1.08 s later, once, `HELM LOST`, Timer D fires. `launch all` at 4 s while hunting: the Helm goes idle, the doors open, all four Hornets have left 25 s after the command, the Helm is handed HUNT back, the roll call counts
 4, the ring is 98-102 m from the ship. Without `launch`, `release all` waited for ever ("ship turns 0.45 rad/s", "ship accelerates 2.8 m/s2": the Helm sweeps for targets at 0.2-0.3 rad/s and orbits at 10 m/s). Instructions (IL model, with launch): Helm 27,358, Staff 11,812, pod

@@ -8,6 +8,9 @@ Nothing of this has been pasted in the game yet (section 12 lists what to look a
 
 ## 1. Numbers against the catalogue
 
+> **Gyro boost (v2.8):** gyros 72 -> 144 (x2): 4,838 MN m, so the angular accelerations quoted below roughly double, less the extra mass (+920 t, +3,600 PCU, now about 33,500 PCU; the trim table in section 10 still applies, delete gyros first). The Helm's Auto Max Turn calibration measures the new authority on the first slews; no script change.
+
+
 | | catalogue 4.5 | Leviathan (Full) | note |
 |---|---|---|---|
 | size | 200 x 60 x 35 m (80 x 24 x 14 cells) | **222.5 x 72.5 x 42.5 m** (89 x 29 x 17 cells; hull 57.5 m wide, 72.5 m over the flank nacelles; 42.5 m from the ram keel to the top of the bridge) | +11 % / +21 % / +21 %: nacelles, ram keel, tower |
@@ -121,7 +124,7 @@ the pod PBs `[Pod] Pod PB 1` and `[Pod] Pod PB 2`; nothing in a pod carries `[SH
 | decoys | 12 x `LargeDecoy` flush in the skin, six mirrored pairs | `[SH] Decoy 1..12` | bow flank, flank, stern, citadel flank, belly |
 | engines | 4 x `LargeBlockLargeHydrogenThrust`, exhaust aft | `[SH] Thruster Main Engine 1..4` | x -10, -5, 3, 8; y 4..6; z 85..87 |
 | manoeuvring | 10 x `LargeBlockLargeHydrogenThrust`: 2 Brake, 4 Strafe, 2 Lift, 2 Dive | `[SH] Thruster Brake P/S`, `Strafe P/S fore/aft`, `Lift P/S`, `Dive P/S` | Brake in the nacelle fronts (z 56), Strafe fore in the flanks (z 32) and aft in the nacelles (z 67), Lift on the belly and Dive on the ledges at z 50 |
-| gyros | 72 x `LargeBlockGyro` | `[SH] Gyroscope 1..72` | banks E, F |
+| gyros | 144 x `LargeBlockGyro` (72 in banks E, F + 72 in the nose cavity floor, y 1, z 15-19) | `[SH] Gyroscope 1..144` | banks E, F; nose |
 | power | 1 x `LargeBlockLargeGenerator` (500 kg uranium), 8 x `LargeBlockSmallGenerator` (100 kg), 20 x `LargeBlockBatteryBlock` (full) | `[SH] Reactor Large`, `[SH] Reactor 1..8`, `[SH] Battery 1..20` | compartments D, C |
 | fuel | 4 x `LargeHydrogenTank` (full, 15 ML each) | `[SH] Hydrogen Tank 1..4` | compartment G |
 | stores | 4 x `LargeBlockLargeContainer`: spare 20 railgun slugs, 100 artillery, 150 assault shells, 300 gatling boxes, 60 rockets (Full) each | `[SH] Ammo Locker 1..4` | compartments A, B |
@@ -340,7 +343,7 @@ Aiming at the weapons ends the fight when the Pirate has no gun left (the sim's 
 | 6 Gnats (400 m) | 2/3 wins (161-178 s), 1 timeout | - |
 | Tech Hunter (13,666 blocks, cap 300 s, 1 seed) | **lost 698 blocks (7 %)**, dealt 1,385 k; the Hunter is down to 19 of 76 armed blocks (12,136 of 13,666 blocks); nobody dead after 300 s | - |
 
-**Manual, dead-man, wing, instructions.** `selftest m6` with `M6_BIG=1` (2 seeds each): the Helm and the Staff hold the ship's own 72 gyros, 14 thrusters, 6 fixed guns, 44 turrets, 20 batteries, the bridge seat (the Gunnery Seat does not count), 5 cameras and the deadman timer, nothing of the pods;
+**Manual, dead-man, wing, instructions.** `selftest m6` with `M6_BIG=1` (2 seeds each): the Helm and the Staff hold the ship's own 144 gyros, 14 thrusters, 6 fixed guns, 44 turrets, 20 batteries, the bridge seat (the Gunnery Seat does not count), 5 cameras and the deadman timer, nothing of the pods;
 manual flight, 0 override-fight ticks, the turrets keep shooting; Helm PB killed at 15 s: all overrides released 1.13 s later. `launch all` at 4 s: pod 1 (bays 1-4) lets go, pod 2 (bays 5-8) follows 20 s later ("Pod Gap"), all 8 Hornets are out
 by 52 s, the Helm gets HUNT back, the roll call counts 8, the ring forms (215-413 m from the COM 18 s after `wing satellite`, still closing: the hull radius is about 110 m). Instructions (IL model, with launch): Helm 37,354, Staff 28,197, pod bay 26,267, Hornet 45,545 (the unchanged
 drone script; block model 2,274 / 1,616 / 616 / 1,750). The integrity scan is skipped on this hull (more than 30,000 cells).

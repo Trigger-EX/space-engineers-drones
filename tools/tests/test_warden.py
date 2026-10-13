@@ -110,7 +110,7 @@ class LoadoutTests(unittest.TestCase):
         bp = ship(False)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockSmallGenerator'), 6)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockBatteryBlock'), 8)
-        self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockGyro'), 8)
+        self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockGyro'), 24)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeHydrogenTank'), 2)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'LargeBlockLargeHydrogenThrust'), 1)
         self.assertEqual(sum(1 for b in bp.blocks if b['sub'] == 'AirtightHangarDoor' or (b['xtype'].endswith('AirtightHangarDoor'))), 8)
@@ -141,7 +141,7 @@ class LoadoutTests(unittest.TestCase):
     def test_catalogue_targets(self):
         """docs/design/systems_catalogue.md 4.4 within about 20 % (the mass and the forward acceleration are explained in docs/design/ships/Warden.md)"""
         n = W.numbers(ship(False))
-        self.assertTrue(1.8 <= n['mass_t_total'] / 1000 <= 2.7, n['mass_t_total'])
+        self.assertTrue(1.8 <= n['mass_t_total'] / 1000 <= 2.9, n['mass_t_total'])   # 2.9: 16 extra gyros on request (+205 t)
         self.assertTrue(2.7 <= n['accel_loaded_m_s2']['Forward'] <= 4.2, n['accel_loaded_m_s2'])
         for d in ('Backward', 'Up', 'Down', 'Left', 'Right'):
             self.assertTrue(1.2 <= n['accel_loaded_m_s2'][d] <= 1.8, (d, n['accel_loaded_m_s2'][d]))

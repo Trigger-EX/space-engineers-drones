@@ -273,6 +273,10 @@ def _interior(S, full):
             S.add('bat', 'MyObjectBuilder_BatteryBlock', 'LargeBlockBatteryBlock', (s * 3, 3, z), 'Forward', 'Up', nm(f'Battery {tag}{i + 1}'), extra=bat_extra(3), kind='bat', toward='Down')
         for i, z in enumerate((20, 21, 22, 24)):
             S.add('gyro', 'MyObjectBuilder_Gyro', 'LargeBlockGyro', (s * 3, 3, z), 'Forward', 'Up', nm(f'Gyroscope {tag}{i + 1}'), toward='Down', kind='gyro')
+    # 16 more (24 in all, 3x the first design) on the floor of the free keel cavities: forward keel z 4..8 and 12, and the engine-room corridor z 29
+    keel = [(sx, 3, z) for z in (5, 6, 7, 8, 12) for sx in (-1, 1)] + [(0, 3, 4), (0, 3, 5)] + [(x, 3, 29) for x in (-1, 0, 1)] + [(0, 3, 6)]
+    for i, c in enumerate(keel):
+        S.add('gyro', 'MyObjectBuilder_Gyro', 'LargeBlockGyro', c, 'Forward', 'Up', nm(f'Gyroscope K{i + 1}'), toward='Down', kind='gyro')
 
 def _bridge(S, full):
     """bridge level (y 9, x -1..1, z 20..24): cockpit, gunnery seat, Remote Control, Helm + Staff PB, timers, event controllers"""

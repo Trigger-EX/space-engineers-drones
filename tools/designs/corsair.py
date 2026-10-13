@@ -262,7 +262,7 @@ def turret_sites():
 def machinery():
     """reactor, batteries and gyro cells on the centre line (x -1..1) of the lower deck"""
     d = {'reactor': (-1, 2, 33), 'batt': [(-1, 2, z) for z in (36, 39, 42, 45)]}
-    gy = [(x, 4, z) for z in range(36, 42) for x in (-1, 0, 1)] + [(-1, 4, 42), (1, 4, 42)]      # 20 gyros on the battery tops (symmetric)
+    gy = [(x, 4, z) for z in range(36, 48) for x in (-1, 0, 1)] + [(sx, 4, z) for z in (36, 37) for sx in (-2, 2)]      # 40 gyros (2x the old 20) on the battery tops and the armour beside them (symmetric)
     d['gyro'] = gy
     return d
 
@@ -511,7 +511,7 @@ def add_systems(bp, res, env, lite):
     weapons = b1 + b2 + b3 + pd + other
     S.update(b1=b1, b2=b2, b3=b3, pd=pd, weapons=weapons)
 
-    # ---- power: reactor (Full) or small generators (Lite), four charged 1 MWh batteries, twenty gyros on the battery tops ----
+    # ---- power: reactor (Full) or small generators (Lite), four charged 1 MWh batteries, forty gyros on the battery tops ----
     m = machinery()
     if lite:
         for i, mn in enumerate(((-1, 2, 33), (0, 2, 33), (1, 2, 33), (0, 2, 34))):
@@ -696,7 +696,7 @@ def corsair_wing(lite=False):
 MODELS = {NAME: corsair, NAME + ' Wing': corsair_wing}
 _COMMON = ('Catamaran-hammerhead corvette (small grid, 33 m x 26.5 m x 12 m): charcoal hull with orange accents, hammer crossbar at the bow carrying two assault cannons '
            'and two autocannons, a dorsal ridge with two small railguns (B1), a stepped bridge tower with the cockpit, four point-defence gatling turrets and an assault '
-           'turret (Full), 14 large hydrogen thrusters on 10 full tanks (7.1 m/s2 forward, 3.6 m/s2 in the other directions), 20 gyros, a 14.75 MW reactor and four charged '
+           'turret (Full), 14 large hydrogen thrusters on 10 full tanks (7.1 m/s2 forward, 3.6 m/s2 in the other directions), 40 gyros, a 14.75 MW reactor and four charged '
            'batteries, three Programmable Blocks ("[Helm] Corsair", "[Staff] Corsair", "[Bay] Corsair" for the cradles), dead-man timer, hand-flyable. Two cradle pods on outrigger pylons, each a 9 x 8 x 9 cell '
            'bay for a Hornet-class drone (Hornet, Wasp, Watcher, Harrier, Lancer, Aegis), nose forward, 24-cell launch lane; the bay merge blocks are "[SH] [Bay n] Merge ...". '
            'Limitation: the assault cannons hold 3 shells, the autocannons 3 clips (48 rounds) and the railguns 6 slugs; there is no conveyor feed (port positions are not known), '

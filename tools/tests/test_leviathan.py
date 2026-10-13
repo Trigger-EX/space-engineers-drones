@@ -128,7 +128,7 @@ class NamingTests(unittest.TestCase):
         bp = ship(False)
         sizes = {k: len(v) for k, v in bp.groups.items()}
         self.assertEqual(sizes, {'B1': 6, 'Artillery': 8, 'Assault': 12, 'Rockets': 4, 'PD': 20, 'Main Turrets': 20, 'Turrets': 44, 'Thrusters': 14, 'Weapons': 50, 'Decoys': 12,
-                                 '[Hangar 1]': 8, '[Hangar 2]': 8, 'Gyros': 72, 'Reactors': 9, 'Batteries': 20, 'Tanks': 4})
+                                 '[Hangar 1]': 8, '[Hangar 2]': 8, 'Gyros': 144, 'Reactors': 9, 'Batteries': 20, 'Tanks': 4})
         lite = {k: len(v) for k, v in ship(True).groups.items()}
         self.assertNotIn('Rockets', lite)
         self.assertEqual(lite['PD'], 24)
@@ -147,7 +147,7 @@ class LoadoutTests(unittest.TestCase):
         self.assertEqual(cnt('LargeBlockLargeGenerator'), 1)
         self.assertEqual(cnt('LargeBlockSmallGenerator'), 8)
         self.assertEqual(cnt('LargeBlockBatteryBlock'), 20)
-        self.assertEqual(cnt('LargeBlockGyro'), 72)
+        self.assertEqual(cnt('LargeBlockGyro'), 144)
         self.assertEqual(cnt('LargeHydrogenTank'), 4)
         self.assertEqual(cnt('LargeBlockLargeHydrogenThrust'), 14)
         self.assertEqual(cnt('LargeBlockLargeContainer'), 4)

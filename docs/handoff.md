@@ -14,6 +14,8 @@ Keep the Space Engineers drone/warship project consistent: scripts, generator, s
 ## Current state
 All checks pass on `main`: compile_check, blocks_sync, minify_check, tools/tests/run_all.py, full build_all, `SimHost selftest all`.
 
+- Gyro boost (post-v2.7, zips not rebuilt): Corsair 20->40, Warden 8->24, Leviathan 72->144 gyros (generators in `tools/designs/{corsair,warden,leviathan}.py`, notes in the ship docs). Small drones untouched: their turn rate is capped by the scripts (MaxTurn 5 rad/s), not by gyro torque. ShrikeAI's Auto Max Turn calibration picks up the new authority; not run in the sim (no SimHost build here).
+
 ## Open questions
 In-game tests first: `packages/README_Warships.md` ranked list, `packages/tests.md` 24-35 (merge clamp face T1, cockpit toolbar Run argument K3, cockpit surface indices, gyro/stick feel, IGC across docked pods, ammo/hydrogen feed). Printers remain no-go as designed (docs/audit/printers.md).
 

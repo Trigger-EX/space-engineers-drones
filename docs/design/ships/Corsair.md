@@ -7,6 +7,9 @@ Evidence labels as elsewhere: [data] repo data, [calc] computed here, [unverifie
 
 ## 1. In one paragraph
 
+> **Gyro boost (v2.8):** gyros 20 -> 40 (x2): about 18 MN m, so the angular accelerations quoted below roughly double (yaw about 0.7 rad/s2 before the extra mass). The Helm's Auto Max Turn calibration measures the new authority on the first slews; no script change.
+
+
 A 33 m catamaran-hammerhead: a chisel nose and a hammer crossbar (two swept wings with assault cannons at the tips and autocannons inboard, orange leading edges), a dorsal
 ridge carrying two small railguns, a stepped bridge tower with the cyan cockpit, a long charcoal centre hull, and two outrigger pylons (hydrogen tanks with brake / lift / dive
 thrusters) that carry two open-fronted cradle pods with orange rims, fins and a 24-cell launch lane in front. Four main thrusters on four stacked stern tanks. Heavy armour on the
@@ -75,7 +78,7 @@ y -4 .......................................................................
 | 6-18 | nose tip, hammer crossbar (x -11..11, z 10-18) with 2 assault cannons (x +-9), 2 autocannons (x +-4) on its top, orange heavy bow |
 | 22-36 | dorsal ridge (x -1..1) and the two railguns `[B1]` (x +-2, z 26-33, Back faces on the tower front) |
 | 40-44 | two stacked mid tanks per side (flush with the flank) with a strafe thruster each (x +-7..9, moved here in review so the strafe thrust line passes 1.5 m from the centre of mass); centre corridor x = 0: Helm PB, Staff PB, Remote Control, Timer D, Event Controller |
-| 33-47 | lower deck on the centre line: reactor (z 33-35), four batteries (z 36-47), 20 gyros on the battery tops (y 4) |
+| 33-47 | lower deck on the centre line: reactor (z 33-35), four batteries (z 36-47), 40 gyros on the battery tops (y 4, z 36-47) and beside them (x +-2, z 36-37) |
 | 34-55 | bridge tower (3 steps, cockpit `SmallBlockCockpit` at x -1..1, y 16-18, z 41-43, glass slopes on the front), antenna, cameras |
 | 53-67 | outrigger pylons x +-7..12: tank + brake thruster in front (z 53-55), dive thruster above, lift thruster below |
 | 56-67 | cradle pods x +-13..25, bore x +-15..23, y 3-10, z 56-65; PD gatling turrets on the roofs and under the belly, outboard fins |
@@ -188,7 +191,7 @@ A fixed 500 m stand-off kills the Pirate about twice as fast (4 seeds: 99-252 s 
 
 Against the Tech Hunter in 600 s (3 seeds, no wing): 0 wins, the Corsair stays at 1,000 m, deals 630-680 k damage and takes 40-90 k; the Hunter keeps 13,300 of 13,666 blocks. It does not die; it does not lose either.
 
-**Manual, dead-man, wing, instructions.** `selftest m6` (2 seeds each): the Helm holds all 20 gyros, 14 thrusters, 6 fixed guns, 5 turrets, 4 batteries, the one seat, 8 cameras and the dead-man timer, the Staff the same lists (no drone block adopted);
+**Manual, dead-man, wing, instructions.** `selftest m6` (2 seeds each): the Helm holds all 40 gyros, 14 thrusters, 6 fixed guns, 5 turrets, 4 batteries, the one seat, 8 cameras and the dead-man timer, the Staff the same lists (no drone block adopted);
 manual flight with a Pirate in the field: 0 override-fight ticks, fixed guns quiet, the turrets keep shooting (enemy 53 -> 22 blocks while the pilot flies), AUTO back 1.5 s after standing up; Helm PB killed at 15 s: the Staff releases
 every override 1.1 s later, once, `HELM LOST`, Timer D fires; `launch all` at 4 s while hunting: both bays let go by 29 s, the Helm is handed HUNT back, the roll call counts 2, the drones sit 100 m from the ship 18 s after `wing satellite`.
 Without `launch`, `release all` in HUNT waited until the 60 s drop ("ship accelerates 8.5 m/s2"): the Helm never lets the ship settle (that is why `launch` exists). Instructions (IL model, Pirate fight with launch):

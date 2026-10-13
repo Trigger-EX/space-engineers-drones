@@ -384,7 +384,7 @@ def _propulsion(S):
         bp.keep_clear(b, 3, 'exhaust')
 
 
-GYRO_BANKS = [((-9, 1, 62), (6, 1, 3)), ((4, 1, 62), (6, 1, 3)), ((-9, 1, 72), (6, 1, 3)), ((4, 1, 72), (6, 1, 3))]   # (min cell, (nx, ny, nz)): 18 gyros each, 72 in all; a gyro has one mount face, so one layer on the floor
+GYRO_BANKS = [((-9, 1, 62), (6, 1, 3)), ((4, 1, 62), (6, 1, 3)), ((-9, 1, 72), (6, 1, 3)), ((4, 1, 72), (6, 1, 3))]   # (min cell, (nx, ny, nz)): 18 gyros each, 72 in the machinery banks (72 more in the nose, see below); a gyro has one mount face, so one layer on the floor
 
 
 def _interior(S, full):
@@ -423,6 +423,11 @@ def _interior(S, full):
                 for z in range(z0, z0 + nz):
                     n += 1
                     S.add('gyro', 'MyObjectBuilder_Gyro', 'LargeBlockGyro', (x, y, z), 'Forward', 'Up', nm(f'Gyroscope {n}'), toward='Down', kind='gyro')
+    # 72 more (144 in all, 2x the first design) on the belly floor of the nose cavity: z 16..19 full rows (x +-1..7/8/9, none on the centre line), z 15 x +-1..4
+    for z, xm in ((19, 9), (18, 8), (17, 8), (16, 7), (15, 4)):
+        for x in [-v for v in range(xm, 0, -1)] + list(range(1, xm + 1)):
+            n += 1
+            S.add('gyro', 'MyObjectBuilder_Gyro', 'LargeBlockGyro', (x, 1, z), 'Forward', 'Up', nm(f'Gyroscope {n}'), toward='Down', kind='gyro')
 
 
 def _bridge(S, full):
@@ -935,7 +940,7 @@ def deck_plan(bp, y, xr=range(-14, 15), zr=None):
 
 DOCS = {'Leviathan': 'LARGE-grid dreadnought (about 222 x 72 x 42 m, 14 kt with ammunition): a stepped wedge with an armoured dorsal citadel and a glazed bridge tower, a forward main-battery '
                      'spine of six large railguns (battery [B1]), eight artillery and twelve assault turrets on the flank ledges, twenty gatling turrets for point defence, four rocket turrets (Full only) '
-                     'and twelve decoys; four large hydrogen engines (2 m/s2 forward) and ten more large thrusters for the other axes, 72 gyros, one large and eight small reactors, 20 batteries, '
+                     'and twelve decoys; four large hydrogen engines (2 m/s2 forward) and ten more large thrusters for the other axes, 144 gyros, one large and eight small reactors, 20 batteries, '
                      'four hydrogen tanks, Helm and Staff programmable blocks, bridge cockpit, gunnery seat and Remote Control, and two flank hangars (eight doors each) with a docked, empty '
                      '4-slot Cradle Pod each (own CubeGrids and Pod PBs, room for 8 Hornet-class drones). Ammunition, uranium, hydrogen and batteries are pre-loaded and about 270 junction blocks feed the '
                      'thrusters and the artillery / assault / rocket turrets from the tanks and four ammo lockers. Limits: the six railguns have no feed (6 slugs each, reload by hand from the lockers), '
