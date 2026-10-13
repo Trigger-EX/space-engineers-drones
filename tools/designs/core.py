@@ -156,6 +156,15 @@ def longbow_frame(grid, script, lite=False, seeker=False):
     thr(bp, (-3, -2, -1), "Left", "Up", f"{tag} Ion Strafe R1"); thr(bp, (-3, -2, 0), "Left", "Up", f"{tag} Ion Strafe R2")
     thr(bp, (2, -2, -1), "Right", "Up", f"{tag} Ion Strafe L1"); thr(bp, (2, -2, 0), "Right", "Up", f"{tag} Ion Strafe L2")
     if L:
+        # second thruster of every pair: acceleration doubled (6.3 -> about 11 m/s^2), so it can run from, or swing round, a ship
+        # charging it at 100 m/s (a Tech Hunter rush caught the old one before it could build any speed)
+        thr(bp, (-1, -2, 1), "Backward", "Up", f"{tag} Ion Main L2"); thr(bp, (1, -2, 1), "Backward", "Up", f"{tag} Ion Main R2")
+        thr(bp, (-2, -2, -3), "Forward", "Up", f"{tag} Ion Brake L2"); thr(bp, (2, -2, -3), "Forward", "Up", f"{tag} Ion Brake R2")
+        thr(bp, (-3, -3, -1), "Left", "Up", f"{tag} Ion Strafe R3"); thr(bp, (-3, -3, 0), "Left", "Up", f"{tag} Ion Strafe R4")
+        thr(bp, (2, -3, -1), "Right", "Up", f"{tag} Ion Strafe L3"); thr(bp, (2, -3, 0), "Right", "Up", f"{tag} Ion Strafe L4")
+        thr(bp, (0, -4, -2), "Down", "Forward", f"{tag} Ion Lift M")
+        thr(bp, (-2, 0, -1), "Up", "Backward", f"{tag} Ion Dive L2"); thr(bp, (2, 0, -1), "Up", "Backward", f"{tag} Ion Dive R2")
+    if L:
         thr(bp, (-1, -4, -2), "Down", "Forward", f"{tag} Ion Lift L"); thr(bp, (1, -4, -2), "Down", "Forward", f"{tag} Ion Lift R")
     else:   # the small one's battery hangs underneath; lift thrusters go on its sides
         thr(bp, (-2, -5, 0), "Down", "Forward", f"{tag} Ion Lift L"); thr(bp, (2, -5, 0), "Down", "Forward", f"{tag} Ion Lift R")
