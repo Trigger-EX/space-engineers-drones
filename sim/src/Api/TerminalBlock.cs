@@ -141,6 +141,16 @@ namespace SeSim.Api
 
         public ITerminalProperty GetProperty(string id) { return Terminal.Property(id); }
         public ITerminalAction GetActionWithName(string name) { return Terminal.Action(name); }
+        public void GetProperties(List<ITerminalProperty> resultList, Func<ITerminalProperty, bool> collect = null)
+        {
+            resultList.Clear();
+            foreach (var p in Terminal.Properties.Values) if (collect == null || collect(p)) resultList.Add(p);
+        }
+        public void GetActions(List<ITerminalAction> resultList, Func<ITerminalAction, bool> collect = null)
+        {
+            resultList.Clear();
+            foreach (var a in Terminal.Actions.Values) if (collect == null || collect(a)) resultList.Add(a);
+        }
         public string CustomName { get { return CustomNameValue; } set { CustomNameValue = value ?? ""; } }
         public string CustomData { get { return CustomDataValue; } set { CustomDataValue = value ?? ""; } }
         public override string DisplayName { get { return CustomNameValue; } }
@@ -218,6 +228,14 @@ namespace SeSim.Api
     public sealed class SimGenericFunctional : SimFunctionalBlock
     {
         public SimGenericFunctional(BlockInst i, World w) : base(i, w) { }
+        /// <summary>The AI blocks' "AI Behavior" switch (terminal id assumed "ActivateBehavior"; off in a pasted blueprint). Only consulted
+        /// by VanillaAiBrain when SimSettings.AiBehaviorNeedsSwitch is set.</summary>
+        public bool BehaviorOn;
+        protected override void Register(TerminalRegistry r)
+        {
+            base.Register(r);
+            AddBool(r, "ActivateBehavior", b => ((SimGenericFunctional)b).BehaviorOn, (b, v) => ((SimGenericFunctional)b).BehaviorOn = v, false);
+        }
         /// <summary>For slot C's VanillaAiBrain: "OffensiveCombat", "FlightMovement", "DefensiveCombat", "BasicMission", ... for the game's
         /// AI blocks (scripts switch them on/off through Enabled while they have no target), else null.</summary>
         public string AiKind

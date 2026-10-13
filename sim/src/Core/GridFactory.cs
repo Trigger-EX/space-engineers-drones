@@ -200,6 +200,11 @@ namespace SeSim.Core
                     if (mw > 0 && bd.Enabled)
                         b.Sink = new PowerSink { Block = b, Group = def.PowerGroup, Priority = defs.PriorityOf(def.PowerGroup), RequestMW = mw };
                 }
+                if (b.Sink == null && def.Kind == "LargeTurretBase" && s.TurretsNeedPower)
+                {
+                    double tw = def.PowerMW > 0 ? def.PowerMW : s.TurretIdlePowerMW;
+                    b.Sink = new PowerSink { Block = b, Group = def.PowerGroup ?? "Defense", Priority = defs.PriorityOf(def.PowerGroup ?? "Defense"), RequestMW = bd.Enabled ? tw : 0 };
+                }
                 body.Blocks.Add(b);
             }
             body.BuildCells();

@@ -1,0 +1,20 @@
+# "1vX" against your own ships: every blueprint folder in enemies\ (shipped: Tech Hunter) fights ALONE against N of each armed drone
+# model (N = 1,2,3,4,6,8,12,16,24) and against the 4 mixed drone teams. Run with:  run.bat -Plan plans\enemy.plan   (Windows)
+#                                                                                   ./run_mint.sh plans/enemy.plan  (Linux Mint)
+# To test another ship: copy its blueprint folder (the one with bp.sbc) from %AppData%\SpaceEngineers\Blueprints\local into enemies\.
+# Only its largest grid is simulated (rotor/hinge/piston subgrids such as custom turret pods are dropped). Turrets fight on their own.
+# Resumable: stop any time, run the same command again and it continues.
+selfcheck | selftest all
+verify-enemy | run --enemies enemies --filter "^enemy/Tech Hunter-vs-(Hornet|3xGnat|2xLongbow S|6xWasp)$" --seeds 10 --out {OUT}
+# --- 1. main: the ship is flown like the pirate (closes in at 40 m/s, circles its target at 700 m) ---
+enemy-main | run --enemies enemies --kind enemy --enemy-counts 1,2,3,4,6,8,12,16,24 --seeds 100 --resume --out {OUT}
+# --- 2. the ship holds position (dampeners on, a pilot sitting still); only its turrets fight ---
+enemy-hold | run --enemies enemies --kind enemy --enemy-brain hold --enemy-counts 1,2,3,4,6,8,12,16,24 --seeds 50 --resume --out {OUT}
+# --- 3. long fights for the snipers (Longbows outrange the turrets: 5 minutes ends in a draw) ---
+enemy-long | run --enemies enemies --kind enemy --filter "Longbow" --enemy-counts 1,2,3,4,6,8,12,16,24 --cap-seconds 900 --seeds 30 --resume --out {OUT}
+# --- 4. robustness: all large turrets limited to 800 m instead of their ammo range (artillery 2000 m, assault cannon 1400 m) ---
+enemy-turret800 | run --enemies enemies --kind enemy --enemy-counts 1,3,6,12 --turret-range-from-ammo false --seeds 50 --resume --out {OUT}
+# --- 5. trajectories (small CSVs I can plot) ---
+trace-th-6hornet | one --enemies enemies --scenario "enemy/Tech Hunter-vs-6xHornet" --seed-index 0 --trace {OUT}/t.csv --trace-every 6
+trace-th-12gnat | one --enemies enemies --scenario "enemy/Tech Hunter-vs-12xGnat" --seed-index 0 --trace {OUT}/t.csv --trace-every 6
+trace-th-3longbowl | one --enemies enemies --scenario "enemy/Tech Hunter-vs-3xLongbow L" --seed-index 0 --trace {OUT}/t.csv --trace-every 6

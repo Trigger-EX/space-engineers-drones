@@ -2,13 +2,16 @@
 //   selftest [physics|api|combat|runner|scenario|all]   engine self-checks by group (default: the first four);
 //                                 `selftest scenario` (or --selftest scenario) also runs 3 short duels end to end
 //   list [--filter RX] [--kind K] print scenario names with job counts
-//   run   --filter REGEX --seeds 100 [--jobs 4] [--seed 1] [--shard i/n] [--out DIR] [--resume] [--<setting> value ...]
+//   run   --filter REGEX [--seeds N] [--jobs 4] [--seed 1] [--shard i/n] [--out DIR] [--resume] [--<setting> value ...]
 //   one   --scenario NAME --seed-index K [--trace FILE] [--trace-every N] [--profile] [--echo]   single run, optional trace CSV
 //   scenario overrides for run/one: --commands "T:cmd;..." (script drones' start commands), --start-distance MIN:MAX,
 //         --face (ships start pointing at the enemy), --custom-data "INI with \n" (PB CustomData of the script drones)
 //   summarize --in runs.jsonl [--out summary.csv]    rebuild summary.csv from a runs.jsonl
 //   dock-launch [--model Hornet] [--seconds 30] [--release-at 3] ...   printed drone merged to a dummy printer, merge off, no _JOIN (sim/src/Run/DockLaunch.cs)
+//   follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] ...   FOLLOW mode vs a moving owner (sim/src/Run/FollowTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
+//   --seeds defaults to DefaultSeeds (a quick check). Pick the count the task needs (CLAUDE.md "Simulations"); the big matrices
+//   live in pc/plans/*.plan, which always pass --seeds explicitly.
 // Options not listed here are SimSettings fields in kebab case (e.g. --gyro-pitch-sign 1, --friendly-fire false,
 // --infinite-ammo false); unknown options are an error. --cap-seconds N changes the fight cap (default 300).
 using System;
@@ -23,6 +26,8 @@ namespace SeSim.Run
     public static class SimProgram
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+        /// <summary>Seeds per scenario when --seeds is not given: a quick check, not a statistical result.</summary>
+        const int DefaultSeeds = 10;
 
         public static int Main(string[] args)
         {
@@ -48,7 +53,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -128,9 +133,9 @@ namespace SeSim.Run
                 case "list":
                 {
                     var o = Parse(args, 1, settings);
-                    if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+                    ApplyGenOptions(o);
                     var l = ScenarioGen.Select(o.Get("filter", null), o.Get("kind", null));
-                    int seeds = o.Int("seeds", 100);
+                    int seeds = o.Int("seeds", DefaultSeeds);
                     var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
                     foreach (var sc in l)
                     {
@@ -144,6 +149,8 @@ namespace SeSim.Run
                 }
                 case "dock-launch":
                     return DockLaunch.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
+                case "follow-test":
+                    return FollowTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "compile-scripts":
                     return CompileScripts(simDir, FindRepoRoot(null));
                 case "summarize":
@@ -163,6 +170,47 @@ namespace SeSim.Run
                     return CmdRun(args, simDir, settings);
                 default:
                     throw new ArgumentException("unknown command '" + args[0] + "'");
+            }
+        }
+
+        /// <summary>Scenario generator switches: --unfair curated|full; --enemies DIR (blueprint folders fought "1vX" by every armed
+        /// model), --enemy-counts 1,2,3 (team sizes against each enemy), --enemy-brain pirate|hold.</summary>
+        static void ApplyGenOptions(Opts o)
+        {
+            if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+            if (o.Has("enemies")) ScenarioGen.EnemyDir = Path.GetFullPath(o.Get("enemies", "enemies"));
+            if (o.Has("enemy-counts"))
+            {
+                var l = new List<int>();
+                foreach (string p in o.Get("enemy-counts", "").Split(','))
+                {
+                    int c;
+                    if (p.Trim().Length == 0) continue;
+                    if (!int.TryParse(p.Trim(), NumberStyles.Integer, Inv, out c) || c < 1 || c > 64) throw new ArgumentException("--enemy-counts needs numbers 1..64 separated by commas");
+                    l.Add(c);
+                }
+                if (l.Count == 0) throw new ArgumentException("--enemy-counts is empty");
+                ScenarioGen.EnemyCounts = l.ToArray();
+            }
+            if (o.Has("enemy-fleets"))
+            {
+                // inline "3xHornet+2xGnat;Basilisk+Gnat" or a file with one fleet per line ('#' comments)
+                string v = o.Get("enemy-fleets", "");
+                string[] items = File.Exists(v) ? File.ReadAllLines(v) : v.Split(';');
+                var l = new List<string[]>();
+                foreach (string it in items)
+                {
+                    string t = it; int h = t.IndexOf('#'); if (h >= 0) t = t.Substring(0, h);
+                    if (t.Trim().Length > 0) l.Add(ScenarioGen.ParseFleet(t));
+                }
+                if (l.Count == 0) throw new ArgumentException("--enemy-fleets is empty");
+                ScenarioGen.EnemyFleets = l;
+            }
+            if (o.Has("enemy-brain"))
+            {
+                string b = o.Get("enemy-brain", "pirate");
+                if (b != "pirate" && b != "hold") throw new ArgumentException("--enemy-brain must be pirate or hold");
+                ScenarioGen.EnemyBrain = b;
             }
         }
 
@@ -232,7 +280,7 @@ namespace SeSim.Run
             var o = Parse(args, 1, settings);
             string repo = FindRepoRoot(o.Get("repo", null));
             if (!CheckBlueprints(repo)) return 4;
-            if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+            ApplyGenOptions(o);
             string name = o.Get("scenario", o.Positional.Count > 0 ? o.Positional[0] : null);
             if (name == null) throw new ArgumentException("one needs --scenario NAME (see `list`)");
             Scenario sc = null;
@@ -292,7 +340,7 @@ namespace SeSim.Run
             var o = Parse(args, 1, settings);
             string repo = FindRepoRoot(o.Get("repo", null));
             if (!CheckBlueprints(repo)) return 4;
-            if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
+            ApplyGenOptions(o);
             var scenarios = ScenarioGen.Select(o.Get("filter", null), o.Get("kind", null));
             if (scenarios.Count == 0) { Console.Error.WriteLine("no scenario matches the filter"); return 1; }
             if (o.Has("cap-seconds"))
@@ -302,7 +350,8 @@ namespace SeSim.Run
                 settings.MaxTicks = ticks;
             }
             ApplyScenarioOverrides(o, scenarios);
-            int seeds = o.Int("seeds", 100), seedStart = o.Int("seed-start", 0);
+            int seeds = o.Int("seeds", DefaultSeeds), seedStart = o.Int("seed-start", 0);
+            if (!o.Has("seeds")) Console.Error.WriteLine("--seeds not given: " + DefaultSeeds + " per scenario (quick check); pass --seeds N for more");
             ulong baseSeed = (ulong)o.Int("seed", 1);
             int threads = o.Int("jobs", Environment.ProcessorCount);
             var jobs = ParallelRunner.MakeJobs(scenarios, seeds, seedStart);

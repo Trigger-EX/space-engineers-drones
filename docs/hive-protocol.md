@@ -15,7 +15,7 @@ AEGIS, MANTIS, BASILISK, STINGER (command channel only).
 | `<TAG>_TGT` | `MyTuple<long id, Vector3D pos, Vector3D vel, double radius, long sender>`; `radius < 0` = "target finished, everybody drop it for 120 s" | drones and carrier relays -> same-type drones (plus the legacy feed lists below) |
 | `<TAG>_CMD` | `string` | carrier relay / player -> drones |
 | `<TAG>_HOME` | `Vector3D` (moving rally point) | carrier relay -> drones |
-| `<TAG>_HOMER` | `double` (carrier radius; Gnat only) | carrier relay -> Gnats |
+| `<TAG>_HOMER` | `double` (carrier radius) | carrier relay (all three since relay v1.1/v1.2) -> Gnats, FOLLOW drones |
 | `<TAG>_SWARM` | `MyTuple<long gridId, Vector3D pos, Vector3D vel, long targetId, int flags>`; bit0 under fire, bit1 alarm, bit2 lock stale | wingmates of the same type |
 | `<TAG>_JOIN` | (empty trigger) | printer -> freshly released drones |
 | `<TAG>_HIT` | `MyTuple<Vector3D, Vector3D>` (Gnat only) | Gnat -> Gnats |
@@ -28,13 +28,14 @@ nobody listened to `WATCHER_TGT` because the Watcher shares on `HORNET_TGT`.
 
 ## 2. The FLEET channel
 
-Name: `<ch>` = `FLEET` (key `Channel`), or `FLEET_<secret>` when `Secret` is set. Three tags:
+Name: `<ch>` = `FLEET` (key `Channel`), or `FLEET_<secret>` when `Secret` is set. Four tags:
 
 | tag | payload | meaning |
 |---|---|---|
 | `<ch>_TGT` | `MyTuple<long, Vector3D, Vector3D, double, long>` identical to `<TAG>_TGT` | a contact: id, position, velocity, radius, sender PB. `radius < 0` = finished, drop it. |
 | `<ch>_HOME` | `Vector3D` | rally / home point (sent by the carrier relays, every 1/6 s) |
 | `<ch>_CMD` | `string` (one command, optional arguments) | fleet-wide command |
+| `<ch>_HOMER` | `double` | radius of the ship sending `<ch>_HOME` (carrier relays since v1.1/v1.2). Read by the FOLLOW block and the Gnat, not by the FLEET block. |
 
 Rules every receiver follows (inside the shared block, `FleetOk` / `FleetPump`):
 
@@ -43,8 +44,8 @@ Rules every receiver follows (inside the shared block, `FleetOk` / `FleetPump`):
   >= 1e9, radius >= 1e5) and the PB's own grid.
 * A contact that arrived over IGC (`Src == "IGC"`) is **never re-shared** (this is pre-existing logic in every script), so the channel cannot
   echo or amplify.
-* A command is accepted only if the first word is in `Allowed Commands` (default `hunt,attack,guard,form,assist,rtb,idle,stop,launch,abort,
-  split,focus,next,unlock,aialert`). Not allowed over FLEET by default: `lock` (manual raycast), `range`, `ai`, `aim`, `home`, `reload`,
+* A command is accepted only if the first word is in `Allowed Commands` (default `hunt,attack,guard,follow,escort,form,assist,rtb,idle,stop,
+  launch,abort,split,focus,next,unlock,aialert`; `follow,escort` since v2.2). Not allowed over FLEET by default: `lock` (manual raycast), `range`, `ai`, `aim`, `home`, `reload`,
   `disarm`. Each script applies the word to its own `Command()` (unknown words are ignored there), so `fleet rtb` makes all types return,
   `fleet launch` releases the Stingers, `fleet hunt` starts everything.
 * Home: last writer wins (also versus `<TAG>_HOME`). Use one carrier per fleet, or disable `Accept Home` on drones that have another home.
@@ -80,7 +81,7 @@ every enemy their turrets track on `<ch>`, and the argument `fleet <cmd>` (for e
 | Watcher (HornetDroneAI) | `_TGT` (its contacts) | `_TGT`, `_CMD`, `_HOME` |
 | Hornet, Gnat, Longbow S/L, Wasp, Lancer, Harrier, Aegis, Mantis, Basilisk | `_TGT` of the locked target and of "finished" | `_TGT`, `_CMD`, `_HOME` |
 | Stinger | nothing | `_TGT`, `_CMD` (`launch`, `abort`), `_HOME` ignored |
-| Carrier relays | `_TGT`, `_HOME`, `_CMD` (on `fleet ...`) | nothing |
+| Carrier relays | `_TGT`, `_HOME`, `_HOMER`, `_CMD` (on `fleet ...`) | nothing |
 | HiveMotherAI (printer) | nothing (its `_JOIN` and rack `launch` stay on the per-type tags) | nothing |
 
 ## 5. Security (read before playing multiplayer)

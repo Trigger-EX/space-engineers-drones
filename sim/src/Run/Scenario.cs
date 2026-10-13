@@ -14,7 +14,7 @@ namespace SeSim.Run
 {
     public sealed class ShipSpec
     {
-        public string Model;              // blueprint folder name ("Hornet"), "Stinger" (= projected grid of "Stinger Rack"), "Pirate"
+        public string Model;              // blueprint folder name ("Hornet"), "Stinger" (= projected grid of "Stinger Rack"), "Pirate", or an --enemies folder
         public int Team;
         public string Role;               // free label for reports ("A1", "B2")
         /// <summary>Commands sent as argument runs, e.g. (0.5 s, "hunt"). Default per model in ScenarioGen.DefaultCommands.</summary>
@@ -203,6 +203,11 @@ namespace SeSim.Run
                     bodies = GridFactory.Spawn(w, PirateBlueprint(defs), spec.Team, i, at, idMap);
                     sh.HasBrain = true;
                 }
+                else if (ScenarioGen.IsEnemy(spec.Model))
+                {
+                    bodies = GridFactory.Spawn(w, ScenarioGen.EnemyBlueprint(spec.Model), spec.Team, i, at, idMap);
+                    sh.HasBrain = true;            // no PB or remote control needed: the brain (or a pilot holding position) flies it
+                }
                 else if (spec.Model == "Stinger")
                 {
                     var bp = BlueprintLoader.Get(bpDir, "Stinger Rack");
@@ -229,6 +234,7 @@ namespace SeSim.Run
                 }
                 if (spec.Model == "Midge") w.Brains.Add(new VanillaAiBrain(sh.Main));
                 else if (spec.Model == "Pirate") w.Brains.Add(new PirateBrain(sh.Main));
+                else if (ScenarioGen.IsEnemy(spec.Model)) { if (ScenarioGen.EnemyBrain == "pirate") w.Brains.Add(new PirateBrain(sh.Main)); else sh.Main.DampenersOn = true; }
                 else if (HasAiBlocks(sh.Main)) w.Brains.Add(new VanillaAiBrain(sh.Main) { ScriptShip = true });   // v1.8 hybrid search: the script toggles the AI blocks
             }
 

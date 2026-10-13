@@ -18,7 +18,8 @@ Everything below is what you need to continue. Read sections 1–4 before touchi
   2. Also: *"investigate using timer blocks to automate things, weigh if it's better."* (analysis in §8)
   3. Then **run simulated fights between all models, 100 simulations per variation**, including
      **unfair fights (1v2, 1v3, 2v3, etc.)**. The game can't be run, so **build your own simulation
-     engine**.
+     engine**. (Since replaced: in a Claude session, run only as many sims as the task needs. 100 per
+     variation is only for the local PC plans. See CLAUDE.md "Simulations".)
   4. **Audit the results for improvements, implement the combat improvements, re-simulate.**
   5. **Finally, audit all aspects for improvement.** They said to keep going for hours if needed.
 - Deliver: zip(s) with `Blueprints/`, `Scripts/`, `README.md`; plus a short summary of sim results.

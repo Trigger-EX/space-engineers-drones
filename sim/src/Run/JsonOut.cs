@@ -74,6 +74,12 @@ namespace SeSim.Run
                 KN(sb, "damage_dealt", Math.Round(s.DamageDealt, 1)); KN(sb, "damage_taken", Math.Round(s.DamageTaken, 1));
                 KN(sb, "friendly_damage", Math.Round(s.FriendlyDamageDealt, 1)); KN(sb, "friendly_hits", s.FriendlyHitsDealt);
                 KN(sb, "blocks_start", s.BlocksStart); KN(sb, "blocks_end", s.BlocksEnd);
+                KN(sb, "weapons_start", s.WeaponsStart); KN(sb, "weapons_end", s.WeaponsEnd);
+                KN(sb, "thrusters_start", s.ThrustersStart); KN(sb, "thrusters_end", s.ThrustersEnd);
+                KN(sb, "power_start_mw", Math.Round(s.PowerStartMW, 2)); KN(sb, "power_end_mw", Math.Round(s.PowerEndMW, 2));
+                KN(sb, "power_blocks_start", s.PowerBlocksStart); KN(sb, "power_blocks_end", s.PowerBlocksEnd);
+                KN(sb, "armed_start", s.ArmedStart); KN(sb, "armed_end", s.ArmedEnd);
+                KN(sb, "power_zero_at_s", Math.Round(s.PowerZeroAtS, 2)); KN(sb, "armed_zero_at_s", Math.Round(s.ArmedZeroAtS, 2));
                 KN(sb, "blocks_lost", s.BlocksLost); KN(sb, "blocks_killed", s.BlocksKilled);
                 KN(sb, "mass_lost_frac", Math.Round(s.MassLostFraction, 4));
                 KN(sb, "time_on_target_s", Math.Round(s.TimeOnTargetS, 2));
@@ -118,6 +124,8 @@ namespace SeSim.Run
                     s.DamageDealt = SeSim.Core.MiniJson.Num(so, "damage_dealt", 0); s.DamageTaken = SeSim.Core.MiniJson.Num(so, "damage_taken", 0);
                     s.FriendlyDamageDealt = SeSim.Core.MiniJson.Num(so, "friendly_damage", 0); s.FriendlyHitsDealt = (long)SeSim.Core.MiniJson.Num(so, "friendly_hits", 0);
                     s.BlocksStart = (int)SeSim.Core.MiniJson.Num(so, "blocks_start", 0); s.BlocksEnd = (int)SeSim.Core.MiniJson.Num(so, "blocks_end", 0);
+                    s.WeaponsStart = (int)SeSim.Core.MiniJson.Num(so, "weapons_start", 0); s.WeaponsEnd = (int)SeSim.Core.MiniJson.Num(so, "weapons_end", 0);
+                    s.ThrustersStart = (int)SeSim.Core.MiniJson.Num(so, "thrusters_start", 0); s.ThrustersEnd = (int)SeSim.Core.MiniJson.Num(so, "thrusters_end", 0);
                     s.BlocksLost = (long)SeSim.Core.MiniJson.Num(so, "blocks_lost", 0); s.BlocksKilled = (long)SeSim.Core.MiniJson.Num(so, "blocks_killed", 0);
                     s.MassLostFraction = SeSim.Core.MiniJson.Num(so, "mass_lost_frac", 0); s.TimeOnTargetS = SeSim.Core.MiniJson.Num(so, "time_on_target_s", 0);
                     s.ScriptTargetS = SeSim.Core.MiniJson.Num(so, "script_target_s", 0); s.FirstScriptTargetS = SeSim.Core.MiniJson.Num(so, "first_script_target_s", -1);

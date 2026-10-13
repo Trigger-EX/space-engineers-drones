@@ -20,6 +20,7 @@ namespace SeSim.Blueprint
         public float ThrustForceN, ThrustMaxPowerMW, ThrustMinPowerMW;
         public float GyroForce;
         public float BatteryMaxMWh, BatteryMaxOutMW, BatteryMaxInMW, BatteryInitialRatio;
+        public float GeneratorMW;                      // reactors / hydrogen engines: constant output (fuel not modelled)
         public float SensorMaxRange, TurretControlRange;
         public float WarheadRadius, WarheadDamage;
         public float InventoryVolume;
@@ -145,6 +146,11 @@ namespace SeSim.Blueprint
                             d.ThrustForceN = (float)MiniJson.Num(st, "force_n", 0);
                             d.ThrustMaxPowerMW = (float)MiniJson.Num(st, "max_power_mw", 0);
                             d.ThrustMinPowerMW = (float)MiniJson.Num(st, "min_power_mw", 0);
+                            if (MiniJson.Str(st, "thruster_type", "") == "Hydrogen") d.ThrustMaxPowerMW = d.ThrustMinPowerMW = 0;   // burns hydrogen (tanks assumed full), not electricity
+                            break;
+                        case "Reactor":
+                        case "HydrogenEngine":
+                            d.GeneratorMW = (float)MiniJson.Num(st, "max_power_output_mw", MiniJson.Num(st, "max_output_mw", 0));
                             break;
                         case "Gyro":
                             d.GyroForce = (float)MiniJson.Num(st, "force_n", 0);

@@ -22,5 +22,8 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         if os.path.isfile(f):
             rel = os.path.relpath(f, f"{R}/pc")
             add(f, rel)
+    for d, _, fs in os.walk(f"{R}/pc/enemies"):          # enemy blueprints for plans/enemy.plan (<Name>/bp.sbc)
+        for f in sorted(fs):
+            if f == "bp.sbc": add(os.path.join(d, f), os.path.relpath(os.path.join(d, f), f"{R}/pc"))
     z.writestr(top + "VERSION.txt", f"git {rev}\n")
 print(out, n, "files", os.path.getsize(out) // 1024, "KB")

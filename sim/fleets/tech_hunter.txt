@@ -1,0 +1,47 @@
+# Tech Hunter study: fleets of Hornet, Gnat, Longbow S, Longbow L, Basilisk up to 10 drones (sim/fleets/README in docs/tech-hunter-study.md)
+# pure fleets at 3, 6, 10
+3xHornet
+6xHornet
+10xHornet
+3xGnat
+6xGnat
+10xGnat
+3xLongbow S
+6xLongbow S
+10xLongbow S
+3xLongbow L
+6xLongbow L
+10xLongbow L
+3xBasilisk
+6xBasilisk
+10xBasilisk
+# pairs 5+5
+5xHornet+5xGnat
+5xHornet+5xLongbow S
+5xHornet+5xLongbow L
+5xHornet+5xBasilisk
+5xGnat+5xLongbow S
+5xGnat+5xLongbow L
+5xGnat+5xBasilisk
+5xLongbow S+5xLongbow L
+5xLongbow S+5xBasilisk
+5xLongbow L+5xBasilisk
+# triples 4+3+3
+4xHornet+3xGnat+3xLongbow S
+4xHornet+3xGnat+3xLongbow L
+4xHornet+3xGnat+3xBasilisk
+4xHornet+3xLongbow S+3xLongbow L
+4xHornet+3xLongbow S+3xBasilisk
+4xHornet+3xLongbow L+3xBasilisk
+4xGnat+3xLongbow S+3xLongbow L
+4xGnat+3xLongbow S+3xBasilisk
+4xGnat+3xLongbow L+3xBasilisk
+4xLongbow S+3xLongbow L+3xBasilisk
+# four types 3+3+2+2
+3xHornet+3xGnat+2xLongbow S+2xLongbow L
+3xHornet+3xGnat+2xLongbow S+2xBasilisk
+3xHornet+3xGnat+2xLongbow L+2xBasilisk
+3xHornet+3xLongbow S+2xLongbow L+2xBasilisk
+3xGnat+3xLongbow S+2xLongbow L+2xBasilisk
+# all five, 2 each
+2xHornet+2xGnat+2xLongbow S+2xLongbow L+2xBasilisk

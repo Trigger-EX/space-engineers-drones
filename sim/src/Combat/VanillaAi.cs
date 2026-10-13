@@ -56,9 +56,11 @@ namespace SeSim.Combat
             }
         }
 
-        static bool Active(BlockInst b)
+        static bool Active(BlockInst b, SimSettings s)
         {
             if (b == null || b.Destroyed || !b.IsFunctional) return false;
+            var g = b.Api as SimGenericFunctional;
+            if (s.AiBehaviorNeedsSwitch && g != null && !g.BehaviorOn) return false;
             var f = b.Api as SimFunctionalBlock;
             return f == null || f.EnabledValue;
         }
@@ -71,9 +73,10 @@ namespace SeSim.Combat
             if (_rng == null) _rng = new DetRng(DetRng.Mix(DetRng.Mix(w.Seed, 0xA1), (ulong)b.EntityId));
             if (_blocksVersion != b.Version) FindAiBlocks();
             double now = w.Time;
-            bool active = Active(_offensive) && Active(_flight);
+            bool active = Active(_offensive, s) && Active(_flight, s);
             if (ScriptShip)
             {
+                if (s.ScriptAiBlocksInert) return;      // switched on by the script but never does anything (behaviour off)
                 if (!active)
                 {
                     if (_wasActive) { _wasActive = false; ReleaseControl(b); }

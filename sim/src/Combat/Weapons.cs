@@ -123,8 +123,8 @@ namespace SeSim.Combat
 
         /// <summary>Fire if commanded and ready; spawns projectiles through World.Projectiles with muzzle position/velocity:
         /// direction = DirLocal rotated to world + spread (uniform in a cone of DeviateShotAngleDeg); velocity =
-        /// shooter velocity at muzzle + dir*speed for Projectile ammo; Missile ammo (rockets): dir*MissileInitialSpeed WITHOUT
-        /// ship velocity (HANDOFF/Keen thread: rockets do not inherit); railgun slug (Missile, acceleration 0, speed 1000):
+        /// shooter velocity at muzzle + dir*speed for Projectile ammo; Missile ammo (rockets): see SimSettings.RocketInherit (default:
+        /// ship velocity + dir*MissileInitialSpeed, accelerating along dir with the total speed capped); railgun slug (Missile, acceleration 0, speed 1000):
         /// inherits ship velocity [I]. Emits EventKind.Shot.</summary>
         public void Update(World w, double dt)
         {
@@ -224,10 +224,15 @@ namespace SeSim.Combat
             Vector3D pos, dir;
             MuzzleWorld(out pos, out dir);
             dir = CombatUtil.Deviate(Rng, dir, SpreadRad, w.Settings.SpreadUniformInAngle);
-            Vector3D vel;
-            if (Mode == ProjectileSystem.ModeRocket) vel = dir * Ammo.MissileInitialSpeed;
+            Vector3D vel, head = default(Vector3D), inh = default(Vector3D);
+            if (Mode == ProjectileSystem.ModeRocket)
+            {
+                int m = w.Settings.RocketInherit;
+                if (m == 1 || m == 2) { Vector3D sv = body.VelocityAtWorld(pos); vel = sv + dir * Ammo.MissileInitialSpeed; head = dir; if (m == 2) inh = sv; }
+                else vel = dir * Ammo.MissileInitialSpeed;
+            }
             else vel = body.VelocityAtWorld(pos) + dir * (Ammo.Speed > 0 ? Ammo.Speed : Ammo.MissileInitialSpeed);
-            w.Projectiles.Spawn(pos, vel, Ammo, body, body.ShipIndex);
+            w.Projectiles.Spawn(pos, vel, Ammo, body, body.ShipIndex, head, inh);
             ShotsFired++;
             var e = new SimEvent { Kind = EventKind.Shot, Tick = w.Tick, ShipA = body.ShipIndex, ShipB = -1, Value = Mode, Position = pos };
             w.Events.On(ref e);
@@ -262,7 +267,9 @@ namespace SeSim.Combat
                     b.Weapon = u; Weapons.Add(u);
                     if (d.Kind == "LargeTurretBase")
                     {
-                        var t = new TurretUnit(b, u, 800f);
+                        float range = 800f;
+                        if (w.Settings.TurretRangeFromAmmo && d.Weapon.Ammo != null && d.Weapon.Ammo.MaxTrajectory > 0) range = d.Weapon.Ammo.MaxTrajectory;
+                        var t = new TurretUnit(b, u, range);
                         b.Turret = t; Turrets.Add(t);
                     }
                     break;
@@ -302,7 +309,9 @@ namespace SeSim.Combat
             ulong salt = b.EntityId != 0 ? (ulong)b.EntityId : (ulong)((b.Body != null ? b.Body.Id : 0) * 100003L + b.Index + 17);
             u.Rng = new DetRng(DetRng.Mix(DetRng.Mix(w.Seed, 0xC0DE), salt));
             u.CapacitorFull = WeaponUnit.CapacityOf(s, d.Large);   // small 20 s, large 59 s with the data numbers (EntityComponents.sbc)
-            if (u.Mode == ProjectileSystem.ModeSlug)
+            // only railguns have a capacitor (EntityCapacitorComponent); artillery / assault cannon shells are penetrating "slugs" too
+            // but reload by time only (giving them a capacitor in the Defense power group starved every turret on a big ship)
+            if (u.Mode == ProjectileSystem.ModeSlug && d.Subtype.Contains("Railgun"))
             {
                 double init = b.Src != null ? b.Src.PropNum("StoredPower", double.NaN) : double.NaN;
                 u.CapacitorMWh = double.IsNaN(init) ? u.CapacitorFull * Math.Max(0, Math.Min(1, s.RailgunInitialCharge)) : Math.Min(init, u.CapacitorFull);

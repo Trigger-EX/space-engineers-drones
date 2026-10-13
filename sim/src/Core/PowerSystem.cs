@@ -1,5 +1,5 @@
 // SLOT A. Per-body electrical network (one network per Body = per grid, like the game; merged ships share power).
-// Sources: batteries only (drones have no reactors/solar). Sinks: PowerSink records (thrusters, gyros, utility blocks, railguns...).
+// Sources: batteries, plus reactors / hydrogen engines at constant output (only enemy blueprints such as user warships have them). Sinks: PowerSink records (thrusters, gyros, utility blocks, railguns...).
 // Groups are served in ascending priority (DefDb.PowerPriority, from ResourceDistributionGroups.sbc): non-adaptible groups get
 // all or nothing, adaptible groups (Thrust, DefenseAdative, Charging, ...) a partial ratio. Battery recharge is not modelled
 // (nothing on a drone produces surplus); batteries only discharge.
@@ -54,6 +54,9 @@ namespace SeSim.Core
                     supply += cap < b.MaxOutputMW ? cap : b.MaxOutputMW;
                 }
             }
+            double gen = GeneratorMW();
+            double batSupply = supply;
+            supply += gen;
             LastSupplyCapMW = supply;
 
             // ---- demand by group, priority order ----
@@ -85,9 +88,10 @@ namespace SeSim.Core
             LastDemandMW = demandTotal; LastSuppliedMW = used;
 
             // ---- drain ----
-            if (used > 0 && supply > 0)
+            double fromBat = used - gen;                  // generators carry the load first, batteries the rest
+            if (fromBat > 0 && batSupply > 0)
             {
-                double scale = used / supply;
+                double scale = fromBat / batSupply; if (scale > 1) scale = 1;
                 for (int i = 0; i < bats.Count; i++)
                 {
                     var b = bats[i];
@@ -128,6 +132,19 @@ namespace SeSim.Core
             k.Adaptible = defs.PowerAdaptible.TryGetValue(k.Group, out a) && a;
             k.Order = order++;
             Sinks.Add(k);
+        }
+
+        /// <summary>Output available from working reactors / hydrogen engines (constant, fuel not modelled).</summary>
+        public double GeneratorMW()
+        {
+            double g = 0;
+            var gs = Body.Generators;
+            for (int i = 0; i < gs.Count; i++)
+            {
+                var b = gs[i];
+                if (b.IsFunctional && (b.Src == null || b.Src.Enabled)) g += b.Def.GeneratorMW;
+            }
+            return g;
         }
 
         public double StoredMWh()
