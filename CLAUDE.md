@@ -10,6 +10,11 @@ Space Engineers combat drones, printer ships, in-game C# scripts and a simulatio
 - Never use DLC blocks in blueprints (the block index `defs.json` records each block's DLC).
 - Blueprint rule: delete old blueprint folders before copying new ones in-game (stale `.sbcB5` cache).
 
+## Release zips: only when asked
+- Do not build or rebuild the release zips (`tools/build_all.py` without `--no-zip`, `releases/*.zip`) on your own, and do not commit rebuilt zips. Build them only when the user asks for it.
+- When a task needs blueprints for the simulator, use `python3 -I tools/build_all.py --no-zip --only "<Model>" ...` (fast); a full run takes about 12 minutes.
+- After a script or design change, just say the zips are not rebuilt.
+
 ## Simulations: run only as many as the task needs
 - Choose the seed count for each task and say in one line what you ran and why. Don't default to big runs. `SimHost.exe run` uses 10 seeds per scenario unless you pass `--seeds N`.
 - Rough guide: 3-10 seeds to check that something runs or to catch a regression; 20-50 for a rough A/B direction; 100+ only when you have to show a difference of a few percent, and only on the scenarios that matter (narrow it with `--filter`). Stop adding seeds once the answer is clear.
