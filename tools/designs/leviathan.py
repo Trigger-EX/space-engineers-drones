@@ -721,6 +721,24 @@ def _dock_upright(bp, pod, conns, nose, lock=False):
     raise AssertionError('no upright docking pose: ' + '; '.join(errs))
 
 
+def _walkways(S, res, vol):
+    """entry + walkways: a slide door in each wall of the bridge stem (x = +-2, y 11, reached from the citadel top at (+-3, 11, 57)) opens on the stem shaft
+    (x -1..1, z 55..59), which climbs through a hole in the bridge floor to the bridge and drops through the citadel cavity and the bulkhead gap at x = 0 to the
+    central compartment; a door in the wall |x| = 6 leads into each hangar"""
+    env = set(vol['solid'].cells)
+    legs = []
+    entry = (2, 11, 57)
+    path = [(x, 11, 57) for x in range(-2, 3)] + [(-1, 12, 57), (1, 12, 57)]
+    for s in (-1, 1):
+        legs.append(C.route_walkway(S, res, env, [(0, 9, 57), (0, 2, 45), (s * 6, 1, 45)]))
+    path += [(0, 10, 57), (0, 11, 57)]
+    cells = list(dict.fromkeys(path + legs[0] + legs[1]))
+    doors = {entry: 'Entry S', (-2, 11, 57): 'Entry P', (-6, 1, 45): 'Hangar P', (6, 1, 45): 'Hangar S'}
+    C.carve_walkway(S, res, cells, doors=doors, name='Leviathan walkway', namer=nm)
+    rooms = [(-1, 13, 57), (1, 13, 57), (-1, 13, 56), (-1, 13, 58), (-7, 1, 45), (7, 1, 45)]
+    C.walk_check(S, (3, 11, 57), [(-1, 13, 57), (-7, 1, 45), (7, 1, 45)], cells + rooms, 'Leviathan walkway')
+
+
 def leviathan(lite=False, with_pods=True, lock=False, name=None, wing=0):
     full = not lite
     name = name or ('Leviathan Lite' if lite else 'Leviathan')
@@ -734,9 +752,11 @@ def leviathan(lite=False, with_pods=True, lock=False, name=None, wing=0):
     _bridge(S, full)
     _sensing(S, full)
     _decoys(S, res)
+    _walkways(S, res, vol)
     _conveyors(S)
     _greebles(res)
     res.check()
+    C.link_conveyors(bp, [(c, n) for c, r, n in _terminals(S)])
     _groups_and_toolbars(S)
     bp.ship = S
     bp.hull = res

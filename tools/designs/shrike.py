@@ -437,6 +437,7 @@ def build(lite=False):
 def shrike(lite=False):
     bp, res, _ = build(lite)
     res.check()
+    link_conveyors(bp)
     return finalize(bp)
 
 

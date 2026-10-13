@@ -635,6 +635,7 @@ def corsair(lite=False):
     bp, res, _ = build(lite)
     res.check()
     check_cradles(bp)
+    link_conveyors(bp)
     return finalize(bp)
 
 
@@ -683,6 +684,7 @@ def corsair_wing(lite=False):
     bp, res, S = build(lite, name='Corsair Wing' + (' Lite' if lite else ''))
     res.check()
     check_cradles(bp)
+    link_conveyors(bp)
     for hm, tg in zip(S['merges'], ('Port', 'Starboard')):
         d = hornet(lite)
         d.display = 'Hornet ' + tg
