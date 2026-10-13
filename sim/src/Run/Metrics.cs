@@ -28,6 +28,7 @@ namespace SeSim.Run
         // end-of-run state
         public bool Alive, Capable, EverCapable;
         public int BlocksStart, BlocksEnd;
+        public int WeaponsStart, WeaponsEnd, ThrustersStart, ThrustersEnd;   // functional guns/turrets and working thrusters
         public string Script = "";
         public double BlockMassLostKg, InitialMassKg;
         public double WeaponRange;
@@ -135,6 +136,7 @@ namespace SeSim.Run
             {
                 var sh = Ships[i]; var st = _st[i];
                 st.BlocksStart = sh.InitialBlocks; st.InitialMassKg = sh.InitialMass; st.WeaponRange = sh.WeaponRange;
+                CountUnits(sh.Bodies, out st.WeaponsStart, out st.ThrustersStart);
                 var sb = new System.Text.StringBuilder();
                 var seen = new List<string>();
                 for (int k = 0; k < sh.Pbs.Count; k++) { string nm = sh.Pbs[k].ScriptName ?? "?"; if (!seen.Contains(nm)) seen.Add(nm); }
@@ -287,12 +289,24 @@ namespace SeSim.Run
             }
         }
 
+        static void CountUnits(List<Body> bodies, out int weapons, out int thrusters)
+        {
+            weapons = 0; thrusters = 0;
+            for (int k = 0; k < bodies.Count; k++)
+            {
+                var b = bodies[k];
+                for (int i = 0; i < b.Weapons.Count; i++) if (b.Weapons[i].Block.IsFunctional) weapons++;
+                for (int i = 0; i < b.Thrusters.Count; i++) if (b.Thrusters[i].Working) thrusters++;
+            }
+        }
+
         bool BodyCapable(World w, Body b, bool needControl, ShipInstance sh, bool needWeapon = true)
         {
             // stored power
             bool power = false;
             var bat = b.Batteries;
             for (int i = 0; i < bat.Count; i++) if (bat[i].CanDischarge) { power = true; break; }
+            if (!power && b.Power != null && b.Power.GeneratorMW() > 0) power = true;
             if (!power) return false;
             bool thr = false;
             var th = b.Thrusters;
@@ -364,6 +378,7 @@ namespace SeSim.Run
                 for (int k = 0; k < list.Count && !cap; k++) cap = BodyCapable(w, list[k], !sh.HasBrain, sh);
                 sh.CombatCapable = cap;
                 st.Capable = cap; st.BlocksEnd = blocks; st.Alive = blocks > 0;
+                CountUnits(list, out st.WeaponsEnd, out st.ThrustersEnd);
                 if (cap) { st.EverCapable = true; _teamCap[sh.Team] = true; }
                 else if (st.EverCapable && !sh.Disabled) { sh.Disabled = true; sh.DisabledAt = now; st.DisabledAtS = now; }
                 if (!sh.Destroyed && (blocks == 0 || (sh.InitialMass > 0 && mass < 0.1 * sh.InitialMass))) { sh.Destroyed = true; sh.DestroyedAt = now; st.DestroyedAtS = now; }

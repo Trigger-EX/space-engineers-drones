@@ -42,6 +42,9 @@ namespace SeSim.Core
         /// <summary>false (default): thrust acts through the centre of mass like the game (MyEntityThrustComponent applies the summed
         /// thrust at CenterOfMassWorld, so thruster placement never turns a ship). true: per-thruster r x F torque.</summary>
         public bool ThrusterTorque = false;
+        /// <summary>[I] Large turret engagement range = its ammo's max range (artillery 2000 m, assault cannon 1400 m) when true;
+        /// a flat 800 m (the turret blocks' MaxRangeMeters) when false. Gatling/rocket turrets are 800 m either way.</summary>
+        public bool TurretRangeFromAmmo = true;
         public bool GyroscopicTerm = false;                      // add -w x (I w) to the angular acceleration (design: off, Havok-like approximation not needed)
         public double CollisionRestitution = 0.2;                // body-body contact impulse restitution
         public int CollisionMinBlocks = 4;                       // bodies with fewer live blocks (debris) do not collide
@@ -85,6 +88,16 @@ namespace SeSim.Core
         public double TurretMinElevationDeg = -10;               // [I] large turret elevation lower limit
         public double TurretFireConeDeg = 1.0;                   // turret fires when aim error is below this
         public double PirateCruiseSpeed = 40, PirateOrbitSpeed = 25, PirateOrbitRange = 700, PirateMaxTurnRate = 0.5;   // [I] pirate brain
+        /// <summary>Pirate evasive manoeuvres (like the vanilla AI's "evasive" option): strafe at PirateEvasiveSpeed across the line
+        /// of sight, flipping every 2-5 s, on top of its orbit. Off by default (the matrix results so far are without it).</summary>
+        public bool PirateEvasive = false;
+        public double PirateEvasiveSpeed = 30;
+        /// <summary>Rockets (Missile ammo with explosion) at launch [I]: 0 = the old model (barrel direction x MissileInitialSpeed, ship
+        /// velocity ignored); 1 = ship velocity + barrel x MissileInitialSpeed, accelerating along the barrel with the total speed capped at
+        /// DesiredSpeed, so a rocket fired from a ship moving sideways curves onto the barrel line (Keen bug tracker "Rocket doesn't move in
+        /// a straight line": fired from a moving ship it curves; answer: the rocket's max speed does not stack with the ship's velocity);
+        /// 2 = full Galilean inheritance (ship velocity kept, own speed on top).</summary>
+        public int RocketInherit = 1;
         public double VanillaSearchIntervalS = 30;               // AI Offensive default search interval (MidgeNotes.md)
         public double VanillaFireConeDeg = 5;                    // vanilla AI fires fixed guns inside this cone
         public bool VanillaSearchOnActivate = true;              // [I] AI Offensive searches as soon as it is enabled (then every interval)

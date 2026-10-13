@@ -1,5 +1,5 @@
 // =====================================================================
-//  WASP DRONE AI  v2.2-wasp  - rocket fire control, lead solver & flight
+//  WASP DRONE AI  v2.5-wasp  - rocket fire control, lead solver & flight
 //  For Space Engineers (vanilla, small grid). Paste into a Programmable Block.
 //  Derived from HORNET DRONE AI v1.8: same tracking, hive (IGC), AI hand-off,
 //  damage sensing, printer join; the weapon model and fire control are new.
@@ -42,8 +42,15 @@
 //   * optional "Dash Along AI Heading" (off): measured +4 points in 1v1, -11 in teams (see the notes)
 //   * config keys that contain "=" were renamed (MyIni splits there)
 //
+//  v2.5 (LEAD v1.0, shared block, docs/lead-v1.md): the lead solver predicts the target with its freshest acceleration, held only
+//   for as long as its manoeuvres usually last (an AI ship on evasive flips its strafe every 2-5 s); the hull aim point counts only
+//   across the line of fire, turns with the target's spin, and keeps "Aim Margin" x the predicted miss of known hull around it
+//   Rockets: modelled leaving with the ship's velocity + launch speed, accelerating along the barrel with the speed capped (they curve
+//   when fired from a moving ship, Keen bug tracker); "Rocket Velocity Model" CAPPED / NONE (the v2.3 model) / FULL
+//
 //  COMMANDS (PB argument, toolbar, or IGC "<Tag>_CMD")
 //   guard    hold home point, engage anything inside GuardRadius
+//   follow   stay with the owner: a ship running a Mothership link, or you on foot near the drone ("escort" works too)
 //   hunt     chase and engage any target, actively scan
 //   assist   you fly, script aims + fires when a target is locked
 //   rtb      fly home, then idle
@@ -56,13 +63,16 @@
 //  Settings live in the PB's Custom Data (written on first run).
 // =====================================================================
 
-const string VER = "2.3-wasp";
+const string VER = "2.5-wasp";
 
 // ---------------- settings (overwritten from Custom Data) -------------
 string Tag = "WASP";
 double ProjSpeed = 200;      // m/s  rocket top speed (informational; the solver uses the Rkt* curve below)
 double RktV0 = 100, RktAcc = 600, RktVmax = 200;   // Missile200mm: launch speed, acceleration, cap
-bool InheritVel = false;     // rockets do not inherit the launcher's velocity (set true if a test shows they do)
+string RocketModel = "CAPPED"; // CAPPED: a rocket leaves with our velocity + launch speed, accelerates along the barrel, total speed capped
+                              // (fired from a moving ship it curves onto the barrel line; Keen bug tracker); NONE: our velocity is ignored;
+                              // FULL: our velocity is kept on top of the rocket's own speed
+double LeadMargin = 1.0;      // aim point keeps this many predicted misses of known hull around it (LEAD block)
 double MaxFireRangeU = 650, MaxLeadTimeU = 3.5, StandoffU = 350;   // when the rocket stock is unknown/unlimited (creative world: empty inventories) the doctrine is "more rockets, from farther": sim, locked duels, win 34.8 -> 43.6 %
 double MaxFireRange = 420;   // rockets die at 800 m; accuracy falls with flight time (sim sweep: 650 -> 420 doubled the hit rate, 31 -> 75 %, and gave more hits per drone)
 double MaxLeadTime = 2.0;    // never fire at an intercept further than this many seconds of flight (was 3.2)
@@ -101,7 +111,7 @@ bool AutoScan = true, ShareTargets = true, Jink = true, FriendCheck = true;
 string StartMode = "IDLE";   // safe default: drone waits for a command
 
 // ---------------- state ----------------------------------------------
-enum Mode { IDLE, GUARD, HUNT, ASSIST, RTB }
+enum Mode { IDLE, GUARD, HUNT, ASSIST, RTB, FOLLOW }
 Mode _mode = Mode.IDLE;
 MyIni _ini = new MyIni();
 double _now = 0;
@@ -138,12 +148,14 @@ void RegisterFeeds()
 class Track
 {
     public long Id; public Vector3D Pos, Vel, Acc; public double AccMag;
+    public Vector3D LAcc, LSeg, LW, LOR; public int LSegN; public double LSegT0 = -99, LManT = 2;   // LEAD v1.0 state (fresh acceleration, manoeuvres, spin)
     public double Spin, SpinSince = -1, Rad0, Raw, RawMax, DeadAt = -1, DisSince = -1; public Vector3D OF, OU; public bool HasOri;
     public MatrixD O = MatrixD.Identity; public List<Vector3D> Hull = new List<Vector3D>(); public int HullNext;
     public Vector3D Thrust, AimLocal; public double AimT = -99;
     // how fast it's rotating, from orientation changes between sightings
     public void Ori(MatrixD o, double dt)
     {
+        LeadSpin(this, o, dt);
         if (HasOri && dt > 0.04 && dt < 2)
         {
             double a = Math.Max(Math.Acos(MathHelper.Clamp(Vector3D.Dot(OF, o.Forward), -1, 1)), Math.Acos(MathHelper.Clamp(Vector3D.Dot(OU, o.Up), -1, 1)));
@@ -154,6 +166,7 @@ class Track
     public MyDetectedEntityType Type; public string Name;
     public void Set(Vector3D p, Vector3D v, double r, double now, string src)
     {
+        LeadSample(this, v, now, now - Seen);
         double dt = now - Seen;
         if (Seen > 0 && dt > 0.04 && dt < 2)
         {
@@ -216,7 +229,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -389,11 +402,321 @@ string AiGateStatus()
 }
 // <<< AI GATE <<<
 
+// >>> FOLLOW v1.0 (shared block: identical in every scripted combat drone, synced by tools/follow_sync.py) >>>
+// FOLLOW mode ("follow" or "escort" command, Start Mode FOLLOW, or launch Mode=FOLLOW): the drone stays with its owner instead of
+// holding a fixed home point (GUARD).
+// The owner is found two ways:
+//  * SHIP: whatever broadcasts the home point, i.e. a ship running a carrier link (HornetMothership, LongbowMothership, GnatMothership,
+//    or any script sending "<Tag>_HOME" or "<fleet>_HOME"). The owner's velocity comes from successive position fixes, so older link
+//    scripts work too. The link's "<Tag>_HOMER" / "<fleet>_HOMER" radius keeps the drones outside its hull (else Owner Radius).
+//  * ON FOOT: the owner's own character, when a drone sensor sees it (about 50 m). It wins while seen, so stepping out of the ship
+//    near the drones hands the escort to you.
+// What the drone does:
+//  * flies its own slot on a ring behind the owner (upper half only in gravity), outside the hull, and matches the owner's velocity;
+//    a straight line through the hull is replaced by a detour round it, near the hull it never closes in, and on a collision
+//    course with the owner (up to 8 s ahead) it sidesteps;
+//  * engages only targets within Engage Radius of the owner, and drops a fight that takes it beyond Leash;
+//  * the ring widens (up to 2x) while the owner manoeuvres hard (over 3 m/s2), so a ship that out-turns the drones does not run into them;
+//  * link lost: keeps flying the owner's last track for Coast seconds (10 s on foot), then holds that point until the owner is heard again.
+// Own [Follow] section in Custom Data (written on first run, "reload" re-reads it).
+// Hooks: FollowLoad() after AiGateLoad(); FollowStep() every tick after ReadIGC(); FollowSensed(e) for each sensor detection and
+// "Detect Owner" = FoFoot, "Detect Players" = TargetChars || FoFoot in ConfigureSensors(); first line of Home():
+// "if (_mode == Mode.FOLLOW && FollowKnown()) return FollowPos();"; the target pick skips targets farther than FoEngage from Home();
+// idle translation "want = FollowWant(me, aBrake, Separation(me)) + Evade();"; with a target
+// "if (_mode == Mode.FOLLOW && FollowFar(me)) want = FollowBack(me);"; speed cap MaxSpeed in FOLLOW; FollowStatus() in the status.
+double FoDist = 60, FoFootDist = 20, FoRadius = 25, FoEngage = 800, FoLeash = 1200, FoCoast = 3;
+bool FoFoot = true;
+Vector3D _foP, _foV, _foLinkP, _foLinkV, _foFwd, _foUp;
+double _foT = -99, _foLinkT = -99, _foFootT = -99, _foR = 0, _foRT = -99, _foPhase = 0, _foAcc = 0;
+bool _foFrame = false, _foOnFoot = false;
+IMyBroadcastListener _foLR1, _foLR2; string _foKey = "";
+
+void FollowLoad()
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "Follow";
+    if (!ini.ContainsKey(S, "Slot Distance")) ini.Set(S, "Slot Distance", FoDist);
+    if (!ini.ContainsKey(S, "On Foot Distance")) ini.Set(S, "On Foot Distance", FoFootDist);
+    if (!ini.ContainsKey(S, "Owner Radius")) ini.Set(S, "Owner Radius", FoRadius);
+    if (!ini.ContainsKey(S, "Engage Radius")) ini.Set(S, "Engage Radius", FoEngage);
+    if (!ini.ContainsKey(S, "Leash")) ini.Set(S, "Leash", FoLeash);
+    if (!ini.ContainsKey(S, "Coast After Link Loss (s)")) ini.Set(S, "Coast After Link Loss (s)", FoCoast);
+    if (!ini.ContainsKey(S, "Follow Owner On Foot")) ini.Set(S, "Follow Owner On Foot", FoFoot);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    FoDist = Math.Max(10, ini.Get(S, "Slot Distance").ToDouble(FoDist));
+    FoFootDist = Math.Max(5, ini.Get(S, "On Foot Distance").ToDouble(FoFootDist));
+    FoRadius = Math.Max(0, ini.Get(S, "Owner Radius").ToDouble(FoRadius));
+    FoEngage = Math.Max(50, ini.Get(S, "Engage Radius").ToDouble(FoEngage));
+    FoLeash = Math.Max(FoEngage, ini.Get(S, "Leash").ToDouble(FoLeash));
+    FoCoast = Math.Max(0, ini.Get(S, "Coast After Link Loss (s)").ToDouble(FoCoast));
+    FoFoot = ini.Get(S, "Follow Owner On Foot").ToBoolean(FoFoot);
+    int h = 0; foreach (char c in Tag) h = (h * 31 + c) % 997;
+    _foPhase = h / 997.0;   // drone types share no slot list: each type starts its ring at its own angle
+    string key = Tag + "#" + _flChan;
+    if (key == _foKey) return;
+    _foKey = key;
+    if (_foLR1 != null) IGC.DisableBroadcastListener(_foLR1);
+    if (_foLR2 != null) IGC.DisableBroadcastListener(_foLR2);
+    _foLR1 = IGC.RegisterBroadcastListener(Tag + "_HOMER");
+    _foLR2 = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_HOMER") : null;
+}
+
+void FoReadR(IMyBroadcastListener l)
+{
+    while (l != null && l.HasPendingMessage)
+    {
+        var m = l.AcceptMessage();
+        if (!(m.Data is double)) continue;
+        double r = (double)m.Data;
+        if (r > 0 && r < 5000) { _foR = r; _foRT = _now; }
+    }
+}
+
+void FoSet(Vector3D p, Vector3D v, bool foot) { _foP = p; _foV = v; _foT = _now; _foOnFoot = foot; }
+
+void FollowStep()
+{
+    FoReadR(_foLR1); FoReadR(_foLR2);
+    if (_dynHomeT > _foLinkT)   // a new position fix from the carrier link
+    {
+        double dt = _dynHomeT - _foLinkT;
+        if (dt > 0.05 && dt < 2)
+        {
+            Vector3D raw = (_dynHome - _foLinkP) / dt;
+            if (raw.LengthSquared() > 150 * 150) _foLinkV = Vector3D.Zero;   // a jump (another carrier, or a respawn): no speed from it
+            else
+            {
+                Vector3D nv = _foLinkV + (raw - _foLinkV) * 0.5;
+                _foAcc += (Math.Min(30, (nv - _foLinkV).Length() / dt) - _foAcc) * 0.15;   // how hard the owner manoeuvres (m/s2, smoothed)
+                _foLinkV = nv;
+            }
+        }
+        else if (dt >= 2) _foLinkV = Vector3D.Zero;
+        _foLinkP = _dynHome; _foLinkT = _dynHomeT;
+        if (_now - _foFootT > 1.0) FoSet(_foLinkP, _foLinkV, false);   // the owner on foot wins while the sensor sees them
+    }
+    if (_rc == null || !FollowKnown()) return;
+    // slot frame: forward = the owner's heading (kept while it stops), up = away from gravity (in space the frame's own up)
+    Vector3D g = _rc.GetNaturalGravity();
+    if (!_foFrame)
+    {   // start with the drone "behind" the owner: no slot on the far side of the hull
+        Vector3D to = _foP - _rc.GetPosition();
+        _foFwd = to.LengthSquared() > 1 ? Vector3D.Normalize(to) : _rc.WorldMatrix.Forward; _foUp = _rc.WorldMatrix.Up; _foFrame = true;
+    }
+    if (g.LengthSquared() > 0.1) _foUp = -Vector3D.Normalize(g);
+    Vector3D v = FollowVel();
+    if (v.LengthSquared() > 9) _foFwd = Vector3D.Normalize(_foFwd + (Vector3D.Normalize(v) - _foFwd) * 0.005);   // ~3 s lag: a weaving owner does not swing the ring
+    Vector3D right = Vector3D.Cross(_foFwd, _foUp);
+    if (right.LengthSquared() < 0.01) right = _rc.WorldMatrix.Right;   // owner flying straight up or down
+    right.Normalize();
+    _foUp = Vector3D.Normalize(Vector3D.Cross(right, _foFwd));
+    if (g.LengthSquared() > 0.1 && Vector3D.Dot(_foUp, g) > 0) _foUp = -_foUp;
+}
+
+void FollowSensed(MyDetectedEntityInfo e)
+{
+    if (!FoFoot || e.IsEmpty() || e.Type != MyDetectedEntityType.CharacterHuman || e.Relationship != MyRelationsBetweenPlayerAndBlock.Owner) return;
+    _foFootT = _now;
+    FoSet(e.Position, new Vector3D(e.Velocity), true);
+}
+
+bool FollowKnown() { return _foT > -50; }
+// on foot the drones keep walking your last heading for 10 s (their sensors must get back within ~50 m of you)
+double FoCoastNow() { return _foOnFoot ? Math.Max(FoCoast, 10) : FoCoast; }
+Vector3D FollowPos() { return _foP + _foV * Math.Min(_now - _foT, FoCoastNow()); }
+Vector3D FollowVel() { return _now - _foT <= FoCoastNow() ? _foV : Vector3D.Zero; }
+double FollowRadius() { return _foOnFoot ? 1 : (_now - _foRT < 10 ? _foR : FoRadius); }
+
+// This drone's slot: rank among the fresh hive mates of the same type (by grid id) picks the angle on the ring. Ring distance: Slot
+// Distance, at least the hull radius + 30 m and wide enough that neighbours sit outside SepRange; on foot On Foot Distance, kept
+// inside the sensor's reach (40 m) so the drones keep seeing you.
+double _foSlotR = 60;
+Vector3D FollowSlot()
+{
+    int n = 1, k = 0; long me = Me.CubeGrid.EntityId;
+    foreach (var m in _mates.Values) { if (_now - m.Seen > 3) continue; n++; if (m.Id < me) k++; }
+    bool grav = _rc.GetNaturalGravity().LengthSquared() > 0.1;
+    double th = grav ? Math.PI * (k + 0.15 + 0.7 * _foPhase) / n : Math.PI * 0.5 + 2 * Math.PI * (k + 0.7 * _foPhase) / n;
+    double gap = Math.Max(SepRange * 1.1, 30) / (2 * Math.Sin((grav ? Math.PI * 0.5 : Math.PI) / Math.Max(n, 2)));
+    _foSlotR = _foOnFoot ? Math.Min(40, Math.Max(FoFootDist, n * 4)) : Math.Max(Math.Max(FoDist, FollowRadius() + 30), n > 1 ? gap / 0.866 : 0);
+    if (!_foOnFoot) _foSlotR *= 1 + MathHelper.Clamp((_foAcc - 3) / 6, 0, 1);   // the owner throws itself around: up to twice the room
+    Vector3D right = Vector3D.Cross(_foFwd, _foUp);
+    Vector3D side = right * Math.Cos(th) + _foUp * Math.Sin(th);
+    return FollowPos() + (-_foFwd * 0.5 + side * 0.866) * _foSlotR;   // 60 deg off the owner's tail
+}
+
+// sep = the script's wingmate separation (SepRange); on foot the ring is smaller than that, so a 15 m push replaces it.
+Vector3D FollowWant(Vector3D me, double aBrake, Vector3D sep)
+{
+    Vector3D o = FollowPos(), s = FollowSlot();
+    double clr = FollowRadius() + (_foOnFoot ? 6 : 15);
+    Vector3D goal = s, seg = s - me;
+    double sl2 = seg.LengthSquared();
+    if (sl2 > 1)
+    {   // the straight line to the slot crosses the hull: aim beside the hull first
+        double u = Vector3D.Dot(o - me, seg) / sl2;
+        if (u > 0 && u < 1)
+        {
+            Vector3D oc = me + seg * u - o;
+            if (oc.LengthSquared() < clr * clr)
+            {
+                if (oc.LengthSquared() < 0.25) oc = Vector3D.Cross(seg, Vector3D.Cross(_foUp, seg));
+                if (oc.LengthSquared() < 0.25) oc = _foUp;
+                goal = o + Vector3D.Normalize(oc) * (clr + 10);
+            }
+        }
+    }
+    Vector3D d = goal - me; double dist = d.Length();
+    double v = Math.Min(Math.Min(MaxSpeed, dist * 0.6), Math.Sqrt(2 * aBrake * dist));
+    Vector3D w = FollowVel() + (dist > 0.5 ? d / dist * v : Vector3D.Zero);
+    Vector3D om = me - o; double oml = om.Length(), band = Math.Max(clr, Math.Min(clr + 25, _foSlotR - 8));
+    if (oml < band)
+    {   // near the hull: no closing in, and get out of the way of an owner turning into the drone
+        Vector3D on = oml > 0.5 ? om / oml : _foUp;
+        double closing = -Vector3D.Dot(_rc.GetShipVelocities().LinearVelocity - FollowVel(), on);
+        double outw = (band - oml) * 0.8 + Math.Max(0, closing), cur = Vector3D.Dot(w - FollowVel(), on);
+        if (cur < outw) w += on * (outw - cur);
+    }
+    Vector3D rv = _rc.GetShipVelocities().LinearVelocity - FollowVel();
+    double rv2 = rv.LengthSquared();
+    if (rv2 > 4)
+    {   // on a collision course with the owner (it out-turns us, or cuts across our path): sidestep early, braking is too late
+        double tc = -Vector3D.Dot(om, rv) / rv2;
+        if (tc > 0 && tc < 8)
+        {
+            Vector3D miss = om + rv * tc; double ml = miss.Length(), need = clr + 15;
+            if (ml < need)
+            {
+                Vector3D side = ml > 0.5 ? miss / ml : Vector3D.Cross(rv, _foUp);
+                if (side.LengthSquared() < 0.01) side = Vector3D.Cross(rv, _rc.WorldMatrix.Right);
+                w += Vector3D.Normalize(side) * Math.Min(MaxSpeed, (need - ml) / Math.Max(tc, 0.5) * 2);
+            }
+        }
+    }
+    if (!_foOnFoot) return w + sep;
+    foreach (var m in _mates.Values)
+    {
+        double age = _now - m.Seen; if (age > 1.5) continue;
+        Vector3D dm = me - (m.Pos + m.Vel * age); double len = dm.Length();
+        if (len < 15 && len > 0.5) w += dm / len * (8 * (1 - len / 15));
+    }
+    return w;
+}
+
+bool FollowFar(Vector3D me) { return FollowKnown() && Vector3D.DistanceSquared(me, FollowPos()) > FoLeash * FoLeash; }
+Vector3D FollowBack(Vector3D me) { Vector3D d = FollowPos() - me; return FollowVel() + (d.LengthSquared() > 1 ? Vector3D.Normalize(d) * MaxSpeed : Vector3D.Zero); }
+
+string FollowStatus()
+{
+    if (_mode != Mode.FOLLOW) return "";
+    if (!FollowKnown()) return "Follow : no owner yet (link script on your ship" + (FoFoot ? ", or stand within ~50 m" : "") + ")\n";
+    double age = _now - _foT;
+    string s = "Follow : " + (_foOnFoot ? "on foot" : "ship") + (age > 1.5 ? " LOST " + age.ToString("F0") + " s" : "") + "  " + FollowVel().Length().ToString("F0") + " m/s";
+    if (_rc != null) s += "  " + Vector3D.Distance(_rc.GetPosition(), FollowPos()).ToString("F0") + " m away";
+    return s + "\n";
+}
+// <<< FOLLOW <<<
+// >>> LEAD v1.0 (shared block: identical in every armed drone script, see docs/lead-v1.md) >>>
+// Target prediction for the lead solvers. Measured on an offline bench (tools/lead_bench/Bench.cs: rockets, gatling and railgun shots at
+// strafing / turning / orbiting / burning targets from 6 m to 120 m long) and in the sim; numbers in docs/lead-v1.md.
+//  * Fresh acceleration: 0.8 of the newest velocity-difference sample (the Longbow's v2.2 finding). The old smoothed, steadiness-gated
+//    acceleration lagged a strafing target by about a second and was the worst estimate in every pattern.
+//  * Manoeuvre horizon: the present acceleration is extrapolated only for as long as this target's manoeuvres usually last (the mean
+//    length of its stretches of steady acceleration), then the target flies on at constant velocity. A burn that has already outlasted
+//    that is trusted for longer the longer it goes on (an orbit, a chase). Matters for slow shots: a rocket needs about 4 s to cover
+//    800 m, and an AI ship with "evasive manoeuvres" flips its strafe every 2-5 s.
+//  * Aim point: a hull point counts only across the line of fire (its depth along the line does not change what the shot hits, but a
+//    deep point swings sideways when the target turns), is turned with the target's measured spin for at most 1 s, and must leave
+//    Lead Margin x the predicted miss of known hull around it, so a long, uncertain shot goes to the middle of the known hull instead
+//    of its edge, and a short, sure one may still pick the engines.
+// Hooks (one line each, in class Track): fields  public Vector3D LAcc, LSeg, LW, LOR; public int LSegN; public double LSegT0 = -99, LManT = 2;
+//   LeadSpin(this, o, dt) first thing in Track.Ori;  LeadSample(this, v, now, now - Seen) first thing in Track.Set.
+// Solvers use LeadAcc(t), LeadHold(t), LeadK / LeadKd, LeadOffset; AimOffset filters its hull points through LeadPick.
+static double LeadFastW = 0.8, LeadFastK = 0.9, LeadAccMax = 30;
+static void LeadSample(Track t, Vector3D v, double now, double dt)
+{
+    if (dt >= 2) { t.LAcc = Vector3D.Zero; t.LSegN = 0; return; }
+    if (t.Seen <= 0 || dt < 0.04) return;
+    Vector3D a = (v - t.Vel) / dt;
+    if (a.LengthSquared() > LeadAccMax * LeadAccMax) a = Vector3D.Normalize(a) * LeadAccMax;
+    t.LAcc = t.LAcc * (1 - LeadFastW) + a * LeadFastW;
+    // a new manoeuvre starts when the acceleration turns well away from the mean of the present one
+    double am = a.Length(), sm = t.LSeg.Length(), mx = Math.Max(am, sm);
+    if (t.LSegN == 0 || (mx > 0.5 && (a - t.LSeg).Length() > 0.6 * mx && now - t.LSegT0 > 0.3))
+    {
+        if (t.LSegN > 0) t.LManT = MathHelper.Clamp(t.LManT * 0.7 + (now - t.LSegT0) * 0.3, 0.4, 8);
+        t.LSeg = a; t.LSegN = 1; t.LSegT0 = now;
+    }
+    else { t.LSegN++; t.LSeg += (a - t.LSeg) / Math.Min(t.LSegN, 8); }
+    if (now - t.LSegT0 > t.LManT) t.LManT = Math.Min(8, t.LManT + 0.3 * dt);
+}
+// spin (world, rad/s) from two orientations: for a small turn phi, each axis b moves by phi x b, so sum(b_old x b_new) = 2 phi
+static void LeadSpin(Track t, MatrixD o, double dt)
+{
+    if (t.HasOri && dt > 0.04 && dt < 2 && t.LOR.LengthSquared() > 0.5)
+        t.LW = t.LW * 0.5 + (Vector3D.Cross(t.OF, o.Forward) + Vector3D.Cross(t.OU, o.Up) + Vector3D.Cross(t.LOR, o.Right)) * (0.25 / dt);
+    t.LOR = o.Right;
+}
+Vector3D LeadAcc(Track t) { return t.LAcc.LengthSquared() < 0.25 ? Vector3D.Zero : t.LAcc * LeadFastK; }
+// seconds the present manoeuvre is expected to go on
+double LeadHold(Track t)
+{
+    double age = _now - t.LSegT0;
+    return Math.Max(Math.Max(t.LManT - age, 0.3 * t.LManT), 2 * (age - t.LManT));
+}
+// target displacement = acceleration * LeadK(T, hold) after T seconds; velocity change = acceleration * LeadKd(T, hold)
+static double LeadK(double T, double h) { return T <= h ? 0.5 * T * T : h * (T - 0.5 * h); }
+static double LeadKd(double T, double h) { return Math.Min(T, h); }
+// aim offset (world) T seconds of flight from now: only across the line of fire 'los', turned with the target's spin for at most 1 s
+Vector3D LeadOffset(Track t, Vector3D off, Vector3D los, double T)
+{
+    if (off.LengthSquared() < 1e-6) return off;
+    double wl = t.LW.Length(), h = Math.Min(_now - t.Seen + T, 1.0);
+    if (wl > 1e-3 && h > 0)
+    {
+        Vector3D k = t.LW / wl; double an = wl * h, c = Math.Cos(an), s = Math.Sin(an);
+        off = off * c + Vector3D.Cross(k, off) * s + k * (Vector3D.Dot(k, off) * (1 - c));
+    }
+    return off - Vector3D.Dot(off, los) * los;
+}
+// Predicted miss (m) of a shot with T seconds of flight: what the target's manoeuvring can do in that time.
+static double LeadMiss(Track t, double T) { return 0.5 * t.AccMag * T * T; }
+// Hull points (target frame) that leave 'need' metres of known hull around them across the line of fire (l, target frame), judged
+// against the extent of all hull points along 4 directions (an octagon round the known hull); none: the one with the most.
+List<int> _leadKeep = new List<int>();
+List<int> LeadPick(List<Vector3D> hull, Vector3D l, double need)
+{
+    _leadKeep.Clear();
+    int n = hull.Count;
+    if (l.LengthSquared() < 0.25 || need <= 0) { for (int i = 0; i < n; i++) _leadKeep.Add(i); return _leadKeep; }   // (no line of fire yet)
+    Vector3D u = Vector3D.Cross(l, Math.Abs(l.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); u.Normalize();
+    Vector3D v = Vector3D.Cross(l, u);
+    double x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, p0 = 1e9, p1 = -1e9, q0 = 1e9, q1 = -1e9;
+    for (int i = 0; i < n; i++)
+    {
+        double x = Vector3D.Dot(hull[i], u), y = Vector3D.Dot(hull[i], v), p = (x + y) * 0.7071, q = (x - y) * 0.7071;
+        x0 = Math.Min(x0, x); x1 = Math.Max(x1, x); y0 = Math.Min(y0, y); y1 = Math.Max(y1, y);
+        p0 = Math.Min(p0, p); p1 = Math.Max(p1, p); q0 = Math.Min(q0, q); q1 = Math.Max(q1, q);
+    }
+    int best = 0; double bm = -1e9;
+    for (int i = 0; i < n; i++)
+    {
+        double x = Vector3D.Dot(hull[i], u), y = Vector3D.Dot(hull[i], v), p = (x + y) * 0.7071, q = (x - y) * 0.7071;
+        double m = Math.Min(Math.Min(Math.Min(x - x0, x1 - x), Math.Min(y - y0, y1 - y)), Math.Min(Math.Min(p - p0, p1 - p), Math.Min(q - q0, q1 - q)));
+        if (m >= need) _leadKeep.Add(i);
+        if (m > bm) { bm = m; best = i; }
+    }
+    if (_leadKeep.Count == 0 && n > 0) _leadKeep.Add(best);
+    return _leadKeep;
+}
+// <<< LEAD v1.0 <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
     LoadConfig();
-    FleetLoad(true); AiGateLoad();
+    FleetLoad(true); AiGateLoad(); FollowLoad();
     _mode = ParseMode(StartMode, Mode.IDLE);
     if (!string.IsNullOrEmpty(Storage))
     {
@@ -427,7 +750,7 @@ Mode ParseMode(string s, Mode def)
     switch (s.Trim().ToUpperInvariant())
     {
         case "IDLE": return Mode.IDLE; case "GUARD": return Mode.GUARD; case "HUNT": return Mode.HUNT;
-        case "ASSIST": return Mode.ASSIST; case "RTB": return Mode.RTB; default: return def;
+        case "ASSIST": return Mode.ASSIST; case "RTB": return Mode.RTB; case "FOLLOW": case "ESCORT": return Mode.FOLLOW; default: return def;
     }
 }
 
@@ -453,7 +776,7 @@ void Tick(string arg, UpdateType src)
     CheckGrid();
     if (_rc == null || !_rc.IsFunctional) { _err = "No working Remote Control / cockpit"; Display(); Release(); return; }
 
-    ReadIGC(); ReadJoin(); ReadSwarm();
+    ReadIGC(); FollowStep(); ReadJoin(); ReadSwarm();
     if (_tick % 6 == 3) BroadcastStatus();
     StepSlimScan();
     if (_tick % 20 == 7) CheckDamage();
@@ -462,7 +785,7 @@ void Tick(string arg, UpdateType src)
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
     if (_mode != Mode.IDLE) OmniScan();
-    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT)) AutoScanStep();
+    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT || _mode == Mode.FOLLOW)) AutoScanStep();
     if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0) ShareTarget();
 
     if (!AiStep()) Control(dt);
@@ -479,6 +802,7 @@ void Command(string a)
     switch (w[0])
     {
         case "guard": SetMode(Mode.GUARD); break;
+        case "follow": case "escort": SetMode(Mode.FOLLOW); break;
         case "hunt": SetMode(Mode.HUNT); break;
         case "assist": SetMode(Mode.ASSIST); break;
         case "rtb": SetMode(Mode.RTB); break;
@@ -494,7 +818,7 @@ void Command(string a)
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
             double r; if (w.Length > 1 && double.TryParse(w[1], out r)) Standoff = MathHelper.Clamp(r, MinRange, FireRange); break;
-        case "reload": LoadConfig(); FleetLoad(true); AiGateLoad(); GetBlocks(); break;
+        case "reload": LoadConfig(); FleetLoad(true); AiGateLoad(); FollowLoad(); GetBlocks(); break;
     }
 }
 
@@ -517,7 +841,8 @@ void LoadConfig()
     RktV0 = Cfg(S, "Rocket Launch Speed", RktV0);
     RktAcc = Cfg(S, "Rocket Acceleration", RktAcc);
     RktVmax = Cfg(S, "Rocket Top Speed", RktVmax);
-    InheritVel = Cfg(S, "Projectiles Inherit Ship Velocity", InheritVel);
+    RocketModel = Cfg(S, "Rocket Velocity Model (CAPPED/NONE/FULL)", RocketModel).Trim().ToUpperInvariant();
+    LeadMargin = Cfg(S, "Aim Margin (predicted misses)", LeadMargin);
     MaxFireRange = Cfg(S, "Max Fire Range", MaxFireRange);
     MaxLeadTime = Cfg(S, "Max Flight Time", MaxLeadTime);
     SafeRange = Cfg(S, "Min Launch Distance", SafeRange);
@@ -918,6 +1243,7 @@ void PruneAndSelect()
     {
         Vector3D p = t.P(_now);
         if (_mode == Mode.GUARD && Vector3D.Distance(p, home) > GuardRadius) continue;
+        if (_mode == Mode.FOLLOW && Vector3D.DistanceSquared(p, home) > FoEngage * FoEngage) continue;   // FOLLOW: only threats near the owner
         Vector3D d = p - me; double dist = d.Length();
         double ang = Math.Acos(MathHelper.Clamp(Vector3D.Dot(d / Math.Max(dist, 1), fwd), -1, 1)) * 57.2958;
         double closing = Vector3D.Dot(t.V(_now) - myVel, -d / Math.Max(dist, 1));
@@ -934,6 +1260,7 @@ void PruneAndSelect()
 
 Vector3D Home()
 {
+    if (_mode == Mode.FOLLOW && FollowKnown()) return FollowPos();   // FOLLOW: the owner (ship link or on foot), see the FOLLOW block
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
     if (_mode == Mode.HUNT && _tgt == null && _patrolStopSet) return _patrolStop;   // search patrol: hold the listening stop, not fly home
     return (_now - _dynHomeT < 5) ? _dynHome : _home;
@@ -1063,6 +1390,7 @@ void Control(double dt)
             want = (pl > 1 ? pd / pl * PatrolSpeed : Vector3D.Zero) + Evade() + Separation(me);
         }
         if (_dash && _mode == Mode.HUNT && _tgt == null) want = _dashDir * DashSpeed + Separation(me);   // dash along the AI's heading
+        if (_mode == Mode.FOLLOW && FollowKnown()) want = FollowWant(me, aBrake, Separation(me)) + Evade();   // own slot by the owner, matching its velocity
         if (_mode == Mode.RTB && dist < 15 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
     }
     else
@@ -1088,8 +1416,9 @@ void Control(double dt)
         double orbit = dist < FireRange * 1.2 ? OrbitSpeed : 0;
         want = tv + dir * vr + tan * orbit * _orbitSign + (Jink ? _jink : Vector3D.Zero) + Evade() + Separation(me);
         if (_mode == Mode.GUARD && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
+        if (_mode == Mode.FOLLOW && FollowFar(me)) want = FollowBack(me);   // leash: drop the fight, back to the owner
     }
-    double cap = (_tgt != null && _mode != Mode.RTB) ? MaxSpeed : (_dash ? DashSpeed + 5 : CruiseSpeed);
+    double cap = (_tgt != null && _mode != Mode.RTB) || _mode == Mode.FOLLOW ? MaxSpeed : (_dash ? DashSpeed + 5 : CruiseSpeed);
     if (want.LengthSquared() > cap * cap) want = Vector3D.Normalize(want) * cap;
 
     Vector3D acc = (want - myVel) * 2.0;
@@ -1112,32 +1441,65 @@ double RktTime(double d)
     return ta + (d - da) / Math.Max(RktVmax, 1);
 }
 
-// Rocket intercept. The rocket flies a straight line at its own speed curve D(T) (it does not inherit our
-// velocity unless InheritVel), so solve  |P_target(T) - shooter| = D(T)  for the flight time T by damped
-// fixed-point iteration (converges while the target is slower than the rocket).
-bool _leadOk = false;
 double FireRange { get { return _rockets >= 0 ? MaxFireRange : MaxFireRangeU; } }
+// Rocket flight in the barrel frame for a launch from a ship moving at ua along the barrel and us across it (CAPPED model): distance
+// along the barrel s, sideways drift q (towards us) and speed along the barrel sv after T seconds. Phase 1: launch velocity
+// (ua + V0, us), +A along the barrel until the speed reaches Vmax; phase 2: speed Vmax, the angle th to the barrel decays as
+// tan(th/2) = tan(th0/2) exp(-A/Vmax t). Closed form, within 1 m of a 60 Hz step-by-step flight.
+void RktPath(double T, double ua, double us, out double s, out double q, out double sv)
+{
+    double V = RktVmax, A = Math.Max(RktAcc, 1e-3), va = ua + RktV0, t1, th;
+    if (va * va + us * us >= V * V) { t1 = 0; th = Math.Atan2(us, va); }
+    else { t1 = (Math.Sqrt(V * V - us * us) - va) / A; th = Math.Asin(MathHelper.Clamp(us / V, -1, 1)); }
+    if (T <= t1) { s = va * T + 0.5 * A * T * T; q = us * T; sv = va + A * T; return; }
+    s = va * t1 + 0.5 * A * t1 * t1; q = us * t1;
+    double k = A / V, h = T - t1, c = Math.Tan(0.5 * th), x = c * Math.Exp(-k * h);
+    q += V / k * 2 * (Math.Atan(c) - Math.Atan(x));
+    s += V * (h - Math.Log((1 + c * c) / (1 + x * x)) / k);
+    sv = V * (1 - x * x) / (1 + x * x);
+}
+
+// Rocket intercept (v2.4): find the barrel direction d and flight time T with  rocket(d, T) = target(T).  The target is predicted
+// with the LEAD block (fresh acceleration held for the expected rest of its manoeuvre, aim point across the line of fire); the
+// rocket follows RocketModel. Newton on T: f(T) = s(T) - |target(T) - sideways drift(T)|.
+bool _leadOk = false;
+Vector3D _aimLos; double _aimNeed;   // line of fire and required hull margin for AimOffset's choice
 bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, out Vector3D point, out Vector3D dir)
 {
-    Vector3D tp = t.P(_now) + AimOffset(t), tv = t.V(_now), ta = UseTargetAccel ? t.EA() : Vector3D.Zero;
-    Vector3D rp = tp - shooter;
-    Vector3D rv = InheritVel ? tv - shooterVel : tv;
-    double tt = RktTime(rp.Length()), resid = 0;
-    Vector3D p = rp;
-    for (int i = 0; i < 10; i++)
+    Vector3D rp = t.P(_now) - shooter, tv = t.V(_now), ta = UseTargetAccel ? LeadAcc(t) : Vector3D.Zero;
+    double rl = rp.Length();
+    if (rl < 1 || double.IsNaN(rl)) { point = shooter + rp; dir = Vector3D.Zero; _leadOk = false; return false; }
+    Vector3D los = rp / rl, d = los, p = rp;
+    double tt = RktTime(rl), h = LeadHold(t), f = 99;
+    _aimLos = los; _aimNeed = LeadMargin * LeadMiss(t, tt);
+    Vector3D off = AimOffset(t);
+    int model = RocketModel == "NONE" ? 0 : RocketModel == "FULL" ? 2 : 1;
+    for (int i = 0; i < 12; i++)
     {
-        p = rp + (rv * tt + 0.5 * ta * tt * tt) * LeadScale;
-        double nt = RktTime(p.Length());
-        resid = Math.Abs(nt - tt);
-        tt = MathHelper.Clamp(0.5 * (tt + nt), 0, 12);
+        p = rp + LeadOffset(t, off, los, tt) + (tv * tt + ta * LeadK(tt, h)) * LeadScale;
+        Vector3D w = p, cv = tv + ta * LeadKd(tt, h);
+        double s, q, sv;
+        if (model == 1)
+        {
+            double ua = Vector3D.Dot(shooterVel, d); Vector3D up = shooterVel - ua * d; double us = up.Length();
+            RktPath(tt, ua, us, out s, out q, out sv);
+            if (us > 1e-3) w -= up * (q / us);
+        }
+        else
+        {
+            RktPath(tt, 0, 0, out s, out q, out sv);
+            if (model == 2) { w -= shooterVel * tt; cv -= shooterVel; }
+        }
+        double wl = w.Length();
+        if (wl < 1) break;
+        d = w / wl; f = s - wl;
+        tt = MathHelper.Clamp(tt - f / Math.Max(sv - Vector3D.Dot(d, cv), 20), 0.02, 12);
     }
-    _leadOk = resid < 0.05 && !double.IsNaN(tt);
+    _leadOk = Math.Abs(f) < 2 && !double.IsNaN(tt) && !double.IsNaN(d.X);
     _leadT = tt;
-    double len = p.Length();
-    if (len < 1 || double.IsNaN(len)) { point = tp; dir = Vector3D.Zero; _leadOk = false; return false; }
     point = shooter + p;
-    dir = p / len;
-    return true;
+    dir = d;
+    return _leadOk;
 }
 
 // ---- fire control state
@@ -1332,13 +1694,14 @@ void Display()
     _sb.Clear();
     _sb.Append("WASP DRONE AI v").Append(VER).Append('\n');
     _sb.Append("Mode   : ").Append(_mode).Append('\n');
+    _sb.Append(FollowStatus());
     if (_tgt != null)
     {
         double dist = _rc != null ? Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()) : 0;
         _sb.Append("Target : ").Append(_tgt.Type == MyDetectedEntityType.SmallGrid ? "SMALL " : _tgt.Type == MyDetectedEntityType.LargeGrid ? "LARGE " : "").Append(_tgt.Src).Append('\n');
         double mySpd = _rc != null ? _rc.GetShipVelocities().LinearVelocity.Length() : 0;
         _sb.Append("Range  : ").Append(dist.ToString("0")).Append(" m  tgt ").Append(_tgt.V(_now).Length().ToString("0")).Append(" me ").Append(mySpd.ToString("0")).Append(" m/s\n");
-        _sb.Append("Lead   : ").Append(_leadT.ToString("0.00")).Append(" s flight  acc ").Append(_tgt.EA().Length().ToString("0.0")).Append("/").Append(_tgt.AccMag.ToString("0.0")).Append(" x").Append(LeadScale.ToString("0.00")).Append('\n');
+        _sb.Append("Lead   : ").Append(_leadT.ToString("0.00")).Append(" s flight  acc ").Append(LeadAcc(_tgt).Length().ToString("0.0")).Append("/").Append(_tgt.AccMag.ToString("0.0")).Append(" for ").Append(LeadHold(_tgt).ToString("0.0")).Append(" s  x").Append(LeadScale.ToString("0.00")).Append('\n');
         _sb.Append("Aim err: ").Append(_aimErrDeg.ToString("0.00")).Append(" / ").Append(_fireWinDeg.ToString("0.00")).Append(" deg").Append(_showFire ? "  FIRING" : "").Append('\n');
     }
     else _sb.Append("Target : none (").Append(_contacts.Count).Append(" contacts)\n\n\n\n");
@@ -1380,12 +1743,12 @@ void ConfigureSensors()
         SetF(s, 50f, "FrontExtend", "Front"); SetF(s, 50f, "BackExtend", "Back");
         SetB(s, true, "Detect Enemy", "DetectEnemy");
         SetB(s, TargetNeutral, "Detect Neutral", "DetectNeutral");
-        SetB(s, false, "Detect Owner", "DetectOwner");
+        SetB(s, FoFoot, "Detect Owner", "DetectOwner");   // FOLLOW on foot (owner entities are never targets: Valid)
         SetB(s, false, "Detect Friendly", "DetectFriendly");
         SetB(s, TargetSmall, "Detect Small Ships", "DetectSmallShips");
         SetB(s, TargetLarge, "Detect Large Ships", "DetectLargeShips");
         SetB(s, TargetLarge, "Detect Stations", "DetectStations");
-        SetB(s, TargetChars, "Detect Players", "DetectPlayers");
+        SetB(s, TargetChars || FoFoot, "Detect Players", "DetectPlayers");
         SetB(s, false, "Detect Asteroids", "DetectAsteroids");
         SetB(s, false, "Detect Floating Objects", "DetectFloatingObjects");
         SetB(s, false, "Detect Subgrids", "DetectSubgrids");
@@ -1411,7 +1774,7 @@ void PollSensors()
         if (!s.IsWorking) continue;
         _sensed.Clear();
         s.DetectedEntities(_sensed);
-        foreach (var e in _sensed) if (Valid(e)) AddContact(e, "SENSOR");
+        foreach (var e in _sensed) { FollowSensed(e); if (Valid(e)) AddContact(e, "SENSOR"); }
     }
 }
 
@@ -1683,16 +2046,19 @@ Vector3D AimOffset(Track t)
     if (_now - t.AimT > 0.5)
     {
         string mode = AimLabel(t);
-        int n = t.Hull.Count, slot = (int)Math.Abs(Me.CubeGrid.EntityId % 9973);
+        int slot = (int)Math.Abs(Me.CubeGrid.EntityId % 9973);
         int step = slot + (int)(_now / 4);
-        if (mode == "SPREAD") t.AimLocal = t.Hull[step % n];
+        // only hull points with enough known hull round them for this shot's predicted miss (LEAD block)
+        var keep = LeadPick(t.Hull, Vector3D.TransformNormal(_aimLos, MatrixD.Transpose(t.O)), _aimNeed);
+        int n = keep.Count;
+        if (mode == "SPREAD") t.AimLocal = t.Hull[keep[step % n]];
         else
         {
             Vector3D axis = mode == "ENGINES" ? -t.Thrust
                 : Vector3D.TransformNormal(_rc.GetPosition() - t.P(_now), MatrixD.Transpose(t.O));
             if (axis.LengthSquared() < 1e-6) axis = Vector3D.Forward;
             axis.Normalize();
-            _aimIdx.Clear(); for (int i = 0; i < n; i++) _aimIdx.Add(i);
+            _aimIdx.Clear(); _aimIdx.AddRange(keep);
             _aimIdx.Sort((a, b) => Vector3D.Dot(t.Hull[b], axis).CompareTo(Vector3D.Dot(t.Hull[a], axis)));
             t.AimLocal = t.Hull[_aimIdx[step % Math.Max(1, n / 4)]];   // one of the best quarter
         }

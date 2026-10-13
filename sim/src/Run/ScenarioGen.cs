@@ -12,6 +12,10 @@
 //          other composition (unordered, incl. mirrors: 10)
 //   swarm  6, 9 and 12 Gnats (a hive swarm) vs each single model (13) and vs the Pirate
 //   pirate each armed model x1, x2, x3 vs the Pirate ship (code-built, large grid with turrets)
+//   enemy  only with --enemies DIR: every blueprint folder in DIR (e.g. a user's warship) alone vs N of each armed model
+//          (N from --enemy-counts, default 1,2,3,4,6,8,12) and vs each mixed composition ("1vX"). Only the blueprint's largest grid
+//          is spawned (rotor/hinge/piston subgrids are dropped). It is flown by the pirate brain (--enemy-brain pirate, default)
+//          or holds position with dampeners on (--enemy-brain hold); either way its turrets fight on their own.
 // Team 0 is the first-named side, team 1 the second. Seeds decide positions/orientations, so the side order has no bias.
 using System;
 using System.Collections.Generic;
@@ -35,6 +39,64 @@ namespace SeSim.Run
             new[] { "Lancer", "Mantis" },
         };
         public static string UnfairMode = "curated";       // "curated" | "full"
+
+        // ---- enemy blueprints (--enemies DIR) ----
+        public static string EnemyDir;                      // null = no enemy scenarios
+        public static int[] EnemyCounts = { 1, 2, 3, 4, 6, 8, 12 };
+        public static string EnemyBrain = "pirate";         // "pirate" | "hold"
+        static List<string> _enemies;
+
+        /// <summary>Blueprint folders (containing bp.sbc) in EnemyDir, sorted; empty when EnemyDir is unset.</summary>
+        public static List<string> Enemies()
+        {
+            if (_enemies != null) return _enemies;
+            var l = new List<string>();
+            if (!string.IsNullOrEmpty(EnemyDir))
+            {
+                if (!System.IO.Directory.Exists(EnemyDir)) throw new System.IO.DirectoryNotFoundException("--enemies folder not found: " + EnemyDir);
+                foreach (string d in System.IO.Directory.GetDirectories(EnemyDir))
+                    if (System.IO.File.Exists(System.IO.Path.Combine(d, "bp.sbc"))) l.Add(System.IO.Path.GetFileName(d));
+                l.Sort(StringComparer.Ordinal);
+                if (l.Count == 0) throw new System.IO.FileNotFoundException("--enemies " + EnemyDir + ": no <Name>/bp.sbc blueprint folders inside");
+            }
+            _enemies = l;
+            return l;
+        }
+
+        public static bool IsEnemy(string model) { return EnemyDir != null && Enemies().Contains(model); }
+
+        static readonly object EnemyLock = new object();
+        static readonly Dictionary<string, SeSim.Blueprint.BlueprintData> EnemyBps = new Dictionary<string, SeSim.Blueprint.BlueprintData>();
+
+        /// <summary>The enemy blueprint reduced to its largest grid (cached, immutable).</summary>
+        public static SeSim.Blueprint.BlueprintData EnemyBlueprint(string name)
+        {
+            lock (EnemyLock)
+            {
+                SeSim.Blueprint.BlueprintData bp;
+                if (EnemyBps.TryGetValue(name, out bp)) return bp;
+                var full = SeSim.Blueprint.BlueprintLoader.Get(EnemyDir, name);
+                var main = full.Grids[0];
+                for (int i = 1; i < full.Grids.Count; i++) if (full.Grids[i].Blocks.Count > main.Blocks.Count) main = full.Grids[i];
+                bp = new SeSim.Blueprint.BlueprintData { Name = name, Path = full.Path };
+                bp.Grids.Add(main);
+                EnemyBps[name] = bp;
+                return bp;
+            }
+        }
+
+        public static List<Scenario> EnemyScenarios()
+        {
+            var l = new List<Scenario>();
+            foreach (string e in Enemies())
+            {
+                for (int j = 0; j < ArmedModels.Length; j++)
+                    for (int c = 0; c < EnemyCounts.Length; c++)
+                        l.Add(Build("enemy", new[] { e }, Rep(ArmedModels[j], EnemyCounts[c])));
+                for (int i = 0; i < MixedTeams.Length; i++) l.Add(Build("enemy", new[] { e }, MixedTeams[i]));
+            }
+            return l;
+        }
 
         // ------------------------------------------------------------------------------------------------------
         static string SideName(string[] side)
@@ -88,7 +150,9 @@ namespace SeSim.Run
                 case "Stinger":
                     s.Commands.Add(new KeyValuePair<double, string>(0.5, "launch"));
                     break;
-                default:           // script drones: HUNT (Gnat: ATTACK), Watcher runs HornetDroneAI in hunt/scout mode
+                default:
+                    if (IsEnemy(s.Model)) break;     // enemy blueprint: brain + turrets, no scripts started
+                    // script drones: HUNT (Gnat: ATTACK), Watcher runs HornetDroneAI in hunt/scout mode
                     s.Commands.Add(new KeyValuePair<double, string>(0.5, "hunt"));
                     break;
             }
@@ -175,6 +239,7 @@ namespace SeSim.Run
             l.AddRange(Mixed());
             l.AddRange(Swarm());
             l.AddRange(Pirate());
+            l.AddRange(EnemyScenarios());
             return l;
         }
 

@@ -1,7 +1,8 @@
 // =====================================================================
-//  GNAT MOTHERSHIP LINK v1.1  (optional - put on your carrier's PB)
+//  GNAT MOTHERSHIP LINK v1.2  (optional - put on your carrier's PB)
 //  * Broadcasts this ship's position as the drones' moving home point, plus its radius
-//    ("<Tag>_HOMER") so the drones hold station OUTSIDE the carrier instead of inside its hull.
+//    ("<Tag>_HOMER", and "<fleet>_HOMER" since v1.2) so the drones hold station OUTSIDE the carrier instead of inside its hull.
+//  * Drones of other types in FOLLOW mode ("fleet follow") escort this ship.
 //  * Forwards every enemy your turrets / turret controllers are tracking
 //    to all drones, so they attack what the carrier sees.
 //  * Relays commands:  run with argument  form | attack | rtb | idle | unlock
@@ -28,7 +29,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -138,6 +139,7 @@ public void Main(string arg, UpdateType src)
     IGC.SendBroadcastMessage(Tag + "_HOME", Me.CubeGrid.WorldVolume.Center);
     FleetSendHome(Me.CubeGrid.WorldVolume.Center);
     IGC.SendBroadcastMessage(Tag + "_HOMER", Me.CubeGrid.WorldVolume.Radius);
+    if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_HOMER", Me.CubeGrid.WorldVolume.Radius);   // FOLLOW drones of every type keep outside the hull
 
     int sent = 0;
     foreach (var t in _turrets)

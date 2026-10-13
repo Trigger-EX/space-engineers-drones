@@ -1,4 +1,39 @@
-### v2.1 (this package): first in-game report fixes
+### v2.3 (this package): lead aiming against manoeuvring targets
+In-game report (2026-10-13): the Basilisk's rockets kept missing an enormous target that was doing basic evasive manoeuvres. A rocket
+needs about 4 s to fly 800 m; an AI ship on "evasive" flips its strafe every 2-5 s. Full write-up and measurements: `docs/lead-v1.md`.
+- **LEAD v1.0** (shared block in every armed drone script, `tools/lead_block.cs`, scripts v2.5 / Gnat 1.12 / Longbow 2.3):
+  - the target's freshest acceleration, held only for as long as its manoeuvres usually last, then constant velocity (the old
+    solver extrapolated a lagging, smoothed acceleration over the whole flight);
+  - the hull aim point counts only across the line of fire, turns with the target's spin for up to 1 s, and keeps
+    `Aim Margin (predicted misses)` x the predicted miss of known hull round it, so long, uncertain shots go to the middle of the
+    known hull instead of its edge.
+- Basilisk / Wasp: rockets modelled as leaving with the ship's velocity + launch speed and curving onto the barrel line
+  (`Rocket Velocity Model` CAPPED / NONE / FULL; NONE is the v2.2 model). Closed-form rocket path, Newton solve on the flight time.
+- Offline bench (`tools/lead_bench`), hits on manoeuvring targets: rockets 50 % -> 62 % (strafing 120 m ship 43 -> 66 %, strafing
+  30 m ship 14 -> 39 %), gatling 70 % -> 90 %, railgun 77 % -> 90 %.
+- Simulator: rockets inherit the shooter's velocity with the speed cap (`--rocket-inherit`, default 1), evasive Pirate
+  (`--pirate-evasive true`).
+
+### v2.2: FOLLOW mode
+Question from the user: does `guard` follow the owner? Only as a side effect: a Mothership link's position replaces the guard spot, but
+the drones fly to the ship's centre (into its hull for most drone types), lag behind a moving ship, and fall back to the old spot when
+the link stops. Nothing followed a player on foot.
+- **FOLLOW** (shared block in every scripted combat drone, `tools/follow_block.cs`, synced by `tools/follow_sync.py`): `follow` / `escort`
+  command (also Start Mode and launch Mode `FOLLOW`). The owner is the ship running a Mothership link (any type, FLEET channel), or the
+  owner's own character seen by the drone's sensor (on foot, ~50 m; wins while seen). Each drone flies its own slot on a ring behind the
+  owner (upper half in gravity) outside its hull, with the owner's velocity fed forward (estimated from the link's position fixes, so old
+  link scripts work), detours round the hull instead of through it, engages only targets within 800 m of the owner, breaks off past
+  1.2 km (2.2 km for the snipers), and after a link loss coasts 3 s on the owner's track (10 s on foot) and holds there. On a
+  collision course with the owner it sidesteps up to 8 s ahead, and the ring widens (up to 2x) while the owner manoeuvres hard.
+  New `[Follow]` section in Custom Data. No AI-block search in FOLLOW (the AI Flight block would fly the drone away from you).
+- Gnat 1.11: `follow` / `escort` = `form`; the formation now matches the link ship's velocity (keeps up with it), and also reads the
+  ship radius from the FLEET channel.
+- Mothership links (Hornet / Longbow v1.1, Gnat v1.2): send the ship's radius on `<Tag>_HOMER` and `<fleet>_HOMER`; `follow` relays.
+- FLEET block: `follow` and `escort` added to the default `Allowed Commands`.
+- Simulator: `follow-test` (moving owner on the fleet channel, or an owner character reported to the sensors; cruise, weave, link loss,
+  on foot, fight).
+
+### v2.1: first in-game report fixes
 In-game report (2026-10-13): Full drones set to `guard` stood still; `hunt` drones waited about 20 s, then all flew off the same way
 and never saw a pirate ship 700 m away. Cause: the AI blocks paste with **AI Behavior off**, so they do nothing, but the scripts handed
 them the ship and switched their own camera search off while waiting for them. Reproduced in the simulator (AI blocks inert:
