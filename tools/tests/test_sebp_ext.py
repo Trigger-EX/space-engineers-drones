@@ -808,8 +808,8 @@ class TestMultiGrid(unittest.TestCase):
             g = mel.find('MasterToSlaveGrid')
             refpos = tuple(float(g.find('PositionOffset').findtext(t)) for t in 'XYZ')
             refq = tuple(float(g.find('OrientationOffset').findtext(t)) for t in 'XYZW')
-            self.assertLess(MU._norm(MU._sub(pos, refpos)), 0.01)
-            self.assertLess(MU.Rot.from_quat(*q).angle_to(MU.Rot.from_quat(*refq)), 0.005)
+            self.assertLess(MU._norm(MU._sub(pos, refpos)), 0.003)                     # measured 0.3 mm and 1.3 mm
+            self.assertLess(MU.Rot.from_quat(*q).angle_to(MU.Rot.from_quat(*refq)), 0.0005)    # exact to the stored float precision
             self.assertEqual([float(g.find('OrientationAsVector').findtext(t)) for t in 'XYZW'], list(refq))
 
     @needs_samples

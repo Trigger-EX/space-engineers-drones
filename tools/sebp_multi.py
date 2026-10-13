@@ -1,7 +1,8 @@
 """Multi-grid blueprints for sebp: grid poses, docking geometry and connector locks.
 
 CONVENTIONS (verified against the owner's `Venture - Expedition End`, see tools/tests/test_sebp_ext.py: the connector pair
-ConnectorMedium <-> Connector is reproduced to 0.003 m and 0.001 rad from the grids' PositionAndOrientation and the block cells):
+ConnectorMedium <-> Connector and Connector <-> Connector are reproduced from the grids' PositionAndOrientation and the block cells to
+    5 mm / 0.2 degrees (MasterToSlaveTransform) and 1.3 mm / exactly (MasterToSlaveGrid)):
 
   * Every CubeGrid has its own <PositionAndOrientation> in WORLD coordinates: Position (metres), Forward, Up and the quaternion
     Orientation (X, Y, Z, W).  The grid frame has Right = Forward x Up, Up, Backward = -Forward as its columns; the quaternion is
@@ -12,8 +13,8 @@ ConnectorMedium <-> Connector is reproduced to 0.003 m and 0.001 rad from the gr
     in grid axes by BlockOrientation (sebp.Blueprint.axes).  A connector contacts its partner on its Forward face.
   * Connector pair in the file: both blocks carry ConnectedEntityId and the same MasterToSlaveTransform (the slave block's frame
     expressed in the master block's frame); the master also carries MasterToSlaveGrid:
-        PositionOffset    = master grid origin - slave block origin, in the SLAVE BLOCK frame      (matches to 1e-3 m on both Venture pairs)
-        OrientationOffset = quaternion of  slaveBlockRotation^-1 * masterGridRotation              (see test; OrientationAsVector repeats it)
+        PositionOffset    = master grid origin - slave block origin, in the SLAVE BLOCK frame      (matches to 1.3 mm on both Venture pairs)
+        OrientationOffset = quaternion of  slaveBlockRotation^-1 * masterGridRotation              (exact; OrientationAsVector repeats it)
     The game snaps nothing: the distance in a saved lock is whatever it was when the lock was made (Venture: 1.82 m for a
     ConnectorMedium on a Connector although the faces are 1.75 m apart; 2.63 m for two Connectors, faces 2.5 m).  The helpers
     below place the faces exactly `gap` metres apart (default 0).

@@ -249,8 +249,8 @@ Tags: **seen** = reproduced from / verified against a game-written file, **deriv
   frame columns = (Forward x Up, Up, -Forward), standard quaternion of that matrix. Cell (i,j,k) has its centre at (i,j,k) x cell size, block frame origin =
   centre of the block's cell box.
 * Connector pair geometry, recomputed from the two grids' poses and the block cells: the stored `MasterToSlaveTransform` (slave block frame in master block
-  frame) is reproduced to 3 mm / 0.2 deg on both Venture pairs; `MasterToSlaveGrid.PositionOffset` = master grid origin - slave block origin in the slave block
-  frame (1e-2 m); `OrientationOffset` (= `OrientationAsVector`) = quaternion of slaveBlockRot^-1 x masterGridRot.
+  frame) is reproduced to 5 mm / 0.2 deg on both Venture pairs (the file stores floats around 3.9e6 m); `MasterToSlaveGrid.PositionOffset` = master grid origin - slave block
+  origin in the slave block frame (1.3 mm); `OrientationOffset` (= `OrientationAsVector`) = quaternion of slaveBlockRot^-1 x masterGridRot (exact).
 * Saved locks are not face-to-face exact: gaps along the normal 0.0707 m (ConnectorMedium on Connector, faces 1.75 m apart) and 0.1322 m (two Connectors), lateral
   < 1 cm. `dock_pose` places the faces `gap` metres apart (default 0) and picks one of the four axis-aligned rolls about the normal.
 * Writer: `attach`/`dock` -> extra `<CubeGrid>` elements (ids unique across grids; toolbars/groups may refer across grids by block). **Connectors are written
