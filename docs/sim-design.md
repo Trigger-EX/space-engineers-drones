@@ -276,7 +276,7 @@ groups get all or nothing. Drain = supplied MW * dt / 3600 spread over dischargi
 
 ### 6.6 Damage model and grid splitting
 Block Hp starts at `MaxIntegrity` (sum of component integrity). `IsFunctional` = Hp >= `CriticalIntegrity`
-(`integrity_before_critical_component`). Hp <= 0 -> `Body.RemoveBlock`: block leaves Cells/lists, `Version++`, mass and
+(`integrity.critical_integrity`; functional = Hp > CriticalHp). Hp <= 0 -> `Body.RemoveBlock`: block leaves Cells/lists, `Version++`, mass and
 connectivity dirty, `SimEvent.BlockDestroyed`, API object `OnDestroyed()`. Phase 8 splits disconnected parts into new bodies
 (main = heaviest part; PB scripts see `Me.CubeGrid` change if theirs moved). Loss of PB or RC, or of all charged batteries, makes
 the ship combat-incapable (section 9); the bodies stay in the world as wrecks (detectable, NoOwnership when no functional
@@ -309,7 +309,7 @@ Body with the same velocity. Printer cycles (HiveMotherAI build/charge/release) 
 
 ## 8. Data loading (slot A)
 `DefDb` reads `defs_stats.json` keys `blocks` (`"Type/Subtype"`), `weapons`, `ammo`, `magazines`, `constants`:
-`mass_kg`, `integrity.sum_of_components` -> MaxIntegrity, `integrity.integrity_before_critical_component` -> CriticalIntegrity,
+`mass_kg`, `integrity.sum_of_components` -> MaxIntegrity, `integrity.critical_integrity` (cumulative through the critical component - 1) -> CriticalIntegrity, `integrity.deformation_ratio` -> DeformationRatio (unused),
 `size_cells`, `grid`, `stats.force_n` (thrust and gyro), `stats.max_power_mw`/`power_mw`/`required_power_mw`, `stats.power_sink_group`,
 battery `max_stored_mwh`/`max_output_mw`/`max_input_mw`/`initial_charge_ratio`, sensor `max_range_m`, turret controller `max_range_m`,
 warhead `explosion_radius_m`/`explosion_damage`, weapon `stats.weapon` (rate_of_fire_rpm, shots_in_burst, deviate_shot_angle_deg,

@@ -16,6 +16,7 @@ namespace SeSim.Blueprint
         public bool Large;
         public Vector3I SizeCells;
         public float MassKg, MaxIntegrity, CriticalIntegrity;
+        public float DeformationRatio = 1f;              // integrity.deformation_ratio (default 1); not used yet
         public string PowerGroup; public float PowerMW;  // sink group + required power (stats.power_mw / required_power_mw)
         public float ThrustForceN, ThrustMaxPowerMW, ThrustMinPowerMW;
         public float GyroForce;
@@ -129,7 +130,8 @@ namespace SeSim.Blueprint
                 double sum = MiniJson.Num(integ, "sum_of_components", 0);
                 double expl = MiniJson.Num(integ, "explicit_MaxIntegrity_override", 0);
                 d.MaxIntegrity = (float)(expl > 0 ? expl : sum);
-                d.CriticalIntegrity = (float)MiniJson.Num(integ, "integrity_before_critical_component", 0);
+                d.CriticalIntegrity = (float)MiniJson.Num(integ, "critical_integrity", 0);   // game: cumulative integrity through the critical component - 1
+                d.DeformationRatio = (float)MiniJson.Num(integ, "deformation_ratio", 1);
                 if (d.CriticalIntegrity > d.MaxIntegrity) d.CriticalIntegrity = d.MaxIntegrity;
                 d.IsTerminal = d.Kind != "CubeBlock";
                 d.InventoryVolume = 0;

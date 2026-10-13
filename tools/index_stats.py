@@ -330,7 +330,7 @@ def blocks(comps, wdefs, consts):
             ccn = d.find('CriticalComponent')
             cidx = num(ccn.get('Index')) if ccn is not None else None
             csub = ccn.get('Subtype') if ccn is not None else None
-            seen_crit, crit_integ_before, crit_found = 0, None, False
+            seen_crit, crit_integ_before, crit_found, crit_integ_through = 0, None, False, None
             missing = []
             for c in d.findall('Components/Component'):
                 sub, cnt = c.get('Subtype'), num(c.get('Count'))
@@ -342,6 +342,7 @@ def blocks(comps, wdefs, consts):
                     if seen_crit == cidx:
                         crit_integ_before = integ
                         crit_found = True
+                        crit_integ_through = integ + cnt * cd['max_integrity']   # game: criticalIntegrity = integrity after adding it, minus 1
                     seen_crit += 1
                 cl.append(dict(subtype=sub, count=cnt, unit_mass=cd['mass'], unit_integrity=cd['max_integrity']))
                 mass += cnt * cd['mass']
@@ -365,6 +366,7 @@ def blocks(comps, wdefs, consts):
                 explicit_MaxIntegrity_override=explicit_mi,
                 critical_component=csub, critical_index=cidx,
                 integrity_before_critical_component=crit_integ_before,
+                critical_integrity=(round(crit_integ_through - 1, 3) if crit_integ_through is not None else None),
                 critical_ratio_approx=(round(crit_integ_before / integ, 4) if crit_integ_before is not None and integ else None),
                 deformation_ratio=num(d.findtext('DeformationRatio')),
                 general_damage_multiplier=num(d.findtext('GeneralDamageMultiplier')),
@@ -623,7 +625,8 @@ def main():
             'MaxIntegrity = integrity). An explicit <MaxIntegrity> in a block def overrides it (explicit_MaxIntegrity_override).',
             'critical integrity: engine uses the cumulative integrity at the critical component (CriticalIntegrityRatio = '
             'criticalIntegrity / MaxIntegrity). integrity_before_critical_component is the sum of the components listed '
-            'BEFORE the critical one; the engine value is approximately that (+/- one unit). INFERRED detail.',
+            'BEFORE the critical one (kept for reference); critical_integrity = cumulative integrity through the critical component entry minus 1 '
+            '(game: criticalIntegrity = integrity - 1 after adding the critical component), the value the sim uses; a block is functional above it.',
             'Weapons.sbc RateOfFire is rounds per minute and DeviateShotAngle is degrees converted to radians on load. VERIFIED '
             'against public MyWeaponDefinition.cs. ReloadTime/ShotDelay are milliseconds (INFERRED; the engine does not convert them).',
             'derived_* fields are arithmetic on file values only. derived_block_dps = ProjectileMassDamage * shots/s * weapon '

@@ -2,7 +2,7 @@
 // Evidence: wiki Decoy block "enemy turrets and homing missiles prefer decoys"; Data/CubeBlocks_Weapons.sbc and CubeBlocks_SignalsPack.sbc give
 // the Decoy definition PriorityModifier 10 and NotWorkingPriorityMultiplier 0 (a switched-off or non-functional decoy has priority 0).
 // Model, used by TurretUnit (large turrets and Custom Turret Controller designation) and VanillaAiBrain (AI block stand-in, rockets included):
-//   * a decoy is "working" when it is alive, functional (Hp >= critical integrity) and enabled;
+//   * a decoy is "working" when it is alive, functional (Hp > critical integrity) and enabled;
 //   * target selection prefers bodies with a working decoy (SimSettings.DecoyPreferTarget) among those in range with line of sight;
 //   * the aim point on the chosen body is the working decoy nearest to the shooter instead of the body centre, with probability
 //     SimSettings.DecoyAimProbability (default 1), re-rolled every SimSettings.DecoyRerollS seconds per shooter/target pair.

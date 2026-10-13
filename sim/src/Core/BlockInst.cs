@@ -22,7 +22,7 @@ namespace SeSim.Core
 
         public float Mass;                // kg (Def.MassKg; + inventory mass later)
         public float MaxHp;               // Def.MaxIntegrity
-        public float CriticalHp;          // Def.CriticalIntegrity: below this the block is non-functional
+        public float CriticalHp;          // Def.CriticalIntegrity: at or below this the block is non-functional
         public float Hp;                  // current integrity; 0 = destroyed
         public bool Destroyed;
 
@@ -41,8 +41,8 @@ namespace SeSim.Core
         public SeSim.Api.SimTerminalBlock Api;   // slot B; null for blocks without terminal (armor)
         public SeSim.Api.SimSlimBlock Slim;      // slot B; created lazily by SimCubeGrid.GetCubeBlock
 
-        /// <summary>Functional = built above critical integrity and not destroyed (IMyCubeBlock.IsFunctional).</summary>
-        public bool IsFunctional { get { return !Destroyed && Hp >= CriticalHp; } }
+        /// <summary>Functional = built above critical integrity (Hp > CriticalHp) and not destroyed (IMyCubeBlock.IsFunctional).</summary>
+        public bool IsFunctional { get { return !Destroyed && Hp > CriticalHp; } }
 
         /// <summary>World position of the block center (uses the body's cached world matrix).</summary>
         public Vector3D WorldCenter { get { return Body.LocalToWorld(LocalCenter); } }
