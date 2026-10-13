@@ -116,7 +116,7 @@ void ManFly(double dt)
 {
     if (_rc == null) return;
     if (_hold) return;
-    _userDamp = _rc.DampenersOverride;   // the pilot flips it with the V key: remembered for the next hand-over
+    _userDamp = (_seat != null ? (IMyShipController)_seat : _rc).DampenersOverride;   // the pilot flips it (on his own seat: per-controller state is unverified, K7) with the V key: remembered for the next hand-over
     bool have = false; Vector3D pt = Vector3D.Zero, dir = Vector3D.Zero, gp = Vector3D.Zero;
     var gl = PrimGuns(); int n = 0;
     if (_tgt != null && _aimRef != null)
