@@ -360,3 +360,11 @@ Staff to release the overrides: the Timer is the whole dead-man). Instructions (
 71,079, i.e. a "Script too complex" if the game counts like the IL model: the scan read all 1,277 blocks in one tick).
 
 **Lite.** `Shrike Lite` has no AI blocks and no sensor, so on its own it only sweeps with the cameras: 0/3 against the Pirate in 600 s without a shot fired (3 seeds). Use it with a pilot (`lock` gives the Helm a target) or take the Full ship.
+
+## 13. Rotor turret (v2.7, Full only)
+
+One PD2S turret (`docs/design/turrets.md`): `SmallAdvancedStatorSmall` -> `SmallAdvancedRotorSmall` + `SmallHinge` -> `SmallHingeHead` with 2 `SmallGatlingGun` and a camera, stator lower cell
+`(0, 9, 22)` on the dorsal spine between the canopy (z 17..19) and the antenna (z 25); swing sphere 1.8 m, fire mask coverage 98 %, 78 of 684 move bins blocked (canopy, antenna).
++400 PCU, +1.4 t, +1 small `SmallProgrammableBlock` `[TU] Turret PB` (100 PCU, avionics bay) running `TurretAI.cs`.
+`CUSTOM_DATA` gained `[Link] Block Prefix=[SH]` (the Helm now adopts `[SH]` blocks only; before, a block without prefix was adopted too); the Full ship's Helm Custom Data also has `[Ship] Tag=SH` and `[Link] Enable (AUTO/ON/OFF)=ON, Ship Tag=SH` so that it sends its target (`.H2S`) to the Turret PB although there is no Staff. All other functional blocks already start with `[SH] `.
+The small-grid stator shapes and offsets are unseen (K-T1, K-T5): the Lite ship has no turret.

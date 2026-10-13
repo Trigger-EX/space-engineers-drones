@@ -25,7 +25,7 @@ from their seat and fly and fight by themselves when nobody sits in it. Nothing 
 4. "In-game scripts" must be enabled in the world settings, otherwise the Programmable Blocks do not run.
 5. If something does not paste, send the game log (`%AppData%\SpaceEngineers\SpaceEngineers_*.log`) and say which model and variant. **Which variant?** `<Name>` (Full) uses the whole design,
    including block types whose XML has never been seen in a game-written blueprint (turrets, sensor, AI blocks, decoys, cargo containers, Run toolbar slots); `<Name> Lite` uses only shapes copied
-   from a game-written ship (no turrets, so no point defence, no sensor, no decoys, no toolbar `Run` slots). If a Full ship does not paste, try its Lite twin.
+   from a game-written ship (no vanilla turrets on the small ships, so no point defence there, no sensor, no decoys, no toolbar `Run` slots; the Warden and Leviathan Lite keep their rotor turrets, built from the Tech Hunter's own shapes). If a Full ship does not paste, try its Lite twin.
 6. Drones for the cradles come from the **Drones** package (Hornet, Wasp, Lancer, Harrier, Aegis, Mantis, Watcher); the `* Wing` ships already carry Hornets.
 
 **Warship specifics.** Large-grid ships are pasted as a free ship in creative mode (or from a projector in survival). The Warden (about 10,300 PCU with its pod) and the Leviathan
@@ -54,6 +54,12 @@ One script family, three jobs, each in its own Programmable Block so that none c
   hangar doors and the launch of the drones, and forwards the words you give it to the Helm.
 * **Bay / Pod PB** (`CradleBayAI.cs`): one per pod (or on the Corsair), manages the merge-block cradles: charges the drone, checks the way out is clear, lets go, repeats for the next drone.
   The Staff talks to it over the antenna (IGC channel `<Ship Tag>.S2P` and `.P2S`).
+* **Turret PB** (`TurretAI.cs`, Full ships): `[TU] Turret PB` drives the **rotor + hinge AI turrets** (Shrike 1, Corsair 2, Warden 4, Leviathan 8 with four small gatling guns each, the Shrike and Corsair
+  two): an advanced rotor turns a hinge that lifts a head with the guns and a camera, so a turret covers the whole half-space on its side of the hull and turns at the rotor's full speed
+  (about 3 rad/s, twice a vanilla gatling turret). It aims with the drones' lead solver at the Helm's target, at what the wing shares and at what the ship's vanilla turrets track; it keeps the guns
+  off the ship's own hull (generated Move / Fire masks in its Custom Data) and off a friendly in line. Arguments: `free` (default: any hostile track), `helm` (only the Helm's target), `hold`
+  (never fire), `park`, `reload`. All its blocks are named `[TU] ...`, never `[SH]`, so the Helm does not take the guns for fixed guns. Design, numbers and the list of things nobody has
+  tested yet: `docs/design/turrets.md`. Lite ships have no rotor turrets on the Shrike and Corsair (their stator shapes were never seen in a game file); Lite Warden and Leviathan have them.
 * A **Timer** named `... Timer D (deadman)` (5 s) is re-armed by the Helm every second while the Helm flies and cuts the thrusters and weapons if the Helm dies; it is stopped while you
   fly. The Shrike and Corsair carry one Event Controller `EC Cockpit (configure in game)` (cockpit occupied -> stop the timer, empty -> start it: this second layer of the dead-man needs you to pick the event once, its number has never been seen in a game file); the Warden and Leviathan carry `EC Cockpit`, `EC Power` (same: pick the events by hand) and `EC Core` (reactor integrity below 40 % -> `Run` the Staff with no argument, which steps its menu to `wing satellite`).
 * **Why one Helm script for a 60-tonne fighter and a 14-kilotonne dreadnought?** The measured numbers (docs/design/ships/*.md in the repository) say a class setting is enough: the stand-off range, speeds and

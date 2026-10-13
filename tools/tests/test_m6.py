@@ -53,7 +53,7 @@ def pbs(bp):
         for b in g.blocks:
             if b['xtype'].endswith('MyProgrammableBlock'):
                 prog = b.get('extra') or ''
-                scr = [f for f in ('ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs', 'HornetDroneAI.cs') if C.script_text(f)[:200] in prog]
+                scr = [f for f in ('ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs', 'HornetDroneAI.cs', 'TurretAI.cs') if C.script_text(f)[:200] in prog]
                 res.append((b['name'], scr[0] if scr else None, ini(b.get('custom_data')), g))
     return res
 
@@ -61,7 +61,7 @@ def all_blocks(bp):
     return [b for g, _ in bp.grids() for b in g.blocks]
 
 # section names built by concatenation in the scripts ("Hangar " + n, "Bay " + n)
-SECTION_PREFIX = ('Hangar ', 'Bay ')
+SECTION_PREFIX = ('Hangar ', 'Bay ', 'Mount T')
 
 class CustomDataTests(unittest.TestCase):
     def check_keys(self, model, bp):
@@ -86,6 +86,7 @@ class CustomDataTests(unittest.TestCase):
                 if name.startswith('[Helm]'): self.assertEqual(script, 'ShrikeAI.cs', name)
                 if name.startswith('[Staff]'): self.assertEqual(script, 'StaffAI.cs', name)
                 if name.startswith(('[Pod]', '[Bay]')): self.assertEqual(script, 'CradleBayAI.cs', name)
+                if name.startswith('[TU]'): self.assertEqual(script, 'TurretAI.cs', name)
 
 class WiringTests(unittest.TestCase):
     def ship_tag(self, data, sec, key):
@@ -157,7 +158,7 @@ class WiringTests(unittest.TestCase):
 
 class SizeTests(unittest.TestCase):
     def test_script_sizes(self):
-        for f in ('ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'):
+        for f in ('ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs', 'TurretAI.cs'):
             n = len(minify(src(f)))
             self.assertLessEqual(n, C.SCRIPT_LIMITS.get(f, 100000), f)
 

@@ -420,3 +420,11 @@ in the open seat does not switch the Helm to MANUAL), 5 cameras and the `(deadma
 AUTO back after 1.5 s; Helm PB killed at 15 s: all overrides released 1.08 s later, once, `HELM LOST`, Timer D fires. `launch all` at 4 s while hunting: the Helm goes idle, the doors open, all four Hornets have left 25 s after the command, the Helm is handed HUNT back, the roll call counts
 4, the ring is 98-102 m from the ship. Without `launch`, `release all` waited for ever ("ship turns 0.45 rad/s", "ship accelerates 2.8 m/s2": the Helm sweeps for targets at 0.2-0.3 rad/s and orbits at 10 m/s). Instructions (IL model, with launch): Helm 27,358, Staff 11,812, pod
 bay 26,267 (the lane check); block model 1,852 / 650 / 616.
+
+## 14. Rotor turrets (v2.7)
+
+Four of the eight gatling point-defence turrets (`Stern P`, `Stern S` dorsal, `Belly Aft P`, `Belly Aft S` ventral) are PD4L rotor turrets (`docs/design/turrets.md`): the Tech Hunter chain
+`LargeAdvancedStator` + `LargeAdvancedRotor` + `LargeHinge` + `SmallHingeHead` with 4 `SmallGatlingGun`, stator on the base-centre cell of the old 3 x 3 x 3 footprint. +2,272 PCU (-900 for the
+removed turrets), +16 t, 16 guns x 1,050 dps sustained (the ship total 15.2 k -> 32.0 k), fire-mask coverage 80 % dorsal (the tower), 96 % ventral. `[TU] Turret PB` (large PB, bridge deck, first free
+cell of (0,9,23) ...) runs `TurretAI.cs`; its Custom Data carries `[Ship] Tag=WARDEN`, `[Turret]` and four `[Mount Tn]` sections with the masks. Names `[TU] T<n> ...`; the junction network no
+longer feeds those four bases (10 turret terminals instead of 14). Lite has them too (all shapes seen in the Tech Hunter).

@@ -26,10 +26,11 @@ import hulls as H
 from hulls import Volume, Zone, Zones
 import sebp_toolbar as TB
 import sebp_multi as MU
+import turrets as TU
 from sebp_inv import Item
 
 NAME = 'Corsair'
-SCRIPTS = ['ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs']
+SCRIPTS = ['ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs', 'TurretAI.cs']
 SCRIPT_MAP = {}                   # test models (designs/cradle_test.py) swap the Helm / Staff program files here
 TAG = '[SH] '                     # host-ship prefix (control_arch 3.6 / grids_bays 6.3): Helm / Staff collect blocks by prefix AND grid
 
@@ -484,7 +485,7 @@ def add_systems(bp, res, env, lite):
     S['tanks'], S['thr'] = tanks, thr_blocks
 
     # ---- weapons: B1 two railguns on the ridge, B2 two assault guns at the hammer tips, B3 two autocannons; turrets ----
-    b1, b2, b3, pd, other = [], [], [], [], []
+    b1, b2, b3, pd, other, tmounts = [], [], [], [], [], []
     for sx, tg in ((-1, 'Port'), (1, 'Stbd')):
         b1.append(reg(bp.add('MyObjectBuilder_SmallMissileLauncherReload', 'SmallRailgun', rail_cells(sx), 'Forward', 'Up',
                              TAG + '[B1] Railgun ' + tg, GUNCOL, kind='gun', state={'capacitor': 'full'})))
@@ -501,6 +502,15 @@ def add_systems(bp, res, env, lite):
         bp.fill_ammo(b)
     if not lite:
         for nm, kind, mn, up in turret_sites():
+            if kind == 'gat' and nm.startswith('PD Roof'):
+                # the roof gatling turrets are rotor + hinge AI turrets (PD2S, TurretAI.cs): stator on the base-centre cell of the old 5x5x5 footprint
+                m = TU.add_turret(bp, len(tmounts) + 1, (mn[0] + 2, mn[1], mn[2] + 2), up, fwd='Forward', model='PD2S', color=GUNCOL)
+                reg(m.stator)
+                for x in range(mn[0], mn[0] + 5):
+                    for y in range(mn[1], mn[1] + 5):
+                        for z in range(mn[2], mn[2] + 5): occ.setdefault((x, y, z), m.stator)
+                tmounts.append(m)
+                continue
             if kind == 'gat':
                 t = reg(bp.add('MyObjectBuilder_LargeGatlingTurret', 'SmallGatlingTurret', mn, 'Forward', up, TAG + '[PD] Gatling Turret ' + nm[3:], GUNCOL, kind='gun'))
                 pd.append(t)
@@ -542,6 +552,10 @@ def add_systems(bp, res, env, lite):
     # event controller for the dead-man's second layer: placed and named, UNCONFIGURED (the "Cockpit occupied" event number was never seen, test K4)
     place(bp, occ, 'MyObjectBuilder_EventControllerBlock', 'EventControllerSmall', (0, 5, 29), TAG + 'EC Cockpit (configure in game)', kind='ctrl')
     S.update(cockpit=cockpit, pb=pb_h, staff=pb_s, bay=pb_b, rc=rc, timer=timer)
+    if tmounts:
+        tpb = place_any(bp, occ, 'MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', [(0, 3, 27), (0, 3, 33), (0, 4, 33), (0, 5, 33), (0, 4, 27), (0, 5, 28)],
+                        f'{TU.PREFIX} Turret PB', kind='ctrl', extra=pb_extra(_script('TurretAI.cs')) if _script('TurretAI.cs') else '', custom_data='[Ship]\nTag=SH\n')
+        S['tpb'] = tpb
 
     # ---- cradle merge blocks (clamp face Forward, towards the drone), one cell in front of the 2-cell wall ----
     merges = []
@@ -602,6 +616,10 @@ def add_systems(bp, res, env, lite):
     bp.set_toolbars(cockpit, toolbar=tb)
     cockpit['settings']['IsMainCockpit'] = 'true'
     S['occ'] = occ
+    S['tmounts'] = tmounts
+    if tmounts:
+        S['tu_check'] = TU.check_mounts(bp, tmounts, min_cover=0.25)
+        S['tpb']['custom_data'] = TU.turret_custom_data(bp, tmounts, 'SH')
     return S
 
 
@@ -658,8 +676,9 @@ def check_wing(bp):
     face to face except the host merge block (a permanent merge otherwise)"""
     occ = bp.occupancy()
     mbs = {mb['name']: mb for mb in merge_blocks(bp)}
-    assert len(bp.subgrids) == 2
-    for drone, pose in bp.subgrids:
+    drones = [(d, p) for d, p in bp.subgrids if any(b['kind'] == 'merge' for b in d.blocks)]       # (the turret top grids are sub-grids too)
+    assert len(drones) == 2
+    for drone, pose in drones:
         dm = [b for b in drone.blocks if b['kind'] == 'merge']
         assert len(dm) == 1
         cells = drone_cells_in_host(bp, drone)

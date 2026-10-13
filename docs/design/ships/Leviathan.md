@@ -347,3 +347,9 @@ Aiming at the weapons ends the fight when the Pirate has no gun left (the sim's 
 manual flight, 0 override-fight ticks, the turrets keep shooting; Helm PB killed at 15 s: all overrides released 1.13 s later. `launch all` at 4 s: pod 1 (bays 1-4) lets go, pod 2 (bays 5-8) follows 20 s later ("Pod Gap"), all 8 Hornets are out
 by 52 s, the Helm gets HUNT back, the roll call counts 8, the ring forms (215-413 m from the COM 18 s after `wing satellite`, still closing: the hull radius is about 110 m). Instructions (IL model, with launch): Helm 37,354, Staff 28,197, pod bay 26,267, Hornet 45,545 (the unchanged
 drone script; block model 2,274 / 1,616 / 616 / 1,750). The integrity scan is skipped on this hull (more than 30,000 cells).
+
+## 15. Rotor turrets (v2.7)
+
+Eight of the twenty gatling turrets are PD4L rotor turrets (`docs/design/turrets.md`): `Deck P/S`, `Stern P1/S1/P2/S2` dorsal, `Keel 1/2` ventral (the Lite ship also swaps its two `Deck` rocket sites, ten
+in all). +4,544 PCU (-1,800), +32 t, 32 guns (86.1 k sustained dps ship total against 52.5 k), fire-mask coverage 85-98 %, the keel turrets 47 % (recess). `[TU] Turret PB` on the bridge deck (0,13,59) runs
+`TurretAI.cs`. The four ammunition-fed vanilla artillery/assault/rocket groups and the remaining twelve gatling turrets are untouched. Names `[TU] T<n> ...`.

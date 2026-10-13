@@ -34,7 +34,7 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(list(L.MODELS), ['Leviathan', 'Leviathan Wing'])
         self.assertIn('Leviathan', L.DOCS)
         self.assertGreater(len(L.DOCS['Leviathan']), 200)
-        self.assertEqual(set(L.SCRIPTS), {'ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'})
+        self.assertEqual(set(L.SCRIPTS), {'ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs', 'TurretAI.cs'})
         self.assertIn('Leviathan', L.MODEL_NOTES)
 
     def test_no_dlc_no_prototech(self):
@@ -81,7 +81,7 @@ class NamingTests(unittest.TestCase):
         bp = ship(False)
         for b in bp.blocks:
             if b['xtype'].endswith('_CubeBlock') and not b['name']: continue
-            self.assertIn('[SH]', b['name'] or '', b['sub'])
+            self.assertTrue((b['name'] or '').startswith('[TU]') or '[SH]' in (b['name'] or ''), b['sub'])      # rotor turrets and their PB are `[TU]` (the Helm adopts only `[SH]` blocks)
         for pod in bp.pods_:
             for b in pod.blocks:
                 self.assertNotIn('[SH]', b['name'] or '')
@@ -89,7 +89,7 @@ class NamingTests(unittest.TestCase):
     def test_pbs(self):
         bp = ship(False)
         pbs = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
-        self.assertEqual(sorted(b['name'] for b in pbs), ['[Helm][SH] Leviathan Helm', '[Staff][SH] Leviathan Staff'])
+        self.assertEqual(sorted(b['name'] for b in pbs), ['[Helm][SH] Leviathan Helm', '[Staff][SH] Leviathan Staff', '[TU] Turret PB'])
         names = []
         for pod in bp.pods_:
             pp = [b for b in pod.blocks if b['xtype'].endswith('MyProgrammableBlock')]
@@ -119,7 +119,7 @@ class NamingTests(unittest.TestCase):
         b1 = [b for b in bp.blocks if '[B1]' in (b['name'] or '')]
         self.assertEqual(sorted(b['sub'] for b in b1), ['LargeRailgun'] * 6)
         pd = [b for b in bp.blocks if '[PD]' in (b['name'] or '')]
-        self.assertEqual(len(pd), 20)
+        self.assertEqual(len(pd), 12)           # + 8 rotor turrets ([TU])
         self.assertTrue(all(b['xtype'].endswith('LargeGatlingTurret') for b in pd))
         for b in bp.blocks:                               # turrets other than the gatlings never carry a battery tag
             if b['xtype'].endswith('LargeMissileTurret'): self.assertNotIn('[B', b['name'])
@@ -127,11 +127,11 @@ class NamingTests(unittest.TestCase):
     def test_groups(self):
         bp = ship(False)
         sizes = {k: len(v) for k, v in bp.groups.items()}
-        self.assertEqual(sizes, {'B1': 6, 'Artillery': 8, 'Assault': 12, 'Rockets': 4, 'PD': 20, 'Main Turrets': 20, 'Turrets': 44, 'Thrusters': 14, 'Weapons': 50, 'Decoys': 12,
+        self.assertEqual(sizes, {'B1': 6, 'Artillery': 8, 'Assault': 12, 'Rockets': 4, 'PD': 12, 'Main Turrets': 20, 'Turrets': 36, 'Thrusters': 14, 'Weapons': 42, 'Decoys': 12,
                                  '[Hangar 1]': 8, '[Hangar 2]': 8, 'Gyros': 144, 'Reactors': 9, 'Batteries': 20, 'Tanks': 4})
         lite = {k: len(v) for k, v in ship(True).groups.items()}
         self.assertNotIn('Rockets', lite)
-        self.assertEqual(lite['PD'], 24)
+        self.assertEqual(lite['PD'], 14)
 
     def test_hangar_groups_are_the_doors_of_their_side(self):
         bp = ship(False)
@@ -142,7 +142,8 @@ class LoadoutTests(unittest.TestCase):
     def test_counts(self):
         bp = ship(False)
         n = L.numbers(bp)
-        self.assertEqual(n['weapons'], dict(railguns=6, artillery=8, assault=12, gatling=20, rocket=4, decoys=12))
+        self.assertEqual(n['weapons'], dict(railguns=6, artillery=8, assault=12, gatling=12, rocket=4, decoys=12))
+        self.assertEqual((n['custom_turrets']['turrets'], n['custom_turrets']['guns']), (8, 32))
         cnt = lambda sub: sum(1 for b in bp.blocks if b['sub'] == sub)
         self.assertEqual(cnt('LargeBlockLargeGenerator'), 1)
         self.assertEqual(cnt('LargeBlockSmallGenerator'), 8)
@@ -187,7 +188,8 @@ class LoadoutTests(unittest.TestCase):
         for d in ('Backward', 'Up', 'Down', 'Left', 'Right'):
             self.assertTrue(0.88 <= n['accel_loaded_m_s2'][d] <= 1.32, (d, n['accel_loaded_m_s2'][d]))
         self.assertTrue(27_700 <= n['pcu_total'] <= 41_500, n['pcu_total'])
-        self.assertTrue(55_000 <= n['dps_sustained'] <= 62_000, n['dps_sustained'])
+        self.assertTrue(49_000 <= n['dps_vanilla'] <= 62_000, n['dps_vanilla'])          # the catalogue figure (8 of the 20 vanilla gatling turrets are rotor turrets now: -6.3 k)
+        self.assertEqual(n['dps_sustained'], n['dps_vanilla'] + 32 * 1050)       # + 8 rotor turrets x 4 gatlings
         self.assertGreaterEqual(n['power']['generation_MW'], 1.5 * n['power']['railgun_recharge_MW'])
         self.assertGreater(n['fuel']['full_forward_minutes'], 30)
         x, y, z = n['dims_m']
@@ -226,7 +228,7 @@ class LoadoutTests(unittest.TestCase):
         a = sorted((b['sub'] or b['xtype']) for b in full.blocks if b['kind'] not in ('conv', 'turret', 'cradle', 'armor', 'plate', 'accent', 'dark', 'glass'))
         b = sorted((b['sub'] or b['xtype']) for b in lite.blocks if b['kind'] not in ('conv', 'turret', 'cradle', 'armor', 'plate', 'accent', 'dark', 'glass'))
         extra = [x for x in a if x not in b or a.count(x) != b.count(x)]
-        self.assertEqual(sorted(set(extra)), ['LargeBlockSensor', 'LargeFlightMovement', 'LargeOffensiveCombat', 'MyObjectBuilder_GravityGenerator'])
+        self.assertEqual(sorted(set(extra)), ['LargeAdvancedStator', 'LargeBlockSensor', 'LargeFlightMovement', 'LargeOffensiveCombat', 'MyObjectBuilder_GravityGenerator'])      # (Full has 8 rotor turrets, Lite 10)
 
     def test_pcu_table_adds_up(self):
         bp = ship(False)
@@ -357,7 +359,7 @@ class HangarTests(unittest.TestCase):
             bp.write(d)
             xml = open(os.path.join(d, 'bp.sbc'), encoding='utf-8').read()
             self.assertEqual(xml.count('<ConnectedEntityId>'), 8)                    # 2 pods x 2 pairs x both sides
-            self.assertEqual(xml.count('<CubeGrid>'), 3 + 8)
+            self.assertEqual(xml.count('<CubeGrid>'), 3 + 8 + 2 * 10)         # + a top and a head grid for each of the 10 rotor turrets (the Lite ship has the Deck rocket sites too)
         with tempfile.TemporaryDirectory() as d:
             ship(True).write(d)
             self.assertEqual(open(os.path.join(d, 'bp.sbc'), encoding='utf-8').read().count('<ConnectedEntityId>'), 0)      # unlocked by default (the Tech Hunter form)

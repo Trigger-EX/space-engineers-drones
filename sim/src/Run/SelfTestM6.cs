@@ -178,9 +178,9 @@ namespace SeSim.Run
                 if (w.Tick != 4 * 60) return;
                 gy = Own<IMyGyro>(sh); th = Own<IMyThrust>(sh); gn = Own<IMyUserControllableGun>(sh);
                 hg = Count(Fld<object>(helm, "_gyros")); ht = Count(Fld<object>(helm, "_thr")); hn = Count(Fld<object>(helm, "_guns")); hd = Count(Fld<object>(helm, "_dm")); hs = Count(Fld<object>(helm, "_seats"));
-                wired = staff == null && !Fld<bool>(helm, "HlkOn");
+                wired = staff == null && Fld<bool>(helm, "HlkOn");          // v2.7 rotor turrets: the Shrike's Helm Custom Data has [Link] Enable=ON, so the Turret PB gets .H2S although there is no Staff
             });
-            Check(gy > 0 && hg == gy && ht == th && hn == gn && hd == 1 && hs == 1 && wired, "Shrike: the Helm holds all " + gy + " gyros, " + th + " thrusters, " + gn + " guns, one dead-man timer and one seat; no Staff, link off (" + hg + "/" + ht + "/" + hn + "/" + hd + "/" + hs + ")");
+            Check(gy > 0 && hg == gy && ht == th && hn == gn && hd == 1 && hs == 1 && wired, "Shrike: the Helm holds all " + gy + " gyros, " + th + " thrusters, " + gn + " guns, one dead-man timer and one seat; no Staff, link on for the Turret PB (" + hg + "/" + ht + "/" + hn + "/" + hd + "/" + hs + ")");
             TestManual("Shrike");
             int ok = 0; const int N = 2;
             for (int seed = 0; seed < N; seed++)

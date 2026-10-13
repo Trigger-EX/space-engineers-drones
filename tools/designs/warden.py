@@ -27,6 +27,7 @@ import sebp_multi as MU
 from sebp_inv import Item
 import pods
 from pods import orient_attached
+import turrets as TU
 
 ROOT = C.ROOT
 B = Volume.box
@@ -39,10 +40,11 @@ def _pb(name):
     t = _script(name)
     return pb_extra(t) if t else ''
 
-HELM_SCRIPT, STAFF_SCRIPT = 'ShrikeAI.cs', 'StaffAI.cs'
-SCRIPTS = [HELM_SCRIPT, STAFF_SCRIPT, 'CradleBayAI.cs']
+HELM_SCRIPT, STAFF_SCRIPT, TURRET_SCRIPT = 'ShrikeAI.cs', 'StaffAI.cs', 'TurretAI.cs'
+SCRIPTS = [HELM_SCRIPT, STAFF_SCRIPT, 'CradleBayAI.cs', TURRET_SCRIPT]
 
 TAG = 'WARDEN'
+CUSTOM_PD = ('Stern P', 'Stern S', 'Belly Aft P', 'Belly Aft S')     # the gatling turrets that are rotor + hinge AI turrets (TurretAI.cs) in this design
 
 # Helm Custom Data of the large ships (ShrikeAI.cs is the Helm of every ship class; these keys are the class tuning, measured in the sim: docs/design/ships)
 HELM_DATA = """
@@ -232,8 +234,19 @@ def _weapons(S, full):
     # --- point defence: 8 gatling turrets, hemispherical cover (4 dorsal, 4 ventral) ---
     pd = [('Front', (-1, 7, 13), 'Up'), ('Stern P', (-4, 7, 28), 'Up'), ('Stern C', (-1, 7, 28), 'Up'), ('Stern S', (2, 7, 28), 'Up'),
           ('Belly Bow P', (-4, 0, 9), 'Down'), ('Belly Bow S', (2, 0, 9), 'Down'), ('Belly Aft P', (-4, -1, 28), 'Down'), ('Belly Aft S', (2, -1, 28), 'Down')]
+    S.tmounts = []
     for i, (tag, mn, up) in enumerate(pd):
         fwd, u = ('Forward', 'Up') if up == 'Up' else ('Forward', 'Down')
+        if tag in CUSTOM_PD:
+            # the vanilla turret's 3x3x3 footprint holds one custom rotor + hinge turret (tools/designs/turrets.py PD4L): stator on the base-centre cell, swing sphere r 1.9 m
+            base_y = mn[1] if up == 'Up' else mn[1] + 2
+            m = TU.add_turret(bp, len(S.tmounts) + 1, (mn[0] + 1, base_y, mn[2] + 1), up, fwd='Forward', model='PD4L', lite=not full, color=GUNC)
+            S.put('tu', m.stator)
+            for x in range(mn[0], mn[0] + 3):
+                for y in range(mn[1], mn[1] + 3):
+                    for z in range(mn[2], mn[2] + 3): S.occ.setdefault((x, y, z), m.stator)
+            S.tmounts.append(m)
+            continue
         b = S.fixed('pd', 'MyObjectBuilder_LargeGatlingTurret', '', mn, fwd, u, nm(f'[PD] Gatling {i + 1} {tag}'), GUNC, kind='turret')
         bp.fill_ammo(b)
 
@@ -291,6 +304,17 @@ def _bridge(S, full):
                    custom_data=helm_cd, extra=_pb(HELM_SCRIPT))
     S.staff = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (1, 9, 24), 'Backward', 'Up', '[Staff][SH] Warden Staff', toward='Backward', kind='ctrl',
                     custom_data=staff_cd, extra=_pb(STAFF_SCRIPT))
+    # the turret PB (TurretAI.cs): first free bridge cell where a large PB attaches (Bottom mount only); Custom Data (masks) is filled in warden() once the hull is final
+    S.tpb = None
+    for c in ((0, 9, 23), (-1, 9, 25), (1, 9, 25), (0, 9, 25), (-2, 9, 22), (2, 9, 22)):
+        if c in S.occ or c in bp.reserve: continue
+        try:
+            S.tpb = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', c, 'Backward', 'Up', f'{TU.PREFIX} Turret PB', toward='Down', kind='ctrl',
+                          custom_data=f'[Ship]\nTag={TAG}\n', extra=_pb(TURRET_SCRIPT))
+            break
+        except AssertionError:
+            continue
+    assert S.tpb is not None, 'no cell for the turret PB'
     S.timer = S.add('timer', 'MyObjectBuilder_TimerBlock', 'TimerBlockLarge', (0, 9, 24), 'Forward', 'Up', nm('Timer D (deadman)'), toward='Down', kind='timer', settings={'Delay': 5000, 'Silent': True})
     S.ec_cockpit = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (-1, 9, 22), 'Forward', 'Up', nm('EC Cockpit'), toward='Down', kind='timer')
     S.ec_power = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (1, 9, 22), 'Forward', 'Up', nm('EC Power'), toward='Down', kind='timer')
@@ -555,6 +579,8 @@ def warden(lite=False, with_pod=True, lock=False, name=None, wing=0):
     _dress(S, res, vol, full)
     C.link_conveyors(bp, [(c, n) for c, r, n in _terminals(S)])   # <ConveyorLines> for the junction network and its terminals
     _groups_and_toolbars(S)
+    S.tu_check = TU.check_mounts(bp, S.tmounts)          # the swing envelopes clear the hull, the parked pose is free, every turret sees half its bins
+    S.tpb['custom_data'] = TU.turret_custom_data(bp, S.tmounts, TAG)
     bp.ship = S
     bp.hull = res
     if with_pod:
@@ -622,13 +648,16 @@ def numbers(bp):
     # catalogue 2.6 sustained data DPS per weapon
     dps = {'LargeRailgun': 817.0, 'LargeCalibreTurret': 2666.7, 'LargeBlockMediumCalibreTurret': 1263.2, 'LargeGatlingTurret': 791.7}
     n['dps_sustained'] = round(sum(dps[b['sub'] or 'LargeGatlingTurret'] for b in blocks if (b['sub'] or 'LargeGatlingTurret') in dps and (b['kind'] in ('rail', 'turret'))))
+    tm = getattr(getattr(bp, 'ship', None), 'tmounts', [])
+    n['custom_turrets'] = dict(TU.mounts_stats(tm), dps_sustained=1050 * sum(len(m.guns) for m in tm), cover=getattr(bp.ship, 'tu_check', {}), slew=TU.slew_rates(tm[0]) if tm else {})
+    n['dps_vanilla'] = n['dps_sustained']; n['dps_sustained'] += n['custom_turrets']['dps_sustained']          # catalogue 2.6: a SmallGatlingGun sustains 1,050
     return n
 
 # ------------------------------------------------------------------------------------------------------------
 # deck plans (text) for the design record: python3 -I tools/designs/warden.py --plans
 # ------------------------------------------------------------------------------------------------------------
-_SYM = {'rail': 'R', 'turret': 'T', 'thr': 't', 'gyro': 'G', 'bat': 'B', 'reactor': 'F', 'tank': 'K', 'cargo': 'C', 'conv': 'j', 'door': 'D', 'conn': 'N', 'ctrl': 'P',
-        'cockpit': 'S', 'decoy': 'X', 'cam': 'c', 'ant': 'a', 'sensor': 'n', 'ai': 'i', 'timer': 'e'}
+_SYM = {'tmount': 'O', 'rail': 'R', 'turret': 'T', 'thr': 't', 'gyro': 'G', 'bat': 'B', 'reactor': 'F', 'tank': 'K', 'cargo': 'C', 'conv': 'j', 'door': 'D', 'conn': 'N', 'ctrl': 'P',
+        'cockpit': 'S', 'tmount': 'O', 'decoy': 'X', 'cam': 'c', 'ant': 'a', 'sensor': 'n', 'ai': 'i', 'timer': 'e'}
 
 def deck_plan(bp, y):
     """one horizontal layer as text: rows = z (bow at the top), columns = x (port left); '.' = empty, '#' armour, 'w' window, letters = systems (_SYM)"""

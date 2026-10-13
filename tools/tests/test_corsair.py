@@ -38,7 +38,7 @@ class Contract(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as d:
                     bp.write(d, bp.name)
                     grids = sebp.load_sbc(os.path.join(d, 'bp.sbc'), allow_dlc=False)
-                    self.assertEqual(len(grids), 3 if wing else 1)
+                    self.assertEqual(len(grids), (3 if wing else 1) + (0 if lite else 4))          # Full: a top and a head grid for each of the two rotor turrets
                     self.assertEqual(len(grids[0].blocks), len(bp.blocks))
                     for g in grids:
                         g.validate()
@@ -61,11 +61,11 @@ class Rules(unittest.TestCase):
     def test_names(self):
         bp = ship(False)
         pbs = [b for b in bp.blocks if b['sub'] == 'SmallProgrammableBlock']
-        self.assertEqual(sorted(b['name'] for b in pbs), ['[Bay] Corsair', '[Helm] Corsair', '[Staff] Corsair'])
+        self.assertEqual(sorted(b['name'] for b in pbs), ['[Bay] Corsair', '[Helm] Corsair', '[Staff] Corsair', '[TU] Turret PB'])
         for b in bp.blocks:
             if b['xtype'].endswith('_CubeBlock') or b in pbs:
                 continue
-            self.assertTrue(b['name'].startswith('[SH] '), b['name'])
+            self.assertTrue(b['name'].startswith('[SH] ') or b['name'].startswith('[TU] '), b['name'])      # `[TU]` = the rotor turrets (the Helm adopts only `[SH]` blocks)
         self.assertEqual(sorted(b['name'] for b in bp.blocks if b['kind'] == 'cradle'), ['[SH] [Bay 1] Merge Port', '[SH] [Bay 2] Merge Starboard'])
 
     def test_cradles_and_lane(self):

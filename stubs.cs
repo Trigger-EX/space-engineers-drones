@@ -537,6 +537,11 @@ namespace Sandbox.ModAPI.Ingame {
   public interface IMyButtonPanel : IMyFunctionalBlock { bool AnyoneCanUse {get;set;} }
   public interface IMyEventControllerBlock : IMyFunctionalBlock { bool IsAndModeEnabled {get;set;} bool IsLowerOrEqualCondition {get;set;} float Threshold {get;set;} }
   public interface IMyTextPanel : IMyFunctionalBlock, IMyTextSurface {}
+  public interface IMyAttachableTopBlock : IMyCubeBlock { bool IsAttached {get;} }
+  public interface IMyMechanicalConnectionBlock : IMyFunctionalBlock { IMyAttachableTopBlock Top {get;} IMyCubeGrid TopGrid {get;} bool IsAttached {get;} void Attach(); void Detach(); }
+  public interface IMyMotorBase : IMyMechanicalConnectionBlock { bool RotorLock {get;set;} float Torque {get;set;} float BrakingTorque {get;set;} float TargetVelocityRad {get;set;} float TargetVelocityRPM {get;set;} float Displacement {get;set;} }
+  public interface IMyMotorStator : IMyMotorBase { float Angle {get;} float LowerLimitRad {get;set;} float UpperLimitRad {get;set;} float LowerLimitDeg {get;set;} float UpperLimitDeg {get;set;} }
+  public interface IMyMotorAdvancedStator : IMyMotorStator {}
   public interface IMyGyro : IMyFunctionalBlock { bool GyroOverride {get;set;} float GyroPower {get;set;} float Pitch {get;set;} float Yaw {get;set;} float Roll {get;set;} }
   public interface IMyThrust : IMyFunctionalBlock {
     float ThrustOverride {get;set;} float ThrustOverridePercentage {get;set;} float MaxThrust {get;} float MaxEffectiveThrust {get;}

@@ -18,14 +18,34 @@ from _common import *            # noqa: F401,F403  (helpers + constants)
 import _common as C
 import hulls as H
 from hulls import Volume, Zone, Zones
+import turrets as TU
 import sebp_toolbar as TB
 from sebp_inv import Item
 
 NAME = 'Shrike'
-SCRIPTS = ['ShrikeAI.cs']
+SCRIPTS = ['ShrikeAI.cs', 'TurretAI.cs']
+TURRET_CELL = (0, 9, 22)           # the PD2S stator's lower cell: on the spine (top y = 8) behind the canopy (y 9, z 17..19)
 TAG = '[SH] '                     # host-ship prefix (control_arch 3.6 / grids_bays 6.3): Helm collects blocks by prefix AND grid
 
-CUSTOM_DATA = """[Manual]
+CUSTOM_DATA = """[Link]
+Block Prefix=[SH]
+
+[Manual]
+HUD Surface=0
+
+[Battery]
+Standoff By Weapons=true
+"""
+# Full: the Helm also sends its target (.H2S) to the turret PB, which a single-PB ship would not do by itself (the link is on when a [Staff] PB exists, or with Enable=ON)
+CUSTOM_DATA_FULL = """[Ship]
+Tag=SH
+
+[Link]
+Enable (AUTO/ON/OFF)=ON
+Ship Tag=SH
+Block Prefix=[SH]
+
+[Manual]
 HUD Surface=0
 
 [Battery]
@@ -350,7 +370,7 @@ def add_systems(bp, res, lite):
 
     # ---- avionics bay under the cockpit: PB (front face on the bulkhead), remote control, dead-man timer ----
     pb = put('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', (0, 2, 12), '[Helm] Shrike', prefer=[('Forward', 'Up')], kind='ctrl',
-             extra=pb_extra(_script('ShrikeAI.cs')) if _script('ShrikeAI.cs') else '', custom_data=CUSTOM_DATA)
+             extra=pb_extra(_script('ShrikeAI.cs')) if _script('ShrikeAI.cs') else '', custom_data=CUSTOM_DATA if lite else CUSTOM_DATA_FULL)
     rc = put('MyObjectBuilder_RemoteControl', 'SmallBlockRemoteControl', (0, 2, 13), TAG + 'Remote Control', prefer=[('Forward', 'Up')], kind='ctrl')
     timer = put('MyObjectBuilder_TimerBlock', 'TimerBlockSmall', (-1, 2, 12), TAG + 'Timer D (deadman)', prefer=[('Forward', 'Up')], kind='ctrl',
                 settings={'Delay': 5000, 'Silent': 'true'})
@@ -388,6 +408,23 @@ def add_systems(bp, res, lite):
             raise AssertionError('camera ' + nm)
         bp.keep_clear(b, 3, 'camera view')
 
+    # ---- Full only: one rotor + hinge AI turret (PD2S, TurretAI.cs) on the dorsal spine behind the canopy; the small-grid stator shapes were never seen in a game file ----
+    tmounts = []
+    if not lite:
+        m = TU.add_turret(bp, 1, TURRET_CELL, 'Up', fwd='Forward', model='PD2S', lite=lite, color=GUNCOL)
+        for c in bp.cells(m.stator): assert c not in occ, f'{bp.name}: turret stator overlaps {occ[c]["name"] or occ[c]["sub"]}'
+        for c in bp.cells(m.stator): occ[c] = m.stator
+        tmounts.append(m)
+        tpb = None
+        for c in ((-1, 2, 13), (1, 3, 12), (-1, 3, 12), (0, 3, 13), (1, 3, 13), (-1, 3, 13), (0, 3, 12)):
+            try:
+                tpb = put('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', c, f'{TU.PREFIX} Turret PB', prefer=[('Forward', 'Up')], kind='ctrl',
+                          extra=pb_extra(_script('TurretAI.cs')) if _script('TurretAI.cs') else '', custom_data='[Ship]\nTag=SH\n')
+                break
+            except AssertionError:
+                continue
+        assert tpb is not None, 'no cell for the turret PB'
+
     # ---- Full only: blocks whose XML shape is not a seen one (sensor, AI blocks, decoys) ----
     if not lite:
         for nm, mn, f, u in (('Sensor', (0, 0, 9), 'Down', 'Forward'),):
@@ -422,7 +459,12 @@ def add_systems(bp, res, lite):
             items[9 + i] = TB.run(pb, arg, experimental=True)
     bp.set_toolbars(cockpit, toolbar=items)
     cockpit['settings']['IsMainCockpit'] = 'true'
-    return dict(occ=occ, thr=thr_blocks, weapons=weapons, b1=b1, b2=b2, cockpit=cockpit, pb=pb, rc=rc, timer=timer, gyros=gyros)
+    if tmounts:
+        tu_check = TU.check_mounts(bp, tmounts, min_cover=0.25)
+        tpb['custom_data'] = TU.turret_custom_data(bp, tmounts, 'SH')
+    else:
+        tu_check = {}
+    return dict(occ=occ, thr=thr_blocks, weapons=weapons, b1=b1, b2=b2, cockpit=cockpit, pb=pb, rc=rc, timer=timer, gyros=gyros, tmounts=tmounts, tu_check=tu_check)
 
 
 def build(lite=False):

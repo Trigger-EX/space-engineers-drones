@@ -193,7 +193,7 @@ KNOWN_TYPES = ['CubeBlock', 'Thrust', 'CameraBlock', 'BatteryBlock', 'RadioAnten
                'OffensiveCombatBlock', 'FlightMovementBlock', 'DefensiveCombatBlock', 'BasicMissionBlock',
                'LargeGatlingTurret', 'LargeMissileTurret', 'InteriorTurret', 'Cockpit', 'Reactor', 'HydrogenEngine', 'OxygenTank',
                'CargoContainer', 'Conveyor', 'ConveyorConnector', 'ConveyorSorter', 'LandingGear', 'Door', 'AirtightHangarDoor',
-               'AirtightSlideDoor', 'ButtonPanel']
+               'AirtightSlideDoor', 'ButtonPanel', 'MotorStator', 'MotorAdvancedStator', 'MotorRotor', 'MotorAdvancedRotor']
 # writer features that are not block shapes: confidence of each
 FEATURES = {
     'inventory items (AmmoMagazine/Ingot/Component/Ore)': 'seen:Pond Hopper Mk2, Red Ship, Starburst - v2, Venture - Expedition End',
@@ -211,6 +211,7 @@ FEATURES = {
     'multi-grid CubeGrids with PositionAndOrientation': 'seen:Venture - Expedition End, Small Grid 8000',
     'connector lock (ConnectedEntityId, MasterToSlaveTransform, MasterToSlaveGrid)': 'seen:Venture - Expedition End (pair geometry reproduced by tests)',
     'merge block lock': 'unseen: the game writes no lock state for merge blocks',
+    'rotor / hinge top on its own CubeGrid (TopBlockId, ParentEntityId, grid pose)': 'seen:Tech Hunter (6 turrets, 29 stator-top pairs reproduced by tests); small-grid stators UNSEEN',
 }
 
 def type_subtypes(t):
@@ -602,6 +603,21 @@ class Blueprint:
         if lock: self.lock_connectors(parent_block, child, child_block, time_of_connection)
         return pose
 
+    def mount(self, child, stator, top, angle=0.0):
+        """rotor / hinge: `child` is the CubeGrid of the top, `top` its rotor-head block (cell (0,0,0), default orientation) and `stator`
+        the MotorStator / MotorAdvancedStator block of THIS grid.  The child's pose follows the measured geometry (sebp_multi.top_pose)
+        for the stator angle `angle` (rad, also written as <CurrentAngle>); the two blocks are linked (TopBlockId / ParentEntityId).
+        The head overlaps the stator's own cell box by design (the game does it too), so there is no overlap check here: use
+        tools/designs/turrets.py sweep_check for the swing envelope."""
+        assert any(stator is y for y in self.blocks) and any(top is y for y in child.blocks), 'blocks must belong to the two grids'
+        assert stator['xtype'].endswith(('_MotorStator', '_MotorAdvancedStator')) and top['xtype'].endswith(('_MotorRotor', '_MotorAdvancedRotor')), 'stator / top block types'
+        assert tuple(top['min']) == (0, 0, 0) and (top['fwd'], top['up']) == ('Forward', 'Up'), 'a top block sits at cell (0,0,0) with the default orientation'
+        pose = MU.top_pose(self, stator, child, top, angle)
+        self.attach(child, pose)
+        stator['links']['top'] = top; top['links']['parent'] = stator
+        stator['settings']['CurrentAngle'] = _txt(float(angle)) if angle else '0'
+        return pose
+
     def lock_connectors(self, parent_block, child, child_block, time_of_connection=60000):
         """mark a connector pair (a block of this grid and one of `child`) as locked.  As in Venture, the block of the later
         grid is the master (carries MasterToSlaveGrid)."""
@@ -688,6 +704,14 @@ class Blueprint:
         o = ET.Element('MyObjectBuilder_CubeBlock', {XSI + 'type': b['xtype']})
         o.append(E('SubtypeName', b['sub'] or None))
         if b['id']: o.append(E('EntityId', b['id']))
+        if level == 'top':           # rotor / hinge head: the game writes neither Min nor orientation (cell 0,0,0, default orientation) nor colour
+            assert tuple(b['min']) == (0, 0, 0) and (b['fwd'], b['up']) == ('Forward', 'Up'), f'{self.label(b)}: a rotor top sits at cell (0,0,0), default orientation'
+            tail = frag(spec['tail'])
+            for e in self._link_elements(b):
+                for i, t in enumerate(tail):
+                    if t.tag == e.tag: tail[i] = e; break
+            for e in tail: o.append(e)
+            return o
         x, y, z = b['min']
         o.append(E('Min', x=x, y=y, z=z))
         if (b['fwd'], b['up']) != ('Forward', 'Up'): o.append(E('BlockOrientation', Forward=b['fwd'], Up=b['up']))
@@ -766,7 +790,7 @@ class Blueprint:
         if not L: return []
         out = []
         idof = lambda blk: blk['id'] if isinstance(blk, dict) else int(blk)
-        for tag, key in (('AzimuthId', 'azimuth'), ('ElevationId', 'elevation'), ('CameraId', 'camera'), ('DirectionBlockId', 'direction')):
+        for tag, key in (('TopBlockId', 'top'), ('ParentEntityId', 'parent'), ('AzimuthId', 'azimuth'), ('ElevationId', 'elevation'), ('CameraId', 'camera'), ('DirectionBlockId', 'direction')):
             if key in L: out.append(E(tag, idof(L[key])))
         if 'tools' in L:
             t = ET.Element('ToolIds')

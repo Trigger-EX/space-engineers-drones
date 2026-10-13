@@ -1,27 +1,23 @@
-# Handoff: v2.7 (audit fixes, SATELLITE formation, four warships)
+# Handoff: v2.7 + rotor AI turrets
 
 ## Goal
 Keep the Space Engineers drone/warship project consistent: scripts, generator, simulator, release zips. Nothing here has run in the real game.
 
 ## Decisions and constraints
 - Work and push on `main` only (CLAUDE.md). Sim runs: few seeds (CLAUDE.md).
-- Audit: `docs/audit/SUMMARY.md` (+ per-domain reports). Fix plan applied except items 7, 11, 12 (printer redesign, sim printing realism, blueprint shape fidelity beyond what the warships needed) and the Stinger item.
-- SATELLITE formation: FOLLOW block v1.1 (`tools/follow_block.cs`), Gnat has its own copy; `docs/follow-mode.md`.
-- Warships `Shrike` (fighter), `Corsair` (corvette), `Warden` (frigate), `Leviathan` (dreadnought) + `Cradle Pod`, Wing variants: `tools/designs/{shrike,corsair,warden,leviathan,pods}.py`, docs `docs/design/ships/*.md`, spec `docs/design/control_arch.md`. Scripts: `ShrikeAI.cs` (Helm, 79,990 of 80,000 chars: no headroom), `StaffAI.cs`, `CradleBayAI.cs`. Hull builder `tools/hulls.py`; generator inventories/toolbars/multi-grid `tools/sebp*.py`.
-- Headroom: Wasp 98,971 and Mantis 98,468 of the 100,000-char PB limit.
-- Release zips v2.7 in `releases/` (Drones, Printers, Warships, All).
+- **Rotor + hinge AI turrets** (this session): `scripts/TurretAI.cs` 1.0 (17,316 chars), `tools/designs/turrets.py` (PD4L large, PD2S small), `sebp.Blueprint.mount()`, `sebp_multi.top_pose/TOP_OFFSETS` (measured on the Tech Hunter), docs `docs/design/turrets.md`, tests `tools/tests/test_turrets.py`. On Shrike 1, Corsair 2 (Full only), Warden 4, Leviathan 8 (Lite 10). Names `[TU] ...`, PB `[TU] Turret PB`; every Helm Custom Data has `[Link] Block Prefix=[SH]`.
+- Audit: `docs/audit/SUMMARY.md`; SATELLITE formation `docs/follow-mode.md`; warships `docs/design/ships/*.md`, `control_arch.md`. Helm `ShrikeAI.cs` is 79,977 of 80,000 chars: no headroom.
+- Mono works here (`apt install mono-mcs mono-runtime mono-devel`; `sim/build.sh`). Baseline: 18 `test_sebp_ext` tests need the owner's `ref/user-samples` (not in the repo) and fail without it.
 
 ## Current state
-All checks pass on `main`: compile_check, blocks_sync, minify_check, tools/tests/run_all.py, full build_all, `SimHost selftest all`.
-
-- Gyro boost (post-v2.7, zips not rebuilt): Corsair 20->40, Warden 8->24, Leviathan 72->144 gyros (generators in `tools/designs/{corsair,warden,leviathan}.py`, notes in the ship docs). Small drones untouched: their turn rate is capped by the scripts (MaxTurn 5 rad/s), not by gyro torque. ShrikeAI's Auto Max Turn calibration picks up the new authority; not run in the sim (no SimHost build here).
+Release zips v2.7 rebuilt in `releases/` (Drones, Printers, Warships, All). `selftest m6` and `ship/Warden-vs-Pirate` pass with the turrets; the sim has no rotor model, so the turret heads are inert there and no combat result exists.
 
 ## Open questions
-In-game tests first: `packages/README_Warships.md` ranked list, `packages/tests.md` 24-35 (merge clamp face T1, cockpit toolbar Run argument K3, cockpit surface indices, gyro/stick feel, IGC across docked pods, ammo/hydrogen feed). Printers remain no-go as designed (docs/audit/printers.md).
+In-game: `packages/tests.md` 36-40 (paste/attach of the rotor turrets, motion, Helm ignores them, masks/friendly fire, ammo), `packages/unknowns.md` K-T1..K-T12, plus the earlier list (merge clamp face T1, cockpit toolbar Run argument K3, IGC across docked pods, ammo/hydrogen feed).
 
 ## Next step
-Run the in-game tests, then fix what they show. Known weak spots: lone Shrike (2/5 vs a Hornet), Lite ships have no AI blocks and find nothing alone, drone recovery into cradles (phase 2), `pc/reference` and `docs/RESULTS.md` need regenerating after the sim fidelity changes.
+Add a `SimMotorStator` (velocity mode, limits, the `top_pose` chain) and head-grid weapons to the simulator, then run 3-10 seeds of turret scenarios (Hornet pair, Pirate, kamikaze swarm). Or run the in-game tests first and fix what they show.
 
 ## Chat
 Base name: ultracode drone audit ships
-Run: 1
+Run: 2

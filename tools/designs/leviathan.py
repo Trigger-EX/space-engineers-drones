@@ -29,6 +29,7 @@ import sebp_multi as MU
 from sebp_inv import Item
 import pods
 from pods import orient_attached
+import turrets as TU
 
 ROOT = C.ROOT
 B = Volume.box
@@ -44,8 +45,8 @@ def _pb(name):
     return pb_extra(t) if t else ''
 
 
-HELM_SCRIPT, STAFF_SCRIPT, POD_SCRIPT = 'ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'
-SCRIPTS = [HELM_SCRIPT, STAFF_SCRIPT, POD_SCRIPT]
+HELM_SCRIPT, STAFF_SCRIPT, POD_SCRIPT, TURRET_SCRIPT = 'ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs', 'TurretAI.cs'
+SCRIPTS = [HELM_SCRIPT, STAFF_SCRIPT, POD_SCRIPT, TURRET_SCRIPT]
 
 TAG = 'LEVIATHAN'
 
@@ -188,6 +189,9 @@ GAT_K = (4, 7, 13, 14)
 ASL_K = (5, 6, 8, 9, 11, 12)
 DIVE_K = 10                     # the Dive thrusters sit at the centre of mass
 ROCKET_K = 15
+
+
+CUSTOM_PD = ('Deck', 'Stern', 'Keel')      # PD sites (first word of `where`) that are rotor + hinge AI turrets in this design
 
 
 def turret_sites():
@@ -364,12 +368,24 @@ def _weapons(S, full):
         bp.preload(b, items=[Item.ammo('LargeRailgunAmmo', 6)], state={'capacitor': 'full'})
         bp.keep_clear(b, 3, 'muzzle')
     counters = {}
+    S.tmounts = []
     spec = {'art': ('MyObjectBuilder_LargeMissileTurret', 'LargeCalibreTurret', 'Artillery Turret'),
             'assault': ('MyObjectBuilder_LargeMissileTurret', 'LargeBlockMediumCalibreTurret', 'Assault Turret'),
             'pd': ('MyObjectBuilder_LargeGatlingTurret', '', '[PD] Gatling'),
             'rocket': ('MyObjectBuilder_LargeMissileTurret', '', 'Rocket Turret')}
     for t in turret_sites():
         role = 'pd' if (t['role'] == 'rocket' and not full) else t['role']          # Lite: no rocket turret (its XML shape is derived, never seen): a gatling turret stands there
+        if role == 'pd' and t['where'].split()[0] in CUSTOM_PD:
+            # rotor + hinge AI turret (TurretAI.cs) in the vanilla turret's 3x3x3 footprint: stator on the base-centre cell
+            mn, up = t['mn'], t['up']
+            base_y = mn[1] if up == 'Up' else mn[1] + 2
+            m = TU.add_turret(bp, len(S.tmounts) + 1, (mn[0] + 1, base_y, mn[2] + 1), up, fwd='Forward', model='PD4L', lite=not full, color=GUNC)
+            S.put('tu', m.stator)
+            for x in range(mn[0], mn[0] + 3):
+                for y in range(mn[1], mn[1] + 3):
+                    for z in range(mn[2], mn[2] + 3): S.occ.setdefault((x, y, z), m.stator)
+            S.tmounts.append(m)
+            continue
         xt, sub, label = spec[role]
         counters[role] = counters.get(role, 0) + 1
         b = S.fixed(role, xt, sub, t['mn'], 'Forward', t['up'], nm(f'{label} {counters[role]} {t["where"]}'), GUNC, kind='turret')
@@ -444,6 +460,16 @@ def _bridge(S, full):
                    custom_data=helm_cd, extra=_pb(HELM_SCRIPT))
     S.staff = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (2, 13, 59), 'Backward', 'Up', '[Staff][SH] Leviathan Staff', toward='Down', kind='ctrl',
                     custom_data=staff_cd, extra=_pb(STAFF_SCRIPT))
+    S.tpb = None
+    for c in ((0, 13, 59), (-1, 13, 59), (1, 13, 59), (0, 13, 60), (-3, 13, 59), (3, 13, 59)):
+        if c in S.occ or c in bp.reserve: continue
+        try:
+            S.tpb = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', c, 'Backward', 'Up', f'{TU.PREFIX} Turret PB', toward='Down', kind='ctrl',
+                          custom_data=f'[Ship]\nTag={TAG}\n', extra=_pb(TURRET_SCRIPT))
+            break
+        except AssertionError:
+            continue
+    assert S.tpb is not None, 'no cell for the turret PB'
     S.timer = S.add('timer', 'MyObjectBuilder_TimerBlock', 'TimerBlockLarge', (0, 13, 57), 'Forward', 'Up', nm('Timer D (deadman)'), toward='Down', kind='timer', settings={'Delay': 5000, 'Silent': True})
     S.ec_cockpit = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (-2, 13, 61), 'Forward', 'Up', nm('EC Cockpit'), toward='Down', kind='timer')
     S.ec_power = S.add('ec', 'MyObjectBuilder_EventControllerBlock', 'EventControllerLarge', (0, 13, 61), 'Forward', 'Up', nm('EC Power'), toward='Down', kind='timer')
@@ -769,6 +795,8 @@ def leviathan(lite=False, with_pods=True, lock=False, name=None, wing=0):
     _dress(S, res, vol, full)
     C.link_conveyors(bp, [(c, n) for c, r, n in _terminals(S)])
     _groups_and_toolbars(S)
+    S.tu_check = TU.check_mounts(bp, S.tmounts, min_cover=0.4)       # the keel turrets sit in a recess: they see about half their half-space
+    S.tpb['custom_data'] = TU.turret_custom_data(bp, S.tmounts, TAG)
     bp.ship = S
     bp.hull = res
     bp.pods_ = []
@@ -941,14 +969,17 @@ def numbers(bp):
     n['dps_sustained'] = round(sum(dps[b['sub'] or 'LargeGatlingTurret' if b['xtype'].endswith('LargeGatlingTurret') else (b['sub'] or 'LargeMissileTurret')]
                                    for b in blocks if b['kind'] in ('rail', 'turret')))
     n['thrusters'] = len([b for b in blocks if b['xtype'] == 'MyObjectBuilder_Thrust'])
+    tm = getattr(getattr(bp, 'ship', None), 'tmounts', [])
+    n['custom_turrets'] = dict(TU.mounts_stats(tm), dps_sustained=1050 * sum(len(m.guns) for m in tm), cover=getattr(bp.ship, 'tu_check', {}), slew=TU.slew_rates(tm[0]) if tm else {})
+    n['dps_vanilla'] = n['dps_sustained']; n['dps_sustained'] += n['custom_turrets']['dps_sustained']          # catalogue 2.6: a SmallGatlingGun sustains 1,050
     return n
 
 
 # ------------------------------------------------------------------------------------------------------------
 # deck plans (text) for the design record: python3 -I tools/designs/leviathan.py --plans
 # ------------------------------------------------------------------------------------------------------------
-_SYM = {'rail': 'R', 'turret': 'T', 'thr': 't', 'gyro': 'G', 'bat': 'B', 'reactor': 'F', 'tank': 'K', 'cargo': 'C', 'conv': 'j', 'door': 'D', 'conn': 'N', 'ctrl': 'P',
-        'cockpit': 'S', 'decoy': 'X', 'cam': 'c', 'ant': 'a', 'sensor': 'n', 'ai': 'i', 'timer': 'e'}
+_SYM = {'tmount': 'O', 'rail': 'R', 'turret': 'T', 'thr': 't', 'gyro': 'G', 'bat': 'B', 'reactor': 'F', 'tank': 'K', 'cargo': 'C', 'conv': 'j', 'door': 'D', 'conn': 'N', 'ctrl': 'P',
+        'cockpit': 'S', 'tmount': 'O', 'decoy': 'X', 'cam': 'c', 'ant': 'a', 'sensor': 'n', 'ai': 'i', 'timer': 'e'}
 
 
 def deck_plan(bp, y, xr=range(-14, 15), zr=None):

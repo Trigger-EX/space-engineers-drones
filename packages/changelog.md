@@ -1,3 +1,22 @@
+### v2.7 (unreleased): ROTOR + HINGE AI TURRETS on the four warships
+New `scripts/TurretAI.cs` (v1.0, 17,316 of 100,000 characters) and `tools/designs/turrets.py`. Design, numbers, formulas, unknowns: `docs/design/turrets.md`.
+- **The turret**: `LargeAdvancedStator` (azimuth) -> top grid with `LargeAdvancedRotor` + `LargeHinge` (elevation, +-90 degrees) -> small head grid with `SmallHingeHead`, four `SmallGatlingGun` and a camera: the chain
+  of the six turrets in the owner's Tech Hunter, whose XML the game wrote (the head is that sample's pod with gatlings instead of autocannons). Small-grid ships get a two-gun `SmallAdvancedStatorSmall` / `SmallHinge`
+  version (stator shapes never seen in a game file: Full only). A turret covers its whole outward half-space; the hinge axis is horizontal, the bore is the azimuth axis at angle 0.
+- **Placed on**: Shrike (1, dorsal spine), Corsair (2, pod roofs, replacing the two roof gatling turrets), Warden (4: `Stern P/S`, `Belly Aft P/S`, replacing four gatling turrets), Leviathan (8: `Deck`,
+  `Stern`, `Keel`, replacing eight gatling turrets; the Lite Leviathan 10). Every ship gets a PB `[TU] Turret PB` with its masks in the Custom Data. All turret blocks are named `[TU] ...`; every Helm Custom Data now
+  has `[Link] Block Prefix=[SH]` (the Shrike's had none: without it the Helm would have fired the turret guns as fixed guns).
+- **TurretAI**: aims by the closed-form pointing law (hinge axis = +-(azimuth axis x direction), verified against the real pose chain to 1e-6 rad), lead solver with the ship's velocity and a capped acceleration, line-of-sight
+  feed-forward, rate = gain x error + feed-forward, slew limit; targets from the Helm's `.H2S`, the fleets' `_TGT` feeds and the ship's vanilla turrets / controllers; fire gate with hit cone, range, track age, a generated
+  line-of-fire mask against the ship's own hull, a camera ray against friendlies; fire modes `free` / `helm` / `hold`; parking; a start-up sign check of both motors.
+- **Generator**: `sebp.Blueprint.mount()`, Motor shapes in `shapes.json` (extracted from the Tech Hunter alone: `extract_shapes.py --merge-types`), `sebp_multi.top_pose` / `TOP_OFFSETS` (measured: 28 of the 29 stator/top pairs of the
+  Tech Hunter reproduce within 2 cm / 0.02 rad), swing-envelope / line-of-fire / move masks, `check_mounts` in every ship generator.
+- **Numbers** (generator, nothing measured in the game): PD4L 568 PCU and 4.0 t each, PD2S 400 PCU and 1.4 t; Warden +16 t and +2,272 PCU (-900 for the removed turrets), Leviathan +32 t and +4,544 PCU. The sustained gun DPS
+  (catalogue figure) of the Warden goes 15.2 k -> 32.0 k, of the Leviathan 52.5 k -> 86.1 k; `numbers()` keeps the old figure as `dps_vanilla`.
+- **Simulator**: no rotor model yet. `SimHost selftest m6` passes with the new blueprints (the Helm still holds exactly its own blocks), `ship/Warden-vs-Pirate` (1 seed) still wins in 82 s; the turret heads ride along inert.
+  So **no combat result exists for these turrets**; K-T1..K-T12 in `packages/unknowns.md` list what only the game can answer.
+- Tests: `tools/tests/test_turrets.py` (19), the Warden / Leviathan / Corsair / Shrike / m6 tests updated for the new blocks and names. `stubs.cs`: `IMyMotorStator` and friends.
+
 ### v2.7 (unreleased): WARSHIPS Shrike, Corsair, Warden, Leviathan (new package `Warships_v2.7_Full` / `_Lite`)
 - **Helm default mode REACT** (`ShrikeAI.cs`, mode 7 in the `.H2S` flags, `StaffAI.cs` shows it): combat-ready but passive until an AI alarm, a mate's alarm, damage or a held target wakes it. `Start Mode` default is REACT (the key name is unchanged). Four rarely used Custom Data keys were dropped to make room (`Target Large/Small Grids`, `Aim Kp/Kd`, `RTB Battery Fraction`); the Helm is 79,977 of 80,000.
 - **Cockpit buttons `deploy` / `dock`** (Staff) on Warden, Leviathan and Corsair; the cradle bay PB keeps a docked drone's thrusters off and switches them on at release.

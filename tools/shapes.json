@@ -971,6 +971,72 @@
    "src": "Styrofoam Plane",
    "tail": ""
   },
+  "MotorAdvancedRotor/*": {
+   "level": "top",
+   "owner": false,
+   "src": "Tech Hunter",
+   "tail": "<ParentEntityId>0</ParentEntityId>\n<YieldLastComponent>false</YieldLastComponent>\n"
+  },
+  "MotorAdvancedRotor/LargeAdvancedRotor": {
+   "level": "top",
+   "owner": false,
+   "src": "Tech Hunter",
+   "tail": "<ParentEntityId>0</ParentEntityId>\n<YieldLastComponent>false</YieldLastComponent>\n"
+  },
+  "MotorAdvancedRotor/LargeHingeHead": {
+   "level": "top",
+   "owner": false,
+   "src": "Tech Hunter",
+   "tail": "<ParentEntityId>0</ParentEntityId>\n<YieldLastComponent>false</YieldLastComponent>\n"
+  },
+  "MotorAdvancedRotor/SmallHingeHead": {
+   "level": "top",
+   "owner": false,
+   "src": "Tech Hunter",
+   "tail": "<ParentEntityId>0</ParentEntityId>\n<YieldLastComponent>false</YieldLastComponent>\n"
+  },
+  "MotorAdvancedStator/*": {
+   "level": "func",
+   "owner": true,
+   "src": "Tech Hunter",
+   "tail": "<TopBlockId>0</TopBlockId>\n<ShareInertiaTensor>false</ShareInertiaTensor>\n<SafetyDetach>5</SafetyDetach>\n<RotorEntityId xsi:nil=\"true\" />\n<WeldedEntityId xsi:nil=\"true\" />\n<TargetVelocity>0</TargetVelocity>\n<MinAngle>0</MinAngle>\n<MaxAngle xsi:nil=\"true\" />\n<CurrentAngle>0</CurrentAngle>\n<LimitsActive>true</LimitsActive>\n<RotorLock>false</RotorLock>\n<Torque>3.36E+07</Torque>\n<BrakingTorque>0</BrakingTorque>\n"
+  },
+  "MotorAdvancedStator/LargeAdvancedStator": {
+   "level": "func",
+   "owner": true,
+   "src": "Tech Hunter",
+   "tail": "<TopBlockId>0</TopBlockId>\n<ShareInertiaTensor>false</ShareInertiaTensor>\n<SafetyDetach>5</SafetyDetach>\n<RotorEntityId xsi:nil=\"true\" />\n<WeldedEntityId xsi:nil=\"true\" />\n<TargetVelocity>0</TargetVelocity>\n<MinAngle>0</MinAngle>\n<MaxAngle xsi:nil=\"true\" />\n<CurrentAngle>0</CurrentAngle>\n<LimitsActive>true</LimitsActive>\n<RotorLock>false</RotorLock>\n<Torque>3.36E+07</Torque>\n<BrakingTorque>0</BrakingTorque>\n"
+  },
+  "MotorAdvancedStator/LargeHinge": {
+   "level": "func",
+   "owner": true,
+   "src": "Tech Hunter",
+   "tail": "<TopBlockId>0</TopBlockId>\n<ShareInertiaTensor>false</ShareInertiaTensor>\n<SafetyDetach>5</SafetyDetach>\n<RotorEntityId xsi:nil=\"true\" />\n<WeldedEntityId xsi:nil=\"true\" />\n<TargetVelocity>0</TargetVelocity>\n<MinAngle>0</MinAngle>\n<MaxAngle>1.57079637</MaxAngle>\n<CurrentAngle>0</CurrentAngle>\n<LimitsActive>true</LimitsActive>\n<RotorLock>false</RotorLock>\n<Torque>3.36E+07</Torque>\n<BrakingTorque>0</BrakingTorque>\n"
+  },
+  "MotorRotor/*": {
+   "level": "top",
+   "owner": false,
+   "src": "Tech Hunter",
+   "tail": "<ParentEntityId>0</ParentEntityId>\n<YieldLastComponent>false</YieldLastComponent>\n"
+  },
+  "MotorRotor/SmallRotor": {
+   "level": "top",
+   "owner": false,
+   "src": "Tech Hunter",
+   "tail": "<ParentEntityId>0</ParentEntityId>\n<YieldLastComponent>false</YieldLastComponent>\n"
+  },
+  "MotorStator/*": {
+   "level": "func",
+   "owner": true,
+   "src": "Tech Hunter",
+   "tail": "<TopBlockId>0</TopBlockId>\n<ShareInertiaTensor>false</ShareInertiaTensor>\n<SafetyDetach>5</SafetyDetach>\n<RotorEntityId xsi:nil=\"true\" />\n<WeldedEntityId xsi:nil=\"true\" />\n<TargetVelocity>0</TargetVelocity>\n<MinAngle xsi:nil=\"true\" />\n<MaxAngle xsi:nil=\"true\" />\n<CurrentAngle>0</CurrentAngle>\n<LimitsActive>false</LimitsActive>\n<RotorLock>false</RotorLock>\n<Torque>3.36E+07</Torque>\n<BrakingTorque>0</BrakingTorque>\n"
+  },
+  "MotorStator/LargeStator": {
+   "level": "func",
+   "owner": true,
+   "src": "Tech Hunter",
+   "tail": "<TopBlockId>0</TopBlockId>\n<ShareInertiaTensor>false</ShareInertiaTensor>\n<SafetyDetach>5</SafetyDetach>\n<RotorEntityId xsi:nil=\"true\" />\n<WeldedEntityId xsi:nil=\"true\" />\n<TargetVelocity>0</TargetVelocity>\n<MinAngle xsi:nil=\"true\" />\n<MaxAngle xsi:nil=\"true\" />\n<CurrentAngle>0</CurrentAngle>\n<LimitsActive>false</LimitsActive>\n<RotorLock>false</RotorLock>\n<Torque>3.36E+07</Torque>\n<BrakingTorque>0</BrakingTorque>\n"
+  },
   "MyProgrammableBlock/*": {
    "container": "<ComponentContainer>\n  <Components>\n    <ComponentData>\n      <TypeId>MyMultiTextPanelComponent</TypeId>\n      <Component xsi:type=\"MyObjectBuilder_MultiTextPanelComponent\">\n        <TextPanelsContents>\n          <MySerializedTextPanelData>\n            <ChangeInterval>0</ChangeInterval>\n            <Font Type=\"MyObjectBuilder_FontDefinition\" Subtype=\"Debug\" />\n            <FontSize>1</FontSize>\n            <ShowText>NONE</ShowText>\n            <FontColor>\n              <PackedValue>4294967295</PackedValue>\n              <X>255</X>\n              <Y>255</Y>\n              <Z>255</Z>\n              <R>255</R>\n              <G>255</G>\n              <B>255</B>\n              <A>255</A>\n            </FontColor>\n            <BackgroundColor>\n              <PackedValue>4278190080</PackedValue>\n              <X>0</X>\n              <Y>0</Y>\n              <Z>0</Z>\n              <R>0</R>\n              <G>0</G>\n              <B>0</B>\n              <A>255</A>\n            </BackgroundColor>\n            <CurrentShownTexture>0</CurrentShownTexture>\n            <SelectedScript />\n            <TextPadding>2</TextPadding>\n            <ScriptBackgroundColor>\n              <PackedValue>4288108544</PackedValue>\n              <X>0</X>\n              <Y>88</Y>\n              <Z>151</Z>\n              <R>0</R>\n              <G>88</G>\n              <B>151</B>\n              <A>255</A>\n            </ScriptBackgroundColor>\n            <ScriptForegroundColor>\n              <PackedValue>4294962611</PackedValue>\n              <X>179</X>\n              <Y>237</Y>\n              <Z>255</Z>\n              <R>179</R>\n              <G>237</G>\n              <B>255</B>\n              <A>255</A>\n            </ScriptForegroundColor>\n            <Sprites>\n              <Length>0</Length>\n            </Sprites>\n          </MySerializedTextPanelData>\n          <MySerializedTextPanelData>\n            <ChangeInterval>0</ChangeInterval>\n            <Font Type=\"MyObjectBuilder_FontDefinition\" Subtype=\"Debug\" />\n            <FontSize>1</FontSize>\n            <ShowText>NONE</ShowText>\n            <FontColor>\n              <PackedValue>4294967295</PackedValue>\n              <X>255</X>\n              <Y>255</Y>\n              <Z>255</Z>\n              <R>255</R>\n              <G>255</G>\n              <B>255</B>\n              <A>255</A>\n            </FontColor>\n            <BackgroundColor>\n              <PackedValue>4278190080</PackedValue>\n              <X>0</X>\n              <Y>0</Y>\n              <Z>0</Z>\n              <R>0</R>\n              <G>0</G>\n              <B>0</B>\n              <A>255</A>\n            </BackgroundColor>\n            <CurrentShownTexture>0</CurrentShownTexture>\n            <SelectedScript />\n            <TextPadding>2</TextPadding>\n            <ScriptBackgroundColor>\n              <PackedValue>4288108544</PackedValue>\n              <X>0</X>\n              <Y>88</Y>\n              <Z>151</Z>\n              <R>0</R>\n              <G>88</G>\n              <B>151</B>\n              <A>255</A>\n            </ScriptBackgroundColor>\n            <ScriptForegroundColor>\n              <PackedValue>4294962611</PackedValue>\n              <X>179</X>\n              <Y>237</Y>\n              <Z>255</Z>\n              <R>179</R>\n              <G>237</G>\n              <B>255</B>\n              <A>255</A>\n            </ScriptForegroundColor>\n            <Sprites>\n              <Length>0</Length>\n            </Sprites>\n          </MySerializedTextPanelData>\n        </TextPanelsContents>\n      </Component>\n    </ComponentData>\n  </Components>\n</ComponentContainer>",
    "container_generic": true,

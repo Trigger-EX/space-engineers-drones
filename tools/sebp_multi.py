@@ -229,3 +229,41 @@ def overlapping_cells(parent_bp, child_bp, pose, tol=1e-3):
                     for z in rng[2]:
                         if (x, y, z) in occ: out.append((c, (x, y, z)))
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# rotors and hinges: the top (rotor head / hinge head) lives on its own CubeGrid
+# ---------------------------------------------------------------------------------------------------------------
+# MEASURED on the owner's Tech Hunter (pc/enemies/Tech Hunter/bp.sbc: 6 turrets, 29 stator/top pairs; tools/tests/test_turrets.py repeats the
+# measurement).  The top block is the first block of its grid (cell (0,0,0), default orientation, so the top grid frame = the top block frame).
+# In the STATOR block frame (origin = centre of the stator's cell box, as block_pose) the top block frame is
+#     translate (0, -d, 0)  then  rotate about the stator's local Up by -angle (right-handed), orientation otherwise equal
+# i.e. the top's forward = (sin a, 0, -cos a), `angle` = the stator's <CurrentAngle> (radians).  d per pair:
+TOP_OFFSETS = {
+    # (stator subtype, top subtype): (d metres, evidence)
+    ('LargeAdvancedStator', 'LargeAdvancedRotor'): (1.0502, 'seen: 12 pairs, Tech Hunter'),
+    ('LargeStator', 'SmallRotor'): (0.8293, 'seen: 2 pairs, Tech Hunter'),
+    ('LargeHinge', 'LargeHingeHead'): (0.0, 'seen: 3 pairs, Tech Hunter'),
+    ('LargeHinge', 'SmallHingeHead'): (0.0, 'seen: 12 pairs, Tech Hunter'),
+    # UNSEEN (no sample has a small-grid stator): the large values scaled by the cell size (0.5 / 2.5)
+    ('SmallAdvancedStatorSmall', 'SmallAdvancedRotorSmall'): (0.2100, 'UNSEEN: Large pair / 5'),
+    ('SmallStator', 'SmallRotor'): (0.1659, 'UNSEEN: Large pair / 5'),
+    ('SmallHinge', 'SmallHingeHead'): (0.0, 'UNSEEN: as LargeHinge'),
+    ('MediumHinge', 'MediumHingeHead'): (0.0, 'UNSEEN: as LargeHinge'),
+}
+
+def rot_about_up(angle):
+    """rotation of a top by `angle` (the stator's CurrentAngle) about the stator's local Up, as the game turns it (see TOP_OFFSETS)"""
+    phi = -angle
+    return Rot((math.cos(phi), 0.0, -math.sin(phi)), (0.0, 1.0, 0.0), (math.sin(phi), 0.0, math.cos(phi)))
+
+def top_offset(stator, top):
+    k = (stator['sub'], top['sub'])
+    if k not in TOP_OFFSETS: raise KeyError(f'no measured stator->top offset for {k}')
+    return TOP_OFFSETS[k]
+
+def top_pose(parent_bp, stator, child_bp, top, angle=0.0):
+    """Pose of the TOP's CubeGrid in the stator's grid frame for stator angle `angle` (rad)"""
+    d, _ = top_offset(stator, top)
+    rel = Pose((0.0, -d, 0.0), rot_about_up(angle))
+    return block_pose(parent_bp, stator) * rel * block_pose(child_bp, top).inv()

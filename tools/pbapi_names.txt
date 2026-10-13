@@ -12,3 +12,6 @@ IMyDoor Status OpenDoor CloseDoor ToggleDoor
 IMyShipConnector Status Connect Disconnect ToggleConnect ThrowOut CollectAll
 IMyEventControllerBlock IsAndModeEnabled IsLowerOrEqualCondition Threshold
 IMyButtonPanel AnyoneCanUse
+IMyMotorBase RotorLock Torque BrakingTorque TargetVelocityRad TargetVelocityRPM Displacement
+IMyMotorStator Angle LowerLimitRad UpperLimitRad LowerLimitDeg UpperLimitDeg
+IMyMechanicalConnectionBlock Top TopGrid IsAttached Attach Detach

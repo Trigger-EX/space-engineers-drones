@@ -31,7 +31,7 @@ def named(bp, text):
 class ContractTests(unittest.TestCase):
     def test_module_contract(self):
         self.assertEqual(list(S.MODELS), ['Shrike'])
-        self.assertEqual(S.SCRIPTS, ['ShrikeAI.cs'])
+        self.assertEqual(S.SCRIPTS, ['ShrikeAI.cs', 'TurretAI.cs'])
         self.assertIn('Shrike', S.DOCS)
         self.assertGreater(len(S.DOCS['Shrike']), 100)
         self.assertIn('3 magazines', S.DOCS['Shrike'])          # the ammunition limitation is stated in the README sentence
@@ -51,9 +51,9 @@ class ContractTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 bp.write(d, bp.name)
                 grids = sebp.load_sbc(os.path.join(d, 'bp.sbc'), allow_dlc=False)
-                self.assertEqual(len(grids), 1)
+                self.assertEqual(len(grids), 1 if lite else 3)          # Full: + the top and head grids of the rotor turret
                 self.assertEqual(len(grids[0].blocks), len(bp.blocks))
-                grids[0].validate()
+                for g in grids: g.validate()
 
 
 class RuleTests(unittest.TestCase):
@@ -74,7 +74,8 @@ class RuleTests(unittest.TestCase):
         full = ship(False).shape_summary()
         unseen = {k for k, (n, conf) in full.items() if not conf.startswith('seen:')}
         self.assertEqual(unseen, {'SensorBlock/SmallBlockSensor', 'OffensiveCombatBlock/SmallOffensiveCombat',
-                                  'FlightMovementBlock/SmallFlightMovement', 'Decoy/SmallDecoy'})
+                                  'FlightMovementBlock/SmallFlightMovement', 'Decoy/SmallDecoy',
+                                  'MotorAdvancedStator/SmallAdvancedStatorSmall', 'MotorAdvancedStator/SmallHinge', 'MotorAdvancedRotor/SmallAdvancedRotorSmall'})      # (no sample has a small-grid stator)
 
     def test_lite_has_no_ai_sensor_decoy_or_unverified_toolbar(self):
         bp = ship(True)
@@ -88,8 +89,7 @@ class RuleTests(unittest.TestCase):
         for lite in (False, True):
             bp = ship(lite)
             pbs = [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_MyProgrammableBlock']
-            self.assertEqual(len(pbs), 1)
-            self.assertEqual(pbs[0]['name'], '[Helm] Shrike')
+            self.assertEqual(sorted(b['name'] for b in pbs), ['[Helm] Shrike'] if lite else ['[Helm] Shrike', '[TU] Turret PB'])
             self.assertEqual(len([b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_RemoteControl']), 1)
             cockpits = [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_Cockpit']
             self.assertEqual([c['sub'] for c in cockpits], ['DBSmallBlockFighterCockpit'])
@@ -119,7 +119,8 @@ class RuleTests(unittest.TestCase):
             if b['xtype'].endswith('_CubeBlock'):
                 continue
             self.assertTrue(b['name'], b['sub'])
-            self.assertTrue(b['name'].startswith('[SH] ') or b['name'].startswith('[Helm] '), b['name'])
+            self.assertTrue(b['name'].startswith(('[SH] ', '[Helm] ', '[TU] ')), b['name'])
+            if b['name'].startswith('[TU] '): continue                  # the rotor turret and its PB: not adopted by the Helm (it adopts [SH] blocks only)
 
     def test_script_is_embedded_when_it_exists(self):
         bp = ship(False)

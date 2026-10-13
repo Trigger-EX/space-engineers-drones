@@ -491,3 +491,9 @@ K1 `MoveIndicator`/`RotationIndicator`/`RollIndicator` signs, ranges and units w
 4. **Fly-by-wire** depends on K1/K2; default stays `assist hud`.
 5. **Merged-drone contamination** (name-prefix rule `[SH]`) is a generator rule as much as a script rule; a blueprint without prefixes makes Helm adopt drone thrusters (grids_bays F6).
 6. Sim fidelity: enemy ships and the new ships share the optimistic large-grid damage model (audit: large thrusters/batteries die 1.6-5.9x too slowly); use same-assumption A/B only.
+
+## Addendum (v2.7): rotor AI turrets are a fourth PB role
+
+`[TU] Turret PB` (`TurretAI.cs`, `docs/design/turrets.md`) runs the rotor + hinge turrets. It listens to the Helm's `<Ship Tag>.H2S`, the fleets' `<TAG>_TGT` feeds and the ship's vanilla turrets / controllers (designators),
+writes only the motors' `TargetVelocityRad` and the head guns' `Shoot`, and sends `<Ship Tag>.TUR` (mounts, tracking, firing) on the construct. Everything it owns is named `[TU] ...`: the Helm's `Own()` (prefix `[SH]`) and the Staff's
+block prefix never adopt it, so turrets stay out of the batteries (D5: turrets are designators and automatic weapons, never batteries). The dead-man timer's `Weapons` group cannot reach the head guns (other grid); `hold` does.

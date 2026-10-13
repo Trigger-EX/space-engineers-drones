@@ -35,14 +35,15 @@ WANT = ['Thrust', 'CameraBlock', 'BatteryBlock', 'RadioAntenna', 'RemoteControl'
         'Projector', 'ShipWelder',
         'LargeGatlingTurret', 'LargeMissileTurret', 'InteriorTurret', 'Cockpit', 'Reactor', 'HydrogenEngine', 'OxygenTank', 'Decoy',
         'SensorBlock', 'CargoContainer', 'Conveyor', 'ConveyorConnector', 'ConveyorSorter', 'LandingGear', 'Door',
-        'AirtightHangarDoor', 'AirtightSlideDoor', 'ButtonPanel', 'TimerBlock', 'MergeBlock', 'Warhead']
+        'AirtightHangarDoor', 'AirtightSlideDoor', 'ButtonPanel', 'TimerBlock', 'MergeBlock', 'Warhead',
+        'MotorStator', 'MotorAdvancedStator', 'MotorRotor', 'MotorAdvancedRotor']
 BASE = {'SubtypeName', 'EntityId', 'Min', 'IntegrityPercent', 'BuildPercent', 'BlockOrientation', 'ColorMaskHSV', 'SkinSubtypeId',
         'ConstructionInventory', 'ConstructionStockpile', 'Owner', 'BuiltBy', 'ShareMode', 'DeformationRatio', 'ComponentContainer',
         'CustomName', 'ShowOnHUD', 'ShowInTerminal', 'ShowInToolbarConfig', 'ShowInInventory', 'NumberInGrid', 'Enabled'}
 TOOLBARS = {'Toolbar', 'BuildToolbar', 'OnLockedToolbar'}
-ZERO = {'AzimuthId', 'ElevationId', 'CameraId', 'DirectionBlockId', 'BindedCamera', 'AttachedPB'}
+ZERO = {'AzimuthId', 'ElevationId', 'CameraId', 'DirectionBlockId', 'BindedCamera', 'AttachedPB', 'TopBlockId', 'ParentEntityId'}
 # run state / user settings that must not leak from the exemplar into a fresh block: tag -> text ('' = empty element)
-RESET = {'Rotation': '0', 'Elevation': '0', 'RemainingAmmo': '0', 'IsShooting': 'false', 'IsShootingFromTerminal': 'false',
+RESET = {'CurrentAngle': '0', 'TargetVelocity': '0', 'Rotation': '0', 'Elevation': '0', 'RemainingAmmo': '0', 'IsShooting': 'false', 'IsShootingFromTerminal': 'false',
          'TargetingGroup': '', 'CurrentTime': '0', 'IsCountingDown': 'false', 'Open': 'false', 'CurrOpening': '0', 'Opening': '0',
          'FilledRatio': '0', 'OxygenLevel': '0', 'SitAnimation': '0', 'IsInFirstPersonView': 'false', 'TimeOfConnection': '0',
          'IsApproaching': 'false', 'IsConnecting': 'false', 'FirstLockAttempt': 'false', 'IsLocked': 'false', 'HudText': ''}
@@ -108,6 +109,7 @@ def clean_tail(e, btype=None):
 def exemplar(b, btype=None):
     spec = {'level': 'func' if b.find('Enabled') is not None else ('term' if b.find('ShowOnHUD') is not None else 'cube'),
             'owner': b.find('ShareMode') is not None}
+    if b.find('ParentEntityId') is not None: spec['level'] = 'top'       # rotor / hinge head: no Min, orientation, colour or owner; ParentEntityId + YieldLastComponent
     if b.find('DeformationRatio') is not None: spec['deform'] = float(b.findtext('DeformationRatio'))
     if b.find('Enabled') is not None and b.findtext('Enabled') == 'false': spec['enabled'] = False
     cc = b.find('ComponentContainer')
@@ -323,7 +325,24 @@ def main(argv=None):
     ap.add_argument('--extra', action='append', default=None)
     ap.add_argument('-o', '--out', default=os.path.join(HERE, 'shapes.json'))
     ap.add_argument('--fresh', action='store_true', help='do not pin the legacy entries of the existing output file')
+    ap.add_argument('--merge-types', default=None, help='T1,T2: extract only these block types from SRC files (--extra, default Tech Hunter) and '
+                    'add/replace just those keys in the existing -o file; nothing else in it changes (for when ref/user-samples is not at hand)')
     a = ap.parse_args(argv)
+    if a.merge_types:
+        types = [t for t in a.merge_types.split(',') if t]
+        extra = a.extra if a.extra is not None else [find_repo_path('pc', 'enemies', 'Tech Hunter', 'bp.sbc')]
+        files = [f for f in extra if os.path.exists(f)]
+        if not files: sys.exit('no sample files found')
+        doc = json.load(open(a.out))
+        new = extract(files, want=types)
+        doc['shapes'] = {k: v for k, v in doc['shapes'].items() if k.split('/')[0] not in types}
+        doc['shapes'].update(new)
+        doc['shapes'] = dict(sorted(doc['shapes'].items()))
+        with open(a.out, 'w', encoding='utf-8', newline='\n') as fh:
+            json.dump(doc, fh, indent=1, sort_keys=True); fh.write('\n')
+        print(f'merged {len(new)} shapes of {", ".join(types)} from {", ".join(sample_name(f) for f in files)} -> {a.out}')
+        for k in sorted(new): print('  ', k)
+        return
     if len(a.paths) == 2:
         files, out_path, pin = [a.paths[0]], a.paths[1], False
     elif a.paths:
