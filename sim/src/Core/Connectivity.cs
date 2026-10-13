@@ -371,6 +371,7 @@ namespace SeSim.Core
                 nb.GridSize = b.GridSize; nb.CellSize = b.CellSize;
                 nb.Team = b.Team; nb.OwnerId = b.OwnerId; nb.ShipIndex = b.ShipIndex; nb.IsStatic = b.IsStatic;
                 nb.DampenersOn = b.DampenersOn;
+                nb.Groups = b.Groups;                                // same grid frame: the block groups' cells still resolve
                 nb.Rotation = b.Rotation;
                 nb.AngularVelocity = oldW;
                 nb.Position = b.WorldMatrix.Translation;             // same grid origin / frame as the parent

@@ -40,6 +40,8 @@ namespace SeSim.Core
         public SeSim.Combat.TurretUnit Turret;   // slot C (large turrets and turret controllers)
         public MergeUnit Merge;           // slot A (connectivity edge)
         public SeSim.Api.SimTerminalBlock Api;   // slot B; null for blocks without terminal (armor)
+        public ToolbarItem[] Toolbar;     // M0: toolbar slots with BlockId remapped to this world's entity ids (null = none)
+        public long[] SelectedIds;        // M0: Event Controller SelectedBlocks, remapped (null = none)
         public SeSim.Api.SimSlimBlock Slim;      // slot B; created lazily by SimCubeGrid.GetCubeBlock
 
         /// <summary>Functional = built above critical integrity (Hp > CriticalHp) and not destroyed (IMyCubeBlock.IsFunctional).</summary>

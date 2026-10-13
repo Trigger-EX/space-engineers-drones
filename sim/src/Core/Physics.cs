@@ -27,13 +27,21 @@ namespace SeSim.Core
             double[] sum = b.DirScratch;
             bool ovX = false, ovY = false, ovZ = false;      // GameDampenerLaw: an override on an axis switches its dampening off
             Vector3D vl = default(Vector3D);
+            // hand piloting (M0): the pilot's Move demand drives every thruster WITHOUT override on an axis with input; that axis is not dampened
+            Vector3D pm = default(Vector3D); bool pilot = false, pX = false, pY = false, pZ = false;
+            if (b.Pilot != null && b.Pilot.Active && b.Pilot.ControlThrusters && b.Pilot.AnyMove)
+            {
+                pm = b.Pilot.MoveGrid(s.PilotInputClamp);
+                pX = pm.X != 0; pY = pm.Y != 0; pZ = pm.Z != 0;
+                pilot = pX || pY || pZ;
+            }
             if (damp)
             {
                 for (int i = 0; i < 6; i++) sum[i] = 0;
                 for (int i = 0; i < n; i++)
                 {
                     var t = th[i];
-                    if (t.OverrideN <= 0f && t.Working) sum[t.DirIndex] += t.MaxForce;
+                    if (t.OverrideN <= 0f && t.Working && !(pilot && PilotAxis(t.DirIndex >> 1, pX, pY, pZ))) sum[t.DirIndex] += t.MaxForce;
                     if (game && t.OverrideN > 0f) { int ax = t.DirIndex >> 1; if (ax == 0) ovX = true; else if (ax == 1) ovY = true; else ovZ = true; }
                 }
                 vl = Vector3D.TransformNormal(b.LinearVelocity, b.InvWorldRot);
@@ -46,6 +54,12 @@ namespace SeSim.Core
                 if (t.Working)
                 {
                     if (t.OverrideN > 0f) f = t.OverrideN < t.MaxForce ? t.OverrideN : t.MaxForce;
+                    else if (pilot && PilotAxis(t.DirIndex >> 1, pX, pY, pZ))
+                    {
+                        int pax = t.DirIndex >> 1;
+                        double want = (pax == 0 ? pm.X : pax == 1 ? pm.Y : pm.Z) * ((t.DirIndex & 1) == 0 ? 1.0 : -1.0);   // along this thruster's push direction
+                        if (want > 0) f = want * t.MaxForce;
+                    }
                     else if (damp)
                     {
                         // component of the velocity along this thruster's push direction; push only when it opposes the motion
@@ -68,6 +82,8 @@ namespace SeSim.Core
                 }
             }
         }
+
+        static bool PilotAxis(int axis, bool x, bool y, bool z) { return axis == 0 ? x : axis == 1 ? y : z; }
 
         /// <summary>Gyro sinks request their definition power while the gyro is working (enabled and functional), 0 otherwise.</summary>
         public static void PrepareGyros(Body b)
@@ -124,6 +140,13 @@ namespace SeSim.Core
             double sumAll = 0, sumOv = 0, sumOther = 0, ratioNum = 0;
             double tgx = 0, tgy = 0, tgz = 0;
             bool anyOv = false;
+            // hand piloting (M0): the non-overridden gyros follow the pilot's rate target, the overridden ones keep their own (per-block priority)
+            Vector3D pw = default(Vector3D); bool pilot = false;
+            if (b.Pilot != null && b.Pilot.Active && b.Pilot.AnyRot)
+            {
+                pw = b.Pilot.RateGrid(s.PilotRateGain, s.PilotRotSign, s.PilotInputClamp, b.MaxAngularSpeed(s));
+                pilot = pw.X != 0 || pw.Y != 0 || pw.Z != 0;
+            }
             for (int i = 0; i < n; i++)
             {
                 var g = gy[i];
@@ -152,20 +175,28 @@ namespace SeSim.Core
             double ix = b.InvInertiaLocal.M11, iy = b.InvInertiaLocal.M22, iz = b.InvInertiaLocal.M33;
             if (ix <= 0) ix = 1e-12; if (iy <= 0) iy = 1e-12; if (iz <= 0) iz = 1e-12;
             double ux, uy, uz;
-            if (anyOv)
+            if (anyOv || pilot)
             {
-                if (sumOv <= 0) { b.GyroDirty = false; return; }         // override with zero power: gyros neither steer nor damp
-                double dx = tgx / sumOv - wl.X, dy = tgy / sumOv - wl.Y, dz = tgz / sumOv - wl.Z;
+                double sumP = pilot ? sumOther : 0;                       // the pilot group: every working gyro without override
+                double wTot = sumOv + sumP;
+                if (wTot <= 0) { b.GyroDirty = false; return; }         // override with zero power: gyros neither steer nor damp
+                if (pilot) { tgx += pw.X * sumP; tgy += pw.Y * sumP; tgz += pw.Z * sumP; }
+                double dx = tgx / wTot - wl.X, dy = tgy / wTot - wl.Y, dz = tgz / wTot - wl.Z;
                 double d2 = dx * dx + dy * dy + dz * dz;
                 const double half = Math.PI / 2;
-                if (b.GyroDirty || b.GyroRampFrames <= 0)
+                double k;
+                if (!anyOv) k = SimSettings.TicksPerSecond / (double)Math.Max(1, s.PilotGyroRampFrames);   // pilot only: a stiff rate controller
+                else
                 {
-                    int frames = s.GyroRampFrames;
-                    double lim = half * half;
-                    b.GyroRampFrames = d2 > lim ? frames : (int)(d2 * (frames - 1) / lim) + 1;
+                    if (b.GyroDirty || b.GyroRampFrames <= 0)
+                    {
+                        int frames = s.GyroRampFrames;
+                        double lim = half * half;
+                        b.GyroRampFrames = d2 > lim ? frames : (int)(d2 * (frames - 1) / lim) + 1;
+                    }
+                    else if (b.GyroRampFrames > 1) b.GyroRampFrames--;
+                    k = SimSettings.TicksPerSecond / (double)b.GyroRampFrames;
                 }
-                else if (b.GyroRampFrames > 1) b.GyroRampFrames--;
-                double k = SimSettings.TicksPerSecond / (double)b.GyroRampFrames;
                 // desired torque = I * (diff * k): the full tensor (not only its diagonal) so off-axis coupling cannot slow the convergence
                 double ax = dx * k, ay = dy * k, az = dz * k;
                 var it = b.InertiaLocal;

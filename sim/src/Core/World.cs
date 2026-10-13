@@ -32,6 +32,10 @@ namespace SeSim.Core
         public readonly List<IShipBrain> Brains = new List<IShipBrain>();
         public readonly List<SeSim.Api.SimSensor> Sensors = new List<SeSim.Api.SimSensor>();   // [B] polled every SensorUpdateTicks
         public readonly List<SeSim.Api.SimCamera> Cameras = new List<SeSim.Api.SimCamera>();   // [B] charge accumulation
+        /// <summary>M0: every block with an entity id by that id (filled by GridFactory; destroyed blocks stay, flagged Destroyed). Toolbar and Event Controller targets.</summary>
+        public readonly Dictionary<long, BlockInst> BlocksById = new Dictionary<long, BlockInst>();
+        /// <summary>M0: timers and event controllers that run block automation (SimSettings.BlockAutomation); empty otherwise.</summary>
+        public readonly List<SeSim.Api.IBlockAutomation> Automation = new List<SeSim.Api.IBlockAutomation>();
 
         /// <summary>Physics-only worlds (selftests): no IGC / projectiles / combat subsystems are created.</summary>
         public readonly bool Minimal;
@@ -69,6 +73,7 @@ namespace SeSim.Core
         {
             const double dt = SimSettings.Dt;
             // 1-2 scripts, IGC
+            if (Automation.Count > 0 && Settings.BlockAutomation) for (int i = 0; i < Automation.Count; i++) Automation[i].Tick(Tick);   // timers / event controllers, M0
             if (Scripts != null) Scripts.RunDue();
             if (Igc != null) Igc.Deliver();
             if (Igc != null && Settings.SwarmCueSeconds > 0 && Tick % Math.Max(1, (long)Math.Round(Settings.SwarmCueSeconds * SimSettings.TicksPerSecond)) == 0)

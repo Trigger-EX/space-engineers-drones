@@ -2,7 +2,7 @@
 // merged = same grid). Cached block list rebuilt when Body.Version changed. Order = Body.Blocks order (BlockInst.Index =
 // blueprint order), deterministic. GetBlocksOfType<T>: 'is T' filter then the predicate; the list is cleared first (like the game).
 // Destroyed blocks are not listed; blocks below critical integrity still are (IsFunctional false). Block groups: none defined
-// in blueprints, so GetBlockGroups returns an empty list and GetBlockGroupWithName null.
+// in most blueprints (M0: parsed from <BlockGroups> when present), so GetBlockGroups is usually empty and GetBlockGroupWithName null.
 using System;
 using System.Collections.Generic;
 using Sandbox.ModAPI.Ingame;
@@ -91,7 +91,22 @@ namespace SeSim.Api
             return null;
         }
 
-        public void GetBlockGroups(List<IMyBlockGroup> blockGroups, Func<IMyBlockGroup, bool> collect = null) { blockGroups.Clear(); }
-        public IMyBlockGroup GetBlockGroupWithName(string name) { return null; }
+        // M0: the blueprint's <BlockGroups> of this PB's body (cells resolve to blocks at call time, destroyed members drop out)
+        public void GetBlockGroups(List<IMyBlockGroup> blockGroups, Func<IMyBlockGroup, bool> collect = null)
+        {
+            blockGroups.Clear();
+            Body b = Pb.Inst.Body;
+            for (int i = 0; i < b.Groups.Count; i++)
+            {
+                var g = new SimBlockGroup(b, b.Groups[i]);
+                if (collect == null || collect(g)) blockGroups.Add(g);
+            }
+        }
+        public IMyBlockGroup GetBlockGroupWithName(string name)
+        {
+            Body b = Pb.Inst.Body;
+            for (int i = 0; i < b.Groups.Count; i++) if (b.Groups[i].Name == name) return new SimBlockGroup(b, b.Groups[i]);
+            return null;
+        }
     }
 }

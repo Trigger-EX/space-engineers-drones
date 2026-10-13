@@ -227,6 +227,16 @@ namespace SeSim.Run
             Construct(r, storage);
         }
 
+        /// <summary>Scenario event (control_arch S8, the dead-man test): the PB stops running for good, like a crashed script; the overrides it set stay in
+        /// the thrusters and gyros. No ScriptException is counted (it is the test, not a script bug).</summary>
+        public void KillPb(SimProgrammableBlock pb, string reason)
+        {
+            var r = pb.Runner;
+            if (r == null || r.Dead) return;
+            r.Dead = true; r.DeathReason = reason ?? "killed";
+            r.PendingArgs.Clear();
+        }
+
         /// <summary>PB destroyed / disabled: no more runs.</summary>
         public void Detach(SimProgrammableBlock pb)
         {

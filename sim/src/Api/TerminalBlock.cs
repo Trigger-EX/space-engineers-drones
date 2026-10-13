@@ -29,6 +29,8 @@ namespace SeSim.Api
         public static double MaxAntennaRadius = 50000;
         /// <summary>false (default): IGC between enemy teams is never delivered (the game's antenna relay needs non-hostile owners).</summary>
         public static bool IgcAllowEnemyRelay = false;
+        /// <summary>Seconds a door needs to open or close (SimDoor; the real animation length is unmeasured).</summary>
+        public static double DoorSeconds = 3.0;
     }
 
     public abstract class SimCubeBlock : IMyCubeBlock
@@ -289,27 +291,4 @@ namespace SeSim.Api
         public bool EvasiveManeuvers { get; set; }
     }
 
-    /// <summary>Timer Block: PB-visible API only. The countdown runs on the world tick; when it expires nothing happens (the
-    /// toolbar actions are not loaded from the blueprint, so there is nothing to run). TriggerDelay is in seconds.</summary>
-    public sealed class SimTimer : SimFunctionalBlock, IMyTimerBlock
-    {
-        long _fireTick = -1;
-        float _delay = 10f;
-        public SimTimer(BlockInst i, World w) : base(i, w) { }
-        public bool Silent { get; set; }
-        public float TriggerDelay { get { return _delay; } set { _delay = float.IsNaN(value) ? 1f : Math.Max(1f, Math.Min(value, 3600f)); } }
-        public bool IsCountingDown
-        {
-            get
-            {
-                if (_fireTick < 0) return false;
-                if (World.Tick >= _fireTick) _fireTick = -1;        // expired: actions skipped
-                return _fireTick >= 0;
-            }
-        }
-        public void StartCountdown() { if (EnabledValue && Inst.IsFunctional) _fireTick = World.Tick + (long)Math.Round(_delay * SimSettings.TicksPerSecond); }
-        public void StopCountdown() { _fireTick = -1; }
-        public void Trigger() { }
-        protected override void OnEnabledChanged() { if (!EnabledValue) _fireTick = -1; }
-    }
 }

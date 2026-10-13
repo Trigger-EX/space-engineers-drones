@@ -1,5 +1,5 @@
 // SLOT D. CLI entry point: mono out/sim/SimHost.exe <command> [options]
-//   selftest [physics|api|combat|runner|scenario|all]   engine self-checks by group (default: the first four);
+//   selftest [physics|api|combat|runner|audit|m0|scenario|all]   engine self-checks by group (default: the first four);
 //                                 `selftest scenario` (or --selftest scenario) also runs 3 short duels end to end
 //   list [--filter RX] [--kind K] print scenario names with job counts
 //   run   --filter REGEX [--seeds N] [--jobs 4] [--seed 1] [--shard i/n] [--out DIR] [--resume] [--<setting> value ...]
@@ -12,6 +12,10 @@
 //   printer-test [--model "Mobile Hive"] [--fault none|noproj|halfload|...] [--script-file F]   Hive Mother on the real printer blueprint with real-game-like faulty projectors (sim/src/Run/PrinterTest.cs)
 //   follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] ...   FOLLOW mode vs a moving owner (sim/src/Run/FollowTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
+//   M0 (docs/design/control_arch.md): --pilot "0:sit;5:move 0 0 -1;20:leave" [--pilot-team 0] puts a ScriptedPilot into the cockpit of our ships (verbs: ScriptedPilot.cs),
+//         --pb-custom-data "Helm=<ini>|Staff=<ini>" (CustomData per PB tag), --enemy-scripted (enemies from --enemies run their own PB scripts: "Helm:hunt",
+//         "Staff:wing satellite"; implies --block-automation), --block-automation (Timer / Event Controller / Button Panel toolbars run), commands "Tag:arg"
+//         (e.g. --commands "0.5:Helm:hunt") go to the PBs whose name starts with [Tag] only.
 //   --seeds defaults to DefaultSeeds (a quick check). Pick the count the task needs (CLAUDE.md "Simulations"); the big matrices
 //   live in pc/plans/*.plan, which always pass --seeds explicitly.
 // Options not listed here are SimSettings fields in kebab case (e.g. --gyro-pitch-sign 1, --friendly-fire false,
@@ -55,7 +59,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless", "allow-mismatch" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -122,8 +126,8 @@ namespace SeSim.Run
                     bool strict = groups.Remove("strict");
                     SelfTestSkips.Count = 0;
                     foreach (string g in groups)
-                        if (g != "physics" && g != "api" && g != "combat" && g != "runner" && g != "audit" && g != "scenario" && g != "all")
-                            throw new ArgumentException("unknown selftest group '" + g + "' (physics, api, combat, runner, audit, scenario, all)");
+                        if (g != "physics" && g != "api" && g != "combat" && g != "runner" && g != "audit" && g != "m0" && g != "scenario" && g != "all")
+                            throw new ArgumentException("unknown selftest group '" + g + "' (physics, api, combat, runner, audit, m0, scenario, all)");
                     bool all = groups.Count == 0 || groups.Contains("all") || (groups.Count == 1 && groups.Contains("scenario"));
                     int f = 0;
                     if (all || groups.Contains("physics")) f += SeSim.Core.SelfTestA.Run();
@@ -131,6 +135,7 @@ namespace SeSim.Run
                     if (all || groups.Contains("combat")) f += SeSim.Combat.SelfTestC.Run();
                     if (all || groups.Contains("audit")) f += SeSim.Core.SelfTestAudit.Run();
                     if (all || groups.Contains("runner")) f += SelfTestD.Run(simDir);
+                    if (all || groups.Contains("m0")) f += SelfTestM0.Run(simDir, FindRepoRoot(null));
                     if (groups.Contains("scenario") || groups.Contains("all")) f += SelfTestD.RunScenarioTests(simDir, FindRepoRoot(null));
                     if (strict && SelfTestSkips.Count > 0) { Console.WriteLine("SELFTEST --strict: " + SelfTestSkips.Count + " section(s) skipped"); f++; }
                     Console.WriteLine(f == 0 ? "SELFTEST OK" + (SelfTestSkips.Count > 0 ? " (" + SelfTestSkips.Count + " sections skipped; --strict fails on that)" : "") : "SELFTEST FAILURES: " + f);
@@ -139,7 +144,7 @@ namespace SeSim.Run
                 case "list":
                 {
                     var o = Parse(args, 1, settings);
-                    ApplyGenOptions(o);
+                    ApplyGenOptions(o, settings);
                     var l = ScenarioGen.Select(o.Get("filter", null), o.Get("kind", null));
                     int seeds = o.Int("seeds", DefaultSeeds);
                     var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
@@ -185,8 +190,9 @@ namespace SeSim.Run
 
         /// <summary>Scenario generator switches: --unfair curated|full; --enemies DIR (blueprint folders fought "1vX" by every armed
         /// model), --enemy-counts 1,2,3 (team sizes against each enemy), --enemy-brain pirate|hold.</summary>
-        static void ApplyGenOptions(Opts o)
+        static void ApplyGenOptions(Opts o, SimSettings settings)
         {
+            ScenarioGen.EnemyScripted = settings.EnemyScripted;       // --enemy-scripted (a SimSettings flag): enemies run their own PB scripts
             if (o.Has("unfair")) ScenarioGen.UnfairMode = o.Get("unfair", "curated");
             if (o.Has("enemies")) ScenarioGen.EnemyDir = Path.GetFullPath(o.Get("enemies", "enemies"));
             if (o.Has("enemy-counts"))
@@ -262,6 +268,25 @@ namespace SeSim.Run
                         if (scripted || o.Has("commands")) sp.CustomDataOverride = cd;
                     }
             }
+            if (o.Has("pilot"))
+            {
+                // --pilot "0:sit;5:move 0 0 -1;20:leave": a ScriptedPilot for every ship of team --pilot-team (default 0) that is a blueprint of ours
+                int pt = o.Int("pilot-team", 0);
+                foreach (var sc in scs)
+                    foreach (var sp in sc.Ships)
+                        if (sp.Team == pt && !ScenarioGen.IsEnemy(sp.Model) && sp.Model != "Pirate") sp.Pilot = o.Get("pilot", "");
+            }
+            if (o.Has("pb-custom-data"))
+            {
+                // --pb-custom-data "Helm=<ini>|Staff=<ini>" (\n = newline; '|' separates PBs): CustomData per PB tag (the PB's CustomName starts with [Tag]) for every ship of the scenario
+                foreach (string part in o.Get("pb-custom-data", "").Split('|'))
+                {
+                    int eq = part.IndexOf('=');
+                    if (eq <= 0) throw new ArgumentException("--pb-custom-data needs Tag=text pairs separated by |");
+                    string tag = part.Substring(0, eq).Trim(), text = part.Substring(eq + 1).Replace("\\n", "\n");
+                    foreach (var sc in scs) foreach (var sp in sc.Ships) sp.PbCustomData[tag] = text;
+                }
+            }
             if (o.Has("face") && o.Get("face", "true") != "false") foreach (var sc in scs) sc.FaceEnemies = true;
             if (o.Has("start-distance"))
             {
@@ -299,7 +324,7 @@ namespace SeSim.Run
             var o = Parse(args, 1, settings);
             string repo = FindRepoRoot(o.Get("repo", null));
             if (!CheckBlueprints(repo)) return 4;
-            ApplyGenOptions(o);
+            ApplyGenOptions(o, settings);
             string name = o.Get("scenario", o.Positional.Count > 0 ? o.Positional[0] : null);
             if (name == null) throw new ArgumentException("one needs --scenario NAME (see `list`)");
             Scenario sc = null;
@@ -325,6 +350,15 @@ namespace SeSim.Run
                         if (pr.ShipIndex == eship) Console.Error.WriteLine("=== t " + (w.Tick / (double)SimSettings.TicksPerSecond).ToString("0.00", Inv) + " ship " + pr.ShipIndex + " " + pr.ScriptName + " ===\n" + pr.EchoText);
                 };
             }
+            var inspect0 = opt.Inspect;
+            opt.Inspect = (w, host, ships) =>
+            {
+                if (inspect0 != null) inspect0(w, host, ships);
+                foreach (var sh in ships)
+                    if (sh.Pilot != null)
+                        Console.Error.WriteLine("pilot ship " + sh.Index + ": seated " + (sh.Pilot.SeatedTicks / (double)SimSettings.TicksPerSecond).ToString("F1", Inv) + " s, override fight ticks " + sh.Pilot.OverrideFightTicks
+                            + ", skipped steps " + sh.Pilot.Skipped);
+            };
             StreamWriter tw = null;
             if (o.Has("trace")) { tw = new StreamWriter(o.Get("trace", "trace.csv"), false, new UTF8Encoding(false)); opt.Trace = tw; }
             RunResult r = ScenarioRunner.RunOne(sc, idx, baseSeed, settings, repo, opt);
@@ -369,7 +403,7 @@ namespace SeSim.Run
             var o = Parse(args, 1, settings);
             string repo = FindRepoRoot(o.Get("repo", null));
             if (!CheckBlueprints(repo)) return 4;
-            ApplyGenOptions(o);
+            ApplyGenOptions(o, settings);
             var scenarios = ScenarioGen.Select(o.Get("filter", null), o.Get("kind", null));
             if (scenarios.Count == 0) { Console.Error.WriteLine("no scenario matches the filter"); return 1; }
             if (o.Has("cap-seconds"))
@@ -452,7 +486,7 @@ namespace SeSim.Run
             string repo = FindRepoRoot(o.Get("repo", null));
             if (!CheckBlueprints(repo)) return 4;
             if (!o.Has("enemies")) o.Kv["enemies"] = "enemies";
-            ApplyGenOptions(o);
+            ApplyGenOptions(o, settings);
             var enemies = ScenarioGen.Enemies();
             string target = o.Get("target", enemies[0]);
             if (!enemies.Contains(target)) throw new ArgumentException("--target '" + target + "' is not a blueprint folder in " + ScenarioGen.EnemyDir);

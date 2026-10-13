@@ -47,6 +47,9 @@ namespace SeSim.Run
         public static string EnemyDir;                      // null = no enemy scenarios
         public static int[] EnemyCounts = { 1, 2, 3, 4, 6, 8, 12 };
         public static string EnemyBrain = "pirate";         // "pirate" | "hold"
+        /// <summary>--enemy-scripted (M0): the enemy blueprints from --enemies run their OWN Programmable Block scripts (start commands "Helm:hunt" and
+        /// "Staff:wing satellite"), keep every grid that fuses with the main one (merge pairs), and use no Pirate / hold brain.</summary>
+        public static bool EnemyScripted;
         static List<string> _enemies;
 
         /// <summary>Blueprint folders (containing bp.sbc) in EnemyDir, sorted; empty when EnemyDir is unset.</summary>
@@ -72,18 +75,24 @@ namespace SeSim.Run
         static readonly Dictionary<string, SeSim.Blueprint.BlueprintData> EnemyBps = new Dictionary<string, SeSim.Blueprint.BlueprintData>();
 
         /// <summary>The enemy blueprint reduced to its largest grid (cached, immutable).</summary>
-        public static SeSim.Blueprint.BlueprintData EnemyBlueprint(string name)
+        public static SeSim.Blueprint.BlueprintData EnemyBlueprint(string name) { return EnemyBlueprint(name, null, false); }
+
+        /// <summary>scripted: the grids are merge-fused first (GridFuse) and the largest fused grid is kept, so a warship whose bays hold merged drones keeps them.</summary>
+        public static SeSim.Blueprint.BlueprintData EnemyBlueprint(string name, SeSim.Blueprint.DefDb defs, bool scripted)
         {
             lock (EnemyLock)
             {
                 SeSim.Blueprint.BlueprintData bp;
-                if (EnemyBps.TryGetValue(name, out bp)) return bp;
+                string key = scripted ? name + "\n#scripted" : name;
+                if (EnemyBps.TryGetValue(key, out bp)) return bp;
                 var full = SeSim.Blueprint.BlueprintLoader.Get(EnemyDir, name);
-                var main = full.Grids[0];
-                for (int i = 1; i < full.Grids.Count; i++) if (full.Grids[i].Blocks.Count > main.Blocks.Count) main = full.Grids[i];
+                System.Collections.Generic.IList<SeSim.Blueprint.GridData> gl = full.Grids;
+                if (scripted && defs != null) gl = SeSim.Core.GridFuse.Fuse(defs, full.Grids);
+                var main = gl[0];
+                for (int i = 1; i < gl.Count; i++) if (gl[i].Blocks.Count > main.Blocks.Count) main = gl[i];
                 bp = new SeSim.Blueprint.BlueprintData { Name = name, Path = full.Path };
                 bp.Grids.Add(main);
-                EnemyBps[name] = bp;
+                EnemyBps[key] = bp;
                 return bp;
             }
         }
@@ -185,7 +194,16 @@ namespace SeSim.Run
                     s.Commands.Add(new KeyValuePair<double, string>(0.5, "launch"));
                     break;
                 default:
-                    if (IsEnemy(s.Model)) break;     // enemy blueprint: brain + turrets, no scripts started
+                    if (IsEnemy(s.Model))
+                    {
+                        // --enemy-scripted: the blueprint's own PBs fly it: Helm hunts, Staff sends the wing to its satellite ring
+                        if (EnemyScripted)
+                        {
+                            s.Commands.Add(new KeyValuePair<double, string>(0.5, "Helm:hunt"));
+                            s.Commands.Add(new KeyValuePair<double, string>(1.0, "Staff:wing satellite"));
+                        }
+                        break;               // otherwise: brain + turrets, no scripts started
+                    }
                     // script drones: HUNT (Gnat: ATTACK), Watcher runs HornetDroneAI in hunt/scout mode
                     s.Commands.Add(new KeyValuePair<double, string>(0.5, "hunt"));
                     break;

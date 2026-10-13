@@ -8,8 +8,9 @@ using System.Xml;
 using VRageMath;
 using SeSim.Core;
 
-// Not parsed on purpose: <Toolbar> and <BlockGroups> (Timer/button actions, terminal groups). They are not cheap to model and no script
-// in the repo reads them; GetBlockGroups stays empty and a Timer's expiry runs nothing (SimTimer).
+// M0 (control_arch S7): <Toolbar> of a block (Timer, Event Controller, Button Panel, cockpit; ToolbarItemTerminalBlock / TerminalGroup /
+// Weapon slots), <SelectedBlocks> of an Event Controller and the grid's <BlockGroups> (Vector3I cells) are parsed into BlockData.Toolbar /
+// Selected and GridData.Groups. They are only EXECUTED when SimSettings.BlockAutomation is on (SimToolbar, SimEventController).
 namespace SeSim.Blueprint
 {
     public sealed class BlueprintData
@@ -28,6 +29,25 @@ namespace SeSim.Blueprint
         public Vector3D Position, Forward = Vector3D.Forward, Up = Vector3D.Up;   // PositionAndOrientation (informational)
         public bool DampenersEnabled = true;
         public readonly List<BlockData> Blocks = new List<BlockData>();
+        /// <summary>&lt;BlockGroups&gt;: group name -> member cells (the game stores Vector3I cells, not ids). Empty for most blueprints.</summary>
+        public readonly List<GroupData> Groups = new List<GroupData>();
+    }
+
+    public sealed class GroupData
+    {
+        public string Name;
+        public int Construct;                // index of the blueprint grid the group came from (fused grids keep their own groups)
+        public readonly List<Vector3I> Cells = new List<Vector3I>();
+    }
+
+    /// <summary>One slot of a block's toolbar. Kind: "Block" (ToolbarItemTerminalBlock: Action on BlockId), "Group" (ToolbarItemTerminalGroup:
+    /// Action on the block group GroupName of the owner's grid), "Weapon" (ToolbarItemWeapon: DefinitionType/Subtype).</summary>
+    public sealed class ToolbarItem
+    {
+        public int Slot;
+        public string Kind, Action, GroupName, WeaponType, WeaponSubtype;
+        public long BlockId;                 // blueprint entity id (remapped at spawn: BlockInst.Toolbar)
+        public string Argument;              // first parameter value (String/Single/Int32...), null when none
     }
 
     public sealed class BlockData
@@ -38,6 +58,7 @@ namespace SeSim.Blueprint
         public long EntityId;               // 0 for armor
         public Vector3I Min;
         public MyBlockOrientation Orientation = MyBlockOrientation.Identity;   // default Forward/Up when the element is absent
+        public int Origin = -1;             // >= 0: index of the blueprint grid this block came from (set by GridFuse; -1 = the grid it is stored in)
         public string CustomName, CustomData, Program, Storage;
         public bool Enabled = true;
         public long Owner;                  // <Owner> if present (ignored: the scenario assigns the team identity)
@@ -46,6 +67,13 @@ namespace SeSim.Blueprint
         /// is flattened too: "StoredPower" (railgun capacitor).</summary>
         public readonly Dictionary<string, string> Props = new Dictionary<string, string>();
         public readonly List<GridData> ProjectedGrids = new List<GridData>();   // projectors' pre-loaded drones
+        public readonly List<ToolbarItem> Toolbar = new List<ToolbarItem>();   // slots of <Toolbar> (empty = none)
+        public readonly List<long> Selected = new List<long>();                // Event Controller <SelectedBlocks>
+        public BlockData Clone()
+        {
+            var c = (BlockData)MemberwiseClone();
+            return c;
+        }
         public string Key { get { return TypeId + "/" + Subtype; } }      // defs_stats.json key
 
         public string Prop(string name, string dflt) { string v; return Props.TryGetValue(name, out v) ? v : dflt; }
@@ -84,7 +112,12 @@ namespace SeSim.Blueprint
             foreach (XmlNode n in grids.ChildNodes)
             {
                 var ge = n as XmlElement;
-                if (ge != null) bp.Grids.Add(ParseGrid(ge, bp.Name));
+                if (ge != null)
+                {
+                    var pg = ParseGrid(ge, bp.Name);
+                    foreach (var gd in pg.Groups) gd.Construct = bp.Grids.Count;
+                    bp.Grids.Add(pg);
+                }
             }
             if (bp.Grids.Count == 0) throw new InvalidDataException(bpSbcPath + ": no grids");
             return bp;
@@ -145,6 +178,23 @@ namespace SeSim.Blueprint
                 if (f != null) g.Forward = new Vector3D(Attr(f, "x"), Attr(f, "y"), Attr(f, "z"));
                 if (u != null) g.Up = new Vector3D(Attr(u, "x"), Attr(u, "y"), Attr(u, "z"));
             }
+            var bg = Child(ge, "BlockGroups");
+            if (bg != null)
+                foreach (XmlNode n in bg.ChildNodes)
+                {
+                    var gx = n as XmlElement;
+                    if (gx == null) continue;
+                    var gd = new GroupData { Name = ChildText(gx, "Name", "") };
+                    var gb = Child(gx, "Blocks");
+                    if (gb != null)
+                        foreach (XmlNode vn in gb.ChildNodes)
+                        {
+                            var v = vn as XmlElement;
+                            if (v == null) continue;
+                            gd.Cells.Add(new Vector3I((int)Dbl(ChildText(v, "X", "0")), (int)Dbl(ChildText(v, "Y", "0")), (int)Dbl(ChildText(v, "Z", "0"))));
+                        }
+                    g.Groups.Add(gd);
+                }
             var cb = Child(ge, "CubeBlocks");
             if (cb != null)
                 foreach (XmlNode n in cb.ChildNodes)
@@ -187,6 +237,13 @@ namespace SeSim.Blueprint
                         break;
                     case "ComponentContainer":
                         ScanForStoredPower(c, b);
+                        { int ts = CountElements(c, "MySerializedTextPanelData"); if (ts > 0) b.Props["TextSurfaces"] = ts.ToString(CultureInfo.InvariantCulture); }
+                        break;
+                    case "Toolbar":
+                        ParseToolbar(c, b);
+                        break;
+                    case "SelectedBlocks":
+                        foreach (XmlNode sn in c.ChildNodes) { var se = sn as XmlElement; if (se != null && se.Name == "long") { long id; if (long.TryParse(se.InnerText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out id)) b.Selected.Add(id); } }
                         break;
                     default:
                         if (!HasElementChildren(c))
@@ -202,6 +259,63 @@ namespace SeSim.Blueprint
                 }
             }
             return b;
+        }
+
+        static int CountElements(XmlElement e, string name)
+        {
+            int n = 0;
+            foreach (XmlNode c in e.ChildNodes)
+            {
+                var ce = c as XmlElement;
+                if (ce == null) continue;
+                if (ce.Name == name) n++;
+                else n += CountElements(ce, name);
+            }
+            return n;
+        }
+
+        static void ParseToolbar(XmlElement tb, BlockData b)
+        {
+            var slots = Child(tb, "Slots");
+            if (slots == null) return;
+            foreach (XmlNode sn in slots.ChildNodes)
+            {
+                var s = sn as XmlElement;
+                if (s == null || s.Name != "Slot") continue;
+                var d = Child(s, "Data");
+                if (d == null) continue;
+                var it = new ToolbarItem();
+                int idx; it.Slot = int.TryParse(ChildText(s, "Index", "0").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out idx) ? idx : 0;
+                string ty = d.GetAttribute("type", Xsi);
+                if (ty.StartsWith("MyObjectBuilder_", StringComparison.Ordinal)) ty = ty.Substring(16);
+                if (ty == "ToolbarItemTerminalBlock" || ty == "ToolbarItemTerminalGroup")
+                {
+                    it.Kind = ty == "ToolbarItemTerminalBlock" ? "Block" : "Group";
+                    it.Action = ChildText(d, "Action", "");
+                    it.GroupName = ChildText(d, "GroupName", null);
+                    long id; if (long.TryParse(ChildText(d, "BlockEntityId", "0").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out id)) it.BlockId = id;
+                    var ps = Child(d, "Parameters");
+                    if (ps != null)
+                        foreach (XmlNode pn in ps.ChildNodes)
+                        {
+                            var pe = pn as XmlElement;
+                            if (pe != null) { it.Argument = ChildText(pe, "Value", null); break; }
+                        }
+                }
+                else if (ty == "ToolbarItemWeapon")
+                {
+                    it.Kind = "Weapon";
+                    var di = Child(d, "DefinitionId");
+                    if (di != null)
+                    {
+                        string wt = di.GetAttribute("Type");
+                        it.WeaponType = wt.StartsWith("MyObjectBuilder_", StringComparison.Ordinal) ? wt.Substring(16) : wt;
+                        it.WeaponSubtype = di.GetAttribute("Subtype");
+                    }
+                }
+                else continue;
+                b.Toolbar.Add(it);
+            }
         }
 
         // railgun capacitor: <Component xsi:type="MyObjectBuilder_EntityCapacitorComponent"><StoredPower>..</StoredPower>

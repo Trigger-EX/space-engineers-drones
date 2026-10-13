@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using VRageMath;
 using VRage.Game;
+using SeSim.Blueprint;
 
 namespace SeSim.Core
 {
@@ -67,6 +68,8 @@ namespace SeSim.Core
         // ---- per-tick accumulators ----------------------------------------------------------------------------
         public Vector3D Force, Torque;         // world frame, cleared after Integrate
         public bool DampenersOn = true;        // set via IMyShipController.DampenersOverride
+        public List<GroupData> Groups = new List<GroupData>();   // M0: terminal block groups of the blueprint grid(s) (cells in this body's frame; GroupData.Construct = origin grid)
+        public PilotInput Pilot;               // hand-flown input of the controller somebody sits in (null = nobody; SimShipController.AttachToBody)
         public bool GyroDirty = true;          // set by SimGyro setters (Keen: SetGyroTorque -> MarkDirty -> ramp frames recomputed)
         public int GyroRampFrames;             // 0 = unset; Keen m_overrideAccelerationRampFrames
         public Vector3D PrevLinearVelocity;    // for acceleration metrics

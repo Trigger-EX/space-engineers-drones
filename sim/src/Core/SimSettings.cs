@@ -269,6 +269,29 @@ namespace SeSim.Core
         public double SwarmCueSeconds = 0;
         public int SwarmCueTeam = 1;
 
+        // ---- M0 piloting (docs/design/control_arch.md s6, S4). [OptInSetting]: not part of the settings hash while at the default ----
+        /// <summary>Hand piloting, rate per unit of RotationIndicator / RollIndicator (rad/s). The game's real scale is unmeasured (test K1/K2).</summary>
+        [OptInSetting] public double PilotRateGain = 1.5;
+        /// <summary>Sign between the indicator and the right-handed rotation about the controller axes (-1: Pitch+ = nose down, Yaw+ = turn right, Roll+ = roll right). Unmeasured (K1).</summary>
+        [OptInSetting] public double PilotRotSign = -1;
+        /// <summary>Indicator values are clamped to +-this per axis before they are used (the game can report very large mouse values).</summary>
+        [OptInSetting] public double PilotInputClamp = 1;
+        /// <summary>Gyro response to a pilot rate target: desired acceleration = diff * 60 / PilotGyroRampFrames (torque-limited), 1 = full authority.</summary>
+        [OptInSetting] public int PilotGyroRampFrames = 2;
+        /// <summary>--enemy-scripted: enemy blueprints from --enemies run their own Programmable Block scripts (start commands per PB tag) instead of the Pirate brain.</summary>
+        [OptInSetting] public bool EnemyScripted = false;
+
+        /// <summary>Timers, Event Controllers and Button Panels run their toolbars (Start/Stop/TriggerNow/OnOff/Shoot/Run...). Off (default): blocks keep
+        /// the old inert behaviour so older enemy blueprints (Tech Hunter ECs) play as before. Scenarios with a ScriptedPilot or --enemy-scripted switch it on.</summary>
+        [OptInSetting] public bool BlockAutomation = false;
+        /// <summary>Event Controller SelectedEvent numbers the sim understands, "name=id,...". Seen in the owner's samples: cargo=1, integrity=2, connector=7, welder=14.
+        /// cockpit / power / merge are PLACEHOLDERS (K4 is open: the real ids were never saved by the game), only meaningful for blueprints from this generator.</summary>
+        [OptInSetting] public string EcEventIds = "cargo=1,integrity=2,connector=7,welder=14,cockpit=101,power=102,merge=103";
+
+        /// <summary>true (default): grids of one blueprint whose enabled Merge Blocks touch are spawned as ONE body (GridFuse, control_arch S9). No existing
+        /// blueprint has such a pair, so older results do not change; false = one body per CubeGrid as before.</summary>
+        [OptInSetting] public bool FuseMergedGrids = true;
+
         public SimSettings Clone() { return (SimSettings)MemberwiseClone(); }
 
         static System.Reflection.FieldInfo[] _fields;
@@ -328,9 +351,15 @@ namespace SeSim.Core
         public string Describe()
         {
             var sb = new System.Text.StringBuilder();
+            SimSettings dflt = null;
             foreach (var f in Fields())
             {
                 object v = f.GetValue(this);
+                if (f.IsDefined(typeof(OptInSettingAttribute), false))
+                {
+                    if (dflt == null) dflt = new SimSettings();
+                    if (Equals(v, f.GetValue(dflt))) continue;           // unchanged opt-in setting: invisible, so older hashes stay valid
+                }
                 sb.Append(f.Name).Append('=').Append(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
             }
             return sb.ToString();

@@ -20,6 +20,10 @@ namespace SeSim.Run
         /// <summary>Commands sent as argument runs, e.g. (0.5 s, "hunt"). Default per model in ScenarioGen.DefaultCommands.</summary>
         public readonly List<KeyValuePair<double, string>> Commands = new List<KeyValuePair<double, string>>();
         public string CustomDataOverride; // optional: replaces the PB CustomData (script config) before construction
+        /// <summary>M0: PB CustomData per PB tag (the PB's CustomName starts with "[Tag]", e.g. Helm, Staff), applied after CustomDataOverride.</summary>
+        public readonly Dictionary<string, string> PbCustomData = new Dictionary<string, string>();
+        /// <summary>M0: ScriptedPilot timeline ("0:sit;5:move 0 0 -1;20:leave", see ScriptedPilot.cs). Null = nobody sits in the cockpit.</summary>
+        public string Pilot;
     }
 
     public sealed class Scenario
@@ -55,6 +59,24 @@ namespace SeSim.Run
         /// <summary>Combat-capable = has a working (PB running OR a brain) + controller + battery charge + any working thruster
         /// + any functional weapon or warhead. Evaluated every 10 ticks by Metrics.</summary>
         public bool CombatCapable;
+        /// <summary>M0: the ship's ScriptedPilot (null = none).</summary>
+        public ScriptedPilot Pilot;
+
+        /// <summary>PBs whose CustomName starts with "[tag]" (case-insensitive). Helm falls back to every PB when none carries a tag (a one-PB ship).</summary>
+        public List<PbRunner> PbsByTag(string tag)
+        {
+            var l = new List<PbRunner>();
+            string pre = "[" + tag + "]";
+            for (int i = 0; i < Pbs.Count; i++)
+                if (Pbs[i].Pb.CustomNameValue.StartsWith(pre, StringComparison.OrdinalIgnoreCase)) l.Add(Pbs[i]);
+            if (l.Count == 0 && string.Equals(tag, "Helm", StringComparison.OrdinalIgnoreCase))
+            {
+                bool anyTag = false;
+                for (int i = 0; i < Pbs.Count; i++) if (Pbs[i].Pb.CustomNameValue.StartsWith("[", StringComparison.Ordinal)) { anyTag = true; break; }
+                if (!anyTag) l.AddRange(Pbs);
+            }
+            return l;
+        }
     }
 
     public sealed class RunOptions
@@ -97,7 +119,7 @@ namespace SeSim.Run
             }
         }
 
-        struct Cmd { public long Tick; public ShipInstance Ship; public string Arg; }
+        struct Cmd { public long Tick; public ShipInstance Ship; public string Arg; public string Tag; }
 
         public static RunResult RunOne(Scenario sc, int seedIndex, ulong baseSeed, SimSettings settings, string repoRoot, RunOptions opt)
         {
@@ -105,6 +127,8 @@ namespace SeSim.Run
             string simDir = opt.SimDir ?? DefaultSimDir();
             var s = settings.Clone();
             if (sc.SwarmCueSeconds >= 0) s.SwarmCueSeconds = sc.SwarmCueSeconds;
+            foreach (var sp in sc.Ships) if (sp.Pilot != null) s.BlockAutomation = true;      // a seated pilot presses buttons, timers and ECs run (M0)
+            if (s.EnemyScripted) s.BlockAutomation = true;
             ulong seed = ScenarioSeed(baseSeed, sc.Name, seedIndex);
             long maxTicks = Math.Min(sc.MaxTicks, s.MaxTicks);
             var ships = new List<ShipInstance>();
@@ -134,7 +158,8 @@ namespace SeSim.Run
                     while (ci < cmds.Count && cmds[ci].Tick <= w.Tick)
                     {
                         var c = cmds[ci++];
-                        for (int k = 0; k < c.Ship.Pbs.Count; k++) host.RunArgument(c.Ship.Pbs[k].Pb, c.Arg, UpdateType.Terminal);
+                        if (c.Tag == null) { for (int k = 0; k < c.Ship.Pbs.Count; k++) host.RunArgument(c.Ship.Pbs[k].Pb, c.Arg, UpdateType.Terminal); }
+                        else { var tp = c.Ship.PbsByTag(c.Tag); for (int k = 0; k < tp.Count; k++) host.RunArgument(tp[k].Pb, c.Arg, UpdateType.Terminal); }   // "Tag:arg" (M0)
                     }
                     w.Step();
                     if (opt.OnTick != null) opt.OnTick(w, host, ships);
@@ -208,8 +233,8 @@ namespace SeSim.Run
                 }
                 else if (ScenarioGen.IsEnemy(spec.Model))
                 {
-                    bodies = GridFactory.Spawn(w, ScenarioGen.EnemyBlueprint(spec.Model), spec.Team, i, at, idMap);
-                    sh.HasBrain = true;            // no PB or remote control needed: the brain (or a pilot holding position) flies it
+                    bodies = GridFactory.Spawn(w, ScenarioGen.EnemyBlueprint(spec.Model, w.Defs, w.Settings.EnemyScripted), spec.Team, i, at, idMap);
+                    sh.HasBrain = !w.Settings.EnemyScripted;   // no PB or remote control needed: the brain (or a pilot holding position) flies it; --enemy-scripted: its own PBs fly it
                 }
                 else if (spec.Model == "Stinger")
                 {
@@ -237,7 +262,7 @@ namespace SeSim.Run
                 }
                 if (spec.Model == "Midge") w.Brains.Add(new VanillaAiBrain(sh.Main));
                 else if (spec.Model == "Pirate") w.Brains.Add(new PirateBrain(sh.Main));
-                else if (ScenarioGen.IsEnemy(spec.Model)) { if (ScenarioGen.EnemyBrain == "pirate") w.Brains.Add(new PirateBrain(sh.Main)); else sh.Main.DampenersOn = true; }
+                else if (ScenarioGen.IsEnemy(spec.Model)) { if (w.Settings.EnemyScripted) { } else if (ScenarioGen.EnemyBrain == "pirate") w.Brains.Add(new PirateBrain(sh.Main)); else sh.Main.DampenersOn = true; }
                 else if (HasAiBlocks(sh.Main)) w.Brains.Add(new VanillaAiBrain(sh.Main) { ScriptShip = true });   // v1.8 hybrid search: the script toggles the AI blocks
             }
 
@@ -303,14 +328,17 @@ namespace SeSim.Run
             for (int i = 0; i < n; i++)
             {
                 var sh = ships[i];
-                if (sh.Spec.CustomDataOverride == null) continue;
+                if (sh.Spec.CustomDataOverride == null && sh.Spec.PbCustomData.Count == 0) continue;
                 for (int k = 0; k < sh.Bodies.Count; k++)
                 {
                     var bl = sh.Bodies[k].Blocks;
                     for (int q = 0; q < bl.Count; q++)
                     {
                         var pb = bl[q].Api as SeSim.Api.SimProgrammableBlock;
-                        if (pb != null) pb.CustomData = sh.Spec.CustomDataOverride;
+                        if (pb == null) continue;
+                        if (sh.Spec.CustomDataOverride != null) pb.CustomData = sh.Spec.CustomDataOverride;
+                        foreach (var kv in sh.Spec.PbCustomData)      // M0: per PB tag, wins over the all-PB override
+                            if (pb.CustomNameValue.StartsWith("[" + kv.Key + "]", StringComparison.OrdinalIgnoreCase)) pb.CustomData = kv.Value;
                     }
                 }
             }
@@ -321,13 +349,33 @@ namespace SeSim.Run
                 if ((uint)si < (uint)n) ships[si].Pbs.Add(host.Runners[r]);
             }
 
+            // 3b. scripted pilots (M0): a brain per ship that has a Pilot timeline
+            for (int i = 0; i < n; i++)
+            {
+                var sh = ships[i];
+                if (sh.Spec.Pilot == null) continue;
+                sh.Pilot = new ScriptedPilot(sh, host, sh.Spec.Pilot);
+                if (sh.Pbs.Count == 0) sh.HasBrain = true;   // flown by the pilot alone (no script): combat capable without a PB
+                w.Brains.Add(sh.Pilot);
+            }
+
             // 4. command schedule
             var cmds = new List<Cmd>();
             for (int i = 0; i < n; i++)
             {
                 var spec = ships[i].Spec;
                 for (int k = 0; k < spec.Commands.Count; k++)
-                    cmds.Add(new Cmd { Tick = (long)Math.Round(spec.Commands[k].Key * SimSettings.TicksPerSecond), Ship = ships[i], Arg = spec.Commands[k].Value });
+                {
+                    string arg = spec.Commands[k].Value, tag = null;
+                    int colon = arg.IndexOf(':');
+                    if (colon > 0 && arg.IndexOf(' ') != 0)
+                    {   // "Helm:hunt" -> PBs tagged [Helm]; any other text with a colon stays one plain argument for every PB (old behaviour)
+                        string t0 = arg.Substring(0, colon);
+                        if (t0.IndexOf(' ') < 0 && ships[i].PbsByTag(t0).Count > 0) { tag = t0; arg = arg.Substring(colon + 1).Trim(); }
+                        else if (t0.IndexOf(' ') < 0 && IsRoleTag(t0)) { continue; }   // a role tag nobody carries (no [Staff] PB): the command is for a ship that is not there
+                    }
+                    cmds.Add(new Cmd { Tick = (long)Math.Round(spec.Commands[k].Key * SimSettings.TicksPerSecond), Ship = ships[i], Arg = arg, Tag = tag });
+                }
             }
             // stable sort by tick (insertion sort keeps spec order for equal ticks)
             for (int a = 1; a < cmds.Count; a++)
@@ -337,6 +385,12 @@ namespace SeSim.Run
                 cmds[b + 1] = c;
             }
             return cmds;
+        }
+
+        static bool IsRoleTag(string t)
+        {
+            return string.Equals(t, "Helm", StringComparison.OrdinalIgnoreCase) || string.Equals(t, "Staff", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t, "Gunnery", StringComparison.OrdinalIgnoreCase) || string.Equals(t, "Pod", StringComparison.OrdinalIgnoreCase);
         }
 
         static void FaceTowards(ShipInstance sh, Vector3D target)

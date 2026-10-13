@@ -4,6 +4,7 @@ using System;
 using System.Text;
 using VRage.Game.GUI.TextPanel;
 using Sandbox.ModAPI.Ingame;
+using VRageMath;
 
 namespace SeSim.Api
 {
@@ -29,5 +30,16 @@ namespace SeSim.Api
         }
         public bool WriteText(StringBuilder s, bool append = false) { return WriteText(s == null ? "" : s.ToString(), append); }
         public string GetText() { return Text; }
+
+        // sprite scripts: the frame is counted (Sprites) and nothing is drawn; sizes are those of a 512x512 square screen
+        public int Sprites, Frames;
+        public MySpriteDrawFrame DrawFrame() { Frames++; return new MySpriteDrawFrame(); }
+        public Vector2 SurfaceSize { get { return new Vector2(512f, 512f); } }
+        public Vector2 TextureSize { get { return new Vector2(512f, 512f); } }
+        public Color ScriptBackgroundColor { get; set; }
+        public Color ScriptForegroundColor { get; set; }
+        public Color FontColor { get; set; }
+        public Color BackgroundColor { get; set; }
+        public TextAlignment Alignment { get; set; }
     }
 }

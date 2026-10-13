@@ -15,6 +15,25 @@ using System.Reflection;
 using System.Text;
 
 namespace VRageMath {
+  public struct Vector2 {
+    public float X, Y;
+    public static Vector2 Zero = new Vector2(0, 0), One = new Vector2(1, 1);
+    public Vector2(float x, float y) { X = x; Y = y; }
+    public Vector2(float v) { X = v; Y = v; }
+    public float Length() { return (float)Math.Sqrt(X * X + Y * Y); }
+    public float LengthSquared() { return X * X + Y * Y; }
+    public static Vector2 operator +(Vector2 a, Vector2 b) { return new Vector2(a.X + b.X, a.Y + b.Y); }
+    public static Vector2 operator -(Vector2 a, Vector2 b) { return new Vector2(a.X - b.X, a.Y - b.Y); }
+    public static Vector2 operator -(Vector2 a) { return new Vector2(-a.X, -a.Y); }
+    public static Vector2 operator *(Vector2 a, float b) { return new Vector2(a.X * b, a.Y * b); }
+    public static Vector2 operator *(float b, Vector2 a) { return new Vector2(a.X * b, a.Y * b); }
+    public static bool operator ==(Vector2 a, Vector2 b) { return a.X == b.X && a.Y == b.Y; }
+    public static bool operator !=(Vector2 a, Vector2 b) { return !(a == b); }
+    public override bool Equals(object o) { return o is Vector2 && this == (Vector2)o; }
+    public override int GetHashCode() { return X.GetHashCode() ^ (Y.GetHashCode() * 397); }
+    public override string ToString() { return string.Format(CultureInfo.CurrentCulture, "X:{0} Y:{1}", X, Y); }
+  }
+
   public struct Vector3 {
     public float X, Y, Z;
     public static Vector3 Zero = new Vector3(0, 0, 0), One = new Vector3(1, 1, 1);
@@ -281,6 +300,8 @@ namespace VRageMath {
     public byte R, G, B, A;
     public Color(int r, int g, int b) { R = (byte)r; G = (byte)g; B = (byte)b; A = 255; }
     public Color(int r, int g, int b, int a) { R = (byte)r; G = (byte)g; B = (byte)b; A = (byte)a; }
+    public static Color White { get { return new Color(255, 255, 255); } }
+    public static Color Black { get { return new Color(0, 0, 0); } }
   }
 }
 
@@ -332,7 +353,20 @@ namespace VRage.Game {
   public struct MyDefinitionId { public static MyDefinitionId Parse(string s){return new MyDefinitionId();} }
   public enum MyRelationsBetweenPlayerAndBlock { NoOwnership, Owner, FactionShare, Neutral, Enemies, Friends }
 }
-namespace VRage.Game.GUI.TextPanel { public enum ContentType { NONE, TEXT_AND_IMAGE, SCRIPT } }
+namespace VRage.Game.GUI.TextPanel {
+  using VRageMath;
+  public enum ContentType { NONE, TEXT_AND_IMAGE, SCRIPT }
+  public enum TextAlignment { LEFT, RIGHT, CENTER }
+  public enum SpriteType { TEXTURE, TEXT, CLIP_RECT }
+  // Real MySprite: Type, Data (texture / text), Position, Size, Color, FontId, Alignment, RotationOrScale (docs: control_arch s2.8).
+  public struct MySprite {
+    public SpriteType Type; public string Data; public Vector2? Position; public Vector2? Size; public Color? Color; public string FontId; public TextAlignment Alignment; public float RotationOrScale;
+    public MySprite(SpriteType type = SpriteType.TEXTURE, string data = null, Vector2? position = null, Vector2? size = null, Color? color = null, string fontId = null, TextAlignment alignment = TextAlignment.CENTER, float rotation = 0f) {
+      Type = type; Data = data; Position = position; Size = size; Color = color; FontId = fontId; Alignment = alignment; RotationOrScale = rotation; }
+    public static MySprite CreateText(string text, string fontId, Color color, float scale = 1f, TextAlignment alignment = TextAlignment.CENTER) { return new MySprite(SpriteType.TEXT, text, null, null, color, fontId, alignment, scale); }
+  }
+  public struct MySpriteDrawFrame : IDisposable { public int Count; public void Add(MySprite sprite) { Count++; } public void Dispose() { } }
+}
 namespace VRage.Game.ModAPI.Ingame {
   using VRageMath; using VRage;
   public interface IMyInventory { MyFixedPoint CurrentVolume {get;} MyFixedPoint MaxVolume {get;} MyFixedPoint CurrentMass {get;} int ItemCount {get;} }
@@ -480,6 +514,8 @@ namespace Sandbox.ModAPI.Ingame {
   public interface IMyTextSurface {
     ContentType ContentType {get;set;} float FontSize {get;set;} string Font {get;set;}
     bool WriteText(string s, bool append=false); bool WriteText(StringBuilder s, bool append=false); string GetText();
+    MySpriteDrawFrame DrawFrame(); Vector2 SurfaceSize {get;} Vector2 TextureSize {get;}
+    Color ScriptBackgroundColor {get;set;} Color ScriptForegroundColor {get;set;} Color FontColor {get;set;} Color BackgroundColor {get;set;} TextAlignment Alignment {get;set;}
   }
   public interface IMyTextSurfaceProvider { IMyTextSurface GetSurface(int index); int SurfaceCount {get;} }
   public interface IMyProgrammableBlock : IMyFunctionalBlock, IMyTextSurfaceProvider { bool IsRunning {get;} bool TryRun(string argument); }
@@ -489,8 +525,18 @@ namespace Sandbox.ModAPI.Ingame {
     bool CanControlShip {get;} bool IsUnderControl {get;} bool DampenersOverride {get;set;} bool IsMainCockpit {get;set;} bool ControlThrusters {get;set;}
     Vector3D CenterOfMass {get;} MyShipVelocities GetShipVelocities(); double GetShipSpeed(); Vector3D GetNaturalGravity(); Vector3D GetArtificialGravity();
     Vector3D GetTotalGravity(); MyShipMass CalculateShipMass();
+    // Pilot input (docs/design/control_arch.md s2.1): Move x right+, y up+, z backward+ (W = -1); Rotation x = pitch (mouse Y), y = yaw (mouse X); values can be large (clamp).
+    Vector3 MoveIndicator {get;} Vector2 RotationIndicator {get;} float RollIndicator {get;} bool HandBrake {get;set;}
   }
   public interface IMyRemoteControl : IMyShipController {}
+  public interface IMyCockpit : IMyShipController, IMyTextSurfaceProvider {}
+  public enum DoorStatus { Open, Closed, Opening, Closing }
+  public interface IMyDoor : IMyFunctionalBlock { DoorStatus Status {get;} void OpenDoor(); void CloseDoor(); void ToggleDoor(); }
+  public enum MyShipConnectorStatus { Unconnected, Connectable, Connected }
+  public interface IMyShipConnector : IMyFunctionalBlock { bool ThrowOut {get;set;} bool CollectAll {get;set;} MyShipConnectorStatus Status {get;} void Connect(); void Disconnect(); void ToggleConnect(); }
+  public interface IMyButtonPanel : IMyFunctionalBlock { bool AnyoneCanUse {get;set;} }
+  public interface IMyEventControllerBlock : IMyFunctionalBlock { bool IsAndModeEnabled {get;set;} bool IsLowerOrEqualCondition {get;set;} float Threshold {get;set;} }
+  public interface IMyTextPanel : IMyFunctionalBlock, IMyTextSurface {}
   public interface IMyGyro : IMyFunctionalBlock { bool GyroOverride {get;set;} float GyroPower {get;set;} float Pitch {get;set;} float Yaw {get;set;} float Roll {get;set;} }
   public interface IMyThrust : IMyFunctionalBlock {
     float ThrustOverride {get;set;} float ThrustOverridePercentage {get;set;} float MaxThrust {get;} float MaxEffectiveThrust {get;}

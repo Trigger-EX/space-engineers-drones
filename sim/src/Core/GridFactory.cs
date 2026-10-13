@@ -68,6 +68,15 @@ namespace SeSim.Core
             w.Teams.Ensure(team + 1);
             long ident = w.Teams.IdentityOf(team);
             var s = w.Settings;
+            var origin = new int[grids.Count];
+            for (int i = 0; i < origin.Length; i++) origin[i] = i;
+            if (s.FuseMergedGrids && grids.Count > 1 && !forceFull)
+            {
+                var from = new List<List<int>>();
+                grids = GridFuse.Fuse(w.Defs, grids, from);
+                origin = new int[grids.Count];
+                for (int i = 0; i < origin.Length; i++) origin[i] = from[i][0];
+            }
             var result = new List<Body>(grids.Count);
 
             MatrixD w0 = MatrixD.CreateWorld(at.Origin, at.Forward, at.Up);
@@ -89,7 +98,7 @@ namespace SeSim.Core
                 body.Position = wm.Translation;               // grid origin until the COM is known
                 w.AddBody(body);
                 body.EntityId = MapId(w, idMap, g.EntityId);
-                BuildBlocks(w, body, g, gi, ident, forceFull, idMap);
+                BuildBlocks(w, body, g, origin[gi], ident, forceFull, idMap);
                 body.UpdateWorldMatrix();
                 body.RecomputeMassProperties();
                 body.LinearVelocity = at.LinearVelocity;
@@ -99,8 +108,10 @@ namespace SeSim.Core
                 body.ApiGrid = new SeSim.Api.SimCubeGrid(body);
                 body.Power = new PowerSystem { Body = body };
                 body.Power.Rebuild();
+                body.Groups.AddRange(g.Groups);
                 result.Add(body);
             }
+            RemapToolbars(result, idMap);
 
             for (int i = 0; i < result.Count; i++) PairMerges(result[i]);
 
@@ -110,6 +121,37 @@ namespace SeSim.Core
                 for (int i = 0; i < result.Count; i++) CreateApis(w, result[i], true);
             }
             return result;
+        }
+
+        // toolbar targets and Event Controller selections refer to blueprint entity ids: translate them to this world's ids (all blocks exist by now)
+        static void RemapToolbars(List<Body> bodies, Dictionary<long, long> idMap)
+        {
+            for (int i = 0; i < bodies.Count; i++)
+            {
+                var bl = bodies[i].Blocks;
+                for (int q = 0; q < bl.Count; q++)
+                {
+                    var src = bl[q].Src;
+                    if (src == null) continue;
+                    if (src.Toolbar.Count > 0)
+                    {
+                        var arr = new ToolbarItem[src.Toolbar.Count];
+                        for (int k = 0; k < arr.Length; k++)
+                        {
+                            var o = src.Toolbar[k]; long nid;
+                            arr[k] = new ToolbarItem { Slot = o.Slot, Kind = o.Kind, Action = o.Action, GroupName = o.GroupName, WeaponType = o.WeaponType, WeaponSubtype = o.WeaponSubtype,
+                                                       Argument = o.Argument, BlockId = o.BlockId != 0 && idMap.TryGetValue(o.BlockId, out nid) ? nid : 0 };
+                        }
+                        bl[q].Toolbar = arr;
+                    }
+                    if (src.Selected.Count > 0)
+                    {
+                        var ids = new List<long>();
+                        for (int k = 0; k < src.Selected.Count; k++) { long nid; if (idMap.TryGetValue(src.Selected[k], out nid)) ids.Add(nid); }
+                        bl[q].SelectedIds = ids.ToArray();
+                    }
+                }
+            }
         }
 
         static long MapId(World w, Dictionary<long, long> idMap, long old)
@@ -135,7 +177,8 @@ namespace SeSim.Core
                 var b = new BlockInst();
                 b.Index = i; b.Def = def; b.Src = bd;
                 b.EntityId = bd.EntityId == 0 ? 0 : MapId(w, idMap, bd.EntityId);
-                b.ConstructId = constructId;
+                if (b.EntityId != 0) w.BlocksById[b.EntityId] = b;
+                b.ConstructId = bd.Origin >= 0 ? bd.Origin : constructId;
                 b.Orientation = bd.Orientation;
                 b.Min = bd.Min;
                 b.Max = OrientMath.MaxCell(bd.Min, def.SizeCells, bd.Orientation);
