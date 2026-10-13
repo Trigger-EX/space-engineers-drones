@@ -26,11 +26,14 @@ WELDING INTO THE PROJECTOR GRID: RemainingBlocks counts projected blocks that ha
   splits the grid at the merge pair; this is UNVERIFIED (test P1 in docs/printers.md).  HiveMotherAI.cs checks it at run time.
 """
 import sys, os, copy, itertools, collections, zlib
+import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import *            # noqa: F401,F403
 import _common as C
 import reach
-from reach import neighbours26, eff_radius_cells, cell_dist, tip_point_from_cells, CELL_M
+from reach import neighbours26, eff_radius_cells, cell_dist, tip_point_from_cells, CELL_M, FAMILY as FAM
+NH = len(FAM)
+RED_IDX = FAM.index(reach.RED_HYP)
 import sebp
 from sebp import Blueprint, DIR, E, ser, frag, cross, neg
 import xml.etree.ElementTree as ET
@@ -160,33 +163,66 @@ def _bbox(cells, pad):
 MODES = ((1, False), (1, True), (0, False), (0, True))        # (gap cells between welders and drone, camera zones soft)
 
 def solve_bay_auto(drone, margin_m=None, avoid_axes=(), prefer=None):
-    """exit direction first (straight away from the merge block, else sideways), strictest mode inside it"""
-    last = None
+    """pick the exit direction and the weld mode: the (exit, mode) with the FEWEST (block, sphere hypothesis) pairs that no legal welder
+    position can reach wins; ties go to the straight-back exit and the strictest mode.  Then run the cover solver on it."""
     des0 = BayDesign(drone)
     opts = exit_options(des0, avoid_axes)
     if prefer is not None and tuple(prefer) in opts: opts.remove(tuple(prefer)); opts.insert(1, tuple(prefer))      # right after the straight-back exit
-    for e in opts:
-        try:
-            return _solve_modes(drone, margin_m, e)
-        except AssertionError as ex:
-            last = last or ex
-    raise last
-
-def _solve_modes(drone, margin_m, exit_dir):
-    """strictest mode that works: 1-cell gap + camera zones kept, then soft camera zones, then welder tips touching the drone.
-    Solving uses a bigger safety margin (0.3 m) than the verifier (0.2 m) wherever the drone allows, as slack for the unverified sensor centre."""
-    last = None
-    for gap, soft in MODES:
-        for mm in ((margin_m,) if margin_m is not None else ((0.2,) if gap == 1 else (0.3, 0.2))):
+    key = (drone.name, _drone_sig(drone), tuple(opts))
+    if key in _AUTO: return _AUTO[key]
+    best = None; last = None
+    for ei, e in enumerate(opts):
+        for mi, (gap, soft) in enumerate(MODES):
             try:
-                return solve_bay(drone, soft_camera=soft, gap=gap, margin_m=mm, exit_dir=exit_dir)
-            except AssertionError as e:
-                last = e
-    raise last
+                ctx = _prepare(drone, soft, gap, e)
+            except AssertionError as ex:
+                last = last or ex; continue
+            sc = (ctx['n_infeasible'], ei, mi)
+            if best is None or sc < best[0]: best = (sc, ctx)
+        if best is not None and best[0][0] == 0: break
+    if best is None: raise last
+    des = _cover(best[1])
+    _AUTO[key] = des
+    return des
+
+_AUTO = {}
+
+def _drone_sig(drone):
+    return hash(tuple(sorted((b['xtype'][-12:], b['sub'], b['min'], b['fwd'], b['up']) for b in drone.blocks)))
 
 def solve_bay(drone, soft_camera=False, gap=1, margin_m=None, max_pad=9, verbose=False, exit_dir=None):
-    key = (exit_dir, drone.name, soft_camera, gap, margin_m, hash(tuple(sorted((b['xtype'][-12:], b['sub'], b['min'], b['fwd'], b['up']) for b in drone.blocks))))
-    if key in _BAYS: return _BAYS[key]
+    return _cover(_prepare(drone, soft_camera, gap, tuple(exit_dir) if exit_dir else None))
+
+# ---- numpy helpers ----
+_KOFF = 128
+def _keys(a):
+    a = np.asarray(a, dtype=np.int64)
+    return ((a[..., 0] + _KOFF) * 256 + (a[..., 1] + _KOFF)) * 256 + (a[..., 2] + _KOFF)
+
+def _boxdist(pts, cells):
+    """(P, N) distance (cell units) from each point to each unit cell box (cells = integer min corners)"""
+    out = np.empty((len(pts), len(cells)))
+    lo = cells[None, :, :].astype(float); hi = lo + 1.0
+    for s in range(0, len(pts), 2500):
+        p = pts[s:s + 2500, None, :]
+        d = np.maximum(np.maximum(lo - p, p - hi), 0.0)
+        out[s:s + 2500] = np.sqrt((d * d).sum(-1))
+    return out
+
+def hyp_points(base, dv):
+    """sphere centres for every FAMILY hypothesis of welders whose tip-centre CELL is `base` (array (M,3), integer) working along dv: (NH, M, 3)"""
+    return np.stack([base + 0.5 + np.asarray(dv, float) * (0.5 - h.backoff) for h in FAM])
+
+def any_reach(points, radius, cells):
+    """True when any point is within `radius` (cell units) of any cell box"""
+    if len(points) == 0 or len(cells) == 0: return False
+    return bool((_boxdist(np.asarray(points, float), np.asarray(cells)) <= radius).any())
+
+def _prepare(drone, soft_camera, gap, exit_dir, max_pad=9):
+    """everything the cover solver needs for one (exit direction, gap, camera zones) setting: forbidden cells, welder candidates with their
+    coverage bitmasks over (block, hypothesis) pairs; raises AssertionError when even the baseline hypothesis cannot be met"""
+    key = (exit_dir, drone.name, soft_camera, gap, _drone_sig(drone))
+    if key in _CTX: return _CTX[key]
     des = BayDesign(drone)
     des.gap = gap; des.soft_camera = soft_camera; des.exit = tuple(exit_dir) if exit_dir else neg(des.c)
     F = build_forbidden(des, soft_camera)
@@ -203,87 +239,104 @@ def solve_bay(drone, soft_camera=False, gap=1, margin_m=None, max_pad=9, verbose
             if soft_camera and why.startswith('camera'): continue
             Fw.add(tuple(c))
     Mp = des.Mp; S1 = S10
-    R = eff_radius_cells(margin_m)
-    box = _bbox(des.D | {Mp}, max_pad)
-    # ---- candidates ----
+    nb = len(des.dblocks)
+    cellarr = np.array([c for b, cs in des.dblocks for c in cs], dtype=np.int64)
+    cblock = np.array([i for i, (b, cs) in enumerate(des.dblocks) for c in cs])
+    onehot = np.zeros((len(cellarr), nb)); onehot[np.arange(len(cellarr)), cblock] = 1.0
+    Fk_w = np.unique(_keys(np.array(sorted(Fw | {Mp, S1}))))
+    Fk = np.unique(_keys(np.array(sorted(F | {Mp, S1}))))
+    Dk = np.unique(_keys(cellarr))
+    tb = _bbox(des.D, 4)
+    xs, ys, zs = (np.arange(tb[k][0], tb[k][1] + 1) for k in range(3))
+    P = np.stack(np.meshgrid(xs, ys, zs, indexing='ij'), -1).reshape(-1, 3)
+    radii = np.array([radius_cells_of(h) for h in FAM])
     cand = []
-    pad2 = 4
-    tb = _bbox(des.D, pad2)
     for d in DIR.values():
         offs, att, _, _ = welder_offsets(d)
-        for x in range(tb[0][0], tb[0][1] + 1):
-            for y in range(tb[1][0], tb[1][1] + 1):
-                for z in range(tb[2][0], tb[2][1] + 1):
-                    bad = False
-                    for o in offs:
-                        c = (x + o[0], y + o[1], z + o[2])
-                        if c in Fw or c == Mp or c == S1: bad = True; break
-                    if bad: continue
-                    if gap == 0 and any((x + o[0], y + o[1], z + o[2]) in des.D for o in att): continue
-                    cs = [(x + o[0], y + o[1], z + o[2]) for o in offs]
-                    tip = tip_point_from_cells(cs, d)
-                    cover = set()
-                    for i, (b, bcs) in enumerate(des.dblocks):
-                        if any(cell_dist(tip, c) <= R for c in bcs): cover.add(i)
-                    if cover: cand.append(((x, y, z), d, frozenset(cs), frozenset(cover), tip, all(c not in F for c in cs)))
-    allcov = set().union(*[c[3] for c in cand]) if cand else set()
-    unreach = [i for i in range(len(des.dblocks)) if i not in allcov]
-    if unreach:
-        names = [des.dblocks[i][0]['name'] or des.dblocks[i][0]['sub'] for i in unreach]
-        raise AssertionError(f'{drone.name}: {len(unreach)} blocks can never be reached by a welder ({names[:5]})')
-    # ---- greedy cover with routing ----
+        offa = np.array(offs, dtype=np.int64); atta = np.array(att, dtype=np.int64)
+        dv = np.array(d, float)
+        near = (_boxdist(P + 0.5 + dv * 0.5, cellarr).min(axis=1) <= 4.2)
+        Q = P[near]
+        if len(Q) == 0: continue
+        wk = _keys(Q[:, None, :] + offa[None, :, :])                    # (m, 54)
+        ok = ~np.isin(wk, Fk_w).any(axis=1)
+        if gap == 0: ok &= ~np.isin(_keys(Q[:, None, :] + atta[None, :, :]), Dk).any(axis=1)
+        Q = Q[ok]; wk = wk[ok]
+        if len(Q) == 0: continue
+        strict = ~np.isin(wk, Fk).any(axis=1)
+        pts = hyp_points(Q, dv)                                         # (NH, m, 3)
+        bits = np.zeros((len(Q), nb * NH), dtype=bool)
+        for hi in range(NH):
+            cov = (_boxdist(pts[hi], cellarr) <= radii[hi]).astype(float) @ onehot > 0      # (m, nb)
+            bits[:, hi::NH] = cov
+        packed = np.packbits(bits, axis=1, bitorder='little')
+        for r in range(len(Q)):
+            m = int.from_bytes(packed[r].tobytes(), 'little')
+            if not m: continue
+            C0 = tuple(int(v) for v in Q[r])
+            cs = frozenset((C0[0] + o[0], C0[1] + o[1], C0[2] + o[2]) for o in offs)
+            cand.append((C0, d, cs, m, tuple(float(v) for v in pts[0][r]), bool(strict[r])))
+    allmask = (1 << (nb * NH)) - 1
+    union = 0
+    for cc in cand: union |= cc[3]
+    infeasible = allmask & ~union
+    base_miss = [i for i in range(nb) if not (union >> (i * NH)) & 1]
+    if base_miss:
+        names = [des.dblocks[i][0]['name'] or des.dblocks[i][0]['sub'] for i in base_miss]
+        raise AssertionError(f'{drone.name}: {len(base_miss)} blocks can never be reached by a welder even under the tip hypothesis ({names[:5]})')
+    ctx = dict(drone=drone, des=des, F=F, Fw=Fw, ray=ray, Mp=Mp, S1=S1, cand=cand, nb=nb, allmask=allmask, infeasible=infeasible,
+               n_infeasible=bin(infeasible).count('1'), max_pad=max_pad)
+    _CTX[key] = ctx
+    return ctx
+
+_CTX = {}
+WELDER_BUDGET = 12        # soft cap per bay for the best-effort hypotheses (tier A may exceed it when the drone needs more)
+RESTARTS = 24             # randomised greedy restarts; the best (fewest tier-A misses, least unmet weight, fewest welders) wins
+# importance of each FAMILY hypothesis (tier A = FAM[:4], must be met wherever any legal welder position can do it; the rest is best effort)
+HYP_WEIGHT = {'tip r1.3': 8, 'tip r1.0': 8, 'tip-1 r1.3': 6, 'tip-1 r1.0': 6, 'tip-2 r1.3': 3, 'tip-2 r1.0': 2, 'mid r1.3': 2, 'mid r1.0': 1}
+TIER_A = 4
+RED_WEIGHT = 2
+
+def radius_cells_of(h): return reach.radius_cells(h)
+
+def _bits(mask):
+    while mask:
+        low = mask & -mask
+        yield low.bit_length() - 1
+        mask ^= low
+
+def _pop(x): return bin(x).count('1')
+
+def _cover(ctx):
+    """weighted greedy cover of the (block, hypothesis) pairs: tier A pairs first (hardest first), then best-effort pairs and a second welder for
+    RED_HYP up to WELDER_BUDGET welders; randomised restarts; pruning; scaffold routing"""
+    import random
+    drone = ctx['drone']; des = ctx['des']; F = ctx['F']; cand = ctx['cand']; nb = ctx['nb']
+    if getattr(des, 'welders', None): return des
+    Mp = ctx['Mp']; S1 = ctx['S1']; ray = ctx['ray']; max_pad = ctx['max_pad']
     free_pad = _bbox(des.D | {Mp}, max_pad + 3)
     def inbox(c): return all(free_pad[k][0] <= c[k] <= free_pad[k][1] for k in range(3))
-    struct = {Mp, S1}                     # printer cells of the bay (armour / merge)
-    armour = {S1}
-    occupied = set(struct)
-    chosen = []                           # (C0, d, cells)
-    banned = set()
-    need = set(range(len(des.dblocks)))
     def center_dist(tip): return sum(abs(tip[k] - (S1[k] + 0.5)) for k in range(3))
-    by_block = collections.defaultdict(list)
-    for ci, cc in enumerate(cand):
-        for i in cc[3]: by_block[i].append(ci)
-    while need:
-        # hardest block first: the uncovered block with the fewest still-usable welder positions
-        def usable(ci): return (cand[ci][0], cand[ci][1]) not in banned and not (cand[ci][2] & occupied)
-        counts = {i: sum(1 for ci in by_block[i] if usable(ci)) for i in need}
-        hard = min(need, key=lambda i: (counts[i], i))
-        if counts[hard] == 0:
-            raise AssertionError(f'{drone.name}: cannot cover block {des.dblocks[hard][0]["name"] or des.dblocks[hard][0]["sub"]} with non-overlapping welders')
-        best = None
-        for ci in by_block[hard]:
-            if not usable(ci): continue
-            C0, d, cs, cover, tip, strict = cand[ci]
-            g = len(cover & need)
-            score = (strict, g, -center_dist(tip))       # welders that keep a cell of air to the drone first, touching ones only when needed
-            if best is None or score > best[0]: best = (score, (C0, d, cs, cover, tip))
-        C0, d, cs, cover, tip = best[1]
-        path = _route_welder(C0, d, cs, F, occupied | set(cs), struct, inbox, des.D)
-        if path is None:
-            banned.add((C0, d)); continue
-        chosen.append((C0, d, cs))
-        occupied |= set(cs); occupied |= set(path); struct |= set(path); armour |= set(path)
-        need -= cover
-    # ---- prune redundant welders (keep coverage) ----
-    def cov_of(sel): return set().union(*[next(cc[3] for cc in cand if cc[0] == C0 and cc[1] == d) for C0, d, _ in sel]) if sel else set()
-    allneed = set(range(len(des.dblocks)))
-    strict_of = {(cc[0], cc[1]): cc[5] for cc in cand}
-    for ch in sorted(chosen, key=lambda t: strict_of[(t[0], t[1])]):          # touching welders are dropped first
-        rest = [x for x in chosen if x is not ch]
-        if cov_of(rest) >= allneed: chosen = rest
-    # rebuild scaffold for the pruned set so no useless armour remains
-    occupied = {Mp, S1}; struct = {Mp, S1}; armour = {S1}
-    for C0, d, cs in sorted(chosen, key=lambda t: center_dist(tip_point_from_cells(t[2], t[1]))):
-        occupied |= set(cs)
-    for C0, d, cs in sorted(chosen, key=lambda t: center_dist(tip_point_from_cells(t[2], t[1]))):
-        path = _route_welder(C0, d, cs, F, occupied, struct, inbox, des.D)
-        if path is None: raise AssertionError(f'{drone.name}: re-route failed for welder at {C0}')
-        occupied |= set(path); struct |= set(path); armour |= set(path)
+    hb = [sum(1 << (i * NH + k) for i in range(nb)) for k in range(NH)]
+    wts = [HYP_WEIGHT[h.name] for h in FAM]
+    feas = ctx['allmask'] & ~ctx['infeasible']
+    tierA = feas & sum(hb[:TIER_A])
+    ctx2 = dict(ctx, hb=hb, wts=wts, feas=feas, tierA=tierA, inbox=inbox, center_dist=center_dist)
+    best = None
+    for rs in range(RESTARTS + 1):
+        rng = random.Random(1000 + rs)
+        res = _greedy(ctx2, rng, 0.0 if rs == 0 else 0.6)
+        if res is None: continue
+        sc = (res['missA'], res['unmet'], len(res['chosen']))
+        if best is None or sc < best[0]: best = (sc, res)
+    assert best, f'{drone.name}: no welder layout found'
+    res = best[1]
+    chosen = res['chosen']
     des.welders = [(C0, d) for C0, d, _ in chosen]
     des.welder_cells = [cs for _, _, cs in chosen]
-    des.armour = armour
-    des.occupied = occupied
+    des.armour = res['armour']
+    des.occupied = res['occupied']
+    occupied = res['occupied']; armour = res['armour']
     # ---- projector: a free cell next to the stalk, outside F ----
     pc = None
     for r in range(1, 6):
@@ -296,9 +349,105 @@ def solve_bay(drone, soft_camera=False, gap=1, margin_m=None, max_pad=9, verbose
     des.proj = pc
     des.forbid = F - ray
     des.ray = ray
-    des.stats = dict(welders=len(chosen), scaffold=len(armour), candidates=len(cand), gap=gap, soft_camera=soft_camera)
-    _BAYS[key] = des
+    names = lambda m: sorted({(des.dblocks[e // NH][0]['name'] or des.dblocks[e // NH][0]['sub']) for e in _bits(m)})
+    inf = {}                              # pairs the final layout does not reach: {hyp name: set of block names}
+    for k, h in enumerate(FAM):
+        m = hb[k] & ~res['union']
+        if m: inf[h.name] = set(names(m))
+    if res['short_red']: inf['redundancy'] = set(names(res['short_red']))
+    des.infeasible = inf                  # complete list of what is NOT covered (tier A entries make the verifier fail)
+    des.tierA_missing = {k: v for k, v in inf.items() if k in [h.name for h in FAM[:TIER_A]]}
+    des.stats = dict(welders=len(chosen), scaffold=len(armour), candidates=len(cand), gap=des.gap, soft_camera=des.soft_camera,
+                     infeasible_pairs=ctx['n_infeasible'], unmet_pairs=_pop(sum(hb) & ~res['union']), missA=res['missA'])
     return des
+
+def _greedy(ctx, rng, noise):
+    des = ctx['des']; F = ctx['F']; cand = ctx['cand']; nb = ctx['nb']; Mp = ctx['Mp']; S1 = ctx['S1']
+    hb = ctx['hb']; wts = ctx['wts']; feas = ctx['feas']; tierA = ctx['tierA']; inbox = ctx['inbox']; center_dist = ctx['center_dist']
+    red_bits = hb[RED_IDX]
+    struct = {Mp, S1}; armour = {S1}; occupied = set(struct)
+    chosen = []; chosen_idx = []; banned = set()
+    union = 0
+    def wgain(m):
+        return sum(wts[k] * _pop(m & hb[k]) for k in range(NH))
+    by_elem = collections.defaultdict(list)
+    for ci, cc in enumerate(cand):
+        for e in _bits(cc[3] & tierA): by_elem[e].append(ci)
+    def usable_all():
+        return [(cc[0], cc[1]) not in banned and not (cc[2] & occupied) for cc in cand]
+    def add(ci):
+        nonlocal occupied, struct, armour, union
+        C0, d, cs, m, tip, strict = cand[ci]
+        path = _route_welder(C0, d, cs, F, occupied | set(cs), struct, inbox, des.D)
+        if path is None: banned.add((C0, d)); return False
+        chosen.append((C0, d, cs)); chosen_idx.append(ci)
+        occupied |= set(cs); occupied |= set(path); struct |= set(path); armour |= set(path)
+        union |= m
+        return True
+    need = tierA
+    while need:
+        us = usable_all()
+        hard = None; hc = None
+        for e in _bits(need):
+            n_ = sum(1 for ci in by_elem[e] if us[ci])
+            if hc is None or n_ < hc: hard, hc = e, n_
+            if hc == 0: break
+        if hc == 0: need &= ~(1 << hard); continue            # cannot be met any more with non-overlapping welders: counted as missed
+        best = None
+        for ci in by_elem[hard]:
+            if not us[ci]: continue
+            C0, d, cs, m, tip, strict = cand[ci]
+            sc = (wgain(m & ~union) + (2 if strict else 0)) * (1.0 + noise * rng.random()) - 0.01 * center_dist(tip)
+            if best is None or sc > best[0]: best = (sc, ci)
+        if add(best[1]): need &= ~union
+    missA = _pop(tierA & ~union)
+    # ---- best effort: remaining pairs and a second RED welder, up to the budget ----
+    def red_cnt():
+        cnt = [0] * nb
+        for ci in chosen_idx:
+            for e in _bits(cand[ci][3] & red_bits): cnt[e // NH] += 1
+        return cnt
+    while len(chosen) < WELDER_BUDGET:
+        cnt = red_cnt()
+        lowmask = sum(1 << (i * NH + RED_IDX) for i in range(nb) if cnt[i] < 2)
+        rest = feas & ~union
+        us = usable_all()
+        pick = None
+        for ci, cc in enumerate(cand):
+            if not us[ci] or ci in chosen_idx: continue
+            m = cc[3]
+            g = wgain(m & rest) + RED_WEIGHT * _pop(m & lowmask)
+            if g < 3: continue
+            sc = (g + (1 if cc[5] else 0)) * (1.0 + noise * rng.random()) - 0.01 * center_dist(cc[4])
+            if pick is None or sc > pick[0]: pick = (sc, ci)
+        if pick is None: break
+        add(pick[1])
+    # ---- prune welders that add nothing ----
+    cnt0 = red_cnt()
+    def cover_ok(sel):
+        u = 0; cnt = [0] * nb
+        for ci in sel:
+            u |= cand[ci][3]
+            for e in _bits(cand[ci][3] & red_bits): cnt[e // NH] += 1
+        return (u & feas) == (union & feas) and all(cnt[i] >= min(2, cnt0[i]) for i in range(nb))
+    order = sorted(range(len(chosen)), key=lambda k: (cand[chosen_idx[k]][5], _pop(cand[chosen_idx[k]][3])))      # touching / weak welders first
+    keep = list(range(len(chosen)))
+    for k in order:
+        trial = [j for j in keep if j != k]
+        if cover_ok([chosen_idx[j] for j in trial]): keep = trial
+    chosen = [chosen[j] for j in keep]; chosen_idx = [chosen_idx[j] for j in keep]
+    cnt = red_cnt()
+    short_red = sum(1 << (i * NH + RED_IDX) for i in range(nb) if cnt[i] < 2)
+    unmet = sum(wts[k] * _pop(hb[k] & ~union) for k in range(NH)) + RED_WEIGHT * _pop(short_red)
+    # rebuild scaffold for the pruned set so no useless armour remains
+    occupied = {Mp, S1}; struct = {Mp, S1}; armour = {S1}
+    srt = sorted(chosen, key=lambda t: center_dist(tip_point_from_cells(t[2], t[1])))
+    for C0, d, cs in srt: occupied |= set(cs)
+    for C0, d, cs in srt:
+        path = _route_welder(C0, d, cs, F, occupied, struct, inbox, des.D)
+        if path is None: return None
+        occupied |= set(path); struct |= set(path); armour |= set(path)
+    return dict(chosen=chosen, armour=armour, occupied=occupied, struct=struct, short_red=short_red, union=union, missA=missA, unmet=unmet)
 
 _BAYS = {}
 
@@ -429,17 +578,22 @@ class PlacedBay:
         self.proj = add3(design.proj, T); self.printer_cells.add(self.proj)
         self.tips = [tip_point_from_cells(list(cs), d) for cs, (C0, d) in zip(self.weld_cells, [(add3(C0, T), d) for C0, d in design.welders])]
         self.dblock_cells = [[add3(c, T) for c in bcs] for b, bcs in design.dblocks]
+        self.dcell_arr = np.array(sorted(self.drone_cells), dtype=np.int64).reshape(-1, 3)
+        # sphere centres of every welder under the margin-free hypotheses (the loosest ones): a foreign drone must stay out of ALL of them
+        pts = []
+        for cs, (C0, d) in zip(self.weld_cells, [(add3(C0, T), d) for C0, d in design.welders]):
+            for h in FAM:
+                if h.margin == 0.0: pts.append(tip_point_from_cells(list(cs), d, h.backoff))
+        self.reach_pts = np.array(pts, dtype=float).reshape(-1, 3)
 
 def bays_conflict(A, B):
     """True when two placed bays cannot coexist (cell overlap, contact with a foreign drone, or a welder reaching a foreign drone)"""
     if A.printer_cells & B.printer_cells: return True
     if A.printer_cells & B.noprint or B.printer_cells & A.noprint: return True
     if A.drone_cells & B.drone_cells: return True
-    R = eff_radius_cells()
+    R = reach.radius_cells(FAM[0])
     for P, Q in ((A, B), (B, A)):
-        for tip in P.tips:
-            for cs in Q.dblock_cells:
-                if any(cell_dist(tip, c) <= R for c in cs): return True
+        if any_reach(P.reach_pts, R, Q.dcell_arr): return True
     return False
 
 
