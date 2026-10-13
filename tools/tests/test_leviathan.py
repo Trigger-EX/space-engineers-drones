@@ -202,6 +202,25 @@ class LoadoutTests(unittest.TestCase):
         for a in n['angular_accel_rad_s2'][:2]:
             self.assertGreater(a, 0.03)
 
+    def test_firing_lanes_and_exhaust_are_clear(self):
+        """no block ahead of a railgun muzzle, none in the first 8 cells of any thruster exhaust"""
+        bp = ship(False)
+        occ = bp.occupancy()
+        for b in bp.blocks:
+            if b['sub'] == 'LargeRailgun':
+                cs = bp.cells(b)
+                z0 = min(c[2] for c in cs)
+                for x in {c[0] for c in cs}:
+                    for y in {c[1] for c in cs}:
+                        for z in range(-4, z0):
+                            self.assertNotIn((x, y, z), occ, b['name'])
+            elif b['xtype'] == 'MyObjectBuilder_Thrust':
+                d = L.THRUST_DIR[b['fwd']]
+                for c in bp.cells(b):
+                    for k in range(1, 9):
+                        o = occ.get((c[0] + d[0] * k, c[1] + d[1] * k, c[2] + d[2] * k))
+                        self.assertTrue(o is None or o is b, b['name'])
+
     def test_lite_differs_only_by_unseen_blocks(self):
         full, lite = ship(False), ship(True)
         a = sorted((b['sub'] or b['xtype']) for b in full.blocks if b['kind'] not in ('conv', 'turret', 'cradle', 'armor', 'plate', 'accent', 'dark', 'glass'))

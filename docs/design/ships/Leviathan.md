@@ -11,12 +11,12 @@ Nothing of this has been pasted in the game yet (section 12 lists what to look a
 | | catalogue 4.5 | Leviathan (Full) | note |
 |---|---|---|---|
 | size | 200 x 60 x 35 m (80 x 24 x 14 cells) | **222.5 x 72.5 x 42.5 m** (89 x 29 x 17 cells; hull 57.5 m wide, 72.5 m over the flank nacelles; 42.5 m from the ram keel to the top of the bridge) | +11 % / +21 % / +21 %: nacelles, ram keel, tower |
-| blocks | 9,044 armour + systems | **8,378 blocks** in the ship grid (3,327 heavy + 4,458 light armour blocks, 20 windows, 77 panels) + 605 in each pod | Lite 8,363 |
-| mass | 13.2 kt | **13,937 t blocks + 164 t ammunition and uranium = 14,101 t** (+7 %) | armour 12.0 kt = 86 % of the blocks (catalogue 83 %) |
+| blocks | 9,044 armour + systems | **8,374 blocks** in the ship grid (3,327 heavy + 4,458 light armour blocks, 20 windows, 73 panels) + 605 in each pod | Lite 8,359 |
+| mass | 13.2 kt | **13,936 t blocks + 164 t ammunition and uranium = 14,100 t** (+7 %) | armour 12.0 kt = 86 % of the blocks (catalogue 83 %) |
 | forward accel | 2.0 m/s2 (27 MN, 3 large + 5 small) | **2.04 m/s2** (28.8 MN = 4 large hydrogen engines; 2.07 empty) | four engines in a row at the stern |
 | other axes | 1.1 m/s2 (2 large per axis) | **1.02 m/s2** (14.4 MN = 2 large per axis; -7 %) | 14 large thrusters in all (catalogue 18 mixed) |
 | angular accel | 0.06 rad/s2 (86 gyros) | **0.038 yaw / 0.039 pitch / 0.49 roll rad/s2** (72 gyros, 2,419 MN m; inertia 6.4e10 / 6.1e10 / 4.9e9 kg m2 from the block masses, point-mass model) | -37 %: 14 fewer gyros than the catalogue (700 PCU, 180 t); 90 degrees of yaw take 12.9 s with full torque (flip and brake) |
-| PCU | 34,575 | **30,010 ship + 2 x 1,643 pods = 33,296** (-4 %); Lite 29,564 + 3,286 | full table in section 10 |
+| PCU | 34,575 | **30,006 ship + 2 x 1,643 pods = 33,292** (-4 %); Lite 29,560 + 3,286 | full table in section 10 |
 | armour HP | 55.2 M | 68.5 M (sum over every block of the ship grid) | +24 % |
 | weapons | 6 rail, 8 artillery, 12 assault, 20 gatling, 4 rocket, 12 decoys | the same | sustained data DPS 58,864 (catalogue 58.9 k); Lite: 24 gatlings, no rocket turret, 60.4 k |
 | generation / batteries | 420 MW / 60 MWh (240 MW) | the same: 1 x 300 MW + 8 x 15 MW, 20 x 3 MWh | railgun recharge 228 MW, surplus 191 MW |
@@ -42,7 +42,7 @@ in nacelles and flanks instead of the catalogue's mixed small ones). Everything 
   caps, cyan bridge glass, thruster nozzles glow orange in the renders.
 * Heavy armour (16.5 k HP, 3.3 t per block) on the bow, the gunhouse and ribs, the whole citadel, the flank belt (|x| = 11, y 1..3), the keel strip (|x| <= 5) and the stern wall; light (2.5 k HP,
   0.5 t) elsewhere: **3,327 heavy, 4,458 light**. The hull is hollow with a 1-cell skin and light bulkheads every 10 cells (z = 10, 20, ... 80), an interior floor under the tanks and a bridge floor.
-  Slopes, corners and 2:1 ramps come from `hulls.build_hull` (every mount face checked), 20 `Window1x1Slope/Flat` glass blocks on the bridge, 77 `ArmorPanel` deck seams.
+  Slopes, corners and 2:1 ramps come from `hulls.build_hull` (every mount face checked), 20 `Window1x1Slope/Flat` glass blocks on the bridge, 73 `ArmorPanel` deck seams (none in front of a railgun muzzle: the bow-deck grid skips the rail lanes).
 * Symmetric about the centre column x = 0 (test `test_symmetric`: every block has its mirror image, except the conveyor junctions whose router picks a side). No floating block: every block of all three
   grids attaches (`audit.py --types`: 9,588 of 9,588 attached, each grid one piece).
 * **Design iterations looked at** (renders in `scratchpad/ship_renders/Leviathan/v1 .. v6`, final set in `.../Leviathan/`): (v1) the demo-style hull with a plain nose: a brick, rejected; (v2) tiers, ribs and a
@@ -157,7 +157,7 @@ Turrets are never batteries (control_arch 3.2); they are designators and automat
 
 * Electricity: 300 + 8 x 15 = 420 MW against 6 x 38 MW railgun recharge = 228 MW and about 0.9 MW for everything else; hydrogen thrusters draw no electricity. Surplus 191 MW; 20 batteries hold 60 MWh and
   deliver 240 MW: all six railguns recharging with every reactor dead for 15.8 min. Uranium 1,300 kg = 3.1 h at the full 420 MW (1 kg = 1 MWh), 5.7 h at the railgun load.
-* Thrust (N), loaded accelerations (14,101 t): Forward 28.8 MN, 2.04 m/s2; Backward, Up, Down, Left, Right 14.4 MN each, 1.02 m/s2.
+* Thrust (N), loaded accelerations (14,100 t): Forward 28.8 MN, 2.04 m/s2; Backward, Up, Down, Left, Right 14.4 MN each, 1.02 m/s2.
 * Thrust balance about the centre of mass (point-mass model of every block and pre-load: COM x = 1.2 m (the mirror plane), y = 10.0 m, z = 128.8 m, i.e. cell z 51.5): the Lift, Dive pairs stand at z 50..52, the Strafe
   pairs 17 cells in front of and 17 behind the COM, so Up / Down thrust turns the ship by 0.1 % of the gyro torque, Left / Right by 1.5 % (roll 36 MN m), Backward by 0.7 %, Forward by 4.5 % (108 MN m of pitch: the
   engines sit 3.75 m above the COM). Nothing turns the ship noticeably under thrust (`test_thrust_balance_about_the_centre_of_mass` asserts < 10 %).
@@ -204,7 +204,7 @@ Full table (`python3 -I tools/designs/leviathan.py --pcu`; PCU per block from `d
 
 | category | n | PCU |
 |---|---:|---:|
-| Armour, windows, panels (3,327 heavy + 4,458 light armour blocks, slopes and corners included, 20 windows, 77 panels) | 7,882 | 7,882 |
+| Armour, windows, panels (3,327 heavy + 4,458 light armour blocks, slopes and corners included, 20 windows, 73 panels) | 7,878 | 7,878 |
 | Gatling turrets (`LargeGatlingTurret`, 225 each) | 20 | 4,500 |
 | Assault turrets (275) | 12 | 3,300 |
 | Artillery turrets (275) | 8 | 2,200 |
@@ -229,19 +229,19 @@ Full table (`python3 -I tools/designs/leviathan.py --pcu`; PCU per block from `d
 | AI blocks (25, Full only) | 2 | 50 |
 | Timer (25) | 1 | 25 |
 | Event controllers (10) | 3 | 30 |
-| **ship grid** | **8,378** | **30,010** |
+| **ship grid** | **8,374** | **30,006** |
 | each pod (605 small-grid blocks: 588 armour 588, 4 merge blocks 400, 2 `ConnectorMedium` 250, Pod PB 100, antenna 100, 4 backup timers 100, 2 reactors 50, 2 batteries 30, Remote Control 25) | 2 x 605 | 2 x 1,643 |
-| **total, empty pods** | | **33,296** (catalogue estimate 34,575: -4 %) |
+| **total, empty pods** | | **33,292** (catalogue estimate 34,575: -4 %) |
 
-Lite: 29,564 + 3,286 = 32,850 (rocket turrets are gatlings: -200; no sensors, no AI blocks: -100). Each Hornet adds 1,010 PCU (Lite 935): eight drones 8,080, so **41.4 k** in all.
+Lite: 29,560 + 3,286 = 32,846 (rocket turrets are gatlings: -200; no sensors, no AI blocks: -100). Each Hornet adds 1,010 PCU (Lite 935): eight drones 8,080, so **41.4 k** in all.
 
 World limits and what to take out (each step lists the PCU it saves and what it costs; do them in this order; the ship stays flyable and armed at every step):
 
 | world limit | state of the ship | PCU |
 |---|---|---:|
-| **50,000** (the owner's creative world is "50,000-ish") | everything: ship + two pods; 8 Hornets bring it to 41.4 k (83 %), 8.6 k spare | 33,296 / 41,376 |
-| **34,000** | ship + pods, no drones | 33,296 (98 %) |
-| **20,000** | trim, cumulative: (1) delete both pods, 4 connectors and 16 doors (-3,286 -500 -1,840; the hangars become open bays, no drones) -> 27,670; (2) delete the 4 rocket turrets (-1,100) -> 26,570; (3) delete 36 of the 72 gyros (-1,800; yaw 0.019 rad/s2, 90 degrees in 18 s) -> 24,770; (4) delete 10 of the 20 gatlings (-2,250; keep the keel pair, one per ledge end and the stern pair) -> 22,520; (5) delete 6 of the 12 assault turrets (-1,650; the odd slots) -> 20,870; (6) delete 4 of the 8 artillery turrets (-1,100; the aft two of each side) -> **19,770** | 19,770 |
+| **50,000** (the owner's creative world is "50,000-ish") | everything: ship + two pods; 8 Hornets bring it to 41.4 k (83 %), 8.6 k spare | 33,292 / 41,376 |
+| **34,000** | ship + pods, no drones | 33,292 (98 %) |
+| **20,000** | trim, cumulative: (1) delete both pods, 4 connectors and 16 doors (-3,286 -500 -1,840; the hangars become open bays, no drones) -> 27,670; (2) delete the 4 rocket turrets (-1,100) -> 26,570; (3) delete 36 of the 72 gyros (-1,800; yaw 0.019 rad/s2, 90 degrees in 18 s) -> 24,770; (4) delete 10 of the 20 gatlings (-2,250; keep the keel pair, one per ledge end and the stern pair) -> 22,520; (5) delete 6 of the 12 assault turrets (-1,650; the odd slots) -> 20,870; (6) delete 4 of the 8 artillery turrets (-1,100; the aft two of each side) -> **19,766** | 19,766 |
 | below 20,000 | further: delete the 2 sensors, the 2 AI blocks and 8 decoys (-190), the antenna (-100), 24 more gyros (-1,200) -> about 18,300 | 18,300 |
 
 Delete the junction branch of every removed turret (10 PCU each, a few per turret) to recover another 150..250. Armour blocks are 1 PCU each: thinning the interior bulkheads (about 600 blocks) is possible
@@ -265,6 +265,10 @@ but removes mass and the attachment points of the interior; it is not part of th
 9. The angular acceleration is low on purpose (0.038 rad/s2): a 180 degree turn takes about 18 s with full torque. 72 -> 86 gyros would reach the catalogue's 0.045 rad/s2 for +700 PCU and +180 t.
 10. The thumbnail written by `build_all` shows the ship grid only (the pods are other grids).
 11. The mass model of `numbers()` is a point-mass sum (block centres): the inertia is within a few percent of a cell-resolved sum, the game uses the real block volumes.
+12. Review notes: the Brake thrusters (x -14..-12 / 12..14, z 56..58) exhaust forward along the flanks, past the hangar doors (z 41..48): do not brake while drones leave through the doors. The Lite
+    variant still uses three types that have a sample only for a sibling subtype (`LargeBlockSmallGenerator`, `LargeBlockRemoteControl`, `TimerBlockLarge`; same XML shape as the seen subtype).
+    Measured by the review: thrust torque about the COM is 4.5 % of the gyro torque at worst (forward burn pitches the nose down; the main engines sit 3.75 m above the COM), every thruster exhaust
+    path is clear of blocks for 8 cells, the six railgun lanes are free of blocks ahead of the muzzles.
 
 ## 12. In-game checks (first paste)
 

@@ -498,7 +498,7 @@ def _decoys(S, res):
 def _greebles(res):
     """thin armour panels (ArmorPanel, 1 PCU each) as deck seams: lines along the upper-hull deck, a regular grid (every third cell, so the ship stays mirror symmetric) on the bow deck, the ledges and the stern wall"""
     H.greeble(res, 'panel', pattern='lines', every=4, normals=('Up',), where=lambda c: c[1] == Y_T2 and Z_FORE0 + 3 <= c[2] <= Z_TIER2_END and abs(c[0]) <= 7, color=GUND, seed=3)
-    H.greeble(res, 'panel', pattern='grid', every=3, normals=('Up',), where=lambda c: c[1] <= Y_T1 and (c[2] < Z_FORE0 - 1 or (abs(c[0]) >= 9 and Z_FORE0 <= c[2] < Z_RAKE)), color=GUND)
+    H.greeble(res, 'panel', pattern='grid', every=3, normals=('Up',), where=lambda c: c[1] <= Y_T1 and not (c[2] < 12 and c[1] >= 2 and abs(c[0]) <= 6) and (c[2] < Z_FORE0 - 1 or (abs(c[0]) >= 9 and Z_FORE0 <= c[2] < Z_RAKE)), color=GUND)
     H.greeble(res, 'panel', pattern='grid', every=3, normals=('Backward',), where=lambda c: c[2] >= LEN - 1 and c[1] >= 7, color=ORANGE_D)
 
 
