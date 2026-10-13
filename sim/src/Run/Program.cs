@@ -54,7 +54,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -169,6 +169,8 @@ namespace SeSim.Run
                     return CmdOne(args, simDir, settings);
                 case "run":
                     return CmdRun(args, simDir, settings);
+                case "search":
+                    return CmdSearch(args, simDir, settings);
                 default:
                     throw new ArgumentException("unknown command '" + args[0] + "'");
             }
@@ -420,6 +422,54 @@ namespace SeSim.Run
             var all = LoadRuns(runsPath);
             JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
             Console.WriteLine("saved: " + all.Count + " fights in " + runsPath + " (summary.csv updated)");
+            return 0;
+        }
+
+        /// <summary>search: endless fleet search against one enemy blueprint (FleetSearch). --enemies DIR (default "enemies"),
+        /// --target NAME (default: the first blueprint there), --max-drones 10, --min-drones 1, --models "Hornet,Gnat,..." (default: every
+        /// armed model plus the fleet-only blueprints that exist), --min-fights 3, --jobs, --out (default out/sim/results/search),
+        /// --cap-seconds, --enemy-brain, --seed and any engine setting.</summary>
+        static int CmdSearch(string[] args, string simDir, SimSettings settings)
+        {
+            var o = Parse(args, 1, settings);
+            string repo = FindRepoRoot(o.Get("repo", null));
+            if (!CheckBlueprints(repo)) return 4;
+            if (!o.Has("enemies")) o.Kv["enemies"] = "enemies";
+            ApplyGenOptions(o);
+            var enemies = ScenarioGen.Enemies();
+            string target = o.Get("target", enemies[0]);
+            if (!enemies.Contains(target)) throw new ArgumentException("--target '" + target + "' is not a blueprint folder in " + ScenarioGen.EnemyDir);
+            string bpDir = Path.Combine(Path.Combine(repo, "out"), "Blueprints");
+            var pool = new List<string>();
+            if (o.Has("models"))
+            {
+                foreach (string m0 in o.Get("models", "").Split(','))
+                {
+                    string m = m0.Trim(); if (m.Length == 0) continue;
+                    ScenarioGen.ParseFleet(m);          // validates the name
+                    if (!pool.Contains(m)) pool.Add(m);
+                }
+            }
+            else
+            {
+                pool.AddRange(ScenarioGen.ArmedModels);
+                foreach (string m in ScenarioGen.FleetOnlyModels) if (File.Exists(Path.Combine(Path.Combine(bpDir, m), "bp.sbc"))) pool.Add(m);
+            }
+            if (pool.Count == 0) throw new ArgumentException("--models is empty");
+            var fsr = new FleetSearch
+            {
+                Enemy = target, Pool = pool.ToArray(), Settings = settings, Repo = repo,
+                MaxDrones = o.Int("max-drones", 10), MinDrones = o.Int("min-drones", 1), MinFights = Math.Max(1, o.Int("min-fights", 3)),
+                Threads = Math.Max(1, o.Int("jobs", Environment.ProcessorCount)), BaseSeed = (ulong)o.Int("seed", 1),
+                OutDir = o.Get("out", null) ?? Path.Combine(Path.Combine(Path.Combine(Path.Combine(repo, "out"), "sim"), "results"), "search")
+            };
+            if (fsr.MaxDrones < 1 || fsr.MaxDrones > 32 || fsr.MinDrones < 1 || fsr.MinDrones > fsr.MaxDrones) throw new ArgumentException("need 1 <= --min-drones <= --max-drones <= 32");
+            if (o.Has("cap-seconds")) { fsr.CapTicks = (int)(o.Dbl("cap-seconds", 300) * SimSettings.TicksPerSecond); settings.MaxTicks = fsr.CapTicks; }
+            Directory.CreateDirectory(fsr.OutDir);
+            string runsPath = Path.Combine(fsr.OutDir, "runs.jsonl");
+            var earlier = File.Exists(runsPath) ? LoadRuns(runsPath) : new List<RunResult>();
+            WriteMeta(Path.Combine(fsr.OutDir, "meta.json"), args, settings, repo, simDir, 0, -1, -1, fsr.BaseSeed, fsr.Threads, null);
+            fsr.Run(earlier);
             return 0;
         }
 

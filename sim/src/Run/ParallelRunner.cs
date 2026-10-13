@@ -143,54 +143,23 @@ namespace SeSim.Run
             }
             var gate = new object();
             long seq = -1;                // job sequence: round = seq / ns, scenario = seq % ns
-            int stopLevel = 0;            // 1 = finish fights in progress, 2 = stop now
             bool abandoned = false;
             int finished = 0, errors = 0, wins = 0, timeouts = 0, running = 0;
             var line = new StringBuilder(8192);
             string simDir = ScenarioRunner.DefaultSimDir();
-            var sw = Stopwatch.StartNew();
             var inv = System.Globalization.CultureInfo.InvariantCulture;
 
-            ConsoleCancelEventHandler onCancel = (o, e) =>
-            {
-                if (Volatile.Read(ref stopLevel) >= 2) return;            // third Ctrl+C: let it kill the process
-                e.Cancel = true; Interlocked.Increment(ref stopLevel);
-            };
-            Console.CancelKeyPress += onCancel;
-            var reader = new Thread(() =>
-            {
-                try
-                {
-                    while (Volatile.Read(ref stopLevel) < 2)
-                    {
-                        string l = Console.In.ReadLine();
-                        if (l == null) return;                             // no keyboard (stdin redirected or closed)
-                        Interlocked.Increment(ref stopLevel);
-                    }
-                }
-                catch (Exception) { }
-            }) { IsBackground = true, Name = "stdin" };
-            reader.Start();
-
-            bool live = !Console.IsErrorRedirected;
-            int lastLen = 0;
-            long lastReport = -100000;
+            var stop = new ConsoleStop();
+            var ui = new LiveLine();
             Action<bool> status = (force) =>
             {
-                long now = sw.ElapsedMilliseconds;
-                if (!force && (live ? now - lastReport < 1000 : now - lastReport < 10000)) return;
-                lastReport = now;
+                if (!force && !ui.Due()) return;
                 int minPer = int.MaxValue; for (int i = 0; i < ns; i++) if (perScenario[i] < minPer) minPer = perScenario[i];
-                double rate = finished / Math.Max(0.001, now / 1000.0);
-                string msg = "fights " + finished + (already > 0 ? " (+" + already + " earlier)" : "") + "  " + rate.ToString("F2", inv) + "/s  " + Fmt(now / 1000.0)
+                int lv = stop.Level;
+                double rate = finished / Math.Max(0.001, ui.ElapsedS);
+                ui.Show("fights " + finished + (already > 0 ? " (+" + already + " earlier)" : "") + "  " + rate.ToString("F2", inv) + "/s  " + LiveLine.Fmt(ui.ElapsedS)
                     + "  every matchup >= " + minPer + (errors > 0 ? "  errors " + errors : "")
-                    + (stopLevel == 0 ? "  [Enter = stop & save]" : stopLevel == 1 ? "  finishing " + running + " in progress [Enter = drop them]" : "  stopping");
-                if (live)
-                {
-                    string pad = msg.Length < lastLen ? new string(' ', lastLen - msg.Length) : "";
-                    Console.Error.Write("\r" + msg + pad); lastLen = msg.Length;
-                }
-                else Console.Error.WriteLine(msg);
+                    + (lv == 0 ? "  [Enter = stop & save]" : lv == 1 ? "  finishing " + running + " in progress [Enter = drop them]" : "  stopping"));
             };
 
             using (var fs = new FileStream(path, already > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.Read))
@@ -204,7 +173,7 @@ namespace SeSim.Run
                         Job job; int si;
                         lock (gate)
                         {
-                            if (stopLevel > 0) return;
+                            if (stop.Level > 0) return;
                             while (true)
                             {
                                 seq++;
@@ -247,15 +216,15 @@ namespace SeSim.Run
                     lock (gate)
                     {
                         if (!alive) break;
-                        if (stopLevel >= 2) { abandoned = true; break; }
+                        if (stop.Level >= 2) { abandoned = true; break; }
                         status(false);
                     }
                     Thread.Sleep(200);
                 }
                 lock (gate) { wr.Flush(); status(true); }
             }
-            Console.CancelKeyPress -= onCancel;
-            if (live) Console.Error.WriteLine();
+            stop.Dispose();
+            ui.End();
             Console.Error.WriteLine("stopped: " + finished + " fights saved this session (" + wins + " decisive, " + timeouts + " timeouts, " + errors + " errors)"
                 + (abandoned ? ", fights in progress dropped" : ""));
             return finished;

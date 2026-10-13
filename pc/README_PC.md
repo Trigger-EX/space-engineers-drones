@@ -37,3 +37,15 @@ an 800 m turret-range robustness run, and three traces. Roughly 2-5 hours on a 1
 - Other selections: `./run_endless.sh --kind 1v1`, `./run_endless.sh --filter "Hornet"`, fewer threads: `--jobs 12`.
 - Linux: Mono's concurrent garbage collector crashed (SIGSEGV) with 19 threads, so the scripts use `MONO_GC_PARAMS=major=marksweep`;
   if the simulator still crashes, the scripts restart it automatically and no finished fight is lost (plans resume the same way).
+
+## Fleet search: what beats your ship? (`run_search.sh` / `run_search.bat`)
+- Linux Mint: `./run_search.sh`   Windows: double-click `run_search.bat`. Press **Enter** to stop and save (twice = stop at once).
+- Finds the drone fleets (1-10 drones, any mix of models) that do best against the first ship in `enemies/` (Tech Hunter). There are about
+  650,000 possible fleets, so it searches: every pure 10-drone fleet and 40 random mixes first, then mostly variations of the 8 best fleets
+  (swap / add / remove drones, combine two fleets) plus some random ones, and gives the promising fleets more fights so luck washes out.
+- Score per fight (0-100): drones win = 80-100 (more drones surviving = higher); otherwise up to 60 for the share of the ship's armed
+  turrets (25), power blocks (25) and thrusters (10) destroyed. Fights last up to 10 minutes.
+- Live line: fights, rate, fleets tried, drone wins; a "leader:" line appears whenever a new fleet takes first place.
+- `results/search/leaderboard.csv`: every fleet tried, ranked (rewritten every 30 s and when you stop); the top 10 are printed at the end.
+- Options: `--max-drones 6`, `--min-drones 4`, `--models "Hornet,Gnat,Longbow L,Basilisk"`, `--target "Other Ship"`, `--enemy-brain hold`,
+  `--cap-seconds 300`, `--jobs 12`. Running it again continues the same search (delete `results/search` to start over).
