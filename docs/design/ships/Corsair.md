@@ -1,7 +1,7 @@
 # Corsair (corvette, small grid)
 
-Key `ship_corsair`. Module `tools/designs/corsair.py` (`MODELS = {"Corsair": fn(lite), "Corsair Wing": fn(lite)}`, `DOCS`, `SCRIPTS = ["CorsairHelmAI.cs", "CorsairStaffAI.cs"]`;
-the scripts are written by other workers, the PBs carry an empty program until `scripts/<name>` exists), tests `tools/tests/test_corsair.py`.
+Key `ship_corsair`. Module `tools/designs/corsair.py` (`MODELS = {"Corsair": fn(lite), "Corsair Wing": fn(lite)}`, `DOCS`, `SCRIPTS = ["ShrikeAI.cs", "StaffAI.cs", "CradleBayAI.cs"]`;
+M6: the Helm is `ShrikeAI.cs` and the Staff `StaffAI.cs`, the same scripts as on every other ship, there are no Corsair-specific scripts), tests `tools/tests/test_corsair.py`.
 Blueprints `Corsair`, `Corsair Lite`, `Corsair Wing`, `Corsair Wing Lite`. Part of the family Shrike / Corsair / Warden / Leviathan (`systems_catalogue.md` 4.3, `control_arch.md`, `grids_bays.md` 5.3).
 Evidence labels as elsewhere: [data] repo data, [calc] computed here, [unverified] never seen in a game file.
 
@@ -131,7 +131,7 @@ Drone exhaust fires into the wall 1 cell + merge away (test C5). Name rule: ever
 
 | item | names / tags |
 |---|---|
-| PBs | `[Helm] Corsair` (Custom Data: `[Ship]`, `[Battery 1..3]`, `[Cockpit]`), `[Staff] Corsair` (`[Staff] Ship Tag/Block Prefix`, `[Wing]`), `[Bay] Corsair` (M5: `[Pod] Tag`, `[Bay 1]`, `[Bay 2]`: the bay table moved here from the Staff data); scripts `CorsairHelmAI.cs`, `CorsairStaffAI.cs` if present, `CradleBayAI.cs` in the Bay PB |
+| PBs | `[Helm] Corsair` (`ShrikeAI.cs`; Custom Data `[Ship]`, `[Link] Ship Tag/Block Prefix`, `[Manual] HUD Surface`, `[Battery] Standoff By Weapons`; M6: the old `[Battery n]` and `[Cockpit]` sections were read by no script and are gone), `[Staff] Corsair` (`StaffAI.cs`; `[Staff] Ship Tag/Block Prefix/Cockpit Surface/Helm HUD Surface/Wing Surface`, `[Wing] Types`), `[Bay] Corsair` (`CradleBayAI.cs`; `[Pod] Tag`, `[Bay 1]`, `[Bay 2]`) |
 | fire control | `[B1]` 2 railguns (RAIL), `[B2]` 2 assault cannons (SHELL), `[B3]` 2 autocannons (BALLISTIC), `[PD]` 4 gatling turrets (point defence, Full only), `Assault Turret`; terminal groups with the same names |
 | groups | `[SH] Thrusters`, `[SH] Weapons`, `[SH] Gyros`, `[SH] Bay Merges` |
 | control | `[SH] Cockpit [Helm Seat]` (main cockpit), `[SH] Remote Control`, `[SH] Timer D (deadman)` (5 s, silent; toolbar thrusters + weapons Off), `[SH] EC Cockpit (configure in game)` (placed, unconfigured: event number never seen, test K4) |
@@ -159,3 +159,39 @@ Nothing to load: tanks, batteries, magazines, uranium are in the file. Check the
 4. Guns run dry quickly (3-6 rounds), no feed.
 5. Renders (`/tmp/.../ship_renders/Corsair/it0..it2`, `python3 -I tools/designs/corsair.py --render DIR`) use the repo thumbnail code: slopes look like stairs. Lite has no point defence.
 6. Mass is a hull-factor outcome of voxel hollowing; 6,566 blocks, 10.6 k PCU (21 % of a 50 k world).
+
+## 8. Flight and fight (M6, simulator only)
+
+Nothing here was measured in the game. Commands as in `Shrike.md` section 12; the wing runs use `Corsair Wing` with `--commands "Helm:hunt;3:Staff:launch all;20:Staff:wing satellite;40:Staff:wing hunt"`.
+
+**Scripts and data.** Helm `ShrikeAI.cs`, Staff `StaffAI.cs` (22,793 characters), bay `CradleBayAI.cs` (17,007), the same files as every other ship; no Corsair-specific script exists or is needed.
+Custom Data after M6 (section 5): `[Link] Ship Tag=SH`/`Block Prefix=[SH]`, `[Manual] HUD Surface=0`, `[Battery] Standoff By Weapons=true` on the Helm; `[Staff]` keys and `[Wing] Types` on the Staff; the bay table on the `[Bay]` PB.
+The Helm chooses the stand-off from its batteries: with two small railguns (reach 1,190 m) it keeps **1,000 m**, outside the 800 m reach of a turret ship, so the Pirate hardly touches it (9 blocks lost, median).
+A fixed 500 m stand-off kills the Pirate about twice as fast (4 seeds: 99-252 s against 185-415 s) but the same ship died against the Tech Hunter after 92 s (1 seed; at 1,000 m it survives 600 s): the weapon-based stand-off stays.
+
+**Flight** (scripted pilot at full stick, dampeners on):
+
+| | design | sim |
+|---|---|---|
+| forward / other axes | 7.2 / 3.6 m/s2 (blocks only) | 7.2 / 3.6 m/s2 (speed cap 100 m/s reached after 14 s) |
+| braking (retro thrusters) | 3.6 m/s2 | from 40 m/s: 10.9 s, 217 m; from 100 m/s: 27.6 s, 1,388 m |
+| yaw | 8.96 MN m of gyro torque | 0.34 rad/s2: 63 % of the 1.5 rad/s stick cap after 2.8 s; a 180 degree turn about 6 s; rotation stops 1.7 s after release |
+
+**Fights** (5 seeds, cap 600 s vs the Pirate, 300 s otherwise; Wing = launch at 3 s):
+
+| enemy | Corsair | Corsair Wing |
+|---|---|---|
+| Pirate (2.8 km) | **9/10 wins** (seeds 0-4: 5/5, kill 185-415 s, median 293; seeds 5-9: 4/5, 268-387 s, 1 timeout at 600 s), 9 blocks lost (median of seeds 0-4) | **5/5**, 106-216 s (median 170): the two Hornets halve the time |
+| 3 Hornets (1,000 m) | 5/5, 84-264 s (median 152), 439 blocks lost | 4/5, 70-164 s (median 83), 1 timeout |
+| 6 Gnats (1,000 m / 400 m) | stalemate (5 timeouts) / 1/5, 4 timeouts | stalemate / 2/5, 3 timeouts |
+| Tech Hunter (13,666 blocks, cap 300 s) | @@TH_Corsair@@ | @@TH_CorsairWing@@ |
+
+Against the Tech Hunter in 600 s (3 seeds, no wing): 0 wins, the Corsair stays at 1,000 m, deals 630-680 k damage and takes 40-90 k; the Hunter keeps 13,300 of 13,666 blocks. It does not die; it does not lose either.
+
+**Manual, dead-man, wing, instructions.** `selftest m6` (2 seeds each): the Helm holds all 20 gyros, 14 thrusters, 6 fixed guns, 5 turrets, 4 batteries, the one seat, 8 cameras and the dead-man timer, the Staff the same lists (no drone block adopted);
+manual flight with a Pirate in the field: 0 override-fight ticks, fixed guns quiet, the turrets keep shooting (enemy 53 -> 22 blocks while the pilot flies), AUTO back 1.5 s after standing up; Helm PB killed at 15 s: the Staff releases
+every override 1.1 s later, once, `HELM LOST`, Timer D fires; `launch all` at 4 s while hunting: both bays let go by 29 s, the Helm is handed HUNT back, the roll call counts 2, the drones sit 100 m from the ship 18 s after `wing satellite`.
+Without `launch`, `release all` in HUNT waited until the 60 s drop ("ship accelerates 8.5 m/s2"): the Helm never lets the ship settle (that is why `launch` exists). Instructions (IL model, Pirate fight with launch):
+Helm 17,904, Staff 6,150, bay 15,741, Hornet 17,245; block model 1,142 / 346 / 446 / 919.
+
+**Lite.** `Corsair Lite` has no turrets, no AI blocks and no sensor: 0/3 against the Pirate (it loses 1,500 to 3,200 blocks and never fires, the camera sweep does not find the target). Fly it yourself (`lock`) or take the Full ship.

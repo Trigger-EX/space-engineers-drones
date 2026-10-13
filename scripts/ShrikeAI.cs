@@ -23,7 +23,7 @@
 //   Run with NO argument             menu: each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (HUD shows it)
 //  CUSTOM DATA  [Shrike] = the Hornet keys (IGC Tag default SHRIKE, Start Mode default GUARD); [Manual] Seat Debounce, Release Delay, Assist (OFF/HUD/FBW),
 //   Assist Max Rate, Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale, Pilot Priority Rate, Auto Fire In Manual, Scan In Manual, Run Menu, Run Menu Wait,
-//   Deadman Timer Name, HUD Surface (cockpit text surface, -1 off); [Battery] Primary (AUTO/B1..B4), Standoff By Weapons, Turret Only (AUTO/ON/OFF), Auto Max Turn
+//   Deadman Timer Name, Seat Exclude (name part, default "gunnery": a seat with that word in its name does not switch the Helm to MANUAL), HUD Surface (cockpit text surface, -1 off); [Battery] Primary (AUTO/B1..B4), Standoff By Weapons, Turret Only (AUTO/ON/OFF), Auto Max Turn
 //   (AUTO/ON/OFF); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
 //  STAFF LINK (HELMLINK block, optional)   with a second PB "[Staff] ..." on the construct (StaffAI.cs) the Helm sends a heartbeat (2 Hz), its mode / target / battery
 //   (5 Hz) and seat changes over IGC (CurrentConstruct) and obeys the verbs the Staff forwards; the Staff releases every override when the heartbeat stops for 1.5 s.
@@ -715,7 +715,7 @@ List<IMyTimerBlock> _dm = new List<IMyTimerBlock>(); IMyTextSurface _hud;
 bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _menuOn; int _force, _asLvl = 1, _menuI; // _force: 0 follow the seat, 1 manual, 2 auto
 double _rawT, _rampT = -99, _w0, _asG = 1, _menuT, _pipR, _pipU;
 double ManDebounce = 0.4, ManRelease = 1.5, ManAssistMax = 1.5, ManGain = 1.5, ManSign = -1, ManScale = 1, ManPrio = 0.3, ManMenuWait = 2;
-bool ManAutoFire, ManScan; string ManMenuItems = "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", ManDmName = "Deadman"; int ManHudSurf = 0;
+bool ManAutoFire, ManScan; string ManMenuItems = "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", ManDmName = "Deadman", ManSeatEx = "gunnery"; int ManHudSurf = 0;
 bool Man { get { return _man || _hold; } }
 
 void ManCfg()
@@ -728,13 +728,13 @@ void ManCfg()
     ManScale = Math.Max(1e-3, Cfg(M, "Rotation Input Scale", ManScale)); ManPrio = Math.Max(1e-3, Cfg(M, "Pilot Priority Rate", ManPrio));
     ManAutoFire = Cfg(M, "Auto Fire In Manual", ManAutoFire); ManScan = Cfg(M, "Scan In Manual", ManScan);
     ManMenuItems = Cfg(M, "Run Menu", ManMenuItems); ManMenuWait = Cfg(M, "Run Menu Wait", ManMenuWait);
-    ManDmName = Cfg(M, "Deadman Timer Name", ManDmName); ManHudSurf = (int)Cfg(M, "HUD Surface", (double)ManHudSurf);
+    ManDmName = Cfg(M, "Deadman Timer Name", ManDmName); ManSeatEx = Cfg(M, "Seat Exclude (name part)", ManSeatEx).ToLowerInvariant(); ManHudSurf = (int)Cfg(M, "HUD Surface", (double)ManHudSurf);
 }
 
 void ManBlocks()
 {
     _seats.Clear(); _dm.Clear(); _hud = null;
-    GridTerminalSystem.GetBlocksOfType(_seats, b => Own(b) && b.CanControlShip && !(b is IMyRemoteControl));
+    GridTerminalSystem.GetBlocksOfType(_seats, b => Own(b) && b.CanControlShip && !(b is IMyRemoteControl) && (ManSeatEx == "" || !b.CustomName.ToLowerInvariant().Contains(ManSeatEx)));   // (a gunnery seat does not take the ship from the Helm)
     string n = ManDmName.ToLowerInvariant();
     if (n != "") GridTerminalSystem.GetBlocksOfType(_dm, b => Own(b) && b.CustomName.ToLowerInvariant().Contains(n));
     try
@@ -1305,7 +1305,7 @@ void Tick(string arg, UpdateType src)
     ReadIGC(); ReadSwarm();
     if (_tick % 6 == 3) BroadcastStatus();
     if (!Hot()) StepSlimScan();
-    if (_tick % 20 == 7) CheckDamage();
+    if (_tick % 4 == 3) CheckDamage();
     if (_tick % 6 == 0) PollDesignators();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
@@ -2210,29 +2210,37 @@ void StepSlimScan()
     if (_slimBusy) return;
     _slims.Clear(); _slims.AddRange(_slimsNew); _slimsGrid = g; _integ = -1;   // swap in the finished pass
 }
-void CheckDamage()
+int _cdI; double _cdSum; Vector3D _cdHd; bool _cdCmp;
+void CheckDamage()   // (sliced: CdSlice blocks per call - a 1,300-block ship read them all in one tick, 58,000 IL instructions against the 50,000 limit)
 {
-    double sum = 0; var g = Me.CubeGrid;
-    // which side was hit: blocks that lost integrity since the last check, as directions from the grid centre (the shooter is out that way)
-    bool cmp = _integ >= 0 && _slimHp.Count == _slims.Count;
-    if (!cmp) { _slimHp.Clear(); for (int i = 0; i < _slims.Count; i++) _slimHp.Add(0); }
-    Vector3D hd = Vector3D.Zero, gc = g.WorldVolume.Center;
-    for (int i = 0; i < _slims.Count; i++)
+    var g = Me.CubeGrid; int n = _slims.Count;
+    if (_cdI == 0)
     {
-        var s = _slims[i];
-        double v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0;
-        sum += v;
-        if (cmp && _slimHp[i] - v > 0.5) { Vector3D d = g.GridIntegerToWorld(s.Position) - gc; double l = d.Length(); if (l > 0.3) hd += d / l; }
-        _slimHp[i] = v;
+        _cdCmp = _integ >= 0 && _slimHp.Count == n;
+        if (!_cdCmp) { _slimHp.Clear(); for (int i = 0; i < n; i++) _slimHp.Add(0); }
+        _cdSum = 0; _cdHd = Vector3D.Zero;
     }
+    if (_slimHp.Count != n) { _cdI = 0; return; }   // (a new scan pass was swapped in)
+    // which side was hit: blocks that lost integrity since the last pass, as directions from the grid centre (the shooter is out that way)
+    Vector3D gc = g.WorldVolume.Center;
+    for (int e = Math.Min(n, _cdI + 150); _cdI < e; _cdI++)
+    {
+        var s = _slims[_cdI];
+        double v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0;
+        _cdSum += v;
+        if (_cdCmp && _slimHp[_cdI] - v > 0.5) { Vector3D d = g.GridIntegerToWorld(s.Position) - gc; double l = d.Length(); if (l > 0.3) _cdHd += d / l; }
+        _slimHp[_cdI] = v;
+    }
+    if (_cdI < n) return;
+    _cdI = 0; Vector3D hd = _cdHd;
     if (hd.LengthSquared() > 0.01)
     {
         hd.Normalize();
         Vector3D m = _now - _hitDirT < 3 ? _hitDir * 0.6 + hd * 0.4 : hd;
         if (m.LengthSquared() > 0.01) { _hitDir = Vector3D.Normalize(m); _hitDirT = _now; }
     }
-    if (_integ >= 0 && sum < _integ - 0.5) { _hitAt = _now; _hits++; }
-    _integ = sum;
+    if (_integ >= 0 && _cdSum < _integ - 0.5) { _hitAt = _now; _hits++; }
+    _integ = _cdSum;
 }
 
 // Random evasive velocity while under fire (new direction every 1-2.5 s and on every new hit).

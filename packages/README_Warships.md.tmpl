@@ -1,0 +1,182 @@
+# Space Engineers warships v{{VERSION}} ({{VARIANT}})
+
+{{INTRO}}
+
+Package contents: {{COUNTS}}. **No DLC blocks.** The Shrike and Corsair are small-grid ships, the Warden and Leviathan are large-grid ships. All of them can be flown by hand
+from their seat and fly and fight by themselves when nobody sits in it. Nothing in this package has been tried in the game yet: it was built and tested in a simulator
+(see "What was tested" below, and do the in-game tests at the end first).
+
+| Ship | Class | Grid | Programmable Blocks | Drones |
+|---|---|---|---|---|
+| **Shrike** | fighter, 1 pilot, 17 m | small | `[Helm] Shrike` | none |
+| **Corsair** | corvette, 36 m | small | `[Helm] Corsair`, `[Staff] Corsair`, `[Bay] Corsair` | 2 cradles in the outrigger pylons (`Corsair Wing` = with two Hornets) |
+| **Warden** | frigate, 85 m | large | `[Helm][SH] Warden Helm`, `[Staff][SH] Warden Staff`, `[Pod] Pod PB` (on the docked pod) | one docked 4-slot pod (`Warden Wing` = with four Hornets) |
+| **Leviathan** | dreadnought, 222 m | large | `[Helm][SH] Leviathan Helm`, `[Staff][SH] Leviathan Staff`, `[Pod] Pod PB 1` and `2` (on the two docked pods) | two docked 4-slot pods (`Leviathan Wing` = with eight Hornets) |
+| **Cradle Pod** | empty 4-slot drone pod | small | `[Pod] Pod PB` | docks into a Warden / Leviathan hangar |
+
+## Install
+
+1. Unzip this package anywhere. You get `Blueprints/<Name>/{bp.sbc,thumb.png}`, `Scripts/*.cs` and this README. The scripts in `Scripts/` are compacted (no comments) so that they fit the
+   Programmable Block limits; the commented originals in `Scripts/Source/` are for reading only. The blueprints already carry the scripts in their Programmable Blocks.
+2. **Delete the old blueprint folders first.** Open `%AppData%\SpaceEngineers\Blueprints\local\` and remove every folder of an earlier version of these ships (also the `bp.sbcB5` next to
+   `bp.sbc`: the game keeps loading that stale cache). This package never ships a `.sbcB5`.
+3. Copy the `Blueprints/<Name>` folders you want into `%AppData%\SpaceEngineers\Blueprints\local\`. In game press **F10**, pick the ship and paste it (creative tools, or a projector in survival).
+   Every ship is a **dynamic** ship; do not convert it to a station.
+4. "In-game scripts" must be enabled in the world settings, otherwise the Programmable Blocks do not run.
+5. If something does not paste, send the game log (`%AppData%\SpaceEngineers\SpaceEngineers_*.log`) and say which model and variant. **Which variant?** `<Name>` (Full) uses the whole design,
+   including block types whose XML has never been seen in a game-written blueprint (turrets, sensor, AI blocks, decoys, cargo containers, Run toolbar slots); `<Name> Lite` uses only shapes copied
+   from a game-written ship (no turrets, so no point defence, no sensor, no decoys, no toolbar `Run` slots). If a Full ship does not paste, try its Lite twin.
+6. Drones for the cradles come from the **Drones** package (Hornet, Wasp, Lancer, Harrier, Aegis, Mantis, Watcher); the `* Wing` ships already carry Hornets.
+
+**Warship specifics.** Large-grid ships are pasted as a free ship in creative mode (or from a projector in survival). The Warden (about 10,300 PCU with its pod) and the Leviathan
+(about 33,000 PCU with both pods) need a world limit to match: the repository file `docs/design/ships/Leviathan.md` lists what to delete for a 20,000 PCU world. The pods are separate grids in the same
+blueprint, docked by two connector pairs: after the paste look at the hangar connectors in the terminal and press **Lock** on each pair that is not locked. Every ship comes with its
+guns loaded, its tanks and batteries full and its Programmable Blocks programmed and configured; there is nothing to copy into a PB. The scripts are in `Scripts/` only for re-pasting.
+
+## Models
+
+{{MODEL_TABLE}}
+
+{{MODEL_SECTIONS}}
+
+## How the ships think (and what runs where)
+
+One script family, three jobs, each in its own Programmable Block so that none comes near the 100,000-character or the 50,000-instruction limit:
+
+{{SCRIPT_SIZES}}
+
+* **Helm** (`ShrikeAI.cs`, the same script on every ship): finds, tracks and shoots the target, flies the ship (thrusters, gyros) and hands the controls to you when you sit down.
+  It is the only block that ever writes a thruster or gyro override. Fixed guns are grouped by the `[B1]` .. `[B4]` tag in their names into up to four batteries (ballistic,
+  rocket, railgun, shell cannon: each gets its own lead solver); turrets are left to the game's own turret AI and count as extra designators. With turrets aboard it also
+  has a *turret-only* mode (a target none of the fixed guns can hit is ignored by them, the ship keeps its broadside to it) and it chooses the stand-off distance from the weapons.
+* **Staff** (`StaffAI.cs`): the ship's officer. It watches a heartbeat from the Helm and **releases every thruster and gyro override when the Helm stops** (about 1.5 s: the
+  dead-man switch), shows status on the cockpit screens, tells the drones where the ship is (so they can fly a ring round it, `wing satellite`) and which target the Helm has, runs the
+  hangar doors and the launch of the drones, and forwards the words you give it to the Helm.
+* **Bay / Pod PB** (`CradleBayAI.cs`): one per pod (or on the Corsair), manages the merge-block cradles: charges the drone, checks the way out is clear, lets go, repeats for the next drone.
+  The Staff talks to it over the antenna (IGC channel `<Ship Tag>.S2P` and `.P2S`).
+* A **Timer** named `... Timer D (deadman)` (5 s) is re-armed by the Helm every second while the Helm flies and cuts the thrusters and weapons if the Helm dies; it is stopped while you
+  fly. The Shrike and Corsair carry one Event Controller `EC Cockpit (configure in game)` (cockpit occupied -> stop the timer, empty -> start it: this second layer of the dead-man needs you to pick the event once, its number has never been seen in a game file); the Warden and Leviathan carry `EC Cockpit`, `EC Power` (same: pick the events by hand) and `EC Core` (reactor integrity below 40 % -> `Run` the Staff with no argument, which steps its menu to `wing satellite`).
+* **Why one Helm script for a 60-tonne fighter and a 14-kilotonne dreadnought?** The measured numbers (docs/design/ships/*.md in the repository) say a class setting is enough: the stand-off range, speeds and
+  the dodging (off for the large ships) are Custom Data, the turn-rate limit is measured by the script itself from the gyros' response (`Auto Max Turn`), and the weapons decide the
+  stand-off distance. The large ships just carry different numbers in their Helm Custom Data.
+
+## Commands
+
+Commands are the **argument** of a Programmable Block (run it with the text; toolbar slots do this), or arrive over IGC. **Run a Helm or Staff PB with no argument** and it steps a
+menu instead: each press highlights the next item (shown on the PB screen and on the cockpit HUD), the highlighted item runs 2 s after the last press. That is what the cockpit
+toolbar slots use (a `Run` slot cannot carry a typed argument in every game version: in-game test 3).
+
+**Staff PB** (anything it does not know goes to the Helm):
+
+| argument | does |
+|---|---|
+| `wing hunt` / `guard` / `rtb` / `follow` / `satellite` | order every drone of the types in `[Wing] Types`: attack what the ship has locked, hold, go home, follow, or fly the ring round the ship (100 m, grows with the hull) |
+| `wing lock` | send the Helm's target to the drones now and `hunt` |
+| `wing roll` / `page` | roll call of the wing (alive, engaged, range) on page 2 of the cockpit display |
+| `launch [n \| a-b \| all] [force]` | **the way to launch drones in a fight**: parks the Helm (idle, dampeners on) so that the ship stops turning and accelerating, opens the hangar doors, releases the drones one by one (2 s apart, 20 s between pods), then gives the Helm its mode back. `n` and `a-b` are bay numbers |
+| `release <n \| a-b \| all> [delay_s] [force]` | the same without touching the Helm. The bays wait until the ship turns slower than 0.1 rad/s and accelerates slower than 1 m/s2 (the drone leaves with the ship's velocity); `force` skips the gates. A request is dropped after 60 s |
+| `hold n` / `unhold n` | keep a bay shut / free it |
+| `recall` | `wing rtb`, 12 s later `wing satellite`, bays cancel their pending releases and switch the cradle merge blocks on (docking back by hand is not scripted) |
+| `doors open` / `doors close` | the `[Hangar n]` doors |
+| `status`, `reload` | refresh the screen / re-read Custom Data and re-scan blocks |
+| `hunt` `guard` `rtb` `idle` `manual` `auto` `assist hud\|fbw\|off` `lock` `unlock` `next` `range <m>` `home` `aim <mode>` `breach on\|off` | forwarded to the Helm (below) |
+
+**Helm PB**: `guard` (hold the home point, engage within Guard Radius), `hunt` (chase and engage), `rtb`, `idle` (release everything: thrusters and gyros off, dampeners on), `lock` (raycast-lock
+what the front camera points at), `unlock`, `next` (ignore this target for 60 s), `range <m>` (stand-off), `home` (set home here), `aim AUTO|BREACH|ENGINES|FACING|SPREAD|CENTER`,
+`breach on|off`, `ai on|off` (use the AI blocks to search), `reload`, and the manual-flight words `manual`, `auto`, `pilot` (toggle), `assist hud|fbw|off`.
+The Helm starts in `GUARD` (it saves its mode). The first fight of a ship that has nothing to shoot at yet: `hunt`.
+
+**Bay / Pod PB**: `release`, `recall`, `hold`, `unhold`, `status`, `reload` (the same words as the Staff).
+
+## Flying by hand (manual mode)
+
+1. **Sit in the pilot seat**: `[SH] Cockpit [Helm Seat]` (Shrike, Corsair) or `Bridge Cockpit` (Warden, Leviathan). Within 0.4 s the Helm switches to **MANUAL**: it releases every gyro
+   and thruster override in that same tick, puts the dampener switch back to what you had, switches the AI blocks off and stops the fixed guns it had switched on. You fly with the
+   ordinary controls. Tracking, the camera scan, the lock, the turrets and the point defence keep working; the fixed guns only fire when **you** fire them
+   (`Auto Fire In Manual` is false). The Remote Control and the `Gunnery Seat` (Warden, Leviathan) do not take the ship from the Helm.
+2. **HUD**: cockpit screen 0 shows the mode, the target, range, the battery that would fire and a **lead pip** (how far to move the nose, in degrees) with the fire window. The Staff writes
+   its status on screen 1 and the wing roll call on screen 2 (which screens your cockpit really has is in-game test 9; `[Manual] HUD Surface`, `[Staff] Cockpit Surface`,
+   `Helm HUD Surface`, `Wing Surface` re-map them).
+3. **Assist levels** (`assist hud|fbw|off` on the Helm, default `hud`): `off` nothing; `hud` the pip and the fire window only; `fbw` fly-by-wire: your stick rate is blended with the script's rate
+   towards the lead point, it needs a lock (`lock`), and any stick movement takes the blend away within 0.2 s. (`assist` with no word is the old Hornet mode: the script aims and fires, you fly.)
+4. **Leave the seat**: after 1.5 s (`Release Delay`) the Helm is back in the mode it had; it does not snap the nose (the turn-rate limit ramps up over 2 s) and the lock resumes.
+5. **`manual`** (to the Helm or the Staff) forces MANUAL with nobody in the seat (the ship then does nothing: Remote-Control or turret-only play), **`auto`** forces AUTO with a pilot aboard
+   (the ship flies itself and you get the HUD), `pilot` toggles. Both are cancelled by the seat changing.
+6. **Cockpit toolbar** (Full variants; page 1): weapon slots, `Main Turrets` / `PD` / `Decoys` on-off, hangar doors, `Run` Helm, `Run` Staff (the menu). Lite variants have the weapon slots only.
+7. If the nose turns the wrong way or too fast under `assist fbw`, change `[Manual] Pilot Rot Sign` (1 or -1), `Pilot Rate Gain` and `Rotation Input Scale` (never measured in the game: tests 3, 4).
+
+## Launching the drones (wing)
+
+* **Which drones**: Hornet-class drones from the Drones package (`Hornet`, `Wasp`, `Lancer`, `Harrier`, `Aegis`, `Mantis`, `Watcher`) that carry a rear merge block. The `* Wing` ships
+  come with Hornets already clamped (`Corsair Wing` 2, `Warden Wing` 4, `Leviathan Wing` 8): those are the easy way.
+* **Loading by hand**: paste the drone so that its merge block touches the cradle's merge block (the cradle merge blocks are named `[SH] [Bay n] Merge ...` on the Corsair and `[POD] Merge n` on the pods; the drone's merge block
+  is at its tail). Both merge blocks must be switched on; the game joins the two grids when they touch. Details and coordinates per slot: `docs/design/ships/Pod.md` (section 3).
+  The Corsair's bays only look for drone blocks named `Hornet...` (`Drone Prefix=Hornet` in the `[Bay] Corsair` Custom Data): change it to the drone's name (or delete the line) for another
+  type. The pod PBs take any drone.
+* **Launch**: `launch all` on the Staff PB (or `launch 1`, `launch 1-2`). The ship parks (idle), the doors open, each drone's batteries are put on recharge if they are below 90 %, the
+  drone is armed and the cradle lets go; the drone burns clear of the ship along the bay's `Away` direction and starts in `GUARD`. Then give the wing its job: `wing satellite` (ring),
+  `wing hunt`, `wing follow`. Bay numbers are global: the Leviathan's second pod starts at 5.
+* **Recall**: `recall`. Docking the drones back into the cradles is not scripted (phase 2): fly them next to the cradle and paste/merge by hand, or let them be.
+* If nobody answers (`NO BAY ANSWERED` on the Staff screen) the pod PB cannot be reached across the docked connectors: run `release n` on the pod PB itself, or use its Timer `[POD] Timer R(n)`.
+
+## Custom Data (what you can change)
+
+Every PB keeps its settings in Custom Data (ini text; the scripts write the keys they know on first start). After editing run the PB with `reload`.
+
+* **Helm** `[Shrike]`: `IGC Tag`, `Start Mode (GUARD/HUNT/ASSIST/IDLE)`, `Standoff Range`, `Min Range`, `Max Fire Range`, `Guard Radius`, `Combat Speed`, `Cruise Speed`, `Orbit Speed`,
+  `Evasive Jinking`, `Auto Camera Scan`, `AI Block Search Assist`, `Target Large Grids`, `Target Small Grids`, `Share Targets Over IGC`, `Friendly Fire Check`, `Fire Window Multiplier`,
+  `Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)`, `Breach Large Ships (AUTO)`, `RTB Battery Fraction`, `Aim Kp`, `Aim Kd`, `Max Turn Rate rad/s`.
+  `[Manual]`: `Seat Debounce`, `Release Delay`, `Assist (OFF/HUD/FBW)`, `Assist Max Rate`, `Pilot Rate Gain`, `Pilot Rot Sign`, `Rotation Input Scale`, `Pilot Priority Rate`,
+  `Auto Fire In Manual`, `Scan In Manual`, `Run Menu`, `Run Menu Wait`, `Deadman Timer Name`, `Seat Exclude (name part)`, `HUD Surface`.
+  `[Battery]`: `Primary (AUTO/B1..B4)`, `Standoff By Weapons`, `Turret Only (AUTO/ON/OFF)`, `Auto Max Turn (AUTO/ON/OFF)`.
+  `[Link]`: `Enable (AUTO/ON/OFF)`, `Ship Tag`, `Block Prefix`, `Heartbeat (s)`. `[Ship]`: `Tag`.
+  Also `[Fleet]`, `[Kamikaze Defence]`, `[AI Gate]` as in the drones.
+  The **Block Prefix** `[SH]` matters: the Helm and the Staff only use blocks whose name starts with it, so drones clamped in the cradles (they are blocks of the same grid while clamped) and the
+  pod are never adopted as thrusters or guns. Name every block you add `[SH] ...` (the Warden and Leviathan PBs are named `[Helm][SH] ...`).
+* **Staff** `[Staff]`: `Ship Tag`, `Block Prefix`, `Trip Time (s)` (1.5), `Watch Helm`, `Cockpit Surface`, `Helm HUD Surface`, `Wing Surface`, `Display Name`, `Wing Display Name`, `Run Menu`,
+  `Run Menu Wait`, `Pod Gap (s)` (20), `Door Open Wait (s)`, `Door Close After (s)`, `Recall Satellite After (s)`; `[Wing] Types` (the drone types it talks to); `[Hangar n] Group`, `Pod`.
+  The **Ship Tag** of the Helm (`[Link] Ship Tag` or `[Ship] Tag`), the Staff and the Pod PBs (`[Pod] Tag`) must be equal; it is `SH` on the Corsair, `WARDEN` / `LEVIATHAN` on the large ships.
+* **Bay / Pod PB** `[Pod]`: `Tag`, `First Bay`, `Slots`, `Charge Fraction`, `Wave Gap`, `Arm Seconds`, `Fused Grace`, `Cooldown`, `Wait Max`, `Max Turn`, `Max Accel`, `Join Seconds`, `Lane Check`,
+  `Lane Cells`, `Match Radius`, `Fleet Channel`, `Fleet Secret`; `[Bay n]`: `Merge`, `Drone Box Min/Max`, `Drone Prefix`, `Drone Tag`, `Away`, `Timer`.
+
+## What was tested, and what was not
+
+Everything below was done in the simulator that runs the real scripts (`SimHost.exe selftest m6`, `docs/design/ships/*.md`), against its own stand-in enemies. **It proves that the
+scripts, names and Custom Data fit together and that the logic holds; it proves nothing about the game's own behaviour.**
+
+* Tested in the sim: every PB finds exactly its ship's own blocks; a scripted pilot sits, flies, turns and leaves with no fight over the controls; the dead-man releases within 1.2 s; the
+  drones leave the cradles with `launch all`, form the ring and shoot; turn rates, accelerations and stopping distances against the design numbers; instruction counts
+  (peak per PB under 40,000 in the pessimistic IL model); fights against the sim's Pirate ship, small drone groups and the Tech Hunter (`docs/design/ships/*.md` for the numbers).
+* Known weak spots, from the same runs: the **Lite Shrike and Lite Corsair** (no AI blocks, no turrets) do not find a target on their own - fly them (`lock`) or use the Full ships; a lone Shrike finds small attackers late and lost to a single Hornet in 3 of 5 sim duels (to three Hornets always); the sim's Gnat swarms rarely close on a ship that does not look for them; `launch` while a pilot flies waits for the pilot to hold still; docking the drones back is not scripted.
+* Not tested and different in the game, possibly: the gyro feel and stick scale (`Pilot Rot Sign`...), the toolbar `Run`, IGC latency and range between the ship and its drones, merge-block clamping and
+  the real separation, connector locking of the pods, conveyor-fed ammunition and hydrogen on the large ships (the sim has no conveyor model and unlimited hydrogen), large-grid damage (the sim is
+  optimistic: large thrusters and batteries die 1.6 to 5.9 times too slowly), the enemy AIs (stand-ins) and the real count of "instructions" (the sim reports a block model and a pessimistic IL model).
+
+## First in-game tests, in this order
+
+1. **Paste the Lite twins** (`Shrike Lite`, `Corsair Lite`, then `Warden Lite`), then the Full ships. A failure of a Full ship that its Lite twin does not have points at the block shapes that have never been seen
+   in a game file (turrets, sensor, AI blocks, decoys, timer toolbars). Large ships: check the PCU against the world limit.
+2. **The scripts start**: open each PB: the screen shows the script and version (ShrikeAI 0.1, StaffAI 1.3, CradleBayAI 1.0), no `Script too complex`, no red text. Let the ship idle for 5 minutes in `guard` and
+   fly it in `hunt` against a target: if any PB stops with "too complex", the game counts instructions harder than the sim's block model; report which one.
+3. **Sit down** (Shrike first): MANUAL within half a second, the ship flies normally, the HUD pip appears, the ship goes back to AUTO 1.5 s after you stand up.
+   Then try `assist fbw` with a lock. If the nose swings the wrong way, flip `Pilot Rot Sign`. Try the Run menu from a toolbar slot: does `Run` with no argument step the menu, and can you set a
+   `Run` slot with an argument on the PB (Ctrl+B export; test K3)?
+4. **Dead-man**: switch the Helm PB off in the terminal while the ship flies in `hunt`: within about 1.5 s the thrusters and gyros must be released, the guns off, "HELM LOST" on the cockpit screen, and the Timer `(deadman)` fires after 5 s. Switch the PB on again: "Helm back".
+5. **Fuel and ammunition** (Warden, Leviathan): every thruster shows hydrogen, turrets refill from the lockers, railguns hold their slugs (the generator writes no conveyor lines; if a branch is dry, rebuild one junction).
+6. **Cradles**: Corsair Wing: are the two Hornets still clamped after the paste (one grid or three in the terminal)? `release 1` on the `[Bay] Corsair` PB; then `launch all` on the Staff. Warden Wing: the pod docked and locked, `launch all`
+   (the Staff reaches the pod across the connectors, or says it did not), `doors open|close`.
+7. **A fight**: a pirate ship or a few enemy drones at 1-2 km. The ship should lock, hold its stand-off (700 m Warden, 800 m Leviathan, from the weapons on the small ships), shoot with every battery it can, and keep
+   the turrets busy. `wing satellite` then `wing hunt` with a launched wing.
+8. Anything from `packages/tests.md` marked [ship] that is not covered above.
+
+## Known unknowns
+
+{{UNKNOWNS}}
+
+## All in-game tests for these ships
+
+{{TESTS}}
+
+## Changelog
+
+{{CHANGELOG}}

@@ -31,10 +31,10 @@ class RuleTests(unittest.TestCase):
     def test_names_and_models(self):
         self.assertEqual(ship(False).name, 'Leviathan')
         self.assertEqual(ship(True).name, 'Leviathan Lite')
-        self.assertEqual(list(L.MODELS), ['Leviathan'])
+        self.assertEqual(list(L.MODELS), ['Leviathan', 'Leviathan Wing'])
         self.assertIn('Leviathan', L.DOCS)
         self.assertGreater(len(L.DOCS['Leviathan']), 200)
-        self.assertEqual(set(L.SCRIPTS), {'ShrikeAI.cs', 'GunneryAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'})
+        self.assertEqual(set(L.SCRIPTS), {'ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'})
         self.assertIn('Leviathan', L.MODEL_NOTES)
 
     def test_no_dlc_no_prototech(self):
@@ -89,7 +89,7 @@ class NamingTests(unittest.TestCase):
     def test_pbs(self):
         bp = ship(False)
         pbs = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
-        self.assertEqual(sorted(b['name'] for b in pbs), ['[Gunnery][SH] Leviathan Gunnery', '[Helm][SH] Leviathan Helm', '[Staff][SH] Leviathan Staff'])
+        self.assertEqual(sorted(b['name'] for b in pbs), ['[Helm][SH] Leviathan Helm', '[Staff][SH] Leviathan Staff'])
         names = []
         for pod in bp.pods_:
             pp = [b for b in pod.blocks if b['xtype'].endswith('MyProgrammableBlock')]

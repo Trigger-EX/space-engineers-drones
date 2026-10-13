@@ -22,7 +22,7 @@ Nothing of this has been pasted in the game yet (section 12 lists what to look a
 | generation / batteries | 420 MW / 60 MWh (240 MW) | the same: 1 x 300 MW + 8 x 15 MW, 20 x 3 MWh | railgun recharge 228 MW, surplus 191 MW |
 | hydrogen | 4 tanks, 60 ML | the same, all full | full forward burn 19,281 L/s = **51.9 min**; everything at 100 % 14.8 min; 25 % forward + 10 % others 104 min (catalogue need 17 ML per 30 min) |
 | docks | 8 | 8 (two pods of 4) | each pod: 4 merge-block cradles, own PB |
-| PBs | Helm, Gunnery, Staff, 2 x Pod | the same | `[Helm][SH]`, `[Gunnery][SH]`, `[Staff][SH]`, `[Pod]` x 2 |
+| PBs | Helm, Gunnery, Staff, 2 x Pod | **Helm, Staff, 2 x Pod: the Gunnery PB was dropped in M6 (section 14)** | `[Helm][SH]`, `[Staff][SH]`, `[Pod]` x 2 |
 | junctions | 200 conveyors | 271 (Lite 256) | 14 thrusters, 24 turrets, 4 tanks, 4 lockers on one network |
 
 Deviations explained: the size (nacelles for the manoeuvring thrusters and the pods' hangars, ram keel for the profile), the angular acceleration (gyros cost 50 PCU and 12.8 t each; 72 keep the
@@ -92,7 +92,7 @@ z20 ...#######################...         z52 ..........#########..........
 z22 ...#...CCC.........CCC...#...         z53 ..........w...S...w..........
 z24 ...TTT#CCC.........CCC#TTT...         z54 ..........w.P...S.w..........   (P at z 54: Remote Control)
 z28 ...#........#TTT#........#...         z57 ..........w...e...w..........
-z33 ...ttt#CCC.........CCC#ttt...         z59 ..........w.P.P.P.w..........   Helm, Gunnery, Staff
+z33 ...ttt#CCC.........CCC#ttt...         z59 ..........w.P...P.w..........   Helm, Staff
 z41 ...D....#...........#....D...         z60 ..........w#######w..........   (bulkhead z = 60)
 z43 ...D....#...BBBBB...#....D...         z61 ..........w.e.e.e.w..........   EC Cockpit, EC Power, EC Core
 z50 ...#######ttt###ttt#######...         z63 ..............a..............
@@ -104,20 +104,20 @@ z85 (stern: tanks at y 4..6, engines z 85..87)
 
 ## 4. Systems (block names and script-facing tags)
 
-Every ship block is named `[SH] ...`; the PBs `[Helm][SH] Leviathan Helm`, `[Gunnery][SH] Leviathan Gunnery`, `[Staff][SH] Leviathan Staff`. Pod blocks are `[POD1] ...` (port) and `[POD2] ...` (starboard),
+Every ship block is named `[SH] ...`; the PBs `[Helm][SH] Leviathan Helm`, `[Staff][SH] Leviathan Staff` (M6: no Gunnery PB). Pod blocks are `[POD1] ...` (port) and `[POD2] ...` (starboard),
 the pod PBs `[Pod] Pod PB 1` and `[Pod] Pod PB 2`; nothing in a pod carries `[SH]` (grids_bays 6.3: Helm and Staff never adopt a drone or pod block).
 
 | system | blocks | names / tags | where |
 |---|---|---|---|
 | seats | 2 x `LargeBlockCockpitSeat` | `[SH] Bridge Cockpit` (main cockpit), `[SH] Gunnery Seat` | bridge (0, 13, 53), (2, 13, 54) |
 | script controller | `LargeBlockRemoteControl` | `[SH] Remote Control` | (-2, 13, 54) |
-| PBs | 3 x `LargeProgrammableBlock` | `[Helm][SH] ...`, `[Gunnery][SH] ...`, `[Staff][SH] ...`; Custom Data `[Ship] Tag=LEVIATHAN`; Helm: `[Battery 1] Tag=B1 Class=RAIL Role=PRIMARY_CANDIDATE`, `[Cockpit]` surfaces; Gunnery: `[Turrets] Groups=Artillery,Assault,Rockets,PD`, `[Ammo]`; Staff: `[Wing]`, `[Hangar 1]`, `[Hangar 2]` (group + pod PB name) | (-2, 13, 59), (0, 13, 59), (2, 13, 59) |
+| PBs | 2 x `LargeProgrammableBlock` (+ 2 pod PBs on the pod grids) | `[Helm][SH] Leviathan Helm` (`ShrikeAI.cs`), `[Staff][SH] Leviathan Staff` (`StaffAI.cs`); Custom Data `[Ship] Tag=LEVIATHAN`; Helm `[Link] Block Prefix`, `[Shrike]` class tuning (section 14), `[Manual] HUD Surface`, `[Battery] Standoff By Weapons=false`; Staff `[Staff] Block Prefix/Cockpit Surface/Helm HUD Surface/Wing Surface/Turret Target Group/Turret Target Names`, `[Wing]`, `[Hangar 1]`, `[Hangar 2]` (group + pod PB name) | (-2, 13, 59), (2, 13, 59) |
 | main battery | 6 x `LargeRailgun`, capacitor full, 6 slugs each | `[SH] [B1] Railgun 1..6`, group `B1` | ribs channels, y 3..4, z 12..19 |
 | artillery | 8 x `LargeCalibreTurret`, 6 shells each | `[SH] Artillery Turret n P1..P4 / S1..S4`, group `Artillery` | forecastle ledges z 20, 23, 26, 29 |
 | assault | 12 x `LargeBlockMediumCalibreTurret`, 6 shells each | `[SH] Assault Turret n P1..P6 / S1..S6`, group `Assault` | flank ledges z 35, 38, 44, 47, 53, 56 |
 | point defence | 20 x `LargeGatlingTurret`, 24 boxes (3,360 rounds) each | `[SH] [PD] Gatling n <place>`, group `PD` | ledge z 32, 41, 59, 62; deck z 22; stern steps z 72, 78; belly z 24, 76; keel z 28, 60 |
 | rockets | 4 x `LargeMissileTurret` (empty subtype), 6 rockets each (Full only; Lite has a gatling there) | `[SH] Rocket Turret n <place>`, group `Rockets` | ledge z 65, deck z 28 |
-| groups | `B1` (6), `Artillery` (8), `Assault` (12), `Rockets` (4), `PD` (20), `Main Turrets` (20 = artillery + assault, Gunnery's), `Turrets` (44), `Weapons` (50), `Thrusters` (14), `Decoys` (12), `[Hangar 1]` (8 port doors), `[Hangar 2]` (8 starboard doors), `Gyros` (72), `Reactors` (9), `Batteries` (20), `Tanks` (4) | | |
+| groups | `B1` (6), `Artillery` (8), `Assault` (12), `Rockets` (4), `PD` (20), `Main Turrets` (20 = artillery + assault), `Turrets` (44), `Weapons` (50), `Thrusters` (14), `Decoys` (12), `[Hangar 1]` (8 port doors), `[Hangar 2]` (8 starboard doors), `Gyros` (72), `Reactors` (9), `Batteries` (20), `Tanks` (4) | | |
 | decoys | 12 x `LargeDecoy` flush in the skin, six mirrored pairs | `[SH] Decoy 1..12` | bow flank, flank, stern, citadel flank, belly |
 | engines | 4 x `LargeBlockLargeHydrogenThrust`, exhaust aft | `[SH] Thruster Main Engine 1..4` | x -10, -5, 3, 8; y 4..6; z 85..87 |
 | manoeuvring | 10 x `LargeBlockLargeHydrogenThrust`: 2 Brake, 4 Strafe, 2 Lift, 2 Dive | `[SH] Thruster Brake P/S`, `Strafe P/S fore/aft`, `Lift P/S`, `Dive P/S` | Brake in the nacelle fronts (z 56), Strafe fore in the flanks (z 32) and aft in the nacelles (z 67), Lift on the belly and Dive on the ledges at z 50 |
@@ -132,12 +132,12 @@ the pod PBs `[Pod] Pod PB 1` and `[Pod] Pod PB 2`; nothing in a pod carries `[SH
 | AI (Full) | `LargeOffensiveCombat`, `LargeFlightMovement` | `[SH] AI Offensive [AI]`, `[SH] AI Flight [AI]` | bridge |
 
 Cockpit toolbar (hand flight, page 1): `B1` Shoot, `Main Turrets` on/off, `PD` on/off, `Rockets` on/off (Full), `Decoys` on/off, `[Hangar 1]` Open_On, Open_Off, Run Helm, Run Staff. Gunnery seat:
-`B1` Shoot, `Artillery`, `Assault`, `PD`, `Rockets` on/off, `[Hangar 2]` Open_On / Open_Off, Run Gunnery, Run Staff. PB `Run` without an argument is the one action never seen in a game file
+`B1` Shoot, `Artillery`, `Assault`, `PD`, `Rockets` on/off, `[Hangar 2]` Open_On / Open_Off, Run Helm, Run Staff. PB `Run` without an argument is the one action never seen in a game file
 (section 11). Timer D, the toolbars and EC Core use only seen action ids except `Run`.
 
-Control hooks (control_arch): Helm collects weapons / thrusters / gyros by `[SH]` AND grid; Gunnery owns the turret groups (`Artillery`, `Assault`, `Rockets`, `PD`, `Main Turrets`); Staff finds the two
+Control hooks (control_arch): Helm collects weapons / thrusters / gyros by `[SH]` AND grid; the Staff sets the targeting group of the `Artillery` / `Assault` turrets (`Turret Target Group`); Staff finds the two
 pod PBs by name and talks to them over `ConnectedConstructs`; the hangar groups are `[Hangar 1]` (port) and `[Hangar 2]` (starboard). Script file names embedded when the files exist in `scripts/`:
-`HelmAI.cs`, `GunneryAI.cs`, `StaffAI.cs` (ship), `CradleBayAI.cs` (both pods); a missing file gives an EMPTY program (`SCRIPTS` in the module lists the names).
+`ShrikeAI.cs` (Helm), `StaffAI.cs` (Staff), `CradleBayAI.cs` (both pods); `SCRIPTS` in the module lists the names.
 
 ## 5. Weapons and point defence
 
@@ -250,7 +250,7 @@ but removes mass and the attachment points of the interior; it is not part of th
 ## 11. Known limits
 
 1. **Railguns have no feed** (section 8): 6 slugs each, reload by hand from the lockers. Artillery, assault and rocket turrets draw from the lockers through the junctions only if that network pastes working.
-2. The two pods are empty (no drones); the Staff / Pod scripts and the pods' bay tables are proposals until the script workers write them; the pod docking is unverified in the game (Pod.md C1..C4).
+2. The two pods are empty in `Leviathan` (use `Leviathan Wing` for eight Hornets already clamped); the pod docking and the Staff-to-pod link across the connectors are unverified in the game (Pod.md C1..C4).
 3. Event Controllers: only EC Core has an event configured (integrity, a seen id); EC Cockpit and EC Power exist but their event numbers (cockpit occupied, stored power) are unverified, set them by hand.
 4. `Run` toolbar slots (cockpits and EC Core) have no argument (the argument form is unseen).
 5. Unseen XML shapes, Full variant only: `LargeBlockSensor` (from the game source), `LargeOffensiveCombat` and `LargeFlightMovement` (guesses), and the rocket turret (`LargeMissileTurret` with the empty
@@ -297,3 +297,50 @@ but removes mass and the attachment points of the interior; it is not part of th
 * Shapes: sample-derived XML for every block (`sebp.shape_summary()`); see limit 5 for the exceptions.
 
 M5: the starboard pod's PB has `[Pod] First Bay=5` (`cradle_pod(first_bay=5)`), so `release 5` is the first drone of the starboard pod and `release all` is sent as `release 1-4 0` and `release 5-8 20` (20 s pod gap); Helm/Staff Custom Data carry `Block Prefix=[SH]`.
+
+## 14. Flight and fight (M6, simulator only), and why there is no Gunnery PB
+
+Nothing here was measured in the game; the sim's large-grid damage is optimistic (large thrusters and batteries die 1.6-5.9 times too slowly), hydrogen is unlimited, there is no conveyor model, the Pirate and the Tech Hunter are stand-ins, and
+the two docked pods are held rigidly to the hull (`RigidLink`). Commands as in `Shrike.md` section 12; `Leviathan Wing` is the Leviathan with four Hornets in each pod.
+
+**Helm.** `ShrikeAI.cs` again, unchanged, with the class data in its Custom Data: `Standoff Range=800`, `Min Range=150`, `Evasive Jinking=false`, `Orbit Speed=10`, `Combat Speed=40`, `AI Block Search Assist=false`, `[Battery] Standoff By Weapons=false`.
+The auto `MaxTurn` calibration works here too: **0.18 rad/s** against the analytic 0.85 sqrt(2 x 0.04 x 0.6) = 0.19 after the first slew. Stand-off sweep (Pirate, 3 seeds each, cap 600 s): weapon-based (the six rails at 1,000 m, the default) kill times 288 / 263 / 200 s;
+500 m 276 / 204 / 108 s; **800 m 109 / 127 / 122 s** (the other settings were still the defaults in this sweep; in the sim the turrets reach 800 m, the artillery 2 km only with a working AI block).
+
+**The Gunnery PB did not earn its keep and is gone.** The design gave it three jobs: (1) secondary batteries with windows and ripple fire (done in the Helm since M3: `[B1]..[B4]` batteries, one lead solver per class), (2) turret and point-defence configuration, (3) the ammunition table
+(the game's conveyors feed the turrets; a script can only watch). The one function that can be measured is (2): which part of the target the heavy turrets shoot at. I set the `SetTargetingGroup` of the artillery and assault turrets from outside
+(an env hook in the sim, later `[Staff] Turret Target Group`) and ran Leviathan vs Pirate, 6 seeds each, cap 400 s, the same seeds:
+
+| artillery / assault turrets aim at | wins | kill time (s) | median |
+|---|---|---|---|
+| the target's centre (nothing set) | 5/6 | 78 88 115 171 207 (timeout 400) | 143 |
+| PowerSystems / Weapons | 5/6 | 47 70 115 123 170 (timeout 400) | 119 |
+| PowerSystems / Propulsion | 5/6 | 70 75 90 123 170 (timeout 400) | 106 |
+| **Weapons / Weapons** | **6/6** | 47 52 82 95 109 110 | **89** |
+
+Aiming at the weapons ends the fight when the Pirate has no gun left (the sim's win condition), which is what a disabled ship is. The effect is a property of the turrets, not a job for a 30,000-character PB, so it became two Custom Data keys in the Staff (10 lines):
+`[Staff] Turret Target Group=Weapons`, `Turret Target Names=Artillery,Assault` (the point-defence gatlings are left on the default so that they keep shooting rockets and drones). Same effect measured on the Warden: median 100 -> 76 s. Not measured: the real
+`SetTargetingGroup` value strings (`Weapons`, `Propulsion`, `PowerSystems` are what the SEEKER test ships use), and that the real turrets honour the group.
+
+**Flight** (scripted pilot at full stick, dampeners on):
+
+| | design | sim |
+|---|---|---|
+| forward / other axes | 2.1 / 1.0 m/s2 | 2.07 / 1.0 m/s2 |
+| braking, stick released | 1.0 m/s2 | from 39.3 m/s: 37.6 s, 746 m (analytic 39 s, 770 m) |
+| yaw | 0.038 rad/s2 | **0.04 rad/s2**: a 90 degree turn about 12.5 s, 180 degrees about 17.7 s; rotation stops 7.6 s after release |
+
+**Fights** (cap 600 s vs the Pirate, 300 s otherwise; Pirate 5 seeds, 3 seeds otherwise; Wing = launch at 3 s, ring at 55 s, `wing hunt` at 75 s):
+
+| enemy | Leviathan | Leviathan Wing |
+|---|---|---|
+| Pirate (2.8 km) | **10/10 wins** (seeds 0-4: 47-110 s, median 82; seeds 5-9: 60-101 s, median 87), about 40 blocks lost | 3/3, 64-97 s (median 80) |
+| 3 Hornets (1,000 m) | 3/3, 79-204 s (median 107) | - |
+| 6 Gnats (1,000 m) | 2/3, 123-147 s, 1 timeout | 2/3, 182-213 s, 1 timeout |
+| 6 Gnats (400 m) | @@GN_Leviathan400@@ | - |
+| Tech Hunter (13,666 blocks, cap 300 s, 1 seed) | @@TH_Leviathan@@ | - |
+
+**Manual, dead-man, wing, instructions.** `selftest m6` with `M6_BIG=1` (2 seeds each): the Helm and the Staff hold the ship's own 72 gyros, 14 thrusters, 6 fixed guns, 44 turrets, 20 batteries, the bridge seat (the Gunnery Seat does not count), 5 cameras and the deadman timer, nothing of the pods;
+manual flight, 0 override-fight ticks, the turrets keep shooting; Helm PB killed at 15 s: all overrides released 1.13 s later. `launch all` at 4 s: pod 1 (bays 1-4) lets go, pod 2 (bays 5-8) follows 20 s later ("Pod Gap"), all 8 Hornets are out
+by 52 s, the Helm gets HUNT back, the roll call counts 8, the ring forms (215-413 m from the COM 18 s after `wing satellite`, still closing: the hull radius is about 110 m). Instructions (IL model, with launch): Helm 37,354, Staff 28,197, pod bay 26,267, Hornet 45,545 (the unchanged
+drone script; block model 2,274 / 1,616 / 616 / 1,750). The integrity scan is skipped on this hull (more than 30,000 cells).

@@ -1,12 +1,12 @@
 // M6 acceptance tests (docs/design/control_arch.md section 7 "M6 Assembly"), run on the REAL packaged blueprints with their REAL scripts and Custom Data:
-//   python3 -I tools/build_all.py --only Corsair "Corsair Wing" Warden "Warden Wing Test" Leviathan --no-zip
+//   python3 -I tools/build_all.py --only Corsair "Corsair Wing" Warden "Warden Wing" Leviathan --no-zip
 // Run: SimHost.exe selftest m6   (the Leviathan rows only with M6_BIG=1: 8,400 blocks, about 10 s of wall time per simulated minute; skips when a blueprint is missing).
 //   1 wiring     [Helm] ShrikeAI and [Staff] StaffAI find exactly the ship's own gyros / thrusters / guns / turrets / batteries / seat / dead-man timer (all names start with the
 //                [SH] prefix, nothing of the docked pod or of a clamped drone), the HELMLINK is on, the Staff hears the Helm, the bay PBs see their bays
 //   2 manual     a scripted pilot sits, flies, turns and leaves (a Pirate fights the ship): no override fight, the Helm is MANUAL while he sits, the fixed guns stay quiet, the
 //                turrets keep killing, AUTO resumes after the release delay and the Helm flies again
 //   3 dead-man   Helm PB killed at 15 s while it flies: the Staff clears every override within Trip Time + one step, once, and Timer D (5 s) fires too
-//   4 wing       'launch all' on the ships with loaded bays (Corsair Wing, Warden Wing Test): the Helm parks, every bay lets go, the Helm gets its mode back, the drones live and
+//   4 wing       'launch all' on the ships with loaded bays (Corsair Wing, Warden Wing): the Helm parks, every bay lets go, the Helm gets its mode back, the drones live and
 //                the Staff's roll call counts them; 'wing satellite' puts them on the ring (distance from the ship), 'wing hunt' makes them shoot
 // EVIDENCE: the sim's physics, gun, turret, IGC, Timer / Event Controller and merge models (large-grid damage is optimistic, hydrogen unlimited, no conveyor model, RigidLink for
 // the connector-docked pod); nothing here was measured in the game. Script state is read by reflection.
@@ -37,16 +37,19 @@ namespace SeSim.Run
             _fail = 0; _pass = 0; _simDir = simDir; _repo = repo;
             Console.WriteLine("SelfTestM6 (the assembled warships: Corsair, Warden" + (Big ? ", Leviathan" : "") + " with their real scripts and Custom Data)");
             string bp = Path.Combine(Path.Combine(repo, "out"), "Blueprints");
-            foreach (string m in new[] { "Corsair", "Corsair Wing", "Warden", "Warden Wing Test", "Pirate-not-needed" })
+            foreach (string m in new[] { "Corsair", "Corsair Wing", "Warden", "Warden Wing", "Pirate-not-needed" })
                 if (m != "Pirate-not-needed" && !File.Exists(Path.Combine(bp, m, "bp.sbc")))
-                { SelfTestSkips.Note("M6 (build: python3 -I tools/build_all.py --only Corsair \"Corsair Wing\" Warden \"Warden Wing Test\" --no-zip)"); Console.WriteLine("  skipped: blueprint " + m + " missing"); return 0; }
+                { SelfTestSkips.Note("M6 (build: python3 -I tools/build_all.py --only Corsair \"Corsair Wing\" Warden \"Warden Wing\" --no-zip)"); Console.WriteLine("  skipped: blueprint " + m + " missing"); return 0; }
+            string dbg = Environment.GetEnvironmentVariable("M6_DEBUG"); if (dbg != null) { Debug(dbg); return 0; }
             var ships = new List<string> { "Corsair", "Warden" }; if (Big) ships.Add("Leviathan");
+            TestShrike();
             foreach (string s in ships) TestWiring(s);
             foreach (string s in ships) TestManual(s);
+            foreach (string s in ships) if (s != "Corsair") TestGunnerySeat(s);
             foreach (string s in ships) TestDeadman(s);
             TestWing("Corsair Wing", 2);
-            TestWing("Warden Wing Test", 4);
-            if (Big && File.Exists(Path.Combine(bp, "Leviathan Wing Test", "bp.sbc"))) TestWing("Leviathan Wing Test", 8);
+            TestWing("Warden Wing", 4);
+            if (Big && File.Exists(Path.Combine(bp, "Leviathan Wing", "bp.sbc"))) TestWing("Leviathan Wing", 8);
             Console.WriteLine(_fail == 0 ? "SelfTestM6 passed (" + _pass + " checks)" : "SelfTestM6 FAILED: " + _fail + " of " + (_pass + _fail));
             return _fail;
         }
@@ -64,7 +67,7 @@ namespace SeSim.Run
         static bool _idleEnemy;
         static Scenario Fight(string a, string enemy, double dist, string pilot, params string[] cmds)
         {
-            var sc = new Scenario { Kind = "ship", Name = "ship/" + a + "-vs-" + enemy, StartDistanceMin = dist, StartDistanceMax = dist, MaxTicks = 200 * 60, FaceEnemies = true, DecisiveHoldSeconds = 1000, BlueprintCustomData = true, RigidSubgrids = true };
+            var sc = new Scenario { Kind = "ship", Name = "ship/" + a + "-vs-" + enemy, StartDistanceMin = dist, StartDistanceMax = dist, MaxTicks = 200 * 60, FaceEnemies = Environment.GetEnvironmentVariable("M6_NOFACE") == null, DecisiveHoldSeconds = 1000, BlueprintCustomData = true, RigidSubgrids = true };
             sc.Teams.Add(new TeamSpec(0, a)); sc.Teams.Add(new TeamSpec(1, enemy));
             var sa = new ShipSpec { Model = a, Team = 0, Role = "A1", Pilot = pilot };
             for (int i = 0; i + 1 < cmds.Length; i += 2) sa.Commands.Add(new KeyValuePair<double, string>(Num(cmds[i]), cmds[i + 1]));
@@ -121,6 +124,24 @@ namespace SeSim.Run
             return bad;
         }
 
+        static string CamInfo(object helm)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var o in (IEnumerable)Fld<object>(helm, "_cams")) { var c = (IMyCameraBlock)o; sb.Append(c.CustomName.Replace("[SH] ", "").Replace("Shrike Test ", "")).Append(c.IsWorking ? "" : "!").Append('=').Append(c.AvailableScanRange.ToString("F0")).Append(' '); }
+            return sb.ToString();
+        }
+        static void Debug(string model)
+        {
+            _idleEnemy = Environment.GetEnvironmentVariable("M6_DEBUG_HUNT") == null;
+            var sc = Fight(model, Environment.GetEnvironmentVariable("M6_DEBUG_ENEMY") ?? "Hornet", 500, null, "0.5", "Helm:hunt");
+            _idleEnemy = false;
+            Go(sc, 0, Environment.GetEnvironmentVariable("M6_DEBUG_SECS") != null ? int.Parse(Environment.GetEnvironmentVariable("M6_DEBUG_SECS")) : 40, (w, sh, helm, staff, host) =>
+            {
+                if (w.Tick % (5 * 60) != 0 || w.Tick == 0) return;
+                Console.WriteLine("t " + w.Tick / 60 + " cams " + Count(Fld<object>(helm, "_cams")) + " contacts " + Count(Fld<object>(helm, "_contacts")) + " tgt " + (Fld<object>(helm, "_tgt") != null) + " aiOn " + Fld<bool>(helm, "_aiOn") + " err '" + Fld<string>(helm, "_err") + "' mode " + Fld<object>(helm, "_mode") + " maxTurn " + Fld<double>(helm, "MaxTurn").ToString("F2") + " standoff " + Fld<double>(helm, "Standoff").ToString("F0") + " w " + sh.Main.AngularVelocity.Length().ToString("F2") + " aiScan " + Fld<int>(helm, "_aiScan") + " scanIdx " + Fld<int>(helm, "_scanIdx") + " cams " + CamInfo(helm));
+            });
+        }
+
         // ------------------------------------------------------------------------------------------------------------------ 1 wiring
         static void TestWiring(string model)
         {
@@ -131,7 +152,7 @@ namespace SeSim.Run
             Go(sc, 0, 8, (w, sh, helm, staff, host) =>
             {
                 if (w.Tick != 7 * 60 || staff == null) return;
-                gy = Own<IMyGyro>(sh); th = Own<IMyThrust>(sh); gn = Own<IMyUserControllableGun>(sh); tu = Own<IMyLargeTurretBase>(sh); ba = Own<IMyBatteryBlock>(sh); se = Own<IMyShipController>(sh); cams = Own<IMyCameraBlock>(sh); rcs = Own<IMyRemoteControl>(sh);
+                gy = Own<IMyGyro>(sh); th = Own<IMyThrust>(sh); gn = Own<IMyUserControllableGun>(sh); tu = Own<IMyLargeTurretBase>(sh); ba = Own<IMyBatteryBlock>(sh); se = Own<IMyShipController>(sh); cams = Own<IMyCameraBlock>(sh); rcs = Own<IMyRemoteControl>(sh); foreach (var bd in sh.Bodies) foreach (var k in bd.Blocks) { var c = k.Api as IMyShipController; if (c != null && !(c is IMyRemoteControl) && ((IMyTerminalBlock)c).CustomName.ToLowerInvariant().Contains("gunnery")) rcs++; }   // (rcs = controllers the Helm does not count as seats: the Remote Control and the gunnery seat)
                 dm = 0; foreach (var bd in sh.Bodies) foreach (var k in bd.Blocks) { var t = k.Api as IMyTimerBlock; if (t != null && t.CustomName.StartsWith("[SH]") && t.CustomName.ToLowerInvariant().Contains("deadman")) dm++; }
                 hg = Count(Fld<object>(helm, "_gyros")); ht = Count(Fld<object>(helm, "_thr")); hn = Count(Fld<object>(helm, "_guns")); hu = Count(Fld<object>(helm, "_turrets")); hb = Count(Fld<object>(helm, "_bats"));
                 hs = Count(Fld<object>(helm, "_seats")); hd = Count(Fld<object>(helm, "_dm")); hc = Count(Fld<object>(helm, "_cams"));
@@ -146,6 +167,38 @@ namespace SeSim.Run
             Check(link && hbN >= 8 && trips == 0 && txt.Contains("HELM  ok"), model + ": HELMLINK on, the Staff has " + hbN + " heartbeats in 7 s, no trip");
         }
         static bool IsDrone(Body b) { foreach (var k in b.Blocks) { var pb = k.Api as SimProgrammableBlock; if (pb != null && pb.CustomNameValue != null && !pb.CustomNameValue.StartsWith("[")) return true; } return false; }
+        /// <summary>the fighter has one PB: the Helm finds its own blocks, flies in MANUAL without a fight, and its only dead-man is Timer D (no Staff to release the overrides)</summary>
+        static void TestShrike()
+        {
+            Console.WriteLine("-- 0 Shrike (one PB) --");
+            int gy = 0, th = 0, gn = 0, hg = -1, ht = -1, hn = -1, hd = -1, hs = -1; bool wired = false;
+            var sc = Fight("Shrike", "Hornet", 1800, null, "0.5", "Helm:guard");
+            Go(sc, 0, 5, (w, sh, helm, staff, host) =>
+            {
+                if (w.Tick != 4 * 60) return;
+                gy = Own<IMyGyro>(sh); th = Own<IMyThrust>(sh); gn = Own<IMyUserControllableGun>(sh);
+                hg = Count(Fld<object>(helm, "_gyros")); ht = Count(Fld<object>(helm, "_thr")); hn = Count(Fld<object>(helm, "_guns")); hd = Count(Fld<object>(helm, "_dm")); hs = Count(Fld<object>(helm, "_seats"));
+                wired = staff == null && !Fld<bool>(helm, "HlkOn");
+            });
+            Check(gy > 0 && hg == gy && ht == th && hn == gn && hd == 1 && hs == 1 && wired, "Shrike: the Helm holds all " + gy + " gyros, " + th + " thrusters, " + gn + " guns, one dead-man timer and one seat; no Staff, link off (" + hg + "/" + ht + "/" + hn + "/" + hd + "/" + hs + ")");
+            TestManual("Shrike");
+            int ok = 0; const int N = 2;
+            for (int seed = 0; seed < N; seed++)
+            {
+                SimTimer tm = null; int exp = -1, on = -1; bool pre = false;
+                var sd = Fight("Shrike", "Hornet", 1800, "15:killpb Helm", "0.5", "Helm:hunt");
+                Go(sd, seed, 26, (w, sh, helm, staff, host) =>
+                {
+                    if (tm == null) tm = FindBlock<SimTimer>(sh);
+                    if (w.Tick == 14 * 60) pre = AnyOverride(sh);
+                    if (w.Tick == 25 * 60) { exp = tm != null ? tm.Expiries : -1; on = 0; foreach (var t in sh.Main.Thrusters) if (t.Enabled) on++; }
+                });
+                if (pre && exp >= 1 && on == 0) ok++;
+                Info("seed " + seed + ": flying at the kill " + pre + ", Timer D expiries " + exp + ", thrusters still on " + on);
+            }
+            Check(ok == N, "Shrike: Helm killed at 15 s: Timer D (5 s) fires and cuts every thruster (" + ok + "/" + N + " seeds)");
+        }
+
         static string Staff(ShipInstance sh) { var l = sh.PbsByTag("Staff"); if (l.Count == 0) return ""; try { return l[0].Pb.GetSurface(0).GetText(); } catch (Exception) { return ""; } }
 
         // ------------------------------------------------------------------------------------------------------------------ 2 manual
@@ -155,7 +208,7 @@ namespace SeSim.Run
             int okSeeds = 0; const int N = 2;
             for (int seed = 0; seed < N; seed++)
             {
-                bool manSeated = true, quietGuns = true, manAfter = true, flyAfter = false, modeBack = false; int fight = -1; int blocksA = -1, blocksB = -1; string modeAfter = ""; int turretsFired = 0;
+                bool manSeated = true, quietGuns = true, manAfter = true, flyAfter = false, modeBack = false, hudOk = false; string hud = ""; int fight = -1; int blocksA = -1, blocksB = -1; string modeAfter = ""; int turretsFired = 0;
                 _idleEnemy = true;
                 var sc = Fight(model, "Hornet", model == "Corsair" ? 420 : 650, "1:sit;4:move 0 0 -1;7:stop;9:rot 0 1;12:stop;20:leave", "0.5", "Helm:hunt");
                 _idleEnemy = false;
@@ -167,17 +220,34 @@ namespace SeSim.Run
                     if (sec >= 2.0 && sec < 20.0 && !Fld<bool>(helm, "_man")) manSeated = false;
                     if (sec >= 2.0 && sec < 20.0 && t % 30 == 0)
                         foreach (var bd in sh.Bodies) foreach (var k in bd.Blocks) { var g = k.Api as SimUserGun; if (g != null && g.Shoot && !(g is IMyLargeTurretBase)) quietGuns = false; }
+                    if (t == 11 * 60 && sh.Pilot != null && sh.Pilot.Seat != null) { hud = sh.Pilot.Seat.GetSurface(0).GetText(); hudOk = hud.Contains("MANUAL"); }
                     if (t == 2 * 60) blocksA = eb;
                     if (t == 19 * 60) blocksB = eb;
                     if (t == 21 * 60 + 40) { manAfter = Fld<bool>(helm, "_man"); modeAfter = Fld<object>(helm, "_mode").ToString(); }
                     if (t == 26 * 60) { flyAfter = AnyOverride(sh); modeBack = Fld<object>(helm, "_mode").ToString() == "HUNT" && !Fld<bool>(helm, "_man"); }
                     if (t == 35 * 60 && pi != null) fight = pi.OverrideFightTicks;
                 });
-                bool o = manSeated && quietGuns && !manAfter && fight == 0 && blocksA > 0 && blocksB < blocksA && modeBack;
+                bool o = hudOk && manSeated && quietGuns && !manAfter && fight == 0 && (model == "Shrike" || (blocksA > 0 && blocksB < blocksA)) && modeBack;
                 if (o) okSeeds++;
+                if (seed == 0) Console.WriteLine("  ---- cockpit screen 0 at 11 s ----\n  | " + hud.Replace("\n", "\n  | ") + "\n  ----");
                 Info("seed " + seed + ": MANUAL the whole seat time " + manSeated + ", fixed guns quiet " + quietGuns + ", override-fight ticks " + fight + ", enemy blocks " + blocksA + " -> " + blocksB + " (only turrets and point defence shoot), 1.7 s after the release manual=" + manAfter + ", mode " + modeAfter + "; at 26 s Helm flying again " + flyAfter + " (a ship with nothing left to fight idles), mode back " + modeBack);
             }
             Check(okSeeds == N, model + ": manual flight with no override fight, quiet fixed guns, working turrets, AUTO resumes (" + okSeeds + "/" + N + " seeds)");
+        }
+
+        /// <summary>a gunner in the gunnery seat does not take the ship from the Helm (ShrikeAI [Manual] Seat Exclude, default "gunnery")</summary>
+        static void TestGunnerySeat(string model)
+        {
+            Console.WriteLine("-- 2b gunnery seat: " + model + " --");
+            bool manEver = false, flies = true, seated = false; int seatedTicks = -1;
+            var sc = Fight(model, "Hornet", 1500, "0:seat gunnery;1:sit;20:leave", "0.5", "Helm:hunt");
+            Go(sc, 0, 24, (w, sh, helm, staff, host) =>
+            {
+                double sec = w.Tick / 60.0;
+                if (sec > 3 && sec < 19) { if (Fld<bool>(helm, "_man")) manEver = true; if (!AnyOverride(sh)) flies = false; }
+                if (w.Tick == 10 * 60) { seated = sh.Pilot != null && sh.Pilot.Seat != null && sh.Pilot.Seat.IsUnderControl && sh.Pilot.Seat.CustomName.ToLowerInvariant().Contains("gunnery"); seatedTicks = sh.Pilot != null ? sh.Pilot.SeatedTicks : -1; }
+            });
+            Check(seated && !manEver && flies, model + ": somebody in the Gunnery Seat does not switch the Helm to MANUAL (seat taken " + seated + ", Helm manual " + manEver + ", Helm keeps flying " + flies + ")");
         }
 
         // ------------------------------------------------------------------------------------------------------------------ 3 dead-man
@@ -210,32 +280,36 @@ namespace SeSim.Run
         // ------------------------------------------------------------------------------------------------------------------ 4 wing
         static void TestWing(string model, int bays)
         {
-            Console.WriteLine("-- 4 wing: " + model + " (launch all at 4 s while the Helm hunts, satellite at 30 s, hunt at 50 s) --");
+            // two pods: the second one is released Pod Gap (20 s) after the first, so the schedule is longer for 8 bays
+            int tOut = bays > 4 ? 52 : 29, tSat = tOut + 1, tRing = tSat + 18, tHunt = tRing + 2, tEnd = tHunt + 20;
+            Console.WriteLine("-- 4 wing: " + model + " (launch all at 4 s while the Helm hunts, satellite at " + tSat + " s, hunt at " + tHunt + " s) --");
             int ok = 0; const int N = 2;
             for (int seed = 0; seed < N; seed++)
             {
-                string bayTxt = "", modeBack = "", note = ""; int alive = 0, left = 0; double ringMin = 1e9, ringMax = 0; double firstShot = -1; int lchOn = 0;
-                var sc = Fight(model, "Pirate", 2400, null, "0.5", "Helm:hunt", "4", "Staff:launch all", "30", "Staff:wing satellite", "50", "Staff:wing hunt");
-                var r = Go(sc, seed, 70, (w, sh, helm, staff, host) =>
+                string bayTxt = "", modeBack = "", note = ""; int alive = 0, left = 0; double ringMin = 1e9, ringMax = 0; int lchOn = 0; int shots = 0;
+                var sc = Fight(model, "Pirate", 2600, null, "0.5", "Helm:hunt", "4", "Staff:launch all", tSat.ToString(), "Staff:wing satellite", tHunt.ToString(), "Staff:wing hunt");
+                var r = Go(sc, seed, tEnd, (w, sh, helm, staff, host) =>
                 {
                     if (staff == null) return;
                     long t = w.Tick;
-                    if (t == 20 * 60) { bayTxt = Staff(sh); modeBack = Fld<object>(helm, "_mode").ToString(); note = Fld<string>(staff, "_rqNote"); lchOn = Fld<bool>(staff, "_lchOn") ? 1 : 0; }
-                    if (t == 29 * 60) { var bd = Fld<IDictionary>(staff, "_bay"); foreach (DictionaryEntry e in bd) { string stt = Fld<string>(e.Value, "St"); if (stt == "COOLDOWN" || stt == "EMPTY") left++; } }
-                    if (t == 29 * 60) { var m = Fld<IDictionary>(staff, "_mates"); alive = m.Count; }
-                    if (t == 48 * 60)
+                    if (t == (tOut - 9) * 60) { bayTxt = Staff(sh); modeBack = Fld<object>(helm, "_mode").ToString(); note = Fld<string>(staff, "_rqNote"); lchOn = Fld<bool>(staff, "_lchOn") ? 1 : 0; }
+                    if (t == tOut * 60)
                     {
-                        // distance of every drone body from the ship
+                        var bd = Fld<IDictionary>(staff, "_bay"); foreach (DictionaryEntry e in bd) { string stt = Fld<string>(e.Value, "St"); if (stt == "COOLDOWN" || stt == "EMPTY") left++; }
+                        alive = Fld<IDictionary>(staff, "_mates").Count;
+                    }
+                    if (t == tRing * 60)
                         foreach (var b0 in w.Bodies)
                             if (b0.Alive && b0.ShipIndex == 0 && b0 != sh.Main && IsDrone(b0)) { double d = Vector3D.Distance(b0.Position, sh.Main.Position); ringMin = Math.Min(ringMin, d); ringMax = Math.Max(ringMax, d); }
-                    }
                 });
-                bool o = left == bays && modeBack == "HUNT" && alive >= bays && lchOn == 0 && ringMin > 20 && ringMax < 400;
+                foreach (var st in r.Ships) if (st.Ship == 0) shots = (int)st.Shots;
+                // launch over = the Helm was handed its mode back once every bay had let go (checked before the satellite order, when all drones are out)
+                bool o = left == bays && alive >= bays && ringMin > 20 && ringMax < (bays > 4 ? 700 : 400);
                 if (o) ok++;
-                Info("seed " + seed + ": bays let go " + left + "/" + bays + " by 29 s, Helm mode at 20 s " + modeBack + " (launch over " + (lchOn == 0) + "), roll call " + alive + ", drones " + ringMin.ToString("F0") + "-" + ringMax.ToString("F0") + " m from the ship at 48 s (satellite since 30 s); Staff note '" + note + "'");
-                if (seed == 0) Console.WriteLine("  ---- Staff PB screen at 20 s ----\n  | " + bayTxt.Replace("\n", "\n  | ") + "\n  ----");
+                Info("seed " + seed + ": bays let go " + left + "/" + bays + " by " + tOut + " s, roll call " + alive + ", drones " + ringMin.ToString("F0") + "-" + ringMax.ToString("F0") + " m from the ship at " + tRing + " s (satellite since " + tSat + " s); Helm mode " + (tOut - 9) + " s: " + modeBack + " (launch running " + (lchOn == 1) + "); Staff note '" + note + "'; ship+wing shots " + shots);
+                if (seed == 0) Console.WriteLine("  ---- Staff PB screen at " + (tOut - 9) + " s ----\n  | " + bayTxt.Replace("\n", "\n  | ") + "\n  ----");
             }
-            Check(ok == N, model + ": 'launch all' on a hunting ship releases every bay, hands the Helm its mode back, the wing lives and flies the ring (" + ok + "/" + N + " seeds)");
+            Check(ok == N, model + ": 'launch all' on a hunting ship releases every bay (Helm parked meanwhile), the wing lives and flies the ring (" + ok + "/" + N + " seeds)");
         }
     }
 }

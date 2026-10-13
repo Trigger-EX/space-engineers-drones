@@ -95,7 +95,7 @@ class RuleTests(unittest.TestCase):
             self.assertEqual([c['sub'] for c in cockpits], ['DBSmallBlockFighterCockpit'])
             self.assertIn('[Helm Seat]', cockpits[0]['name'])
             self.assertGreaterEqual(len([b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_Gyro']), 2)
-            self.assertEqual(len([b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_CameraBlock']), 6)
+            self.assertEqual(len([b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_CameraBlock']), 7)
             self.assertEqual(len([b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_RadioAntenna']), 1)
 
     def test_cameras_and_thrusters_face_the_way_their_names_say(self):

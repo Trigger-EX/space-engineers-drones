@@ -17,7 +17,7 @@ List<IMyTimerBlock> _dm = new List<IMyTimerBlock>(); IMyTextSurface _hud;
 bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _menuOn; int _force, _asLvl = 1, _menuI; // _force: 0 follow the seat, 1 manual, 2 auto
 double _rawT, _rampT = -99, _w0, _asG = 1, _menuT, _pipR, _pipU;
 double ManDebounce = 0.4, ManRelease = 1.5, ManAssistMax = 1.5, ManGain = 1.5, ManSign = -1, ManScale = 1, ManPrio = 0.3, ManMenuWait = 2;
-bool ManAutoFire, ManScan; string ManMenuItems = "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", ManDmName = "Deadman"; int ManHudSurf = 0;
+bool ManAutoFire, ManScan; string ManMenuItems = "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", ManDmName = "Deadman", ManSeatEx = "gunnery"; int ManHudSurf = 0;
 bool Man { get { return _man || _hold; } }
 
 void ManCfg()
@@ -30,13 +30,13 @@ void ManCfg()
     ManScale = Math.Max(1e-3, Cfg(M, "Rotation Input Scale", ManScale)); ManPrio = Math.Max(1e-3, Cfg(M, "Pilot Priority Rate", ManPrio));
     ManAutoFire = Cfg(M, "Auto Fire In Manual", ManAutoFire); ManScan = Cfg(M, "Scan In Manual", ManScan);
     ManMenuItems = Cfg(M, "Run Menu", ManMenuItems); ManMenuWait = Cfg(M, "Run Menu Wait", ManMenuWait);
-    ManDmName = Cfg(M, "Deadman Timer Name", ManDmName); ManHudSurf = (int)Cfg(M, "HUD Surface", (double)ManHudSurf);
+    ManDmName = Cfg(M, "Deadman Timer Name", ManDmName); ManSeatEx = Cfg(M, "Seat Exclude (name part)", ManSeatEx).ToLowerInvariant(); ManHudSurf = (int)Cfg(M, "HUD Surface", (double)ManHudSurf);
 }
 
 void ManBlocks()
 {
     _seats.Clear(); _dm.Clear(); _hud = null;
-    GridTerminalSystem.GetBlocksOfType(_seats, b => Own(b) && b.CanControlShip && !(b is IMyRemoteControl));
+    GridTerminalSystem.GetBlocksOfType(_seats, b => Own(b) && b.CanControlShip && !(b is IMyRemoteControl) && (ManSeatEx == "" || !b.CustomName.ToLowerInvariant().Contains(ManSeatEx)));   // (a gunnery seat does not take the ship from the Helm)
     string n = ManDmName.ToLowerInvariant();
     if (n != "") GridTerminalSystem.GetBlocksOfType(_dm, b => Own(b) && b.CustomName.ToLowerInvariant().Contains(n));
     try

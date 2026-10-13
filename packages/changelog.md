@@ -1,3 +1,17 @@
+### v2.7 (unreleased): WARSHIPS Shrike, Corsair, Warden, Leviathan (new package `Warships_v2.7_Full` / `_Lite`)
+New zips with four ships that fly by hand (sit in the seat) and by themselves, plus the Cradle Pod and the `Corsair Wing`, `Warden Wing`, `Leviathan Wing` variants with Hornets in the cradles.
+Three scripts: `ShrikeAI.cs` (the Helm of every ship: Hornet brain + MANUAL mode + weapon batteries + dead-man heartbeat; 79,990 of its 80,000 characters), `StaffAI.cs` (heartbeat watch that releases every
+override when the Helm dies, wing orders and roll call, hangar doors, drone launch, display pages) and `CradleBayAI.cs` (the merge-block cradles). The usage guide is the README of the Warships zips.
+The drone zips no longer contain the warships (they moved to the new zips); the All zip has everything. All ships were run in the simulator only: nothing has been pasted into the game yet.
+- Staff 1.4: `launch [n|a-b|all]` (parks the Helm so the bays' ship-turns / ship-accelerates gates pass, releases, gives the Helm its mode back); `[Staff] Turret Target Group` / `Turret Target Names`
+  (artillery and assault turrets aim at the targets' weapons: Leviathan vs Pirate, kill time median 143 s -> 89 s in the sim; replaces the planned Gunnery PB).
+- ShrikeAI: the integrity scan (hit direction) is sliced, 150 blocks per call (a 1,300-block ship read all of them in one tick: 58,000 IL instructions of the 50,000 limit; peak is now 25,000);
+  a seat named `Gunnery` no longer switches the Helm to MANUAL (`[Manual] Seat Exclude`).
+- Designs: the Helm Custom Data of every ship now carries the keys the scripts read (the old `[Battery n]` / `[Cockpit]` sections were read by nobody); large ships: stand-off 700 / 800 m, jinking off,
+  AI-block search off (the AI Flight block made the idle warship wander); Warden / Leviathan Timer D renamed `Timer D (deadman)` (the Helm finds it by that word: they had none); the Shrike has a second forward camera
+  (with one the nose camera was shot off and the Shrike never saw a Hornet again); the empty Gunnery PB of the Leviathan is gone.
+- Simulator: warship scenarios (`ship/<Blueprint>-vs-<Enemy>`) start with the Custom Data the blueprint carries and keep a connector-docked pod rigidly on its host; `selftest m6`.
+
 ### v2.7 (unreleased): SATELLITE formation
 New operating mode: the drones spread round a slowly turning vertical ring centred on the owner (a ship running a Mothership link, you on foot, or the Gnat's carrier /
 home point), break off and engage anything inside the Engage Radius, and fly back to their slots afterwards. Command `satellite` / `sat` / `orbit`; ring distance

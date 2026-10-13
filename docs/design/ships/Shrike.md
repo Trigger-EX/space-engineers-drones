@@ -179,7 +179,7 @@ y -2 ...............................
 | 15-21 centre | **core tank** (x -2..2, y 2-6, z 16-20) with the **dive** thruster on top (exhaust up, y 7-9) and the **lift** thruster below (exhaust down, y -1..1): the dorsal hump behind the canopy and a flush belly nozzle |
 | wing, x 4..15 | one-cell delta (leading edge swept 47 degrees from z 11 at the root to z 24 at the tip), two cells thick at the root, orange leading edge, orange wing tips, an orange cross stripe per side; small canards at x 4-8, z 8-13; decoys (Full) on the tips |
 | pods, x +-6..+-10 | tank (5 x 5 x 5, y 1-5, z 16-20) in a stepped cowl that passes through the wing and rises one cell above it; **main** thruster aft (z 21-23, exhaust to z 27), **retro** thruster forward (z 13-15, exhaust forward), **strafe** thruster at the tip (x +-11..13, exhaust sideways); orange nozzles |
-| 22-29 power bay | two 1 MWh batteries (x -1..1, y 2-3, z 22-27) with the six gyros on top of them (y 4, z 22 and 25), two reactors (y 2, z 29), antenna and up camera on the spine, six cameras all round |
+| 22-29 power bay | two 1 MWh batteries (x -1..1, y 2-3, z 22-27) with the six gyros on top of them (y 4, z 22 and 25), two reactors (y 2, z 29), antenna and up camera on the spine, seven cameras all round |
 | 26-33 tail | swept spine, twin fins on the wing roots (x +-4, y 6-12, orange tips) with left / right cameras on their outer faces, rear camera at the tail end |
 
 Mass distribution: heavy 12.6 t (nose z < 8, belly z 3..17 on the fuselage, cockpit frame), light shell 20.9 t, thrusters 9.8 t, tanks 4.7 t, gyros 3.7 t,
@@ -221,7 +221,7 @@ merged drone, if the owner ever clamps one on, is not adopted); the PB is `[Helm
 | `SmallBlockMediumCalibreGun` | 1 | `[SH] [B2] Assault Cannon` | (0, 5, 0); 3 x `MediumCalibreAmmo` |
 | `SmallBlockMediumContainer` | 1 | `[SH] Ammo Reserve` | (-1, 2, 6); 12 x `AutocannonClip` + 10 x `MediumCalibreAmmo` spare (1.1 t) |
 | `SmallBlockRadioAntenna` | 1 | `[SH] Antenna` | on the spine (0, 9, 25), 5,000 m, ship name shown |
-| `SmallCameraBlock` | 6 | `[SH] Camera Front / Rear / Left / Right / Up / Down` | front between the autocannons, rear at the tail, left / right on the fin faces, up on the spine, down under the cockpit; each with 3 free view cells (`keep_clear`) |
+| `SmallCameraBlock` | 7 | `[SH] Camera Front / Rear / Left / Right / Up / Down / Front Top` | front between the autocannons, **front top (M6) on the nose ridge just ahead of the canopy (cell 0, 6, 9)**, rear at the tail, left / right on the fin faces, up on the spine, down under the cockpit; each with 3 free view cells (`keep_clear`). The second forward camera is there because ShrikeAI confirms what the AI blocks see with the forward cameras (one ray every 1.3 s per camera) and the nose camera is shot off first: with one forward camera the Shrike lost 4 of 5 duels against a single Hornet in the sim, with two 2 of 5 |
 | `TimerBlockSmall` | 1 | `[SH] Timer D (deadman)` | 5 s, silent, **not counting**; toolbar: `OnOff_Off` on groups `[SH] Thrusters` and `[SH] Weapons` (control_arch 2.6: Helm re-arms it every second in AUTO and stops it in MANUAL; it only fires if Helm dies in AUTO) |
 | `EventControllerSmall` | 1 | `[SH] EC Cockpit (configure in game)` | placed and **unconfigured**: the "cockpit occupied" event id was never seen in a file (test K4); in game set Cockpit occupied -> Timer D `Stop`, empty -> `Start` |
 | Full only: `SmallBlockSensor`, `SmallOffensiveCombat`, `SmallFlightMovement`, 2 x `SmallDecoy` | | `[SH] Sensor`, `[SH] AI Offensive [AI]`, `[SH] AI Flight [AI]`, `[SH] Decoy L/R` | sensor under the nose, AI blocks in the avionics bay (Hornet naming `[AI]`; AI blocks must be set up by hand), decoys on the wing tips; their XML shapes are not seen ones (sensor from source, AI blocks guessed, decoy derived from `LargeDecoy`), hence Full only |
@@ -327,3 +327,36 @@ decoys `seen-type`, PB Run slots [unverified]). Everything else, including the d
 | EC left unconfigured | event id unseen | wiring a guess would trigger the dead-man on the wrong event |
 
 Mass trade: each tonne costs 0.26 m/s2 of forward acceleration (960 kN / 61 t); the armour budget (34 t) is the slack, `Zones` in `build_hull()` (heavy: nose, belly, cockpit frame) is the lever.
+
+## 12. Flight and fight (M6, simulator only)
+
+Nothing here was measured in the game. Commands are `SimHost.exe one --scenario ship/<Blueprint>-vs-<Enemy> --seed-index 0..4 --commands "Helm:hunt"` (warship scenarios start the PBs with the Custom Data the
+blueprint carries; `selftest m6` is the automatic part). Drone enemies start 1,000 m away (`--start-distance 1000:1000`): the sim's Hornets and Gnats do not look farther, the Pirate (the sim's stand-in large ship,
+260 blocks, turrets) starts at the default 2.8 km.
+
+**Script and data.** `ShrikeAI.cs` is the only PB script: 79,990 of its 80,000 minified characters (the M6 changes cost 340: the sliced integrity scan, `Seat Exclude`). Custom Data after M6:
+`[Manual] HUD Surface=0` and `[Battery] Standoff By Weapons=true`; the old `[Battery 1..2]` and `[Cockpit]` sections were read by no script and are gone. Second forward camera `Front Top` (section 5).
+
+**Flight** (pilot at full stick in the seat, dampeners on; `meas.py`-style runs of the scripted pilot, 1 seed, the sim is deterministic here):
+
+| | design | sim |
+|---|---|---|
+| forward acceleration | 16.2 m/s2 blocks only (15.7 loaded) | 16.2 m/s2 (80.9 m/s after 5 s; the sim caps speed at 100 m/s) |
+| braking, dampeners, stick released | 15.7 m/s2 | from 40 m/s: 2.5 s, 50 m; from 100 m/s: 6.2 s, 308 m |
+| yaw | gyro torque / inertia in the design record | reaches the sim's 1.5 rad/s stick-rate cap within 1 s (at least 1.5 rad/s2); rotation stops 1.2 s after the stick is released |
+
+**Fights** (5 seeds each, cap 300 s):
+
+| enemy | result | note |
+|---|---|---|
+| Pirate (2.8 km) | **8/10 wins** (seeds 0-4: 4/5, median kill 195 s, 99-296; seeds 5-9: 4/5, median 112 s, 98-200), 2 timeouts | 49 blocks lost (median); the Shrike shoots and the Pirate's turrets rarely reach a 17 m ship |
+| 1 Hornet (1,000 m) | **2/5 wins** (3 losses) | with one forward camera 1/5, with the AI search off 0/5: the Shrike acquires a small target late (packages/unknowns.md) |
+| 3 Hornets (1,000 m) | 0/5 | a single fighter loses to three (the old M3 result for every single-fighter hull): the Shrike fires under 10 shots |
+| 6 Gnats (1,000 m / 400 m) | stalemate (5 timeouts) / 0/5 wins, 1 loss, 4 timeouts | the sim's Gnats do not close on a ship that does not find them |
+
+**Manual, dead-man, instructions.** `selftest m6`: the Helm holds all 6 gyros, 8 thrusters and 5 guns, the one seat and the one dead-man timer; seat taken: MANUAL within 0.4 s, 0 override-fight ticks, fixed guns quiet, the cockpit
+screen 0 says `MODE MANUAL ASSIST-HUD` with the lead pip, 1.5 s after standing up the Helm is back in HUNT and flies again. Helm PB killed at 15 s: Timer D (5 s) fires once and the thrusters are off (2/2 seeds; with one PB there is no
+Staff to release the overrides: the Timer is the whole dead-man). Instructions (`--count-instructions`, vs the Pirate, 120 s): block model peak 1,629, **IL model peak 25,009** of the 50,000 (before the integrity scan was sliced:
+71,079, i.e. a "Script too complex" if the game counts like the IL model: the scan read all 1,277 blocks in one tick).
+
+**Lite.** `Shrike Lite` has no AI blocks and no sensor, so on its own it only sweeps with the cameras: 0/3 against the Pirate in 600 s without a shot fired (3 seeds). Use it with a pilot (`lock` gives the Helm a target) or take the Full ship.

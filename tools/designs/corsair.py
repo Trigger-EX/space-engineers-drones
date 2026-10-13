@@ -35,7 +35,6 @@ TAG = '[SH] '                     # host-ship prefix (control_arch 3.6 / grids_b
 
 HELM_DATA = """[Ship]
 Tag=SH
-Class=CORVETTE
 
 [Link]
 Ship Tag=SH
@@ -50,7 +49,6 @@ Standoff By Weapons=true
 
 STAFF_DATA = """[Ship]
 Tag=SH
-Class=CORVETTE
 
 [Staff]
 Ship Tag=SH

@@ -75,8 +75,11 @@ COMMAND_DOC = {
     'split': 'split targets across the hive', 'focus': 'focus fire', 'ai': '`ai on|off` AI-block search assist', 'aim': '`aim <mode>` aim point (AUTO / BREACH / ENGINES / FACING / SPREAD / CENTER)', 'breach': '`breach on|off` AUTO drills one hole into big ships (v2.6)', 'seeker': '`seeker on|off` let a [Seeker] turret guide the aim (v2.6, experimental)',
     'aialert': 'treat the AI-block alert as raised', 'home': 'set the home point to the current position', 'range': '`range <m>` set the standoff',
     'reload': 're-read Custom Data and re-scan blocks', 'start': 'start printing',
-    'max': '`max <n>` set Max Drones', 'release': '`release [bay]` release finished drones', 'hold': '`hold <bay>` keep a bay paused',
-    'unhold': '`unhold <bay>` resume a bay', 'relay': '`relay on|off` forward carrier turret targets', 'launch': 'rack: leave the dock and hunt',
+    'max': '`max <n>` set Max Drones', 'release': 'printers: `release [bay]` release finished drones; warship Staff / bay PBs: `release <n|a-b|all> [delay_s] [force]` let go of clamped drones (waits for a calm ship unless `force`)', 'hold': '`hold <bay>` keep a bay paused',
+    'unhold': '`unhold <bay>` resume a bay', 'relay': '`relay on|off` forward carrier turret targets', 'launch': 'Stinger rack: leave the dock and hunt; warship Staff: `launch [n|a-b|all] [force]` park the Helm, release the bays, hand the Helm its mode back',
+    'manual': 'warship Helm: the ship is hand-flown (nothing of the script touches thrusters or gyros)', 'auto': 'warship Helm: the script flies again even with a pilot aboard', 'pilot': 'warship Helm: toggle manual / auto',
+    'wing': 'warship Staff: `wing hunt|guard|rtb|follow|satellite|lock|roll` order the drones', 'page': 'warship Staff: `page [1|2]` status / wing roll call on the PB screen', 'fleet': 'warship Staff: `fleet <command>` on the fleet channel',
+    'recall': 'warship Staff / bays: wing rtb, then satellite, bays cancel and re-open', 'doors': 'warship Staff: `doors open|close` the hangar doors', 'status': 'refresh the screen',
     'abort': 'abort and release', 'disarm': 'disarm the warheads',
 }
 HIVE_DOC = {'stop': 'stop printing, all welders off'}
@@ -347,6 +350,18 @@ PACKAGES = [   # (zip base name, kinds, variants, template, intro)
      'Every drone, every warship and every printer, Full and Lite, in one zip.'),
 ]
 
+SHIP_PB = {'ShrikeAI.cs': 'Helm (every ship)', 'StaffAI.cs': 'Staff (Corsair, Warden, Leviathan)', 'CradleBayAI.cs': 'Bay / Pod PB (Corsair, each pod)',
+           'HornetDroneAI.cs': 'the Hornets of the Wing ships'}
+
+def script_sizes_md(scripts):
+    """table of the minified script sizes against the Programmable Block limit (the ship Helm has its own 80,000 budget, C.SCRIPT_LIMITS)"""
+    out = ['| script | runs in | minified characters | limit |', '|---|---|--:|--:|']
+    for s_ in scripts:
+        if s_ not in SHIP_PB or not os.path.exists(os.path.join(SCRIPTS_DIR, s_)): continue
+        n = len(minify(open(os.path.join(SCRIPTS_DIR, s_), encoding='utf-8').read()))
+        out.append(f'| `{s_}` | {SHIP_PB[s_]} | {n:,} | {C.SCRIPT_LIMITS.get(s_, 100000):,} |')
+    return '\n'.join(out)
+
 def render_readme(tmpl, intro, variant, rows, kinds):
     kindset = set(kinds)
     scripts = sorted({s for r in rows for s in r['scripts']})
@@ -355,7 +370,7 @@ def render_readme(tmpl, intro, variant, rows, kinds):
     txt = read_pkg(tmpl)
     rep = {'VERSION': VERSION, 'VARIANT': variant, 'INTRO': intro, 'COUNTS': counts, 'INSTALL': read_pkg('install.md').strip(),
            'MODEL_TABLE': model_table(rows), 'MODEL_SECTIONS': model_sections(rows),
-           'SCRIPT_REFERENCE': script_reference_md(scripts), 'UNKNOWNS': scoped('unknowns.md', kindset),
+           'SCRIPT_REFERENCE': script_reference_md(scripts) if '{{SCRIPT_REFERENCE}}' in txt else '', 'SCRIPT_SIZES': script_sizes_md(scripts), 'UNKNOWNS': scoped('unknowns.md', kindset),
            'TESTS': scoped('tests.md', kindset, number=True), 'CHANGELOG': read_pkg('changelog.md').strip()}
     for k, v in rep.items(): txt = txt.replace('{{%s}}' % k, v)
     assert '{{' not in txt, 'unreplaced placeholder in ' + tmpl
@@ -388,9 +403,10 @@ def make_zip(path, rows, readme, extra_files):
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 1)
-    ap.add_argument('--only', nargs='*', help='build only these model names (base names, e.g. "Hornet" "Hive Mother"); zips are then skipped')
+    ap.add_argument('--only', nargs='*', help='build only these model names (base names, e.g. "Hornet" "Hive Mother"); zips are then skipped unless --zip (written to <out>/dist_partial)')
     ap.add_argument('--out', default=os.path.join(ROOT, 'out'))
     ap.add_argument('--no-zip', action='store_true')
+    ap.add_argument('--zip', action='store_true', help='with --only: also write the zips and READMEs of the packages that have models among the built ones, into <out>/dist_partial (tests the packaging path without the full build)')
     a = ap.parse_args(argv)
     t0 = time.time()
     mods, missing = designs.load()
@@ -435,14 +451,15 @@ def main(argv):
             if d not in keep and os.path.isdir(os.path.join(bp_root, d)) and not failed:
                 shutil.rmtree(os.path.join(bp_root, d)); print(f'removed stale out/Blueprints/{d}')
     for c in cross: print('CROSS-CHECK FAIL:', c)
-    dist = os.path.join(a.out, 'dist')
-    if not a.only and not a.no_zip:
+    dist = os.path.join(a.out, 'dist_partial' if a.only else 'dist')
+    if (not a.only and not a.no_zip) or (a.only and a.zip and not failed):
         os.makedirs(dist, exist_ok=True)
         md = models_md(rows, failed)
         open(os.path.join(dist, 'MODELS.md'), 'w', encoding='utf-8').write(md + '\n')
         os.makedirs(os.path.join(dist, 'readmes'), exist_ok=True)
         for base, kinds, variants, tmpl, intro in PACKAGES:
             prow = [r for r in ok_rows if r['kind'] in kinds and r['lite'] in variants]
+            if a.only and not prow: continue                                 # a partial build: only the packages that have a model
             variant = 'Full + Lite' if len(variants) == 2 else ('Lite' if variants[0] else 'Full')
             readme = render_readme(tmpl, intro, variant, prow, kinds)
             open(os.path.join(dist, 'readmes', base + '_README.md'), 'w', encoding='utf-8').write(readme)

@@ -243,7 +243,7 @@ Every ship block is named `[SH] ...`; the PBs `[Helm][SH] Warden Helm` and `[Sta
 |---|---|---|---|
 | cockpit | `LargeBlockCockpitSeat` (main cockpit), `CockpitOpen` gunnery seat | `[SH] Bridge Cockpit`, `[SH] Gunnery Seat` | bridge (0, 9, 20), (1, 9, 20) |
 | script controller | `LargeBlockRemoteControl` | `[SH] Remote Control` | (-1, 9, 20) |
-| PBs | 2 x `LargeProgrammableBlock` | `[Helm][SH] Warden Helm`, `[Staff][SH] Warden Staff`; Custom Data `[Ship] Tag=WARDEN` (+ `[Battery 1]` Tag=B1 Class=RAIL on Helm, `[Wing]`, `[Hangar 1]` on Staff) | (-1, 9, 24), (1, 9, 24) |
+| PBs | 2 x `LargeProgrammableBlock` (+ the pod PB on the pod grid) | `[Helm][SH] Warden Helm` (`ShrikeAI.cs`), `[Staff][SH] Warden Staff` (`StaffAI.cs`); Custom Data `[Ship] Tag=WARDEN`; Helm `[Link] Block Prefix`, `[Shrike]` class tuning (section 13), `[Manual] HUD Surface`, `[Battery] Standoff By Weapons=false`; Staff `[Staff] Block Prefix/Cockpit Surface/Helm HUD Surface/Wing Surface/Turret Target Group/Turret Target Names`, `[Wing]`, `[Hangar 1]` (M6: the old `[Battery 1]` and `[Cockpit]` sections were read by no script) | (-1, 9, 24), (1, 9, 24) |
 | main battery | 2 x `LargeRailgun`, capacitor full, 6 slugs each | `[SH] [B1] Railgun P/S`, group `B1` | channels x = -2 / 2, y 5..6, z 4..11 |
 | artillery | 2 x `LargeCalibreTurret`, 6 shells each | `[SH] Artillery Turret P/S` | deck (-3 / 3, 7, 14) |
 | assault | 4 x `LargeBlockMediumCalibreTurret`, 6 shells each | `[SH] Assault Turret 1..4 P/S` | sponson notches (+-4, 5, 18 and 23) |
@@ -328,7 +328,7 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 1. Delete any old `Warden` blueprint folder in the game's blueprint directory before copying the new one in (stale `bp.sbcB5` cache), `Warden` and `Warden Lite` and their ids differ.
 2. Paste the ship in creative (it is a large grid, 1,208 blocks plus the pod's 605, PCU 10,297; each Hornet adds about 1,010). The pod comes with it, docked.
 3. Ownership: the blocks carry the owner's save id and the game re-owns them to the pasting player.
-4. Scripts: copy `HelmAI.cs` to the Helm PB, `StaffAI.cs` to the Staff PB, `CradleBayAI.cs` to the Pod PB when those files exist (the generator embeds them from `scripts/` automatically; until then the PBs
+4. Scripts: `ShrikeAI.cs` is the Helm, `StaffAI.cs` the Staff, `CradleBayAI.cs` the Pod PB (M6: there is no separate `HelmAI.cs`; the generator embeds them from `scripts/`; if the PBs
    have no program). Custom Data is pre-set (`[Ship] Tag=WARDEN`).
 5. What is already loaded: every gun with its magazines (railguns 6 + capacitor full, gatlings 24 boxes, artillery / assault 6 shells), 100 kg uranium in each reactor, both tanks full, all batteries full,
    the lockers with spares. Nothing else needs loading; the drones (not included) are the only thing to add.
@@ -336,7 +336,7 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 ## 10. Known limits
 
 1. Railguns have no feed (section 7); artillery and assault turrets draw from the lockers through the junctions only if that network pastes working.
-2. The pod is empty (no drones); the Staff / Pod scripts and the Pod's bay table are proposals until the script workers write them.
+2. The pod is empty in `Warden` (use `Warden Wing` for four Hornets already clamped); the scripts are the shared ones (section 13) and everything about the pod across the connectors is unverified (Pod.md C1..C4).
 3. Event Controllers: only EC Core has an event configured (integrity, a seen id); EC Cockpit and EC Power exist but their event numbers (cockpit occupied, stored power) are unverified, set them by hand.
 4. `Run` toolbar slots (cockpit 7, 8 and EC Core) have no argument (the argument form is unseen).
 5. No lights, beacon, LCD or cargo conveyors to the pod. Large grid, space only (no gravity budget).
@@ -371,3 +371,49 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 * Shapes: sample-derived XML for every block (`sebp.shape_summary()`); of the type-level ones only `Reactor/LargeBlockSmallGenerator`, `RemoteControl/LargeBlockRemoteControl` and
   `TimerBlock/TimerBlockLarge` come from a sibling subtype of the same type. The Full variant adds the unseen shapes `SensorBlock/LargeBlockSensor` (from the source), `OffensiveCombatBlock` and
   `FlightMovementBlock` (guesses); Lite has none of them.
+
+## 13. Flight and fight (M6, simulator only)
+
+Nothing here was measured in the game; large-grid damage in the sim is optimistic (docs/audit: large thrusters and batteries die 1.6-5.9 times too slowly), hydrogen is unlimited, there is no conveyor model, the Pirate and the
+Tech Hunter are stand-ins flown by the sim's Pirate brain, and the docked pod is held rigidly to the hull (`RigidLink`, no pod mass). Commands as in `Shrike.md` section 12; `Warden Wing` is the Warden with four Hornets in the pod.
+
+**Does the Warden need its own Helm script?** No. `ShrikeAI.cs` flies it unchanged with the class numbers below in its Custom Data; the audit points were: thrusters and gyros (the script reads mass and per-direction
+thrust from the Remote Control and the thrusters, and writes overrides to the 24 thrusters and 8 gyros: fine), `MaxTurn` calibration (the script measures the angular acceleration while the command saturates and sets
+`0.85 sqrt(2 a 0.6 rad)`: **0.51 rad/s** against the analytic 0.85 sqrt(2 x 0.30 x 0.6) = 0.51, after the first slew from a random heading), stand-off for 2 km railguns (the two railguns are 2 of 16 weapons; the
+turrets decide, see below), turret-only mode (on: `Batt B1* RAILx2 ... TO`, the fixed rails refuse targets they cannot hit while the turrets work).
+
+**What the sim said about the settings** (Warden vs Pirate, same seeds, cap 400-600 s):
+
+| setting | result |
+|---|---|
+| nothing set (stand-off from the weapons = 1,000 m, the two rails dominate) | 3 seeds: 1 win (304 s), 2 timeouts at 600 s: at 1,000 m only the rails (one slug per 30 s each) and the artillery reach, the 800 m assault and gatling turrets do not |
+| `Standoff Range=700`, `Standoff By Weapons=false` | 3/3 wins (128-184 s); 450 m: 3/3 (155-243 s) |
+| jinking on / off at 700 m, 8 seeds each | 8/8 both; median 90 s / 114 s (sd about 90 s: no difference; off because a 12 m/s random change is more than the 1.7 m/s2 strafe thrust can follow, it only burns hydrogen) |
+| AI Block Search Assist on / off, 6 seeds each | 6/6 both; median 101 / 100 s, longest 360 s / 150 s. On, the idle ship wanders (5-8 m/s, 1 rad/s yaw) while the AI block searches, which also keeps the bays' gates shut: off |
+| artillery + assault turrets on target group `Weapons` (Staff `Turret Target Group`) | 6/6, 53-86 s (median 76) against median 100 s without |
+
+Class data in the Helm Custom Data: `Standoff Range=700`, `Min Range=150`, `Evasive Jinking=false`, `Orbit Speed=10`, `Combat Speed=40`, `AI Block Search Assist=false`, `[Battery] Standoff By Weapons=false`.
+
+**Flight** (scripted pilot at full stick, dampeners on):
+
+| | design | sim |
+|---|---|---|
+| forward / other axes | 4.03 / 1.67 m/s2 | 4.07 / 1.7 m/s2 |
+| braking, stick released | 1.7 m/s2 | from 40.7 m/s: 23.9 s, 492 m (analytic 23.5 s, 470 m) |
+| yaw | 0.16 rad/s2 (solid-box inertia; the block masses give up to 0.30) | **0.30 rad/s2**: a 90 degree turn about 4.6 s, 180 degrees about 6.5 s (the doc's "9 s" was the pessimistic figure); rotation stops 4.4 s after the stick is released |
+
+**Fights** (5 seeds each, cap 600 s vs the Pirate, 300 s otherwise):
+
+| enemy | Warden | Warden Wing (`launch all` at 3 s, ring at 20 s, `wing hunt` at 40 s) |
+|---|---|---|
+| Pirate (2.8 km) | **10/10 wins** (seeds 0-4: 53-86 s, median 79; seeds 5-9: 51-77 s, median 65), about 25 blocks lost | **5/5**, 55-81 s (median 65) |
+| 3 Hornets (1,000 m) | 5/5, 65-106 s (median 92) | 5/5, 28-76 s (median 44) |
+| 6 Gnats (1,000 m) | stalemate (nobody fires) | stalemate |
+| 6 Gnats (400 m) | 4/5 wins (135-264 s), 1 loss (a precise Gnat swarm disabled the ship at 116 s with 76 blocks gone) | 5/5 (50-131 s) |
+| Tech Hunter (13,666 blocks, cap 300 s) | @@TH_Warden@@ | @@TH_WardenWing@@ |
+
+**Manual, dead-man, wing, instructions.** `selftest m6` (2 seeds each): the Helm and the Staff hold exactly the ship's own 8 gyros, 24 thrusters, 2 fixed guns, 14 turrets, 8 batteries, the bridge seat (the `Gunnery Seat` and the Remote Control do not count: a gunner
+in the open seat does not switch the Helm to MANUAL), 5 cameras and the `(deadman)` timer, nothing of the pod; manual flight with an idle Hornet 650 m away: 0 override-fight ticks, fixed guns quiet, the turrets kill it (54 -> 34-40 blocks),
+AUTO back after 1.5 s; Helm PB killed at 15 s: all overrides released 1.08 s later, once, `HELM LOST`, Timer D fires. `launch all` at 4 s while hunting: the Helm goes idle, the doors open, all four Hornets have left 25 s after the command, the Helm is handed HUNT back, the roll call counts
+4, the ring is 98-102 m from the ship. Without `launch`, `release all` waited for ever ("ship turns 0.45 rad/s", "ship accelerates 2.8 m/s2": the Helm sweeps for targets at 0.2-0.3 rad/s and orbits at 10 m/s). Instructions (IL model, with launch): Helm 27,358, Staff 11,812, pod
+bay 26,267 (the lane check); block model 1,852 / 650 / 616.

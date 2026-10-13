@@ -218,7 +218,7 @@ def cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', s
                             prefer=(('Up', 'Backward'),), name=f'{P} Battery {i + 1}', extra=bat_extra(1), kind='bat', state={'stored_power': 'full'})
         for c in bp.cells(b): occ[c] = b
         bats.append(b)
-    cd = ('[Pod]\n' f'Tag={ship_tag}\nSlots={n}\nFirst Bay={first_bay}\nPulse=Update10\n'
+    cd = ('[Pod]\n' f'Tag={ship_tag}\nSlots={n}\nFirst Bay={first_bay}\n'
           + ''.join(f'\n[Bay {k + 1}]\nMerge={P} Merge {k + 1}\nDrone Box Min={s.box_min[0]},{s.box_min[1]},{s.box_min[2]}\nDrone Box Max={s.box_max[0]},{s.box_max[1]},{s.box_max[2]}\n'
                     f'Away=0,0,-1\nTimer={P} Timer R{k + 1}\n' for k, s in enumerate(slots)))
     pb = dev('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', 'Pod PB', kind='ctrl', custom_data=cd,
@@ -300,11 +300,11 @@ def attach_drone(pod, k, drone_bp, check=True):
     if check: check_clearance(pod)
     return pose
 
-def load_hornets(pod, n):
-    """test ships (control_arch M6): clamp `n` real Hornets (HornetDroneAI) into the first n slots of `pod`"""
+def load_hornets(pod, n, lite=False):
+    """the 'Wing' ships (control_arch M6): clamp `n` real Hornets (HornetDroneAI, Hornet Lite in a Lite ship) into the first n slots of `pod`"""
     from core import hornet
     for k in range(n):
-        d = hornet(False)
+        d = hornet(lite)
         d.display = 'Hornet'
         attach_drone(pod, k, d)
 

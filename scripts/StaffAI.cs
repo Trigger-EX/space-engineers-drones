@@ -26,6 +26,9 @@
 //   * LAUNCH (M6): 'launch [n|a-b|all] [force]' = the Helm goes IDLE (overrides off, dampeners on: the ship comes to rest, which the bays' gates need - an AUTO Helm that hunts or sweeps
 //     for targets keeps the ship turning and accelerating, so a plain 'release' waits for ever), then 'release', and when those bays have left (or after 90 s) the Helm gets its old
 //     mode back (guard / hunt / rtb; nothing is sent when a pilot flies or the mode changed meanwhile).
+//   * TURRET TARGET GROUP (M6, replaces the planned Gunnery PB): [Staff] Turret Target Group (Weapons / Propulsion / PowerSystems; blank = off) and Turret Target Names (words in the
+//     turrets' names, e.g. "Artillery,Assault"): those turrets get SetTargetingGroup at start and on 'reload' and aim at that subsystem of their target instead of its centre. Point
+//     defence turrets are left alone. Sim: Leviathan vs Pirate, 6 seeds, kill time median 143 s -> 89 s (docs/design/ships/Leviathan.md).
 //   * COMMANDS (PB argument, toolbar): wing <cmd>, fleet <cmd>, release / launch / hold / unhold / recall / doors, reload, status; every other word is forwarded to the Helm over IGC (.S2H): hunt, guard, rtb, manual, auto, assist hud, lock, next, unlock, ...
 //     Run with NO argument: menu, each press steps "Run Menu", the highlighted item runs "Run Menu Wait" s after the last press (cockpit-toolbar fallback, K3).
 //   * DISPLAYS: the PB's own screen, the cockpit surface "Cockpit Surface" (default 1, -1 off) and any LCD named "...Staff Display...": link state, mode, seat,
@@ -38,10 +41,10 @@
 //   every 10 ticks, so it lands up to 0.17 s after the 1.5 s).
 // =====================================================================
 
-const string VER = "1.3";
+const string VER = "1.4";
 MyIni _ini = new MyIni();
 string Ship = "SHIP", BlkPre = "", WingName = "wing display", WingOrder = "-", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,launch,recall,doors open,doors close", DispName = "staff display";
-string[] Types = { "HORNET" };
+string[] Types = { "HORNET" }; string TurGroup = "", TurNames = "";   // [Staff] Turret Target Group / Turret Target Names (M6)
 double Trip = 1.5, MenuWait = 2, PodGap = 20, DoorWait = 15, DoorClose = 10, RecallWait = 12; bool Watch = true; int CockSurf = 1, HudSurf = 0, WingSurf = 2, _page = 1;
 
 List<IMyGyro> _gyros = new List<IMyGyro>(); List<IMyThrust> _thr = new List<IMyThrust>();
@@ -180,6 +183,7 @@ void Load()
     CockSurf = (int)Cfg(S, "Cockpit Surface", (double)CockSurf); HudSurf = (int)Cfg(S, "Helm HUD Surface", (double)HudSurf);
     MenuItems = Cfg(S, "Run Menu", MenuItems); MenuWait = Cfg(S, "Run Menu Wait", MenuWait); DispName = Cfg(S, "Display Name", DispName).ToLowerInvariant();
     WingSurf = (int)Cfg(S, "Wing Surface", (double)WingSurf); WingName = Cfg(S, "Wing Display Name", WingName).ToLowerInvariant();
+    TurGroup = Cfg(S, "Turret Target Group", TurGroup).Trim(); TurNames = Cfg(S, "Turret Target Names", TurNames).ToLowerInvariant();
     Types = Cfg("Wing", "Types", string.Join(",", Types)).ToUpperInvariant().Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
     if (Types.Length == 0) Types = new[] { "HORNET" };   // an empty list would crash the roll-call page
     string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
@@ -194,6 +198,8 @@ void Blocks()
     GridTerminalSystem.GetBlocksOfType(_ai, b => Own(b) && b.CustomName.IndexOf("[AI]", StringComparison.OrdinalIgnoreCase) >= 0);
     GridTerminalSystem.GetBlocksOfType(_lcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(DispName));
     GridTerminalSystem.GetBlocksOfType(_wlcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(WingName));
+    if (TurGroup != "" && TurNames != "")   // the turrets named like that go for one subsystem of their target (SetTargetingGroup: Weapons / Propulsion / PowerSystems)
+        foreach (var t in _turrets) foreach (var n in TurNames.Split(',')) if (n.Trim() != "" && t.CustomName.ToLowerInvariant().Contains(n.Trim())) { try { t.SetTargetingGroup(TurGroup); } catch (Exception) { } break; }
     _doors.Clear();
     foreach (var h in _hg)
     {

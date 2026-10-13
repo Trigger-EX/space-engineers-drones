@@ -25,18 +25,11 @@ NAME = 'Shrike'
 SCRIPTS = ['ShrikeAI.cs']
 TAG = '[SH] '                     # host-ship prefix (control_arch 3.6 / grids_bays 6.3): Helm collects blocks by prefix AND grid
 
-CUSTOM_DATA = """[Battery 1]
-Tag=B1
-Class=AUTO
-Role=PRIMARY_CANDIDATE
+CUSTOM_DATA = """[Manual]
+HUD Surface=0
 
-[Battery 2]
-Tag=B2
-Class=AUTO
-Role=SECONDARY
-
-[Cockpit]
-Helm Surface=0
+[Battery]
+Standoff By Weapons=true
 """
 
 
@@ -382,7 +375,8 @@ def add_systems(bp, res, lite):
     put('MyObjectBuilder_RadioAntenna', 'SmallBlockRadioAntenna', (0, 9, 25), TAG + 'Antenna', prefer=[('Up', 'Backward')], strict=True, kind='ant',
         settings={'BroadcastRadius': 5000, 'ShowShipName': 'true'})
     cams = [('Front', (0, 3, 2), 'Forward', 'Up'), ('Rear', (0, 3, 34), 'Backward', 'Up'), ('Left', (-5, 8, 30), 'Left', 'Up'),
-            ('Right', (5, 8, 30), 'Right', 'Up'), ('Up', (0, 9, 27), 'Up', 'Backward'), ('Down', (0, 0, 12), 'Down', 'Forward')]
+            ('Right', (5, 8, 30), 'Right', 'Up'), ('Up', (0, 9, 27), 'Up', 'Backward'), ('Down', (0, 0, 12), 'Down', 'Forward'),
+            ('Front Top', (0, 6, 9), 'Forward', 'Up')]          # (M6) a second forward camera: ShrikeAI confirms the AI block's contact with the forward cameras and the nose one is shot off first
     for nm, mn, f, u in cams:
         for dz in (0, -2, -1, 1, -3, -4):                      # slide along the hull until the camera finds a flat face to stand on
             try:

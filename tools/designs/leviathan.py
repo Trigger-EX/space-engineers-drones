@@ -11,7 +11,7 @@ nozzles in a row, flank nacelles with the manoeuvring thrusters) and a pair of s
 
 Naming (the scripts rely on it, docs/design/control_arch.md 3.2 and grids_bays 6.3):
   * every block of the ship carries `[SH]` in its CustomName; the pods' blocks carry `[POD1]` (port) / `[POD2]` (starboard), never `[SH]`;
-  * the PBs: `[Helm][SH] Leviathan Helm`, `[Gunnery][SH] Leviathan Gunnery`, `[Staff][SH] Leviathan Staff` (ship grid); `[Pod] Pod PB 1` / `[Pod] Pod PB 2` (pod grids);
+  * the PBs: `[Helm][SH] Leviathan Helm`, `[Staff][SH] Leviathan Staff` (ship grid; M6: no Gunnery PB, its one useful job is a StaffAI Custom Data key, docs/design/ships/Leviathan.md); `[Pod] Pod PB 1` / `[Pod] Pod PB 2` (pod grids);
   * weapon battery tag `[B1]` = the six railguns (RAIL); turrets are never batteries; point-defence gatlings carry `[PD]`;
   * terminal groups: B1, Artillery, Assault, Rockets, PD, Main Turrets, Turrets, Weapons, Thrusters, Decoys, [Hangar 1] (port doors), [Hangar 2] (starboard doors), Gyros, Reactors,
     Batteries, Tanks;
@@ -44,8 +44,8 @@ def _pb(name):
     return pb_extra(t) if t else ''
 
 
-HELM_SCRIPT, GUNNERY_SCRIPT, STAFF_SCRIPT, POD_SCRIPT = 'ShrikeAI.cs', 'GunneryAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'
-SCRIPTS = [HELM_SCRIPT, GUNNERY_SCRIPT, STAFF_SCRIPT, POD_SCRIPT]
+HELM_SCRIPT, STAFF_SCRIPT, POD_SCRIPT = 'ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs'
+SCRIPTS = [HELM_SCRIPT, STAFF_SCRIPT, POD_SCRIPT]
 
 TAG = 'LEVIATHAN'
 
@@ -426,21 +426,17 @@ def _interior(S, full):
 
 
 def _bridge(S, full):
-    """bridge level (interior y 13, x -3..3, z 53..61): two seats, Remote Control, Helm + Gunnery + Staff PB, timer, event controllers"""
+    """bridge level (interior y 13, x -3..3, z 53..61): two seats, Remote Control, Helm + Staff PB, timer, event controllers"""
     bp = S.bp
     cd = f'[Ship]\nTag={TAG}\n'
     helm_cd = cd + HELM_DATA
-    gun_cd = (cd + '\n[Turrets]\nGroups=Artillery,Assault,Rockets,PD\nPD Group=PD\nMain Group=Main Turrets\n'
-              '\n[Ammo]\nLockers=[SH] Ammo Locker\nFeed=conveyor\n')
-    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\nCockpit Surface=1\nHelm HUD Surface=0\nWing Surface=2\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n'
+    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\nCockpit Surface=1\nHelm HUD Surface=0\nWing Surface=2\nTurret Target Group=Weapons\nTurret Target Names=Artillery,Assault\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n'
                 '\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB 1\n\n[Hangar 2]\nGroup=[Hangar 2]\nPod=[Pod] Pod PB 2\n')
     S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 13, 53), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.gunner = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (2, 13, 54), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
     S.add('rc', 'MyObjectBuilder_RemoteControl', 'LargeBlockRemoteControl', (-2, 13, 54), 'Forward', 'Up', nm('Remote Control'), toward='Down', kind='ctrl')
     S.helm = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (-2, 13, 59), 'Backward', 'Up', '[Helm][SH] Leviathan Helm', toward='Down', kind='ctrl',
                    custom_data=helm_cd, extra=_pb(HELM_SCRIPT))
-    S.gunnery = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (0, 13, 59), 'Backward', 'Up', '[Gunnery][SH] Leviathan Gunnery', toward='Down', kind='ctrl',
-                      custom_data=gun_cd, extra=_pb(GUNNERY_SCRIPT))
     S.staff = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (2, 13, 59), 'Backward', 'Up', '[Staff][SH] Leviathan Staff', toward='Down', kind='ctrl',
                     custom_data=staff_cd, extra=_pb(STAFF_SCRIPT))
     S.timer = S.add('timer', 'MyObjectBuilder_TimerBlock', 'TimerBlockLarge', (0, 13, 57), 'Forward', 'Up', nm('Timer D (deadman)'), toward='Down', kind='timer', settings={'Delay': 5000, 'Silent': True})
@@ -640,14 +636,14 @@ def _groups_and_toolbars(S):
     bp.group('Gyros', R['gyro']); bp.group('Reactors', R['reactor']); bp.group('Batteries', R['bat']); bp.group('Tanks', R['tank'])
     # deadman timer (control_arch 2.6): cuts thrusters and weapons; the EC / Helm re-arm it
     bp.set_toolbars(S.timer, toolbar=[TB.group('Thrusters', 'OnOff_Off'), TB.group('Weapons', 'OnOff_Off')])
-    # hand flight: page 1 = weapons, then Helm / Staff / Gunnery and the doors
+    # hand flight: page 1 = weapons, then Helm / Staff and the doors
     cock = [TB.group('B1', 'Shoot'), TB.group('Main Turrets', 'OnOff'), TB.group('PD', 'OnOff')]
     if rockets: cock.append(TB.group('Rockets', 'OnOff'))
     cock += [TB.group('Decoys', 'OnOff'), TB.group('[Hangar 1]', 'Open_On'), TB.group('[Hangar 1]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff)]
     bp.set_toolbars(S.cockpit, toolbar=cock)
     gun = [TB.group('B1', 'Shoot'), TB.group('Artillery', 'OnOff'), TB.group('Assault', 'OnOff'), TB.group('PD', 'OnOff')]
     if rockets: gun.append(TB.group('Rockets', 'OnOff'))
-    gun += [TB.group('[Hangar 2]', 'Open_On'), TB.group('[Hangar 2]', 'Open_Off'), TB.run(S.gunnery), TB.run(S.staff)]
+    gun += [TB.group('[Hangar 2]', 'Open_On'), TB.group('[Hangar 2]', 'Open_Off'), TB.run(S.helm), TB.run(S.staff)]
     bp.set_toolbars(S.gunner, toolbar=gun)
     bp.set_toolbars(S.ec_core, toolbar=[TB.block(S.staff, 'Run')])
     S.ec_core['settings'] = TB.event_settings('integrity', 0.4, invert=True)
@@ -743,7 +739,7 @@ def leviathan(lite=False, with_pods=True, lock=False, name=None, wing=0):
             pod = pods.cradle_pod(4, lite=lite, name=f'{name} {pname} Cradle Pod', tag=tag, ship_tag=TAG, first_bay=1 if s < 0 else 5)
             pod.display = f'Leviathan {pname} Cradle Pod'
             pod.pod.pb['name'] = f'[Pod] Pod PB {1 if s < 0 else 2}'
-            if wing: pods.load_hornets(pod, wing)         # test ship 'Leviathan Wing Test' only
+            if wing: pods.load_hornets(pod, wing, lite)         # 'Leviathan Wing': four Hornets in each pod
             _dock_upright(bp, pod, S.conns[s], nose, lock)
             check_hangar(bp, pod, s)
             bp.pods_.append(pod)
@@ -938,17 +934,23 @@ def deck_plan(bp, y, xr=range(-14, 15), zr=None):
 DOCS = {'Leviathan': 'LARGE-grid dreadnought (about 222 x 72 x 42 m, 14 kt with ammunition): a stepped wedge with an armoured dorsal citadel and a glazed bridge tower, a forward main-battery '
                      'spine of six large railguns (battery [B1]), eight artillery and twelve assault turrets on the flank ledges, twenty gatling turrets for point defence, four rocket turrets (Full only) '
                      'and twelve decoys; four large hydrogen engines (2 m/s2 forward) and ten more large thrusters for the other axes, 72 gyros, one large and eight small reactors, 20 batteries, '
-                     'four hydrogen tanks, Helm, Gunnery and Staff programmable blocks, bridge cockpit, gunnery seat and Remote Control, and two flank hangars (eight doors each) with a docked, empty '
+                     'four hydrogen tanks, Helm and Staff programmable blocks, bridge cockpit, gunnery seat and Remote Control, and two flank hangars (eight doors each) with a docked, empty '
                      '4-slot Cradle Pod each (own CubeGrids and Pod PBs, room for 8 Hornet-class drones). Ammunition, uranium, hydrogen and batteries are pre-loaded and about 270 junction blocks feed the '
                      'thrusters and the artillery / assault / rocket turrets from the tanks and four ammo lockers. Limits: the six railguns have no feed (6 slugs each, reload by hand from the lockers), '
                      'the pods carry no drones, about 33,000 PCU with the pods (worlds of 50 k or more; the doc lists what to drop for 20 k), and nothing of this has been pasted in the game yet.'}
 MODEL_NOTES_LEVIATHAN = ('Large grid, paste only (delete the old blueprint folder first). About 33,000 PCU with the two pods: needs a world limit of 50 k or more (docs/design/ships/Leviathan.md lists the trimming '
-                         'steps for 20 k). Needs the Helm / Gunnery / Staff / Pod scripts for autonomous play (the PBs stay empty until the script files exist); flyable by hand from the bridge cockpit. '
+                         'steps for 20 k). The Helm, Staff and Pod scripts are embedded in the PBs; flyable by hand from the bridge cockpit. '
                          'Each pod is a second / third grid docked by two connector pairs inside its hangar: press Lock on the hangar connectors if a pod did not lock. Drones are added by pasting them '
                          "against the pods' merge blocks.")
 
 MODEL_NOTES = {'Leviathan': MODEL_NOTES_LEVIATHAN}          # shown in the README by build_all.model_note
-MODELS = {'Leviathan': leviathan}
+def leviathan_wing(lite=False):
+    return leviathan(lite, name='Leviathan Wing' + (' Lite' if lite else ''), wing=4)
+
+DOCS['Leviathan Wing'] = ('The Leviathan with eight Hornets already clamped, four in each hangar pod: launch them with `launch all` on the Staff PB (the second pod follows the first by 20 s). '
+                          'Adds 432 blocks and about 8,000 PCU to the empty Leviathan (about 41,000 PCU in all: a world limit of 50 k or more).')
+MODEL_NOTES['Leviathan Wing'] = MODEL_NOTES_LEVIATHAN
+MODELS = {'Leviathan': leviathan, 'Leviathan Wing': leviathan_wing}
 
 
 if __name__ == '__main__':

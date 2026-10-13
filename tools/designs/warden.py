@@ -279,7 +279,7 @@ def _bridge(S, full):
     bp = S.bp
     cd = f'[Ship]\nTag={TAG}\n'
     helm_cd = cd + HELM_DATA
-    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\nCockpit Surface=1\nHelm HUD Surface=0\nWing Surface=2\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB\n')
+    staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\nCockpit Surface=1\nHelm HUD Surface=0\nWing Surface=2\nTurret Target Group=Weapons\nTurret Target Names=Artillery,Assault\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB\n')
     S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 9, 20), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.add('gunner', 'MyObjectBuilder_Cockpit', 'CockpitOpen', (1, 9, 20), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
     S.add('rc', 'MyObjectBuilder_RemoteControl', 'LargeBlockRemoteControl', (-1, 9, 20), 'Forward', 'Up', nm('Remote Control'), toward='Down', kind='ctrl')
@@ -534,7 +534,7 @@ def warden(lite=False, with_pod=True, lock=False, name=None, wing=0):
     if with_pod:
         pod = pods.cradle_pod(4, lite=lite, name=f'{name} Cradle Pod', ship_tag=TAG)
         pod.display = 'Warden Cradle Pod'
-        if wing: pods.load_hornets(pod, wing)         # test ship 'Warden Wing Test' only
+        if wing: pods.load_hornets(pod, wing, lite)         # 'Warden Wing': four Hornets clamped in the pod
         pods.dock_pod(bp, pod, S.conns, lock=lock)
         bp.pod = pod
         check_hangar(bp)
@@ -632,7 +632,13 @@ MODEL_NOTES_WARDEN = ('Large grid, paste only (delete the old blueprint folder f
                       '(docs/design/ships/Warden.md, C1..C4). Drones are added by pasting them against the pod\'s merge blocks.')
 
 MODEL_NOTES = {'Warden': MODEL_NOTES_WARDEN}          # shown in the README by build_all.model_note
-MODELS = {'Warden': warden}
+def warden_wing(lite=False):
+    return warden(lite, name='Warden Wing' + (' Lite' if lite else ''), wing=4)
+
+DOCS['Warden Wing'] = ('The Warden with four Hornets already clamped in its pod (each stern merge block on a cradle merge block): launch them with `launch all` on the Staff PB. '
+                       'Adds 216 blocks and about 4,000 PCU to the empty Warden.')
+MODEL_NOTES['Warden Wing'] = MODEL_NOTES_WARDEN
+MODELS = {'Warden': warden, 'Warden Wing': warden_wing}
 
 if __name__ == '__main__':
     import argparse

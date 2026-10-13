@@ -5,6 +5,7 @@
 //
 // Script syntax (ShipSpec.Pilot, CLI --pilot): "<seconds>:<verb> [args];..." e.g.  "0:sit;5:move 0 0 -1;8:rot 0 1;20:leave"
 //   sit | leave                      take / leave the cockpit (leave also clears all input)
+//   seat NAME                        the seat for the following steps is the cockpit whose name contains NAME (M6: 'seat gunnery'; no NAME = the first cockpit)
 //   move X Y Z                       MoveIndicator in cockpit axes (x right+, y up+, z backward+; W = 0 0 -1), clamped to +-1 by Physics
 //   rot PITCH YAW | roll R | stop    RotationIndicator (pitch+ = nose down, yaw+ = turn right), RollIndicator; stop clears move/rot/roll/modes
 //   damp on|off                      DampenersOverride (the V key)
@@ -37,6 +38,7 @@ namespace SeSim.Run
         readonly ShipInstance _ship; readonly ScriptHost _host;
         readonly List<Step> _steps = new List<Step>();
         int _next;
+        string _seatName = "";           // 'seat NAME': the cockpit whose name contains NAME (default: the first cockpit)
         SimCockpit _cock;                 // the seat (first cockpit of the ship)
         Mode _mode; Vector3D _target; double _speed = 30;
         bool _fireAligned; double _fireDeg;
@@ -79,7 +81,7 @@ namespace SeSim.Run
                 for (int i = 0; i < b.Blocks.Count; i++)
                 {
                     var c = b.Blocks[i].Api as SimCockpit;
-                    if (c != null && !b.Blocks[i].Destroyed) return c;
+                    if (c != null && !b.Blocks[i].Destroyed && (_seatName == "" || (c.CustomName ?? "").ToLowerInvariant().Contains(_seatName))) return c;
                 }
             return null;
         }
@@ -190,6 +192,7 @@ namespace SeSim.Run
             string[] a = st.Args;
             switch (st.Verb)
             {
+                case "seat": if (_cock != null && _cock.IsUnderControl) { _cock.Input.Clear(); _cock.SetUnderControl(false); } _seatName = string.Join(" ", a).ToLowerInvariant(); _cock = FindSeat(); if (_cock == null) Skipped++; break;
                 case "sit": if (_cock == null) { Skipped++; break; } _cock.SetUnderControl(true); break;
                 case "leave": if (_cock == null) { Skipped++; break; } _mode = Mode.None; _fireAligned = false; SetFire(false); _cock.SetUnderControl(false); break;
                 case "move": if (_cock == null) { Skipped++; break; } _mode = Mode.None; _cock.Input.Move = new Vector3D(D(a, 0, 0), D(a, 1, 0), D(a, 2, 0)); break;

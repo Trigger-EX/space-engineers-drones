@@ -67,7 +67,6 @@ backup of `docs/design/control_arch.md` section 4.2 A3. The Pod PB's Custom Data
 Tag=WARDEN
 Slots=4
 First Bay=1
-Pulse=Update10
 
 [Bay 1]
 Merge=[POD] Merge 1
