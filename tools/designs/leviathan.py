@@ -749,7 +749,7 @@ def _walkways(S, res, vol):
     C.walk_check(S, (3, 11, 57), [(-1, 13, 57), (-7, 1, 45), (7, 1, 45)], cells + rooms, 'Leviathan walkway')
 
 
-def leviathan(lite=False, with_pods=True, lock=False, name=None, wing=0):
+def leviathan(lite=False, with_pods=True, lock=True, name=None, wing=0):
     full = not lite
     name = name or ('Leviathan Lite' if lite else 'Leviathan')
     bp = Blueprint(name, 'Large', seed=seed_for(name))

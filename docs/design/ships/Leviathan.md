@@ -198,8 +198,8 @@ from the lockers**. The tanks are not set to Stockpile. Risk: the paste may rebu
 * Drones are not in the file: `Leviathan` = ship + two EMPTY pods. Add up to 4 per pod, Hornet-class (Hornet, Wasp, Harrier, Watcher 8 long; Lancer, Aegis 9 long): paste them so that each stern merge block touches
   a pod merge block, or build them with `pods.attach_drone(pod, k, drone)` (test `test_locked_variant_with_eight_drones_writes_reloads_and_fits` builds eight, clamps them, and checks 0.25 m clearance to the hull).
   Midge Full (10 long) and the Gnat (belly merge) do not fit.
-* Locked variant: `leviathan.leviathan(lite, lock=True)` writes all four connector pairs in the Venture locked form (`sebp_multi`); unlocked is the default (the Tech Hunter form, the form that was seen to paste).
-  No model is registered for it.
+* Connectors: the blueprint now starts LOCKED (default `lock=True`: all four connector pairs are written in the Venture locked form, `sebp_multi`), so the cradle pods cannot drift off the hull when the ship is pasted.
+  `leviathan.leviathan(lite, lock=False)` writes the old unlocked form (the Tech Hunter form).
 
 ## 10. PCU
 
@@ -309,6 +309,18 @@ the two docked pods are held rigidly to the hull (`RigidLink`). Commands as in `
 **Helm.** `ShrikeAI.cs` again, unchanged, with the class data in its Custom Data: `Standoff Range=800`, `Min Range=150`, `Evasive Jinking=false`, `Orbit Speed=10`, `Combat Speed=40`, `AI Block Search Assist=false`, `[Battery] Standoff By Weapons=false`.
 The auto `MaxTurn` calibration works here too: **0.18 rad/s** against the analytic 0.85 sqrt(2 x 0.04 x 0.6) = 0.19 after the first slew. Stand-off sweep (Pirate, 3 seeds each, cap 600 s): weapon-based (the six rails at 1,000 m, the default) kill times 288 / 263 / 200 s;
 500 m 276 / 204 / 108 s; **800 m 109 / 127 / 122 s** (the other settings were still the defaults in this sweep; in the sim the turrets reach 800 m, the artillery 2 km only with a working AI block).
+
+**Caught from behind by a capital ship (v2.8, reported in the game with the Tech Hunter).** Three faults of the large-grid Helm: (1) the idle search was the fighter's: a +-34 degree nod every 16 s, which needs 2.5 times the dreadnought's angular
+acceleration, so the ship rocked up and down instead of looking round; (2) in REACT nothing scanned, and in HUNT only the one forward camera did, so the Hunter was found only when the turrets (800 m) saw it; (3) with the target behind, the ship
+spent its first 18 s turning with the thrust vector pointing sideways and stayed inside the Hunter's turret range. Changes in `ShrikeAI.cs` (large grids only, `Big`): steady search turn at half Max Turn, +-20 degree nod over 125 s; every camera scans to 1.8 km
+(in REACT too, without sweeping); a capital ship (radius >= 50 m) is held at `Capital Standoff Range` (1,000 m: the Hunter's turrets reach 800 m by themselves) instead of 800 m, and when it is in the rear half inside that range the nose points AWAY and the
+main engines burn for up to 20 s ("flee"), then the ship turns round (40 s pause before it can flee again); braking distances use the thrust along the direction of travel (the Leviathan brakes 1.0 m/s2 but accelerates 2.0 m/s2 forward), no random evasion on a
+large grid. `Capital Standoff Range=0` switches the standoff change and the flee off.
+
+Sim, seed 0, Tech Hunter behind the ship (`--face-away true`), pirate flying (40 m/s, circles at 700 m), 90 s, blocks lost (Leviathan / Hunter): Hunter 607 m behind: flee off (old standoff 800 m) **246 / 714**, flee on **66 / 162**; the flee run opens to 880 m in 20 s, is nose-on
+at 45 s and then sits at about 830 m, outside the turrets of both ships (only the six rails shoot), so it trades much less in both directions. Hunter 1,450 m behind, old Helm (cap 240 s, stopped at 69 s): the ship never turned until the Hunter's shells arrived at 735 m, 231 blocks lost by 65 s;
+new Helm 74 lost by 66 s. Detection by camera is still slow (a ray costs its length in charge; a 5 degree wide ship is hit by about one ray in a thousand): in that run the turrets found the Hunter at 830 m again. `AI Block Search Assist=true` (the AI block points the nose, the
+camera confirms down the boresight) turned the ship onto the Hunter at 1,030 m, 10 s earlier, but the idle ship then wanders; it stays off by default. One seed each: a direction, not a measurement.
 
 **The Gunnery PB did not earn its keep and is gone.** The design gave it three jobs: (1) secondary batteries with windows and ripple fire (done in the Helm since M3: `[B1]..[B4]` batteries, one lead solver per class), (2) turret and point-defence configuration, (3) the ammunition table
 (the game's conveyors feed the turrets; a script can only watch). The one function that can be measured is (2): which part of the target the heavy turrets shoot at. I set the `SetTargetingGroup` of the artillery and assault turrets from outside

@@ -40,7 +40,6 @@ Block Prefix=[SH]
 
 [Shrike]
 IGC Tag=BALLISTA
-Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)=BREACH
 AI Block Search Assist=false
 Start Mode (GUARD/HUNT/ASSIST/IDLE)=HUNT
 Standoff Range=1600
@@ -179,17 +178,20 @@ def _groups(S):
 # ---------------------------------------------------------------------------------------------
 EXIT_WANT = 'Up'                  # host direction the printed probe leaves along (the foundry bay's exit is its local Right)
 
-def foundry(lite):
+def foundry(lite, row='x'):
+    """the printer with its two ConnectorMedium blocks on a flange under the equipment pod, in a row along the foundry's x or z axis (ballista() tries both
+    and keeps the one whose bay exit ends up pointing away from the ship)"""
     fb = PR.MODELS['Probe Foundry'](lite)
     occ = fb.occupancy()
     # a flange under the equipment pod carries two ConnectorMedium blocks 5 cells (2.5 m = one large cell) apart, contact face Down
-    # (the pair is displaced along the foundry's z, so the bay exit - the foundry's exit direction - ends up perpendicular to the connector row)
-    for z in (-4, -3, 3):
-        for x in (-1, 0, 1):
-            assert (x, -2, z) not in occ, f'foundry flange cell {(x, -2, z)} is taken'
-            fb.armor(x, -2, z, PL.PRINTER_COLOR)
-    conns = [fb.add('MyObjectBuilder_ShipConnector', 'ConnectorMedium', (-1, -4, z), 'Down', 'Forward', f'Foundry Connector {"AB"[i]} ({fb.name})', GUND, kind='conn')
-             for i, z in enumerate((-4, 1))]
+    pos = (-4, 1)                      # block corner along the row; the pod spans -2..2, so the flange fills -4..-3 and 3
+    for u in (-4, -3, 3):
+        for v in (-1, 0, 1):
+            c = (u, -2, v) if row == 'x' else (v, -2, u)
+            assert c not in occ, f'foundry flange cell {c} is taken'
+            fb.armor(*c, PL.PRINTER_COLOR)
+    conns = [fb.add('MyObjectBuilder_ShipConnector', 'ConnectorMedium', (u, -4, -1) if row == 'x' else (-1, -4, u), 'Down', 'Forward',
+                    f'Foundry Connector {"AB"[i]} ({fb.name})', GUND, kind='conn') for i, u in enumerate(pos)]
     fb.pod = SimpleNamespace(connectors=conns)
     # the Spotter starts and stops the foundry (the Hive Mother PB would print a probe the moment it is pasted otherwise)
     for b in fb.blocks:
@@ -207,7 +209,7 @@ def exit_of(fb):
     assert d, f'{fb.name}: no Exit Direction in the Hive Mother PB'
     return d
 
-def dock_foundry(host, fb, conns, want=EXIT_WANT):
+def dock_foundry(host, fb, conns, want=EXIT_WANT, lock=True):
     """dock with the roll that sends the bay's exit (the foundry's exit direction) along the host direction `want`"""
     errs = []
     for order in (list(conns), list(conns)[::-1]):
@@ -217,7 +219,11 @@ def dock_foundry(host, fb, conns, want=EXIT_WANT):
             except AssertionError as e:
                 errs.append(f'roll {roll}: {e}'); continue
             d = pose.rot.apply(MU.DIRS[exit_of(fb)])
-            if MU._dot(d, MU.DIRS[want]) > 0.99 or MU._dot(d, MU.DIRS['Backward']) > 0.99: return pose
+            if MU._dot(d, MU.DIRS[want]) > 0.99 or MU._dot(d, MU.DIRS['Backward']) > 0.99:
+                if lock:      # written locked, as the Warden / Leviathan pods are (an unlocked pod broke off the hull in the game)
+                    host.lock_connectors(order[0], fb, fb.pod.connectors[0])
+                    host.lock_connectors(order[1], fb, fb.pod.connectors[1])
+                return pose
             host.subgrids.pop()
     raise AssertionError('dock_foundry: no roll puts the bay exit along ' + want + '; ' + '; '.join(errs))
 
@@ -277,8 +283,16 @@ def ballista(lite=False, with_foundry=True):
     _groups(S)
     bp.ship = S
     if with_foundry:
-        fb = foundry(lite)
-        dock_foundry(bp, fb, S.conns)
+        errs = []
+        for row in ('x', 'z'):
+            fb = foundry(lite, row)
+            try:
+                dock_foundry(bp, fb, S.conns)
+                break
+            except AssertionError as e:
+                errs.append(f'row {row}: {e}')
+        else:
+            raise AssertionError('no foundry docking: ' + ' | '.join(errs))
         bp.foundry = fb
         check_foundry(bp)
     pods.assert_clean(bp)
@@ -287,8 +301,8 @@ def ballista(lite=False, with_foundry=True):
 MODELS = {'Ballista': ballista}
 DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 3 battery behind a thin frame of 16 large hydrogen thrusters (32 m/s2 fore and aft, 16 m/s2 on the other axes, 12 gyros), 1.35 M of slug damage per salvo at 2,000 m. '
         'The Helm keeps the stand-off and turns the ship onto the target. A small probe foundry docked on its rear connectors prints a Peeper probe when a big target is engaged; the probe circles the target and its turret finds the '
-        'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 7,100 PCU with the foundry, 8,000 with a live probe. Nothing has run in the game.'}
-MODEL_NOTES = {'Ballista': 'Needs a world PCU limit of 10,000 or more. Paste it, wait until the two foundry connectors are locked (the Spotter presses Connect), then run the Helm. Lite has no sensor / AI blocks and prints Lite probes (no turret, so they find nothing): use Full.'}
+        'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 7,200 PCU with the foundry, 8,200 with a live probe. Nothing has run in the game.'}
+MODEL_NOTES = {'Ballista': 'Needs a world PCU limit of 10,000 or more. The foundry connectors are written locked (the Spotter presses Connect if they ever come up unlocked). Lite has no sensor / AI blocks and prints Lite probes (no turret, so they find nothing): use Full.'}
 SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
 
 # ---------------------------------------------------------------------------------------------

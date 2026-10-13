@@ -19,7 +19,7 @@ remembers where every targetable block is, power first because it is railguns.
 | acceleration (loaded) | 31.5 m/s2 fore and aft, 15.8 m/s2 up / down / left / right [calc] |
 | turning | 12 `LargeBlockGyro` = 403 MN m; 5.1 / 3.1 / 4.7 rad/s2 pitch / yaw / roll [calc, point-mass inertia], i.e. the 180 deg/s cap in about 1 s |
 | power | 1 large reactor + 4 small = 360 MW, 21 large batteries = 252 MW / 63 MWh. A full re-arm of 27 guns (0.5 MWh each at 38 MW) takes about 100 s supply-bound, 59 s is the per-gun floor |
-| PCU | ship 4,349; foundry about 2,800; one live probe 916 (+62 projected). **About 7,150 idle, 8,100 with a probe alive** [calc, sum of block PCU] |
+| PCU | ship 4,349; foundry about 2,860; one live probe 916 (+62 projected). **About 7,200 idle, 8,200 with a probe alive** [calc, sum of block PCU] |
 
 PCU is not what limits the design: it is mass, power and the volume of the gun block. 10,000 PCU could hold about 60 railguns, but they would weigh 870 t on their own and re-arm for ten minutes.
 `COLS` / `ROWS` in `ballista.py` scale the battery (the tests pin 27).
@@ -33,7 +33,7 @@ the Helm and Spotter PBs and the Remote Control (y = 4 deck). Mast on the wall: 
 ## 3. Control
 
 * **Helm** `[Helm][SH] Ballista Helm` runs `ShrikeAI.cs` with the Warden's recipe: weapon battery `[B1]` = the 27 rails (RAIL class, 2,000 m), `Standoff By Weapons=true` keeps about 85 % of the railgun range,
-  `Combat Speed=100`, jinking on, `Aim Point=BREACH` (hold one hull point and drill it). IGC Tag `BALLISTA`.
+  `Combat Speed=100`, jinking on. Against large grids of radius >= 25 m the Helm's AUTO aim is BREACH (hold one hull point and drill it); that is what the Spotter feed steers. IGC Tag `BALLISTA`.
 * **Spotter** `[Spotter][SH] Ballista Spotter` runs `SpotterAI.cs` (section 5).
 * No cockpit: a drone. Hand flying needs a seat added by hand (the Helm switches to MANUAL when somebody sits in a flight seat).
 
@@ -56,8 +56,8 @@ the block position is `GetTargetedEntity().HitPosition` when the game gives one,
 * **Feed** to the Helm as `BALLISTA_AIM` = (target id, position in the target frame) every 4 s or on change. Choice: `Priority` (default power, weapons, propulsion), then most hits, then freshest. A vital
   fed for 45 s without disappearing is marked tried and the next is used; when all are tried the marks reset. The Helm (ShrikeAI hook in `ReadIGC`) makes it the BREACH point and drills it **along the real
   line of fire** (the direction is computed in the Helm from its own position, not taken from the probe). A point the Helm already gave up on (its 30 s stall rule, `_bBad`) is not taken again.
-* **Bay**: finds the foundry's `Hive Mother PB`, runs `max 1` + `start` when the Helm has a target of radius >= 15 m and no probe is alive, `stop` when the target is gone, waits 15 s after a lost probe, and
-  presses Connect on `Foundry Connector` blocks whenever they are connectable (a pasted ship arrives unlocked). The foundry has `Auto Start=false`, so nothing prints before the first target.
+* **Bay**: finds the foundry's `Hive Mother PB`, runs `max 1` + `start` when the Helm has a target of radius >= 25 m and no probe is alive, `stop` when the target is gone, waits 15 s after a lost probe, and
+  presses Connect on `Foundry Connector` blocks whenever they are connectable (a safety net: the blueprint is written with the pairs locked, like the Warden pod). The foundry has `Auto Start=false`, so nothing prints before the first target.
 
 ## 6. Probe foundry
 
@@ -73,7 +73,7 @@ Ballista's two rear connectors the way the Cradle Pod docks in the Warden's hang
 2. **A turret without ammunition may not acquire or aim**, and the targeting groups may not pick subsystems of an enemy grid from outside. `SeekerProbe.cs` answers this in 5 minutes (put it on any ship with a turret).
 3. Components: creative mode needs none; in survival the foundry's welders need the probe's components (about 1 t of steel plate, 4.6 t of parts) fed by hand.
 4. Not run anywhere: the sim has no probe, foundry or Spotter models. Compile-checked only (`tools/compile_check.sh`, stand-in API).
-5. Helm size: the hook raised ShrikeAI to 80,529 of the Helm's 80,600-character budget (design budget 80,000, hard cap 85,000, the Programmable Block takes 100,000).
+5. Helm size: the hook raised ShrikeAI to 80,547 of the Helm's 80,600-character budget (design budget 80,000, hard cap 85,000, the Programmable Block takes 100,000).
 6. The foundry's 12 welders cost 150 PCU each (1,800 of its ~2,800); fewer welders would save PCU but the bay's reach guarantees (`reach.py`) assume them.
 7. Lite Ballista prints Lite probes: they cannot identify anything. Use Full.
 

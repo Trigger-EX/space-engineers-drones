@@ -16,7 +16,7 @@
 //     one is used; when every vital of every group was tried the marks are cleared.
 //
 //  3. BAY. The probe foundry (a small-grid printer docked on two connectors, its Programmable Block named "Hive Mother PB") is started when
-//     the Helm has a target of at least "Min Target Radius" m and no probe is alive, and stopped when the target is gone or enough probes
+//     the Helm has a target of at least "Min Target Radius" m (default 25 = the Helm's Breach Min Radius: only such targets are drilled) and no probe is alive, and stopped when the target is gone or enough probes
 //     live. The Spotter also presses Connect on the foundry connectors whenever they are connectable (a pasted blueprint arrives unlocked).
 //     Probes are counted by their <Probe Tag>_SWARM heartbeat.
 //
@@ -27,7 +27,7 @@
 const string VER = "0.1";
 string HostTag = "BALLISTA", ProbeTag = "PEEPER", HiveName = "Hive Mother PB", ConnName = "Foundry Connector";
 string PrioText = "0,1,2";
-double HoldSec = 45, ExpireSec = 90, RefreshSec = 4, MergeR = 6, MinRadius = 15, PrintCooldown = 15;
+double HoldSec = 45, ExpireSec = 90, RefreshSec = 4, MergeR = 6, MinRadius = 25, PrintCooldown = 15;
 int MaxProbes = 1;
 bool BayControl = true, FeedOn = true;
 

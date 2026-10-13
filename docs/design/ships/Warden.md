@@ -323,7 +323,7 @@ Risk: the paste may rebuild conveyor connectivity differently from the game's ow
 * **Launch lane**: straight down (-y) from the door plane: 7.5 m wide, the full 20 m hangar length, 12 m deep, nothing in it (the hanging gatlings are at z 28..30, the recessed ones at z 9..11, the sensors
   at x +-4; lift thrusters stand at z 9 and 28). Drone noses point down the lane; the pod's `Away` is (0, 0, -1) in pod cells = ship Down.
 * Drones are not in the file: `Warden` = ship + EMPTY pod. Add up to four: paste Hornets so that each stern merge block touches a pod merge block (positions in `Pod.md`, or build them with `pods.attach_drone`).
-* Locked variant: `warden.warden(lite, lock=True)` writes both connector pairs in the Venture locked form (`sebp_multi`), unlocked is the default (the Tech Hunter form, the form that was seen to paste).
+* Connectors: the blueprint now starts LOCKED (default `lock=True`: both connector pairs in the Venture locked form, `sebp_multi`), so the pod cannot break off the hull when the ship is pasted. `warden.warden(lite, lock=False)` writes the old unlocked form (the Tech Hunter form).
   No `Warden` model is registered for it.
 
 ## 9. Paste and load

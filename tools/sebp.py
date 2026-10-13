@@ -466,7 +466,7 @@ class Blueprint:
     # ---------- shapes, pre-loads, toolbars, groups ----------
     def shape(self, b):
         """(template spec, confidence) used for block b (honours legacy_shapes)"""
-        return shape_for(b['xtype'], b['sub'], self.legacy_shapes)
+        return shape_for(b['xtype'], b['sub'], self.legacy_shapes and not b.get('sample_shape'))
 
     def label(self, b):
         return f'{self.name}: {b["name"] or b["sub"] or b["xtype"].replace("MyObjectBuilder_", "")}@{tuple(b["min"])}'
@@ -683,7 +683,7 @@ class Blueprint:
         return own, bb
 
     def build_block(self, b, counters):
-        spec, _ = shape_for(b['xtype'], b['sub'], self.legacy_shapes)
+        spec, _ = shape_for(b['xtype'], b['sub'], self.legacy_shapes and not b.get('sample_shape'))     # b['sample_shape'] = this block alone uses the sample-derived shape
         level = spec['level']
         o = ET.Element('MyObjectBuilder_CubeBlock', {XSI + 'type': b['xtype']})
         o.append(E('SubtypeName', b['sub'] or None))
@@ -732,7 +732,7 @@ class Blueprint:
             for i, t in enumerate(tail):
                 if t.tag == e.tag: tail[i] = e; break
             else:
-                anchor = 'END' if self.legacy_shapes else TAIL_AFTER.get(e.tag, 'END')
+                anchor = 'END' if (self.legacy_shapes and not b.get('sample_shape')) else TAIL_AFTER.get(e.tag, 'END')
                 j = None if anchor in ('END', None) else next((i for i, t in enumerate(tail) if t.tag == anchor), None)
                 if anchor is None: tail.insert(0, e)             # first field after <Enabled>
                 elif j is not None: tail.insert(j + 1, e)
