@@ -208,3 +208,24 @@ def lock_elements(master_world, master_block_pose, slave_world, slave_block_pose
         vals = pos if tag == 'PositionOffset' else q
         for k, v in zip('XYZW', vals): e.append(E(k, _num(v)))
     return t, g
+
+
+def overlapping_cells(parent_bp, child_bp, pose, tol=1e-3):
+    """cells of the child grid (placed at `pose` in the parent's frame) whose box intersects the box of a parent cell, as
+    [(child cell, parent cell)].  Boxes that only touch (the docked faces) do not count.  Axis-aligned poses only."""
+    pc, cc = CELL[parent_bp.grid], CELL[child_bp.grid]
+    occ = {}
+    for b in parent_bp.blocks:
+        for c in parent_bp.cells(b): occ[c] = True
+    out = []
+    for b in child_bp.blocks:
+        for c in child_bp.cells(b):
+            centre = pose.apply(tuple(v * cc for v in c))
+            lo = [(centre[i] - cc / 2 + tol) / pc + 0.5 for i in range(3)]          # parent cell index i spans [i - 0.5, i + 0.5) * pc
+            hi = [(centre[i] + cc / 2 - tol) / pc + 0.5 for i in range(3)]
+            rng = [range(math.floor(lo[i]), math.floor(hi[i]) + 1) for i in range(3)]
+            for x in rng[0]:
+                for y in rng[1]:
+                    for z in rng[2]:
+                        if (x, y, z) in occ: out.append((c, (x, y, z)))
+    return out

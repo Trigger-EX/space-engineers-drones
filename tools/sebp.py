@@ -585,6 +585,10 @@ class Blueprint:
         the game may or may not restore the lock; the unlocked default is the tested form)."""
         assert any(parent_block is y for y in self.blocks) and any(child_block is y for y in child.blocks), 'blocks must belong to the two grids'
         pose = MU.dock_pose(self, parent_block, child, child_block, parent_face, child_face, gap, roll)
+        if gap >= 0:
+            hit = MU.overlapping_cells(self, child, pose)
+            assert not hit, (f'{self.name}: docking {child.name} this way puts {len(hit)} of its cells inside this grid (first: {hit[0]}); the connector face '
+                             f'is not free or another roll= fits (0..3)')
         self.attach(child, pose)
         if lock: self.lock_connectors(parent_block, child, child_block, time_of_connection)
         return pose
@@ -780,6 +784,11 @@ class Blueprint:
     def _groups_xml(self):
         """<BlockGroups> element text for this grid ('' when there are no groups)"""
         if not self.groups: return ''
+        for name, members in self.groups.items():
+            for m in members:
+                if m['key'] not in CENTERS and any(v > 1 for v in m['size']):
+                    note = f'{self.label(m)}: block group {name!r}: Center cell of {m["key"]} is not known from any sample; the block-local cell (0,0,0) was written'
+                    if note not in self.notes: self.notes.append(note)
         return ser(TB.block_groups_element(self.groups, self.group_cell), 5)
 
     def _grid_xml(self, gid, display, world):

@@ -353,10 +353,6 @@ class TestShapes(unittest.TestCase):
         # every sample named in a confidence string exists
         names = {name_of(f) for f in files()} if ground.have_samples() else None
         if names:
-            for k, v in ct.items():
-                if k.startswith('feature:'): continue
-                for m in re.finditer(r'(?:seen|seen-type|derived)[: ]\(?([^,()]+?)(?=[,)]| \(|$)', v):
-                    pass
             for k, v in sebp.shape_report().items():
                 src = v[1]
                 if src and not src.startswith(('Starburst', 'derived', 'LargeGatlingTurret/*')):
@@ -897,11 +893,11 @@ class TestMultiGrid(unittest.TestCase):
         big = Blueprint('Ship', 'Large', seed=5)
         for x in range(3):
             for y in range(3): big.armor(x, y, 0, sub='LargeBlockArmorBlock')
-        conn = big.add(T('ShipConnector'), 'Connector', (1, 1, 1), 'Forward', 'Up', name='Dock A')
+        conn = big.add(T('ShipConnector'), 'Connector', (1, 1, -1), 'Forward', 'Up', name='Dock A')       # Forward = -z: the face must look away from the hull
         pod = Blueprint('Pod', 'Small', seed=6)
         for x in range(2):
             for y in range(2): pod.armor(x, y, 0)
-        pc = pod.add(T('ShipConnector'), 'ConnectorSmall', (0, 0, 1), 'Forward', 'Up', name='Pod conn')
+        pc = pod.add(T('ShipConnector'), 'ConnectorSmall', (0, 0, -1), 'Forward', 'Up', name='Pod conn')
         pose = big.dock(pod, conn, pc, gap=gap, lock=lock)
         return big, pod, conn, pc, pose
 
@@ -912,6 +908,25 @@ class TestMultiGrid(unittest.TestCase):
         world_c = pose.apply(cc_)
         self.assertLess(MU._norm(MU._sub(world_c, MU._add(cp, MU._mul(n_p, 0.2)))), 1e-9)
         self.assertLess(MU._norm(MU._add(pose.rot.apply(n_c), n_p)), 1e-9)
+
+    def test_dock_refuses_a_pose_that_puts_the_child_inside_the_parent(self):
+        ship = Blueprint('ship', 'Large', seed=1)
+        for x in range(3):
+            for z in range(3): ship.armor(x, 0, z, sub='LargeBlockArmorBlock')
+        conn = ship.add(T('ShipConnector'), 'Connector', (1, -1, 1), name='dock')               # Forward = -z
+        pod = Blueprint('pod', 'Small', seed=2)
+        for x in range(4):
+            for z in range(4): pod.armor(x, 0, z)
+        pc = pod.add(T('ShipConnector'), 'ConnectorSmall', (-1, 0, 0), name='pdock')
+        ship.dock(pod, conn, pc)                                                              # free face: fine
+        ship2 = Blueprint('ship2', 'Large', seed=1)
+        for x in range(3):
+            for z in range(3): ship2.armor(x, 0, z, sub='LargeBlockArmorBlock')
+        conn2 = ship2.add(T('ShipConnector'), 'Connector', (1, -1, 1), name='dock')
+        ship2.armor(1, -1, 0, sub='LargeBlockArmorBlock')                                     # in front of the connector's Forward face
+        with self.assertRaises(AssertionError) as c: ship2.dock(pod, conn2, pc)
+        self.assertIn('inside this grid', str(c.exception))
+        self.assertEqual(ship2.subgrids, [])                                                  # nothing attached by the failed call
 
     def test_writer_emits_several_cubegrids(self):
         big, pod, conn, pc, pose = self._two_grids()
