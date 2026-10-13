@@ -5,6 +5,7 @@
 //   mono SimHost.exe dock-launch [--model Hornet] [--seconds 30] [--release-at 3] [--both-merges] [--join-at T] [--arm-at T]
 //        [--custom-data "INI with \n"] [--seed 1] [--repo DIR] [--trace FILE]
 //   --join-at T   also broadcast "<TAG>_JOIN" ("join") from a helper PB-less sender at T s (default: never, the bug scenario)
+//   --recompile-at T   terminal action "Recompile" on the drone PB at T s (Custom Data survives, the script state does not)
 //   --arm-at T    run the argument "armed" on the drone PB at T s (what HiveMotherAI does through DPb.TryRun)
 //
 // The dummy printer is code-built: the blueprint's own merge block gets a partner (opposite face, centres one cell apart), a one-cell stalk of
@@ -26,6 +27,7 @@ namespace SeSim.Run
     public static class DockLaunch
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+        const double ClearM = 12;   // 'left the printer': drone centre this far from the printer's merge block (the drone is 5 m long)
 
         static string Arg(string[] a, string k, string d)
         {
@@ -116,7 +118,7 @@ namespace SeSim.Run
         {
             string model = Arg(args, "--model", "Hornet");
             double secs = Dbl(args, "--seconds", 30), rel = Dbl(args, "--release-at", 3);
-            double joinAt = Dbl(args, "--join-at", -1), armAt = Dbl(args, "--arm-at", -1);
+            double joinAt = Dbl(args, "--join-at", -1), armAt = Dbl(args, "--arm-at", -1), recAt = Dbl(args, "--recompile-at", -1);
             bool both = Has(args, "--both-merges");
             ulong seed = (ulong)Dbl(args, "--seed", 1);
             string cd = Arg(args, "--custom-data", null);
@@ -155,7 +157,7 @@ namespace SeSim.Run
             if (tracePath != null) { tw = new StreamWriter(tracePath, false, new UTF8Encoding(false)); tw.WriteLine("t,drone_x,drone_y,drone_z,speed,dist_to_printer_merge,mode,grid_split"); }
             long ticks = (long)(secs * SimSettings.TicksPerSecond);
             long relTick = (long)(rel * SimSettings.TicksPerSecond);
-            bool released = false, joinSent = false, armSent = false;
+            bool released = false, joinSent = false, armSent = false, recSent = false;
             double firstMove = -1, leftAt = -1, splitAt = -1, maxDist = 0, maxSpeed = 0; string modeNow = "?", modeFirst = null; double modeAt = -1;
             Vector3D pm0 = printerMerge.WorldCenter;
             var sb = new StringBuilder();
@@ -163,6 +165,7 @@ namespace SeSim.Run
             {
                 double now = t / SimSettings.TicksPerSecond;
                 if (!armSent && armAt >= 0 && now >= armAt) { armSent = true; host.RunArgument(pb, "armed", UpdateType.Terminal); }
+                if (!recSent && recAt >= 0 && now >= recAt) { recSent = true; pb.ApplyAction("Recompile"); runner = pb.Runner; }
                 if (!released && t >= relTick)
                 {
                     released = true;
@@ -184,7 +187,7 @@ namespace SeSim.Run
                 if (spd > maxSpeed) maxSpeed = spd;
                 if (released && dist > maxDist) maxDist = dist;
                 if (released && firstMove < 0 && db != printerBody && spd > 1.0) firstMove = w.Time;
-                if (released && leftAt < 0 && db != printerBody && dist > 30) leftAt = w.Time;
+                if (released && leftAt < 0 && db != printerBody && dist > ClearM) leftAt = w.Time;
                 if (t % 30 == 0)
                 {
                     string e = runner != null ? runner.EchoText : null;
@@ -198,7 +201,7 @@ namespace SeSim.Run
             Console.Write(sb.ToString());
             Console.WriteLine("RESULT " + model + ": split " + (splitAt >= 0 ? splitAt.ToString("F2", Inv) + " s" : "never")
                 + ", first movement " + (firstMove >= 0 ? firstMove.ToString("F2", Inv) + " s" : "never")
-                + ", >30 m away " + (leftAt >= 0 ? leftAt.ToString("F2", Inv) + " s" : "never")
+                + ", > 12 m away " + (leftAt >= 0 ? leftAt.ToString("F2", Inv) + " s" : "never")
                 + ", max dist " + maxDist.ToString("F1", Inv) + " m, max speed " + maxSpeed.ToString("F1", Inv) + " m/s, final mode " + modeNow
                 + (modeAt >= 0 ? " (since " + modeAt.ToString("F1", Inv) + " s)" : ""));
             string last = runner != null ? runner.EchoText : "";

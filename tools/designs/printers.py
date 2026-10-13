@@ -62,6 +62,13 @@ def _stinger_fallback(lite):
     for c in [c for c, why in bp.reserve.items() if why.endswith(g['name'])]: del bp.reserve[c]
     for i, z in enumerate((-3, -2)):
         bp.add('MyObjectBuilder_Warhead', 'SmallWarhead', (0, 0, z), 'Forward', 'Up', f'{name} Warhead {i + 1}', (0.98, 0.65, 0.05), kind='warhead')
+    # removing the gatling left blocks that hung on it (the left camera): drop everything not attached to the merge block by mount points
+    adj = bp.attachment(); m = [b for b in bp.blocks if b['kind'] == 'merge'][0]
+    seen = {id(m)}; todo = [id(m)]
+    while todo:
+        for n in adj[todo.pop()]:
+            if n not in seen: seen.add(n); todo.append(n)
+    for b in [b for b in bp.blocks if id(b) not in seen]: bp.blocks.remove(b)
     return finalize(bp)
 
 def get_drone(key, lite):
@@ -126,11 +133,13 @@ def build(spec, lite):
         cap = (spec.get('caps') or {}).get(tag, max(4, 3 * count))
         for n in nums:
             cfg.append(dict(n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
+
     if spec.get('turret') and not lite: pr.add_turret()
     if spec.get('guns'): pr.add_guns(spec['guns'])
     if spec.get('per_dir'): pr.add_thrusters(spec['per_dir'])
     else: pr.tcount = {}
     pr.add_antenna(5000)
+    for cf in cfg: cf['geom'] = PL.bay_geometry(pr, next(r for r in pr.records if r['n'] == cf['n']))
     comps = {}
     for bay in pr.records:
         comps.setdefault(bay['drone'].name, cost_components_of(bay['drone']))
