@@ -27,6 +27,13 @@ a full-ammo-range turret robustness run (turrets as if a pilot target-locked: ar
 - Limits: only the largest grid is simulated (rotor/hinge/piston subgrids, e.g. custom turret pods, are dropped); hydrogen and reactor fuel never run out;
   no PB scripts run on the enemy ship; its turrets aim by themselves.
 
+## Overnight run + stability test (Linux)
+- `./overnight.sh` (default 8 hours, all logical CPUs; `--hours 6 --jobs 16` to change). Runs `plans/enemy.plan` from the start,
+  then adds new seeds (100, 101, ...) of the same matchups to `results/enemy-main-more` until the time is up. About every
+  30 minutes it reruns the 336 fights of `results/recheck` and compares them fight by fight, and it counts the kernel's
+  hardware errors. `results/overnight/summary.txt` says STABLE or UNSTABLE; `results/overnight/status.log` has the timeline.
+- Results from before the first overnight run are moved to `old_results/`. If the PC crashes, start it again: it continues.
+
 ## Endless mode (run until you press Enter)
 - Linux Mint: `./run_endless.sh`   Windows: double-click `run_endless.bat`.
 - Fights every matchup round after round (by default your ships in `enemies/` vs 1..24 of every drone) and shows a live line:
