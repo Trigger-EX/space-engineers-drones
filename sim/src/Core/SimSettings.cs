@@ -192,6 +192,9 @@ namespace SeSim.Core
         /// <summary>Pirate evasive manoeuvres (like the vanilla AI's "evasive" option): strafe at PirateEvasiveSpeed across the line
         /// of sight, flipping every 2-5 s, on top of its orbit. Off by default (the matrix results so far are without it).</summary>
         public bool PirateEvasive = false;
+        /// <summary>Pirate rush: never settle into the orbit, keep flying straight at the target at PirateCruiseSpeed (a player ramming
+        /// the drones; a big slow-turning ship pointing its nose at them). Off by default.</summary>
+        public bool PirateRush = false;
         public double PirateEvasiveSpeed = 30;
         /// <summary>Rockets (Missile ammo with explosion) at launch [I]: 0 = the old model (barrel direction x MissileInitialSpeed, ship
         /// velocity ignored); 1 = ship velocity + barrel x MissileInitialSpeed, accelerating along the barrel with the total speed capped at

@@ -308,7 +308,7 @@ namespace SeSim.Combat
             Vector3D dirT = rel * (1.0 / d);
             Vector3D up = Vector3D.Up;
             Vector3D vdes, fwd;
-            if (d > s.PirateOrbitRange + 100)
+            if (s.PirateRush || d > s.PirateOrbitRange + 100)
             {
                 vdes = dirT * s.PirateCruiseSpeed;
                 fwd = dirT;
