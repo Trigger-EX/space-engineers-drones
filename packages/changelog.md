@@ -1,4 +1,27 @@
-### v2.5 (this package): foundry fixes (finish-welding, robust reach, automatic take-off, owner ids)
+### v2.6 (this package): BREACH aim against big ships; SEEKER test ships
+- **Script length fix (important).** A Programmable Block takes at most 100,000 characters; since v2.2 every armed drone script
+  was over it (Hornet 155,629, Basilisk 175,054 characters with comments), so a pasted drone's PB could not hold its script. The
+  blueprints and the zips' `Scripts/` folder now carry minified scripts (comments and whitespace removed only; `tools/minify_cs.py`,
+  proven identical by compiling both and comparing the IL, `tools/minify_check.sh`; largest now Basilisk 97,721). The commented
+  originals are in `Scripts/Source/`, for reading only: they are too long to paste. The build refuses a script over the limit.
+Question from the user: against large battleships (their *Tech Hunter*) the drones "can't figure out where vital components are and
+just shoot the hull". Study: `docs/tech-hunter-study.md` (1,280 simulated fights, fleets of up to 10 Hornet / Gnat / Longbow S /
+Longbow L / Basilisk).
+- **BREACH** (shared block `tools/aim_block.cs` in every armed drone script, synced by `tools/aim_sync.py`): against a large grid of
+  radius >= 25 m, AUTO holds one hull point (the known one nearest the target's centre, where the armour over the core is thinnest),
+  keeps every round on it, and aims down the hole as it deepens; stalled or missing points are swapped. Sim vs Tech Hunter: railgun
+  drones destroy about twice as many power blocks (Longbow L 0.65 -> 1.2 per drone in 10 min), at the cost of fewer exposed turrets.
+  `aim breach`, `breach on|off`; Custom Data `Breach Large Ships (AUTO)`, `Breach Min Target Radius (m)`, `Breach Stall (s)`.
+- **SEEKER (experimental, option 4)**: a turret on the drone named `[Seeker]` is set to `Seeker Group` (PowerSystems / Weapons /
+  Propulsion); the script reads where it points and drills there. New test ships **Longbow L Seeker** (artillery turret, 2 km) and
+  **Basilisk Seeker** (roof turret renamed); `scripts/SeekerProbe.cs` reports what any ship's turrets tell a script. In the sim it did
+  not beat BREACH; the in-game API behaviour is the open question (test 23).
+- Finding for fleet building: against a turret-heavy capital ship only Longbow L survives (2 km = artillery range); Hornets, Gnats and
+  Basilisks die in under 70 s whatever they aim at. Nothing of 10 drones or fewer knocked the Tech Hunter out in 10 minutes.
+- Simulator: turrets need power; only railguns have a capacitor (artillery / assault-cannon capacitors starved every turret of a big
+  ship); turret targeting groups + Azimuth/Elevation API; enemy vitals in the results; `--enemy-fleets`.
+
+### v2.5: foundry fixes (finish-welding, robust reach, automatic take-off, owner ids)
 - **Finish-welding verification.** `HiveMotherAI.cs` 2.1 no longer leaves BUILD when the projector reports 0 blocks left (that only means "all placed", not "all welded"). A new FINISH state keeps every welder on until a full scan of the bay's drone box finds each block at full integrity and functional. Welders can no longer be switched off in BUILD/FINISH (the old stall "kick" that turned all welders off is gone; it now toggles one welder at a time). The LCD lists unfinished blocks (name, cell, integrity, distance to the nearest welder), reports off/damaged/unpowered welders and an empty `[Stock]`, and FINISH has a timeout that FAULTs with the list.
 - **Robust welder reach.** The welder sphere centre is unknown (model dummy), so `reach.py` now checks 8 hypotheses (centre at the tip, 1, 2 or 3 cells inside the welder; radius 1.3 m and 1.0 m), a build-order support check and a foreign-bay check. Hornet-class bays now carry 10-12 welders (was 5-8), Gnat bays 7 (was 5). Exit directions were re-chosen per drone. Costs about +900 PCU and +2.7 t per Hornet-class bay. Per-bay Custom Data gains `Drone Box Min/Max`, `Drone Cell Count`, `Drone Occupied Cells`, `Ignore Cells`, an explicit `Exit Direction`, and a `[Launch]` section.
 - **Automatic take-off.** A shared LAUNCH block (`tools/launch_block.cs`, synced by `tools/launch_sync.py`) is in the Hornet, Gnat, Longbow, Mantis, Wasp, Lancer, Harrier, Aegis and Basilisk scripts. A printed drone launches when its own PB sees the merge pair open, or on `[Launch] Armed=true`, `_JOIN`, FLEET `join`, or the arguments `armed` / `launch` / `disarm`. No single message is needed. It burns away from the printer for `Burst Seconds`, then goes home and into its start mode (default GUARD). The printer writes `[Launch]` into the drone PB before release, repeats `_JOIN` for 40 s and recompiles the drone PB.

@@ -1,4 +1,31 @@
-# Foundry notes (HiveMotherAI v2.1)
+# Foundry notes (HiveMotherAI v2.2)
+
+## v2.2: crash proofing and breadcrumbs (after "ERROR Object reference not set to an instance of an object" in the game)
+The real game showed that text on the Hive Mother PB of the v2.0 'Mobile Hive' release. It is `Main()`'s catch block (`Echo("ERROR " + ex.Message)`): a
+NullReferenceException inside `Tick()`, no line number, and the script then does that every tick (so no bay ever advances). The cause was NOT found
+(no real-game log); v2.2 removes every candidate and makes the next occurrence self-explaining.
+* Candidates guarded (v2.0 had all of them unguarded): `IMyProjector.RemainingBlocks / TotalBlocks / BuildableBlocksCount / IsProjecting` (a projector
+  with no or a half-loaded projection; v2.0/v2.1 lines `int rem = b.Proj.IsProjecting ? b.Proj.RemainingBlocks : -1;` in BUILD and
+  `b.Proj.IsProjecting && b.Proj.RemainingBlocks > 0` in COOLDOWN), `Enabled` on removed/destroyed welders/projector/merge blocks (`SetOn`; a block that
+  threw is skipped until the next GetBlocks), `GetCubeBlock` null / `FatBlock` null (armour) / cells that throw, `Merge.CubeGrid`, drone blocks
+  (`DPb`, `DMerge`, `DBats`) that left the grid terminal system after the release, `Nearest()` over a removed merge block, `GetInventory` null,
+  `Me.GetSurface(0)` null (`SurfaceCount` checked), `Me.CustomData`, IGC dictionaries, per-thruster / per-turret / per-battery accesses.
+* Every bay steps inside its own try/catch (`BayFail`): the bay goes to FAULT with `EXCEPTION <type>: <msg> (at <where>)`, the other bays keep
+  printing, and the FAULT bay retries after `Fault Retry Seconds`. The other Tick sections (IGC read, expiry, home broadcast, relay, joins, display,
+  GetBlocks) are each guarded too. The constructor sets `UpdateFrequency` first and survives a failing LoadConfig/GetBlocks. `GetBlocks` builds the new
+  bay list aside, so a failure half way keeps the old one. Bays whose projector or merge block is gone are FAULTed and the list is rebuilt.
+* Breadcrumbs: `_where` is set before each risky section ("bay 2 BUILD projector read", "bay 1 ARM write drone Custom Data", ...). `Err()` keeps the last 3
+  distinct errors with the time of the first occurrence and a repeat count: `<Type>: <msg> | at: <_where> | bay N state S | in <script method from the
+  stack trace>`. The terminal info (Echo, now every run so it never goes blank) and LCD 0 show `!! n ERRORS` in the header and the error block at the
+  bottom; `reload` clears the log.
+* Real bug found by the new sim test (v2.1 logic): with `[Stock]` cargo empty the stall detector sets `Starved`, which held back `t` for ever; the
+  no-box fallback finish timer (`Finish Fallback Seconds`) used the same `t`, so FINISH never ended. It now uses the real time since FINISH began.
+* `sim/printer_test.sh` (`SimHost.exe printer-test`): the real script on the real 'Mobile Hive' blueprint for 320 s, plain and with stand-in projectors /
+  welders that throw NullReferenceException (no projection, stats not ready, projection lost, projector stuck off, IsProjecting throwing, welder removed).
+  With `--script-file` it runs old scripts from git: the v2.0 and v2.1 scripts print exactly the in-game text "ERROR Object reference not set to an instance of an object" every tick (throw site `Program.StepBay`, `b.Proj.RemainingBlocks`); v2.2 keeps all four bays ticking and shows the error with its breadcrumb. The stand-ins are HYPOTHESES (nobody has seen the
+  real API throw there); the sim also never places projected blocks, so the drone box never fills (the test uses `Skip Finish Check=true`) and no
+  physical drone exists for ARM/RELEASE (the DRONE side of the release is covered by `sim/dock_launch_test.sh`).
+* Reading the in-game error: the first line is `Type: message`, then `at:` the section, then bay/state, then the script method. Send that line.
 
 ## Diagnosis (checked in the code)
 * `RemainingBlocks` counts projected blocks not yet placed. v2.0 left BUILD at 0 and switched the welders off in CHARGE, so blocks that were

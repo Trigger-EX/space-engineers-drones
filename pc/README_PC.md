@@ -37,6 +37,11 @@ an 800 m turret-range robustness run, and three traces. Roughly 2-5 hours on a 1
 - Other selections: `./run_endless.sh --kind 1v1`, `./run_endless.sh --filter "Hornet"`, fewer threads: `--jobs 12`.
 - Linux: Mono's concurrent garbage collector crashed (SIGSEGV) with 19 threads, so the scripts use `MONO_GC_PARAMS=major=marksweep`;
   if the simulator still crashes, the scripts restart it automatically and no finished fight is lost (plans resume the same way).
+- A crash prints its reason to the experiment's `log.txt` ("Got a SIGILL/SIGSEGV ..."). Random SIGILL/SIGSEGV crashes under full load
+  usually mean an unstable CPU (Intel 13th/14th gen: update the BIOS microcode). Check that results are still right: run some
+  finished fights again (same command, e.g. `--seeds 3`, `--out results/recheck`, no `--resume`) and
+  `python3 compare_runs.py results/enemy-main/runs.jsonl results/recheck/runs.jsonl`. The sim is deterministic, so any
+  "different" fight means the machine computed something wrong.
 
 ## Fleet search: what beats your ship? (`run_search.sh` / `run_search.bat`)
 - Linux Mint: `./run_search.sh`   Windows: double-click `run_search.bat`. Press **Enter** to stop and save (twice = stop at once).

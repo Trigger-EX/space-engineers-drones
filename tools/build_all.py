@@ -25,8 +25,9 @@ sys.path.insert(0, HERE)
 import designs                                   # noqa: E402  (puts tools/designs on sys.path)
 import sebp                                      # noqa: E402
 import _common as C                              # noqa: E402
+from minify_cs import minify                     # noqa: E402  (PB limit: 100,000 characters)
 
-VERSION = '2.5'
+VERSION = '2.6'
 PKG_DIR = os.path.join(ROOT, 'packages')
 SCRIPTS_DIR = os.path.join(ROOT, 'scripts')
 AXES = ('Forward', 'Backward', 'Up', 'Down', 'Left', 'Right')
@@ -70,7 +71,7 @@ COMMAND_DOC = {
     'guard': 'hold the home point, engage anything inside Guard Radius', 'hunt': 'chase and engage any target, actively scan',
     'assist': 'you fly, the script aims and fires', 'rtb': 'fly home, then idle', 'idle': 'release all control (`stop` is an alias)',
     'lock': 'raycast-lock whatever the nose camera points at', 'unlock': 'drop the current target', 'next': 'ignore the current target for 60 s',
-    'split': 'split targets across the hive', 'focus': 'focus fire', 'ai': '`ai on|off` AI-block search assist', 'aim': '`aim <mode>` aim point',
+    'split': 'split targets across the hive', 'focus': 'focus fire', 'ai': '`ai on|off` AI-block search assist', 'aim': '`aim <mode>` aim point (AUTO / BREACH / ENGINES / FACING / SPREAD / CENTER)', 'breach': '`breach on|off` AUTO drills one hole into big ships (v2.6)', 'seeker': '`seeker on|off` let a [Seeker] turret guide the aim (v2.6, experimental)',
     'aialert': 'treat the AI-block alert as raised', 'home': 'set the home point to the current position', 'range': '`range <m>` set the standoff',
     'reload': 're-read Custom Data and re-scan blocks', 'start': 'start printing',
     'max': '`max <n>` set Max Drones', 'release': '`release [bay]` release finished drones', 'hold': '`hold <bay>` keep a bay paused',
@@ -93,7 +94,7 @@ def script_table():
         _SCRIPT_ESC = {}
         for f in sorted(os.listdir(SCRIPTS_DIR)):
             if f.endswith('.cs'):
-                t = open(os.path.join(SCRIPTS_DIR, f), encoding='utf-8').read()
+                t = minify(open(os.path.join(SCRIPTS_DIR, f), encoding='utf-8').read())   # blueprints carry the minified text
                 _SCRIPT_ESC[f] = (escape(t), escape(escape(t)))
     return _SCRIPT_ESC
 
@@ -124,6 +125,8 @@ def check_written(bp, folder, label, scripted_expected):
     if main.findtext('GridSizeEnum') != bp.grid: probs.append('GridSizeEnum mismatch')
     progs = [e for e in cbs.iter('Program') if (e.text or '').strip()]
     if scripted_expected and not progs: probs.append('script expected but no <Program> text in the XML')
+    for e in progs:
+        if len(e.text) > 100000: probs.append(f'<Program> has {len(e.text)} characters; the Programmable Block takes at most 100,000')
     # reload the written file: every CubeGrid (main + projected) must validate and the main one must keep its block count
     try:
         loaded = sebp.load_sbc(path, allow_dlc=False)
@@ -350,7 +353,11 @@ def make_zip(path, rows, readme, extra_files):
     for r in rows:
         for f in ('bp.sbc', 'thumb.png'):
             files[f'Blueprints/{r["name"]}/{f}'] = open(os.path.join(r['folder'], f), 'rb').read()
-    for s in scripts: files[f'Scripts/{s}'] = open(os.path.join(SCRIPTS_DIR, s), 'rb').read()
+    for s in scripts:
+        # Scripts/: paste-ready (minified, under the PB's 100,000-character limit); Scripts/Source/: the commented originals
+        src = open(os.path.join(SCRIPTS_DIR, s), encoding='utf-8').read()
+        files[f'Scripts/{s}'] = minify(src).encode('utf-8')
+        files[f'Scripts/Source/{s}'] = src.encode('utf-8')
     if any(r['model'] == 'Midge' for r in rows):
         files['Scripts/' + MIDGE_NOTES] = open(os.path.join(SCRIPTS_DIR, MIDGE_NOTES), 'rb').read()
     files['README.md'] = readme.encode('utf-8')

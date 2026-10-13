@@ -2,6 +2,9 @@
 # Sourced by run_mint.sh and run_endless.sh: installs mono with apt if missing, then a 5 s self-check (exits on failure).
 # Mono's concurrent garbage collector crashed (SIGSEGV) with 19 simulation threads on a 20-thread CPU: use the plain one.
 export MONO_GC_PARAMS="${MONO_GC_PARAMS:-major=marksweep}"
+# A crash still prints its reason to the log ("Got a SIGxxx ..." + native stack); this stops the ~10 MB of mono_crash.*.blob
+# files each crash would leave in this folder.
+export MONO_CRASH_NOFILE=1
 need=0
 command -v mono >/dev/null 2>&1 || need=1
 mono -V >/dev/null 2>&1 && ls /usr/lib/mono/4.5/System.Xml.dll /usr/lib/mono/4.5/System.Core.dll >/dev/null 2>&1 || need=1
