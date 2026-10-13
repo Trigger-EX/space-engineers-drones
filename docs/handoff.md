@@ -30,7 +30,7 @@ improved lead prediction to every armed drone script that benefits.
 
 ## Next step
 Commit and push the working tree to `main`, then re-run the sim A/B matrix
-(`mono out/sim/SimHost.exe run --filter "^(1v1|pirate)/" --seeds 100` with old vs new blueprints, plus `--pirate-evasive true`),
+(`mono out/sim/SimHost.exe run --filter "^(1v1|pirate)/" --seeds N` (N = as many as needed, see CLAUDE.md "Simulations") with old vs new blueprints, plus `--pirate-evasive true`),
 add the results to docs/lead-v1.md, run `python3 -I tools/build_all.py` for the v2.2 zips (VERSION = '2.3' in tools/build_all.py).
 
 ## Chat

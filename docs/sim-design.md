@@ -339,7 +339,7 @@ in budget: default only the 1v2 for all pairs, 1v3/2v3 for a curated list via `-
 Hornet+Longbow S, Wasp+2 Gnats, Lancer+Mantis) vs each single model and vs each other. Pirate: each model x1/x2/x3 vs Pirate.
 Placement: team centroids 1.5-3 km apart (uniform), ships within 60 m of their centroid with >= 25 m separation, random
 orientation, zero velocity. Default start commands per model (`ScenarioGen.DefaultCommands`, e.g. `hunt`) sent at 0.5 s as
-Terminal argument runs. 100 seeds per scenario; seed = Mix(baseSeed, hash(scenarioName), seedIndex).
+Terminal argument runs. Seeds per scenario: `--seeds N` (default 10, a quick check; the PC plans pass their own counts); seed = Mix(baseSeed, hash(scenarioName), seedIndex).
 
 ## 11. Determinism
 Same binary + same scenario + same seed => identical `runs.jsonl` line (except wall/cpu timing fields). Rules: no
