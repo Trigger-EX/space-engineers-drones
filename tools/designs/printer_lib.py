@@ -294,7 +294,7 @@ WELDER_BUDGET = 12        # soft cap per bay for the best-effort hypotheses (tie
 RESTARTS = 24             # randomised greedy restarts; the best (fewest tier-A misses, least unmet weight, fewest welders) wins
 # importance of each FAMILY hypothesis (tier A = FAM[:4], must be met wherever any legal welder position can do it; the rest is best effort)
 HYP_WEIGHT = {'tip r1.3': 8, 'tip r1.0': 8, 'tip-1 r1.3': 6, 'tip-1 r1.0': 6, 'tip-2 r1.3': 3, 'tip-2 r1.0': 2, 'mid r1.3': 2, 'mid r1.0': 1}
-TIER_A = 4
+TIER_A = reach.TIER_A
 RED_WEIGHT = 2
 
 def radius_cells_of(h): return reach.radius_cells(h)
@@ -323,9 +323,11 @@ def _cover(ctx):
     tierA = feas & sum(hb[:TIER_A])
     ctx2 = dict(ctx, hb=hb, wts=wts, feas=feas, tierA=tierA, inbox=inbox, center_dist=center_dist)
     best = None
-    for rs in range(RESTARTS + 1):
+    rs = 0
+    while rs <= RESTARTS or (best is None or best[0][0] > 0) and rs <= 4 * RESTARTS:
         rng = random.Random(1000 + rs)
         res = _greedy(ctx2, rng, 0.0 if rs == 0 else 0.6)
+        rs += 1
         if res is None: continue
         sc = (res['missA'], res['unmet'], len(res['chosen']))
         if best is None or sc < best[0]: best = (sc, res)
@@ -349,14 +351,18 @@ def _cover(ctx):
     des.proj = pc
     des.forbid = F - ray
     des.ray = ray
-    names = lambda m: sorted({(des.dblocks[e // NH][0]['name'] or des.dblocks[e // NH][0]['sub']) for e in _bits(m)})
-    inf = {}                              # pairs the final layout does not reach: {hyp name: set of block names}
+    names = lambda m: sorted({reach.block_label(des.dblocks[e // NH][0]) for e in _bits(m)})
+    inf = {}                              # pairs the final layout does not reach: {hyp name: set of block labels}
     for k, h in enumerate(FAM):
         m = hb[k] & ~res['union']
         if m: inf[h.name] = set(names(m))
     if res['short_red']: inf['redundancy'] = set(names(res['short_red']))
-    des.infeasible = inf                  # complete list of what is NOT covered (tier A entries make the verifier fail)
-    des.tierA_missing = {k: v for k, v in inf.items() if k in [h.name for h in FAM[:TIER_A]]}
+    des.unmet = inf                       # everything the final layout does not reach, per hypothesis
+    imp = {}                              # pairs NO legal welder position reaches (physics of the drone shape + forbidden zones)
+    for k, h in enumerate(FAM):
+        m = hb[k] & ctx['infeasible']
+        if m: imp[h.name] = set(names(m))
+    des.impossible = imp
     des.stats = dict(welders=len(chosen), scaffold=len(armour), candidates=len(cand), gap=des.gap, soft_camera=des.soft_camera,
                      infeasible_pairs=ctx['n_infeasible'], unmet_pairs=_pop(sum(hb) & ~res['union']), missA=res['missA'])
     return des
@@ -387,11 +393,13 @@ def _greedy(ctx, rng, noise):
     need = tierA
     while need:
         us = usable_all()
-        hard = None; hc = None
+        hard = None; hc = None; counts = []
         for e in _bits(need):
             n_ = sum(1 for ci in by_elem[e] if us[ci])
-            if hc is None or n_ < hc: hard, hc = e, n_
-            if hc == 0: break
+            counts.append((n_, e))
+            if n_ == 0: break
+        counts.sort()
+        hc, hard = counts[0] if noise == 0 or counts[0][0] == 0 else counts[min(len(counts) - 1, int(rng.random() * rng.random() * 4))]
         if hc == 0: need &= ~(1 << hard); continue            # cannot be met any more with non-overlapping welders: counted as missed
         best = None
         for ci in by_elem[hard]:
@@ -982,7 +990,7 @@ class Printer:
         self.add_pb(script, ini_text)
         bp = self.bp
         bp.bays = [dict(n=r['n'], drone=r['drone'], T=r['T'], merge=r['merge'], projector=r['projector'], welders=r['welders'], offset=r['offset'],
-                        g=r['g'], c=r['c']) for r in self.records]
+                        g=r['g'], c=r['c'], design=r['design'], exit=r['exit']) for r in self.records]
         bp.printer = self
         finalize(bp)
         return bp
@@ -1032,14 +1040,34 @@ def with_latch(drone, prefer=("Down", "Up", "Backward", "Left", "Right", "Forwar
 # =============================================================================================
 # PB configuration
 # =============================================================================================
-def hive_ini(bays, max_drones, rack=False, relay=False, launch_tag='STINGER', target_tags='GNAT,HORNET,LONGBOW', extra=None, comments=()):
-    """Custom Data for HiveMotherAI.cs.  bays = [dict(n, tag, prefix, cap, max_prints)]"""
+def bay_geometry(printer, rec):
+    """Custom Data facts of one bay for HiveMotherAI.cs: the drone's cell box in PRINTER grid coordinates (translation T included), its unique
+    block count, and the printer cells that stand inside that box or next to the drone's merge block (the script must not count them)"""
+    T = rec['T']; drone = rec['drone']
+    cells = [add3(c, T) for b in drone.blocks for c in drone.cells(b)]
+    mn = tuple(min(c[k] for c in cells) for k in range(3)); mx = tuple(max(c[k] for c in cells) for k in range(3))
+    mine = set(cells)
+    ign = {c for c in printer.occ if all(mn[k] <= c[k] <= mx[k] for k in range(3)) and c not in mine}
+    mc = add3(drone.cells([b for b in drone.blocks if b['kind'] == 'merge'][0])[0], T)
+    ign |= {n for n in (add3(mc, d) for d in DIR.values()) if n in printer.occ}
+    ex = tuple(rec['design'].exit)
+    return dict(box_min=mn, box_max=mx, blocks=len(drone.blocks), cells=len(mine), ignore=sorted(ign), exit_dir=VEC2NAME[ex])
+
+def hive_ini(bays, max_drones, rack=False, relay=False, launch_tag='STINGER', target_tags='GNAT,HORNET,LONGBOW', extra=None, comments=(), launch=True):
+    """Custom Data for HiveMotherAI.cs.  bays = [dict(n, tag, prefix, cap, max_prints, exit, geom)]  (geom = bay_geometry())"""
     L = [f'; {c}' for c in comments]
     L += ['[Hive Mother]', f'Max Drones (all tags)={max_drones}', f'Rack Mode (keep docked, launch on targets)={"true" if rack else "false"}',
          f'Rack Launch Command Tag={launch_tag}', f'Rack Target Tags (enemy sightings that release a drone)={target_tags}',
          f'Relay Turret Targets To All Tags={"true" if relay else "false"}', 'Auto Start=true']
     for k, v in (extra or {}).items(): L.append(f'{k}={v}')
+    if launch:
+        L += ['[Launch]', 'Auto=true', 'Burst Seconds=4']
+    v3 = lambda v: ','.join(str(int(x)) for x in v)
     for b in bays:
         L += [f'[Bay {b["n"]}]', f'Tag={b["tag"]}', f'Prefix={b["prefix"]}', f'Max Alive={b["cap"]}', f'Max Prints={b.get("max_prints", 0)}']
         if b.get('exit'): L.append(f'Exit Direction (printer axis the drone leaves along, blank means straight away from the merge block)={b["exit"]}')
+        g = b.get('geom')
+        if g:
+            L += [f'Exit Direction={g["exit_dir"]}', f'Drone Box Min={v3(g["box_min"])}', f'Drone Box Max={v3(g["box_max"])}',
+                  f'Drone Cell Count={g["blocks"]}', f'Drone Occupied Cells={g["cells"]}', 'Ignore Cells=' + ';'.join(v3(c) for c in g['ignore'])]
     return '\n'.join(L) + '\n'
