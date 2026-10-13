@@ -337,8 +337,8 @@ Aiming at the weapons ends the fight when the Pirate has no gun left (the sim's 
 | Pirate (2.8 km) | **10/10 wins** (seeds 0-4: 47-110 s, median 82; seeds 5-9: 60-101 s, median 87), about 40 blocks lost | 3/3, 64-97 s (median 80) |
 | 3 Hornets (1,000 m) | 3/3, 79-204 s (median 107) | - |
 | 6 Gnats (1,000 m) | 2/3, 123-147 s, 1 timeout | 2/3, 182-213 s, 1 timeout |
-| 6 Gnats (400 m) | @@GN_Leviathan400@@ | - |
-| Tech Hunter (13,666 blocks, cap 300 s, 1 seed) | @@TH_Leviathan@@ | - |
+| 6 Gnats (400 m) | 2/3 wins (161-178 s), 1 timeout | - |
+| Tech Hunter (13,666 blocks, cap 300 s, 1 seed) | **lost 698 blocks (7 %)**, dealt 1,385 k; the Hunter is down to 19 of 76 armed blocks (12,136 of 13,666 blocks); nobody dead after 300 s | - |
 
 **Manual, dead-man, wing, instructions.** `selftest m6` with `M6_BIG=1` (2 seeds each): the Helm and the Staff hold the ship's own 72 gyros, 14 thrusters, 6 fixed guns, 44 turrets, 20 batteries, the bridge seat (the Gunnery Seat does not count), 5 cameras and the deadman timer, nothing of the pods;
 manual flight, 0 override-fight ticks, the turrets keep shooting; Helm PB killed at 15 s: all overrides released 1.13 s later. `launch all` at 4 s: pod 1 (bays 1-4) lets go, pod 2 (bays 5-8) follows 20 s later ("Pod Gap"), all 8 Hornets are out

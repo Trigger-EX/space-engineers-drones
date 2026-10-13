@@ -410,7 +410,7 @@ Class data in the Helm Custom Data: `Standoff Range=700`, `Min Range=150`, `Evas
 | 3 Hornets (1,000 m) | 5/5, 65-106 s (median 92) | 5/5, 28-76 s (median 44) |
 | 6 Gnats (1,000 m) | stalemate (nobody fires) | stalemate |
 | 6 Gnats (400 m) | 4/5 wins (135-264 s), 1 loss (a precise Gnat swarm disabled the ship at 116 s with 76 blocks gone) | 5/5 (50-131 s) |
-| Tech Hunter (13,666 blocks, cap 300 s) | @@TH_Warden@@ | @@TH_WardenWing@@ |
+| Tech Hunter (13,666 blocks, cap 300 s) | 1 seed: **out-gunned** - lost 418 blocks (23 %) in 300 s, dealt 559 k; the Hunter is down to 36 of 76 armed blocks (12,375 of 13,666 blocks), nobody dead | 1 seed: lost 352 blocks, dealt 1,410 k; the Hunter down to 42 of 76 armed blocks (11,693 blocks), nobody dead |
 
 **Manual, dead-man, wing, instructions.** `selftest m6` (2 seeds each): the Helm and the Staff hold exactly the ship's own 8 gyros, 24 thrusters, 2 fixed guns, 14 turrets, 8 batteries, the bridge seat (the `Gunnery Seat` and the Remote Control do not count: a gunner
 in the open seat does not switch the Helm to MANUAL), 5 cameras and the `(deadman)` timer, nothing of the pod; manual flight with an idle Hornet 650 m away: 0 override-fight ticks, fixed guns quiet, the turrets kill it (54 -> 34-40 blocks),

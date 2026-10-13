@@ -164,7 +164,7 @@ Nothing to load: tanks, batteries, magazines, uranium are in the file. Check the
 
 Nothing here was measured in the game. Commands as in `Shrike.md` section 12; the wing runs use `Corsair Wing` with `--commands "Helm:hunt;3:Staff:launch all;20:Staff:wing satellite;40:Staff:wing hunt"`.
 
-**Scripts and data.** Helm `ShrikeAI.cs`, Staff `StaffAI.cs` (22,793 characters), bay `CradleBayAI.cs` (17,007), the same files as every other ship; no Corsair-specific script exists or is needed.
+**Scripts and data.** Helm `ShrikeAI.cs`, Staff `StaffAI.cs` (22,834 characters), bay `CradleBayAI.cs` (17,007), the same files as every other ship; no Corsair-specific script exists or is needed.
 Custom Data after M6 (section 5): `[Link] Ship Tag=SH`/`Block Prefix=[SH]`, `[Manual] HUD Surface=0`, `[Battery] Standoff By Weapons=true` on the Helm; `[Staff]` keys and `[Wing] Types` on the Staff; the bay table on the `[Bay]` PB.
 The Helm chooses the stand-off from its batteries: with two small railguns (reach 1,190 m) it keeps **1,000 m**, outside the 800 m reach of a turret ship, so the Pirate hardly touches it (9 blocks lost, median).
 A fixed 500 m stand-off kills the Pirate about twice as fast (4 seeds: 99-252 s against 185-415 s) but the same ship died against the Tech Hunter after 92 s (1 seed; at 1,000 m it survives 600 s): the weapon-based stand-off stays.
@@ -184,7 +184,7 @@ A fixed 500 m stand-off kills the Pirate about twice as fast (4 seeds: 99-252 s 
 | Pirate (2.8 km) | **9/10 wins** (seeds 0-4: 5/5, kill 185-415 s, median 293; seeds 5-9: 4/5, 268-387 s, 1 timeout at 600 s), 9 blocks lost (median of seeds 0-4) | **5/5**, 106-216 s (median 170): the two Hornets halve the time |
 | 3 Hornets (1,000 m) | 5/5, 84-264 s (median 152), 439 blocks lost | 4/5, 70-164 s (median 83), 1 timeout |
 | 6 Gnats (1,000 m / 400 m) | stalemate (5 timeouts) / 1/5, 4 timeouts | stalemate / 2/5, 3 timeouts |
-| Tech Hunter (13,666 blocks, cap 300 s) | @@TH_Corsair@@ | @@TH_CorsairWing@@ |
+| Tech Hunter (13,666 blocks, cap 300 s) | 2 seeds, no kill: lost 105-165 blocks, dealt 268-300 k damage; the Hunter keeps 74 of 76 armed blocks (13,354-13,491 of 13,666 blocks) | 2 seeds, no kill: lost 139-199 blocks (Hornets included), dealt 98-481 k; the Hunter is down to 38-44 of 76 armed blocks (12,420-13,378 blocks left) |
 
 Against the Tech Hunter in 600 s (3 seeds, no wing): 0 wins, the Corsair stays at 1,000 m, deals 630-680 k damage and takes 40-90 k; the Hunter keeps 13,300 of 13,666 blocks. It does not die; it does not lose either.
 

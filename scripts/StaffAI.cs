@@ -1,5 +1,5 @@
 // =====================================================================
-//  STAFF AI  v1.0  - the Staff script of the warships (corvette, frigate, dreadnought; also a second PB on the Shrike test ship)
+//  STAFF AI  v1.4  - the Staff script of the warships (corvette, frigate, dreadnought; also a second PB on the Shrike test ship)
 //  For Space Engineers (vanilla). Paste into a Programmable Block named "[Staff] ..." on the same construct as the "[Helm] ..." PB (ShrikeAI).
 //  Update10 + an IGC callback on the heartbeat. Staff never flies the ship and never writes an override; it only watches, talks and RELEASES.
 //
@@ -386,7 +386,7 @@ void Doors(string a)
 string _lchBack = ""; double _lchT; List<int> _lchSet = new List<int>(); bool _lchOn;
 void Launch(string rest)
 {
-    if (rest == "") rest = "all";
+    if (rest == "" || rest.StartsWith("force")) rest = ("all " + rest).Trim();   // (launch, launch force)
     string[] p = rest.Split(' ')[0].Split('-'); int a, b = -1; _lchSet.Clear();
     foreach (var k in _bay.Keys) if (p[0] == "all" || (int.TryParse(p[0], out a) && k >= a && k <= (p.Length > 1 && int.TryParse(p[1], out b) ? b : a))) _lchSet.Add(k);
     _lchBack = _md == 1 || _md == 2 || _md == 4 ? ModeNames[_md].ToLowerInvariant() : "";

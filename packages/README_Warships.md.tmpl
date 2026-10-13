@@ -64,7 +64,7 @@ One script family, three jobs, each in its own Programmable Block so that none c
 
 Commands are the **argument** of a Programmable Block (run it with the text; toolbar slots do this), or arrive over IGC. **Run a Helm or Staff PB with no argument** and it steps a
 menu instead: each press highlights the next item (shown on the PB screen and on the cockpit HUD), the highlighted item runs 2 s after the last press. That is what the cockpit
-toolbar slots use (a `Run` slot cannot carry a typed argument in every game version: in-game test 3).
+toolbar slots use (a `Run` slot may not be able to carry a typed argument: step 3 of the test list at the end).
 
 **Staff PB** (anything it does not know goes to the Helm):
 
@@ -95,7 +95,7 @@ The Helm starts in `GUARD` (it saves its mode). The first fight of a ship that h
    ordinary controls. Tracking, the camera scan, the lock, the turrets and the point defence keep working; the fixed guns only fire when **you** fire them
    (`Auto Fire In Manual` is false). The Remote Control and the `Gunnery Seat` (Warden, Leviathan) do not take the ship from the Helm.
 2. **HUD**: cockpit screen 0 shows the mode, the target, range, the battery that would fire and a **lead pip** (how far to move the nose, in degrees) with the fire window. The Staff writes
-   its status on screen 1 and the wing roll call on screen 2 (which screens your cockpit really has is in-game test 9; `[Manual] HUD Surface`, `[Staff] Cockpit Surface`,
+   its status on screen 1 and the wing roll call on screen 2 (which screens your cockpit really has is test K9 in `tests.md`; `[Manual] HUD Surface`, `[Staff] Cockpit Surface`,
    `Helm HUD Surface`, `Wing Surface` re-map them).
 3. **Assist levels** (`assist hud|fbw|off` on the Helm, default `hud`): `off` nothing; `hud` the pip and the fire window only; `fbw` fly-by-wire: your stick rate is blended with the script's rate
    towards the lead point, it needs a lock (`lock`), and any stick movement takes the blend away within 0.2 s. (`assist` with no word is the old Hornet mode: the script aims and fires, you fly.)
@@ -103,7 +103,7 @@ The Helm starts in `GUARD` (it saves its mode). The first fight of a ship that h
 5. **`manual`** (to the Helm or the Staff) forces MANUAL with nobody in the seat (the ship then does nothing: Remote-Control or turret-only play), **`auto`** forces AUTO with a pilot aboard
    (the ship flies itself and you get the HUD), `pilot` toggles. Both are cancelled by the seat changing.
 6. **Cockpit toolbar** (Full variants; page 1): weapon slots, `Main Turrets` / `PD` / `Decoys` on-off, hangar doors, `Run` Helm, `Run` Staff (the menu). Lite variants have the weapon slots only.
-7. If the nose turns the wrong way or too fast under `assist fbw`, change `[Manual] Pilot Rot Sign` (1 or -1), `Pilot Rate Gain` and `Rotation Input Scale` (never measured in the game: tests 3, 4).
+7. If the nose turns the wrong way or too fast under `assist fbw`, change `[Manual] Pilot Rot Sign` (1 or -1), `Pilot Rate Gain` and `Rotation Input Scale` (never measured in the game: step 3 of the test list at the end).
 
 ## Launching the drones (wing)
 
@@ -156,7 +156,7 @@ scripts, names and Custom Data fit together and that the logic holds; it proves 
 
 1. **Paste the Lite twins** (`Shrike Lite`, `Corsair Lite`, then `Warden Lite`), then the Full ships. A failure of a Full ship that its Lite twin does not have points at the block shapes that have never been seen
    in a game file (turrets, sensor, AI blocks, decoys, timer toolbars). Large ships: check the PCU against the world limit.
-2. **The scripts start**: open each PB: the screen shows the script and version (ShrikeAI 0.1, StaffAI 1.3, CradleBayAI 1.0), no `Script too complex`, no red text. Let the ship idle for 5 minutes in `guard` and
+2. **The scripts start**: open each PB: the screen shows the script and version (ShrikeAI 0.1, StaffAI 1.4, CradleBayAI 1.0), no `Script too complex`, no red text. Let the ship idle for 5 minutes in `guard` and
    fly it in `hunt` against a target: if any PB stops with "too complex", the game counts instructions harder than the sim's block model; report which one.
 3. **Sit down** (Shrike first): MANUAL within half a second, the ship flies normally, the HUD pip appears, the ship goes back to AUTO 1.5 s after you stand up.
    Then try `assist fbw` with a lock. If the nose swings the wrong way, flip `Pilot Rot Sign`. Try the Run menu from a toolbar slot: does `Run` with no argument step the menu, and can you set a
