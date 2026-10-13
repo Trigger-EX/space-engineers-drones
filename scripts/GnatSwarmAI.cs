@@ -2059,14 +2059,15 @@ void HitVotes(IMyCubeGrid g)
     // silhouette from direction u: exposed faces of the whole drone (every present block that is not part of a hurt block is counted too)
     for (int i = 0; i < 6; i++) _allFaces[i] = 0;
     int[] tmp = _faces; int hurtN = Math.Min(_hurt.Count, 4);   // (4: the 64-direction loop costs ~100 instructions per hurt block per direction; 6 could reach the 50k tick limit)
-    for (int i = 0; i < _slims.Count; i++)
+    int sn = _slims.Count, stride = Math.Max(1, (sn + VoteMaxBlocks - 1) / VoteMaxBlocks);   // cap the per-tick work: above VoteMaxBlocks blocks only every stride-th one is counted (x stride)
+    for (int i = 0; i < sn; i++)
     {
         int slot = -1;
         for (int q = 0; q < hurtN; q++) if (_hurt[q] == i) slot = q;
-        if (slot < 0 && !g.CubeExists(_slims[i].Position)) continue;      // a destroyed block that was not just hit is gone
+        if (slot < 0 && (i % stride != 0 || !g.CubeExists(_slims[i].Position))) continue;      // a destroyed block that was not just hit is gone
         Vector3I mn = _slimMin[i], mx = _slimMax[i];
         if (slot >= 0) { CountFaces(g, mn, mx, tmp, slot * 6); for (int k = 0; k < 6; k++) _allFaces[k] += tmp[slot * 6 + k]; }
-        else { CountFaces(g, mn, mx, _tmpF, 0); for (int k = 0; k < 6; k++) _allFaces[k] += _tmpF[k]; }
+        else { CountFaces(g, mn, mx, _tmpF, 0); for (int k = 0; k < 6; k++) _allFaces[k] += _tmpF[k] * stride; }
     }
     float wgt = 1f / hurtN;
     for (int j = 0; j < HN; j++)
@@ -2090,6 +2091,7 @@ void HitVotes(IMyCubeGrid g)
         if (st >= 1) { _hitShareT = _now; IGC.SendBroadcastMessage(Tag + "_HIT", new MyTuple<Vector3D, Vector3D>(_rc.GetPosition(), ax)); }
     }
 }
+const int VoteMaxBlocks = 160;
 int[] _tmpF = new int[6]; double[] _cs = new double[6]; double _lastVoteT = -9;
 void Decay()
 {
@@ -2152,7 +2154,7 @@ void RaidScan()
         _raidScan++;
         double i = _raidScan + _idx * 53.0, frac = (i * 0.6180339887) % 1.0;
         double tr = Math.Tan(Math.Max(8, Math.Min(RaidScanCone, _axisSpread * 1.1)) / 57.2958 * Math.Sqrt(frac)), th = i * 2.39996323;
-        var e = c.Raycast(RaidRay, Vector3D.Normalize(axis + u * (tr * Math.Cos(th)) + v * (tr * Math.Sin(th))));
+        var e = c.Raycast(c.GetPosition() + Vector3D.Normalize(axis + u * (tr * Math.Cos(th)) + v * (tr * Math.Sin(th))) * RaidRay);   // (the (double, Vector3D) overload wants a camera-LOCAL direction; a world point is unambiguous)
         if (Valid(e)) AddContact(e, "SCAN");
     }
 }
