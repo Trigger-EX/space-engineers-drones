@@ -204,3 +204,6 @@ Helm 17,904, Staff 6,150, bay 15,741, Hornet 17,245; block model 1,142 / 346 / 4
 The two `SmallGatlingTurret` PD Roof turrets on the pod roofs are PD2S rotor turrets (`docs/design/turrets.md`): stator on the base-centre cell of the old 5 x 5 x 5 footprint, 2 `SmallGatlingGun` each,
 85 % of the move/fire bins free; the belly gatlings and the assault turret stay vanilla. +800 PCU, +2.7 t, `[TU] Turret PB` (`SmallProgrammableBlock`, centre corridor) running `TurretAI.cs`.
 The turret grids are sub-grids of the blueprint (a top and a head grid each): `check_wing` counts only the merge-block drones. The Lite ship has none (small-grid stators never seen in a game file).
+
+## AI blocks (added after the Ballista blindness report)
+The Full Corsair had no AI Offensive / AI Flight blocks, so its Helm searched with cameras alone (sim, Tech Hunter held at 900 m: no target in 90 s). Full now carries `[SH] AI Offensive [AI]` and `[SH] AI Flight [AI]` in the avionics corridor (same blocks as the Warden; the Helm's `AI Block Search Assist` default is on, search interval 5 s). Sim: target held from the start at 900 m. Lite still has none. Not run in the game; Warden / Leviathan / Shrike already have the pair and find the Hunter at 900 m in the sim.

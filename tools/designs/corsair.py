@@ -582,6 +582,10 @@ def add_systems(bp, res, env, lite):
     place_slide(bp, occ, 'MyObjectBuilder_RadioAntenna', 'SmallBlockRadioAntenna', (0, 16, 48), TAG + 'Antenna', prefer=[('Up', 'Backward')], strict=True,
                 kind='ant', settings={'BroadcastRadius': 5000, 'ShowShipName': 'true'})
     if not lite:
+        # AI Offensive + Flight (the only all-round detector out to 2.5 km; the cameras alone take minutes to find a big ship), in the avionics corridor
+        ai_cells = [(sx, y, z) for z in (30, 29, 31, 28, 32) for y in (4, 3, 5) for sx in (-1, 1)]
+        place_any(bp, occ, 'MyObjectBuilder_OffensiveCombatBlock', 'SmallOffensiveCombat', [c for c in ai_cells if c[0] < 0], TAG + 'AI Offensive [AI]', prefer=[('Forward', 'Up')], kind='ai')
+        place_any(bp, occ, 'MyObjectBuilder_FlightMovementBlock', 'SmallFlightMovement', [c for c in ai_cells if c[0] > 0], TAG + 'AI Flight [AI]', prefer=[('Forward', 'Up')], kind='ai')
         for sx in (-1, 1):
             place_slide(bp, occ, 'MyObjectBuilder_SensorBlock', 'SmallBlockSensor', (sx * 3, 0, 38), TAG + 'Sensor ' + ('Stbd' if sx > 0 else 'Port'),
                         prefer=[('Down', 'Forward')], strict=True, kind='sensor')
