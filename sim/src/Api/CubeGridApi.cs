@@ -99,5 +99,6 @@ namespace SeSim.Api
         public MyFixedPoint MaxVolume { get { return (MyFixedPoint)MaxVolumeM3; } }
         public MyFixedPoint CurrentMass { get { return (MyFixedPoint)CurrentMassKg; } }
         public int ItemCount { get { return Items; } }
+        public bool IsConnectedTo(IMyInventory dst) { return true; }      // the sim models no conveyor network
     }
 }

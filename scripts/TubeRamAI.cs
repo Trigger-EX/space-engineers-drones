@@ -1,5 +1,5 @@
 // =====================================================================
-//  TUBE RAM AI  v1.2  - kinetic ram drone (small grid, no weapon)
+//  TUBE RAM AI  v1.3  - kinetic ram drone (small grid, no weapon)
 // ---------------------------------------------------------------------
 //  Tube 2x2 / 2x4 / 3x3 / 4x4 (docs/design/tube_drones.md). Sits passive until launched (off its rack or by
 //  command), then flies at the nearest enemy and slams into it at full speed. After an impact it backs off
@@ -28,7 +28,7 @@
 //         with boresight / spiral rays. The first valid contact (or an IGC cue) takes the ship back and starts HUNT. Same pattern as the Gnat.
 //
 //  START: Start Mode (WAIT/HUNT) = HUNT by default: once off its rack (or pasted free) it hunts by itself.
-//  PRINTED (v1.2): held while its grid holds a [Bay block or the Hive Mother PB (still welded to the printer), hunts once the merge pair lets go;
+//  PRINTED (v1.2, clear burn v1.3): held while its grid holds a [Bay block or the Hive Mother PB (still welded to the printer), burns nose first out of the bay for 2.5 s when the merge pair lets go, then hunts / searches;
 //  sends <Tag>_SWARM every second so the printer counts it and reprints it after a ram.
 //  SENTRY (command `sentry`, or Start Mode SENTRY): holds the spot where it was given (or where it came off the rack), runs the AI search
 //         there, and rams anything that comes within Sentry Range (2,500 m = the AI Offensive block's search range), wherever it goes;
@@ -36,7 +36,7 @@
 //
 //  COMMANDS: launch (hunt) | sentry | abort | idle (stop) | rtb | lock | disarm | reload
 // =====================================================================
-const string VER = "1.2";
+const string VER = "1.3";
 
 string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE,TUBE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
 string Tag = "TUBE", BlockTag = "";
@@ -452,7 +452,7 @@ void GetBlocks()
 
 // printed by a Hive Mother: until the merge pair lets go the tube is part of the PRINTER's grid, so every thruster and gyro found on "my" grid
 // may be the printer's. Held (treated as docked) while this grid holds a [Bay block or the Hive Mother PB.
-bool _onPr;
+bool _onPr, _wasPr; double _clearUntil = 0, ClearSecs = 2.5, ClearPower = 0.4;
 bool OnPrinter()
 {
     var l = new List<IMyTerminalBlock>();
@@ -525,6 +525,21 @@ void Tick(string arg, UpdateType src)
     }
     if (_rc == null) { _status = "No remote control"; Show(); return; }
 
+    // CLEAR BURN (v1.3): the moment a printed tube splits off the printer it burns nose first out of its bay (the printer leaves the nose lane free)
+    // for Clear Seconds, before searching or hunting: with no target in sight it used to sit in the bay
+    if (_onPr) _wasPr = true;
+    else if (_wasPr) { _wasPr = false; _clearUntil = _now + ClearSecs; }
+    if (_clearUntil > 0)
+    {
+        if (_now < _clearUntil)
+        {
+            foreach (var g in _gyros) g.GyroOverride = false;
+            _rc.DampenersOverride = false;
+            foreach (var t in _thr) t.ThrustOverridePercentage = _fwd.Contains(t) ? (float)ClearPower : 0f;
+            _status = "Clearing the printer"; if (_tick % 20 == 0) Show(); return;
+        }
+        _clearUntil = 0; Release();
+    }
     bool docked = Docked();
     if (docked && _mode != Mode.WAIT && _mode != Mode.IDLE) { AiOff(); Release(); _mode = Mode.WAIT; }
     if (docked) { _sentry = false; _sentryUp = false; }

@@ -68,6 +68,9 @@ def welder_cells(C0, d):
                 out.append(tuple(C0[k] - m * d[k] + a * u[k] + b * v[k] for k in range(3)))
     return out
 
+PIPE_BACK = 6               # the welder is 6 cells long: C0 - 6 d is the cell behind the centre of its back face, where its conveyor port is (UNVERIFIED)
+def pipe_cell(C0, d): return tuple(C0[k] - PIPE_BACK * d[k] for k in range(3))
+
 def welder_orientation(d):
     fwd = VEC2NAME[d]
     for up in ("Up", "Forward", "Right"):
@@ -317,6 +320,8 @@ def _prepare(drone, soft_camera, gap, exit_dir, max_pad=9, front=True):
         if len(Q) == 0: continue
         wk = _keys(Q[:, None, :] + offa[None, :, :])                    # (m, 54)
         ok = ~np.isin(wk, Fk_w).any(axis=1)
+        pipe_off = -PIPE_BACK * np.array(d, dtype=np.int64)              # survival: a conveyor junction behind the welder's back-face centre (its port)
+        ok &= ~np.isin(_keys(Q + pipe_off), Fk_w)
         if gap == 0: ok &= ~np.isin(_keys(Q[:, None, :] + atta[None, :, :]), Dk).any(axis=1)
         Q = Q[ok]; wk = wk[ok]
         if len(Q) == 0: continue
@@ -331,7 +336,7 @@ def _prepare(drone, soft_camera, gap, exit_dir, max_pad=9, front=True):
             m = int.from_bytes(packed[r].tobytes(), 'little')
             if not m: continue
             C0 = tuple(int(v) for v in Q[r])
-            cs = frozenset((C0[0] + o[0], C0[1] + o[1], C0[2] + o[2]) for o in offs)
+            cs = frozenset([(C0[0] + o[0], C0[1] + o[1], C0[2] + o[2]) for o in offs] + [pipe_cell(C0, d)])      # the pipe cell is reserved like a welder cell
             cand.append((C0, d, cs, m, tuple(float(v) for v in pts[0][r]), bool(strict[r])))
     allmask = (1 << (nb * NH)) - 1
     union = 0
@@ -718,6 +723,7 @@ class Printer:
         self.bp = Blueprint(self.label, 'Small', seed=seed_for(self.label + seed_extra), legacy_shapes=True)
         self.occ = {}                 # cell -> block dict (printer blocks)
         self.noprint = set()          # cells printer blocks must not use (drones, their ring, clear zones)
+        self.pipes = {}               # pipe cell -> welder block (survival conveyor: route_conveyors joins every pipe cell to the [Stock] cargo)
         self.bays = []                # PlacedBay objects
         self.records = []             # dicts for reach.py / README
         self.net = set()              # armour/structure cells that are connected to the pod (for routing)
@@ -730,7 +736,7 @@ class Printer:
 
     # ---- low level placement ----
     def is_free(self, c, extra=()):
-        return c not in self.occ and c not in self.noprint and c not in self.bp.reserve and c not in extra
+        return c not in self.occ and c not in self.noprint and c not in self.bp.reserve and c not in extra and c not in self.pipes
 
     def _own(self, b):
         for c in self.bp.cells(b):
@@ -792,14 +798,15 @@ class Printer:
         return pb
 
     # ---- bays ----
-    def add_group(self, drone, count=1, grid=None, rails_pad=0, first_n=None, design=None, face_offset=(0, 0)):
+    def add_group(self, drone, count=1, grid=None, rails_pad=0, first_n=None, design=None, face_offset=(0, 0), exit_dir=None):
         """Place `count` bays for `drone` on the pod face that looks to -c (c = the drone's clamp direction).  grid = (na, nb) slot array
         along the two lateral axes (default: a row along the first lateral axis).  Returns the list of bay numbers."""
         c0 = C.merge_clamp_dir(drone, [b for b in drone.blocks if b['kind'] == 'merge'][0])
         ax = [abs(v) for v in DIR[c0]].index(1)
         lat = [k for k in range(3) if k != ax]
         na, nb = grid or (count, 1)
-        design = design or solve_bay_auto(drone, avoid_axes=tuple(lat[i] for i, n_ in enumerate((na, nb)) if n_ > 1))
+        design = design or solve_bay_auto(drone, avoid_axes=tuple(lat[i] for i, n_ in enumerate((na, nb)) if n_ > 1),
+                                          prefer=exit_dir, force=exit_dir is not None)      # exit_dir: drones that can only leave one way (Tubes: nose first)
         c = design.c
         assert na * nb >= count
         ua = tuple(1 if k == lat[0] else 0 for k in range(3)); ub = tuple(1 if k == lat[1] else 0 for k in range(3))
@@ -895,6 +902,9 @@ class Printer:
             w = bp.add('MyObjectBuilder_ShipWelder', reach.WELDER_SUB, mn, fwd, up, self.nm(f'Welder {i + 1}', n), WELD_COLOR, kind='welder')
             w['bay'] = n
             self._own(w); welders.append(w)
+            pc = pipe_cell(C1, d)
+            assert pc not in self.occ and pc not in self.pipes, f'{self.label}: pipe cell {pc} of {w["name"]} is taken'
+            self.pipes[pc] = w
         # projector
         sett, off = projector_settings(drone, T, pb.proj, seed_text=f'bay{n}')
         pj = bp.add('MyObjectBuilder_Projector', 'SmallProjector', pb.proj, 'Forward', 'Up', self.nm('Projector', n), (0.6, 0.3, 0.1),
@@ -1135,8 +1145,66 @@ class Printer:
         self.timer_notes = made
 
     # ---- finish ----
+    def route_conveyors(self):
+        """SURVIVAL: every welder's pipe cell is joined to a [Stock] cargo container by small conveyor junctions (6 ports, full mounts).
+        Dijkstra from the network (junctions next to the stock): a plain printer armour cube on the way is turned into a junction (cost 1), a
+        free cell gets a new junction (cost 2); nothing else is crossed.  Raises AssertionError when a welder cannot be piped."""
+        import heapq
+        if getattr(self, 'conveyors', None) is not None: return self.conveyors          # routed already (printers.build routes before the thrusters)
+        stock = [b for b in self.bp.blocks if b['kind'] == 'cargo']
+        if not stock or not self.pipes: return 0
+        plain = ('SmallBlockArmorBlock', 'SmallHeavyBlockArmorBlock')
+        def convertible(c):
+            b = self.occ.get(c)
+            return b is not None and b['xtype'] == 'MyObjectBuilder_CubeBlock' and b['sub'] in plain and len(self.bp.cells(b)) == 1
+        def make_junction(c):
+            if c in self.occ and self.occ[c]['kind'] == 'conv': return
+            if c in self.occ:
+                b = self.occ.pop(c); self.bp.blocks.remove(b)
+            self.pipes.pop(c, None)
+            j = self.bp.add('MyObjectBuilder_Conveyor', 'SmallBlockConveyor', c, 'Forward', 'Up', None, PRINTER_COLOR, kind='conv')
+            self._own(j); self.net.add(c)
+        net = set()
+        for k in stock:                                          # the stock containers' shell neighbours become the trunk
+            for c in self.bp.cells(k):
+                for dv in DIR.values():
+                    n = add3(c, dv)
+                    if convertible(n): make_junction(n); net.add(n)
+        assert net, f'{self.label}: no shell cell next to the [Stock] cargo can carry a conveyor'
+        self._piped = dict(self.pipes)
+        todo = sorted(self.pipes, key=lambda p: sum(abs(v) for v in p))
+        for pc in todo:
+            w = self.pipes.get(pc)
+            if w is None: continue
+            dist = {pc: 0}; prev = {}; h = [(0, pc)]; end = None
+            while h:
+                d0, c = heapq.heappop(h)
+                if d0 > dist.get(c, 1e9): continue
+                if any(add3(c, dv) in net for dv in DIR.values()): end = c; break
+                for dv in DIR.values():
+                    n = add3(c, dv)
+                    if n in self.pipes and n != pc: continue
+                    if convertible(n): step = 1
+                    elif n not in self.occ and n not in self.noprint and n not in self.bp.reserve: step = 2
+                    else: continue
+                    if d0 + step < dist.get(n, 1e9): dist[n] = d0 + step; prev[n] = c; heapq.heappush(h, (d0 + step, n))
+            assert end is not None, f'{self.label}: {w["name"]} cannot be piped to the [Stock] cargo (survival)'
+            path = [end]
+            while path[-1] != pc: path.append(prev[path[-1]])
+            for c in path: make_junction(c); net.add(c)
+        # conveyor lines: junction-junction, junction-welder (its back-centre cell), junction-stock
+        terms = [(pc, w['name']) for pc, w in self._piped.items()]          # each welder's port faces its own pipe junction only
+        for c in net:
+            for dv in DIR.values():
+                b = self.occ.get(add3(c, dv))
+                if b is not None and b['kind'] == 'cargo': terms.append((c, b['name']))
+        C.link_conveyors(self.bp, terminals=terms)
+        self.conveyors = len(net)
+        return len(net)
+
     def finish(self, script, ini_text):
         self.add_pb(script, ini_text)
+        self.route_conveyors()
         self.add_bay_timers()
         bp = self.bp
         bp.bays = [dict(n=r['n'], drone=r['drone'], T=r['T'], merge=r['merge'], projector=r['projector'], welders=r['welders'], offset=r['offset'],

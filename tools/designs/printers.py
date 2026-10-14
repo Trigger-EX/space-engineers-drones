@@ -34,7 +34,7 @@ Welder.mwm is unpublished), hence the hypothesis family.
 CUSTOM DATA for HiveMotherAI.cs, per [Bay N]: Exit Direction, Drone Box Min / Drone Box Max (printer grid cells, translation T included), Drone Cell
 Count (unique drone blocks), Drone Occupied Cells, Ignore Cells; and a [Launch] section (Auto=true, Burst Seconds=4).
 """
-import sys, os, time
+import sys, os, time, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import *            # noqa: F401,F403
 import _common as C
@@ -61,6 +61,8 @@ DRONES = {
     **{f'Tube {s}{w}': ('tube', f'Tube {s}{w}', 'TUBE', True) for s in ('2x2', '2x4', '3x3', '4x4') for w in ('', ' W')},
 }
 _DRONE_CACHE = {}
+# drones that can only leave their bay one way: the Tubes have no reverse thrust and weak side thrusters, so they fly out nose first (drone frame)
+EXIT_DIR = {k: (0, 0, -1) for k in DRONES if k.startswith('Tube ')}
 
 def _stinger_fallback(lite):
     """minimal kamikaze Stinger used ONLY when tools/designs/stinger.py does not exist: the Gnat frame (2 axial ion thrusters, gyro steering,
@@ -148,7 +150,7 @@ def build(spec, lite):
     for key, count, grid in spec['groups']:
         drone = get_drone(key, lite)
         tag = DRONES[key][2]
-        nums = pr.add_group(drone, count, grid)
+        nums = pr.add_group(drone, count, grid, exit_dir=EXIT_DIR.get(key))
         # one drone type: its cap is the printer's Max Drones (Hive Mother stopped at 6 of 8 with 3 per bay); mixed printers share it out
         cap = (spec.get('caps') or {}).get(tag, spec['max'] if len(spec['groups']) == 1 else max(4, 3 * count))
         for n in nums:
@@ -157,7 +159,10 @@ def build(spec, lite):
 
     if spec.get('turret') and not lite: pr.add_turret()
     if spec.get('guns'): pr.add_guns(spec['guns'])
-    if spec.get('per_dir'): pr.add_thrusters(spec['per_dir'])
+    # survival conveyors BEFORE the thrusters (their exhaust zones then route round the pipes), and more thrusters for the pipes' mass:
+    # the per-direction count grows with the mass so the printer keeps the acceleration it had without conveyors
+    m0 = C.total_mass(pr.bp); pr.route_conveyors(); m1 = C.total_mass(pr.bp)
+    if spec.get('per_dir'): pr.add_thrusters(int(math.ceil(spec['per_dir'] * m1 / m0 - 1e-9)))
     else: pr.tcount = {}
     pr.add_antenna(5000)
     for cf in cfg: cf['geom'] = PL.bay_geometry(pr, next(r for r in pr.records if r['n'] == cf['n']))

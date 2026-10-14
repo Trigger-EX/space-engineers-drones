@@ -369,7 +369,7 @@ namespace VRage.Game.GUI.TextPanel {
 }
 namespace VRage.Game.ModAPI.Ingame {
   using VRageMath; using VRage;
-  public interface IMyInventory { MyFixedPoint CurrentVolume {get;} MyFixedPoint MaxVolume {get;} MyFixedPoint CurrentMass {get;} int ItemCount {get;} }
+  public interface IMyInventory { MyFixedPoint CurrentVolume {get;} MyFixedPoint MaxVolume {get;} MyFixedPoint CurrentMass {get;} int ItemCount {get;} bool IsConnectedTo(IMyInventory dst); }
   public interface IMyEntity {
     VRage.Game.Components.MyEntityComponentContainer Components {get;} MatrixD WorldMatrix {get;} long EntityId {get;} Vector3D GetPosition();
     IMyInventory GetInventory(); IMyInventory GetInventory(int i); int InventoryCount {get;} bool HasInventory {get;}
