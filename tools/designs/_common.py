@@ -67,7 +67,7 @@ BAT_S = bat_extra(0.05)             # SmallBlockSmallBatteryBlock
 def ant_extra(r):
     return f"<BroadcastRadius>{r}</BroadcastRadius><ShowShipName>true</ShowShipName><EnableBroadcasting>true</EnableBroadcasting>"
 
-SCRIPT_LIMITS = {"ShrikeAI.cs": 86000}      # ship Helm scripts: <= 86,000 minified characters (control_arch s1.2 budget 80,000, +6,000 of link and feature code since). The PB limit is 100,000. Past ~80 k move an off-hot-path module into the Staff PB (docs/design/helm_split.md); do not raise this cap (CLAUDE.md)
+SCRIPT_LIMITS = {"ShrikeAI.cs": 86000, "TubeRamAI.cs": 80000}      # ship Helm scripts: <= 86,000 minified characters (control_arch s1.2 budget 80,000, +6,000 of link and feature code since). The PB limit is 100,000. Past ~80 k move an off-hot-path module into the Staff PB (docs/design/helm_split.md); do not raise this cap (CLAUDE.md)
 
 def script_text(filename):
     """read scripts/<filename> at call time, minified (comments/whitespace only): a Programmable Block takes at most 100,000

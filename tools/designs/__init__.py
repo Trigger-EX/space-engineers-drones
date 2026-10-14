@@ -16,7 +16,7 @@ ROOT = os.path.normpath(os.path.join(TOOLS, '..'))
 for _p in (HERE, TOOLS):
     if _p not in sys.path: sys.path.insert(0, _p)
 
-DRONE_MODULES = ('core', 'wasp', 'support', 'extra', 'pods', 'shrike', 'corsair', 'warden', 'leviathan', 'ballista', 'peeper')   # everything that is built as a flying ship (the last five: the warships and the pod, docs/design/)
+DRONE_MODULES = ('core', 'wasp', 'support', 'extra', 'pods', 'shrike', 'corsair', 'warden', 'leviathan', 'ballista', 'peeper', 'tube')   # everything that is built as a flying ship (the last five: the warships and the pod, docs/design/)
 SHIP_MODULES = ('pods', 'shrike', 'corsair', 'warden', 'leviathan', 'ballista')    # packaged as kind 'ship' (the Warships zips); the others are kind 'drone'
 PRINTER_MODULES = ('printers',)
 TEST_MODULES = ('testships', 'shrike_test', 'cradle_test', 'wasp_split', 'sprue_test')      # sim/generator test ships (kind 'test'): built into out/Blueprints, never packaged or listed in MODELS.md

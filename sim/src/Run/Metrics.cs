@@ -361,6 +361,8 @@ namespace SeSim.Run
                 if (!rc) return false;
             }
             if (!needWeapon) return true;     // flight/control-capable only (used for never-armed target ships)
+            for (int i = 0; i < sh.Pbs.Count; i++)      // a ram drone (TubeRamAI) is its own weapon: capable while it can still fly and steer
+                if (!sh.Pbs[i].Dead && sh.Pbs[i].Pb.Inst.Body == b && sh.Pbs[i].ScriptName == "TubeRamAI") return true;
             // weapon or warhead
             var wp = b.Weapons;
             bool inf = w.Settings.InfiniteAmmo;

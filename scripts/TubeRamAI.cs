@@ -1,0 +1,601 @@
+// =====================================================================
+//  TUBE RAM AI  v1.0  - kinetic ram drone (small grid, no weapon)
+// ---------------------------------------------------------------------
+//  Tube 2x2 / 2x4 / 3x3 / 4x4 (docs/design/tube_drones.md). Sits passive until launched (off its rack or by
+//  command), then flies at the nearest enemy and slams into it at full speed. After an impact it backs off
+//  and rams again while enough rear thrusters still work. Moves like the Stinger: it points its nose along the
+//  push it needs and burns the rear thruster bank (it has no reverse thrust: it brakes by flipping round).
+//
+//  HUNT   velocity control onto the predicted intercept, friendly avoidance on.
+//  TERM   last seconds: proportional navigation at full throttle, friendly avoidance off (a ram must not
+//         sidestep its target) but a friendly guard aborts the run when a friend is in the way.
+//  EXTEND after an impact or an abort: fly away to the run-up distance, then HUNT again.
+//
+//  Targets: its own nose camera (and a sensor if fitted) and targets shared over antenna by other drones,
+//  carriers and the hive (any of the listed IGC tags). `lock` raycasts what the nose points at.
+//  Warheads are optional: if any block with the Block Tag is a warhead it is armed in TERM only.
+//
+//  COMMANDS: launch (hunt) | abort | idle (stop) | rtb | lock | disarm | reload
+// =====================================================================
+const string VER = "1.0";
+
+string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE,TUBE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
+string Tag = "TUBE", BlockTag = "";
+double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 200, SafeDistance = 150, Gain = 2.5;
+double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300;
+int MaxRams = 0;
+bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false, ReAttack = true;
+double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
+
+enum Mode { WAIT, HUNT, TERM, EXTEND, RTB, IDLE }
+Mode _mode = Mode.WAIT;
+MyIni _ini = new MyIni();
+double _now; long _tick; int _peakIns = 0;   // PB limit is Runtime.MaxInstructionCount per run
+IMyShipController _rc;
+List<IMyGyro> _gyros = new List<IMyGyro>();
+List<IMyThrust> _fwd = new List<IMyThrust>();
+List<IMyThrust> _thr = new List<IMyThrust>();
+List<IMyWarhead> _heads = new List<IMyWarhead>();
+List<IMyCameraBlock> _cams = new List<IMyCameraBlock>();
+List<IMySensorBlock> _sensors = new List<IMySensorBlock>();
+List<MyDetectedEntityInfo> _sensed = new List<MyDetectedEntityInfo>();
+List<IMyShipMergeBlock> _merges = new List<IMyShipMergeBlock>();
+List<IMyBroadcastListener> _lTgt = new List<IMyBroadcastListener>();
+IMyBroadcastListener _lCmd;
+IMyTextSurface _lcd;
+IMyCubeGrid _myGrid;
+Vector3D _launchPos, _home, _prevVel, _prevErr; bool _armed, _haveHome;
+int _rams; double _modeT, _guardT, _slowT, _rangeNow, _closeNow, _tgoNow;
+string _status = "";
+
+class Track { public long Id; public Vector3D Pos, Vel, Acc; public double Radius, Seen; }
+Dictionary<long, Track> _contacts = new Dictionary<long, Track>();
+Track _tgt;
+
+// >>> FLEET LINK v1.0 (shared block: identical in every drone script and carrier relay, see docs/hive-protocol.md) >>>
+// A common IGC channel for ALL drone types, used IN ADDITION to the per-type tags (HORNET_TGT, GNAT_CMD, ...), which are untouched.
+//   <ch>_TGT   MyTuple<long id, Vector3D pos, Vector3D vel, double radius, long sender>   same tuple as <TAG>_TGT; radius < 0 = finished
+//   <ch>_HOME  Vector3D (rally point)        <ch>_CMD  string (one command, e.g. "hunt", "rtb", "launch")
+// <ch> = Channel, plus "_" + Secret when a secret is set (IGC reaches every PB in antenna range, so use a secret in multiplayer).
+// Own [Fleet] section in Custom Data (defaults are written on first run, "reload" re-reads them):
+//   Channel=FLEET   Secret=   Listen Tags=   Extra Broadcast Tags=FLEET   Accept Commands=true   Allowed Commands=...   Accept Home=true
+// Script hooks (the only lines a script needs): FleetLoad(true) after LoadConfig(); FleetPump(Command, home setter) in ReadIGC();
+// drain every listener in FleetTgtL with the same handler as _lTgt (skip a message when !FleetOk(d)); FleetSend(tuple) next to each
+// IGC.SendBroadcastMessage(Tag + "_TGT", ...) (shares and radius -1 "finished" messages).
+List<IMyBroadcastListener> FleetTgtL = new List<IMyBroadcastListener>();   // target listeners (fleet channel + Listen Tags)
+IMyBroadcastListener _flCmd, _flHome;
+List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
+List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
+string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
+string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+bool _flCmdOn = true, _flHomeOn = true;
+
+string FleetTag(string t, string ch)
+{
+    t = t.Trim();
+    if (t.Length == 0) return "";
+    if (t.ToUpperInvariant() == "FLEET") return ch == "" ? "" : ch + "_TGT";
+    return t.IndexOf('_') >= 0 ? t : t.ToUpperInvariant() + "_TGT";
+}
+
+void FleetLoad(bool listen)
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "Fleet";
+    if (!ini.ContainsKey(S, "Channel")) ini.Set(S, "Channel", "FLEET");
+    if (!ini.ContainsKey(S, "Secret")) ini.Set(S, "Secret", "");
+    if (!ini.ContainsKey(S, "Listen Tags")) ini.Set(S, "Listen Tags", "");
+    if (!ini.ContainsKey(S, "Extra Broadcast Tags")) ini.Set(S, "Extra Broadcast Tags", "FLEET");
+    if (!ini.ContainsKey(S, "Accept Commands")) ini.Set(S, "Accept Commands", true);
+    if (!ini.ContainsKey(S, "Allowed Commands")) ini.Set(S, "Allowed Commands", _flAllowed);
+    if (!ini.ContainsKey(S, "Accept Home")) ini.Set(S, "Accept Home", true);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    string ch = ini.Get(S, "Channel").ToString("FLEET").Trim().ToUpperInvariant().Replace(" ", "");
+    string sec = ini.Get(S, "Secret").ToString("").Trim().Replace(" ", "");
+    if (ch != "" && sec != "") ch = ch + "_" + sec;
+    _flChan = ch;
+    _flCmdOn = ini.Get(S, "Accept Commands").ToBoolean(true);
+    _flHomeOn = ini.Get(S, "Accept Home").ToBoolean(true);
+    _flAllowed = ini.Get(S, "Allowed Commands").ToString(_flAllowed).ToLowerInvariant();
+    var tin = new List<string>(); var tout = new List<string>();
+    if (ch != "") tin.Add(ch + "_TGT");
+    foreach (var t in ini.Get(S, "Listen Tags").ToString("").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tin.Contains(x)) tin.Add(x); }
+    foreach (var t in ini.Get(S, "Extra Broadcast Tags").ToString("FLEET").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tout.Contains(x)) tout.Add(x); }
+    _flOut = tout;
+    string key = string.Join("|", tin.ToArray()) + "#" + ch + "#" + (listen ? "1" : "0");
+    if (key == _flKey) return;
+    _flKey = key;
+    foreach (var l in _flAll) IGC.DisableBroadcastListener(l);
+    _flAll.Clear(); FleetTgtL.Clear(); _flCmd = null; _flHome = null;
+    if (!listen) return;
+    foreach (var x in tin) { var l = IGC.RegisterBroadcastListener(x); _flAll.Add(l); FleetTgtL.Add(l); }
+    if (ch != "")
+    {
+        _flCmd = IGC.RegisterBroadcastListener(ch + "_CMD"); _flAll.Add(_flCmd);
+        _flHome = IGC.RegisterBroadcastListener(ch + "_HOME"); _flAll.Add(_flHome);
+    }
+}
+
+bool FleetV(Vector3D v) { return Math.Abs(v.X) < 1e9 && Math.Abs(v.Y) < 1e9 && Math.Abs(v.Z) < 1e9; }   // false for NaN and absurd values
+bool FleetOk(MyTuple<long, Vector3D, Vector3D, double, long> d)
+{
+    return d.Item1 != Me.CubeGrid.EntityId && FleetV(d.Item2) && FleetV(d.Item3) && d.Item4 < 1e5 && !double.IsNaN(d.Item4);
+}
+
+void FleetPump(Action<string> onCmd, Action<Vector3D> onHome)
+{
+    while (_flCmd != null && _flCmd.HasPendingMessage)
+    {
+        var m = _flCmd.AcceptMessage();
+        if (!_flCmdOn || !(m.Data is string)) continue;
+        string c = ((string)m.Data).Trim().ToLowerInvariant();
+        int sp = c.IndexOf(' '); string w = sp < 0 ? c : c.Substring(0, sp);
+        if (w.Length > 0 && ("," + _flAllowed + ",").Contains("," + w + ",")) onCmd(c);
+    }
+    while (_flHome != null && _flHome.HasPendingMessage)
+    {
+        var m = _flHome.AcceptMessage();
+        if (_flHomeOn && m.Data is Vector3D && FleetV((Vector3D)m.Data)) onHome((Vector3D)m.Data);
+    }
+}
+
+void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { foreach (var t in _flOut) IGC.SendBroadcastMessage(t, tup); }
+void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_HOME", p); }
+void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
+// <<< FLEET LINK <<<
+
+// >>> FRIENDLY AVOIDANCE v1.0 (shared block: identical in every combat drone script, synced by tools/blocks_sync.py, see docs/friendly-avoidance.md) >>>
+// Keeps the drone off every grid that is not an enemy: the carrier, the ships it escorts, other wings, neutral and unowned grids.
+// Hive mates repel each other through Separation(), but only mates on the same IGC tag, and the cameras never target a friend, so a
+// drone orbiting a target flew into a Ballista (other tag, not a mate, not a contact) without ever knowing it was there.
+// Two sources fill the obstacle list _fa:
+//   BEACON   every script with this block (and the Shrike Helm) broadcasts its grid's bounding sphere (centre, velocity, radius) on the
+//            IGC channel DRONE_SPACE, 4 Hz; no relationship, tag or camera needed. Needs antennas in range, as every IGC message does.
+//   SIGHTING any non-enemy grid that Valid() sees (sensors, cameras, designators, omni scan) is remembered with its position, velocity and
+//            hull radius for 12 s, so grids without a beacon (a neutral hulk, another player's ship) are avoided too.
+// FaWant() then bends the velocity the drone is about to command, per obstacle (sphere = grid radius + my radius + 15 m margin):
+//   1 BARRIER   closing speed on the sphere is capped at sqrt(2 x 4 m/s2 x gap), so the drone can always stop in time
+//   2 RAMP      inside margin + 40 m a radial push away from it (up to 50 m/s, more inside the margin)
+//   3 SIDESTEP  if the straight line (actual or commanded velocity) passes inside the margin within 8 s, a push sideways
+//   ROCKS    asteroids seen by a camera ray (the scans all go through Valid()) are kept as 40 m spheres on the hit point for 60 s, so the same
+//            barrier / ramp / sidestep keep the drone off them. Voxels give no hull radius and sensors give no hit point: only rays count.
+// Ignored: RTB and IDLE (docking, parked), and any obstacle whose sphere I am inside (launching from a bay, merged, docked).
+// No Custom Data keys (the 100,000-character limit); constants are below. Registers its listener on the first call.
+// Script hooks: FaSee(e) first line of Valid(); want = FaWant(want, me) right after the KzWant line (the speed cap comes after).
+// Enemies are skipped: every contact (_contacts holds only valid targets, my target included), since IGC does not tell friend from foe.
+// Uses from the script: _rc, _now, _mode, _contacts, Valid(), Mode.RTB / Mode.IDLE.
+class FaO { public Vector3D P, V; public double R, T; public bool B, K; }
+Dictionary<long, FaO> _fa = new Dictionary<long, FaO>(); IMyBroadcastListener _faL; double _faT, _faR = 6;
+FaO FaGet(long id) { FaO o; if (!_fa.TryGetValue(id, out o)) _fa[id] = o = new FaO(); return o; }
+void FaSee(MyDetectedEntityInfo e)
+{
+    if (e.Type == MyDetectedEntityType.Asteroid)   // rock: only a camera ray gives a point on it; one 40 m sphere per 40 m cell, kept 60 s
+    {
+        if (e.HitPosition == null || _fa.Count > 150) return;
+        Vector3D h = e.HitPosition.Value; FaO a = FaGet(((long)(h.X / 40) << 40) ^ ((long)(h.Y / 40) << 20) ^ (long)(h.Z / 40));
+        a.P = h; a.V = Vector3D.Zero; a.R = 40; a.T = _now; a.B = false; a.K = true; return;
+    }
+    if (e.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies || (e.Type != MyDetectedEntityType.LargeGrid && e.Type != MyDetectedEntityType.SmallGrid) || e.EntityId == Me.CubeGrid.EntityId) return;
+    FaO o = FaGet(e.EntityId);
+    if (o.B && _now - o.T < 1) return;   // (a fresh beacon fix beats a sighting)
+    o.P = e.Position; o.V = e.Velocity; o.R = Math.Max(e.BoundingBox.Size.Length() * 0.5, 2); o.T = _now; o.B = false;
+}
+Vector3D FaWant(Vector3D want, Vector3D me)
+{
+    if (_faL == null) _faL = IGC.RegisterBroadcastListener("DRONE_SPACE");
+    while (_faL.HasPendingMessage)
+    {
+        var m = _faL.AcceptMessage();
+        if (!(m.Data is MyTuple<long, Vector3D, Vector3D, float>)) continue;
+        var d = (MyTuple<long, Vector3D, Vector3D, float>)m.Data;
+        if (d.Item1 == Me.CubeGrid.EntityId) continue;
+        FaO q = FaGet(d.Item1);
+        q.P = d.Item2; q.V = d.Item3; q.R = d.Item4; q.T = _now; q.B = true;
+    }
+    Vector3D mv = _rc.GetShipVelocities().LinearVelocity, push = Vector3D.Zero;
+    if (_now - _faT >= 0.25)
+    {
+        _faT = _now; var v = Me.CubeGrid.WorldVolume; _faR = v.Radius;
+        IGC.SendBroadcastMessage("DRONE_SPACE", new MyTuple<long, Vector3D, Vector3D, float>(Me.CubeGrid.EntityId, v.Center, mv, (float)v.Radius));
+        var gone = new List<long>(); foreach (var kv in _fa) if (_now - kv.Value.T > (kv.Value.B ? 3 : kv.Value.K ? 60 : 12)) gone.Add(kv.Key);
+        foreach (var id in gone) _fa.Remove(id);
+    }
+    if (_mode == Mode.RTB || _mode == Mode.IDLE) return want;
+    foreach (var kv in _fa)
+    {
+        var o = kv.Value;
+        if (_contacts.ContainsKey(kv.Key)) continue;   // an enemy's beacon (or my target's): the fight is meant to close in on it
+        Vector3D rel = me - (o.P + o.V * Math.Min(_now - o.T, 3));
+        double dist = rel.Length(), r = o.R + _faR, inner = r + 15;
+        if ((dist < r && !o.K) || dist < 1) continue;   // inside a ship's bounding sphere: launching, merged or docked (a rock's sphere is only a hit point's margin: still avoid it)
+        Vector3D n = rel / dist;
+        double cl = -Vector3D.Dot(want - o.V, n), lim = Math.Sqrt(8 * Math.Max(dist - inner, 0));
+        if (cl > lim) want += n * (cl - lim);
+        if (dist < inner + 40) push += n * 50 * Math.Min(1.5, (inner + 40 - dist) / 40 + (dist < inner ? 0.5 : 0));
+        for (int k = 0; k < 2; k++)
+        {
+            Vector3D w = (k == 0 ? mv : want) - o.V; double ww = w.LengthSquared(), t = -Vector3D.Dot(rel, w) / Math.Max(ww, 1);
+            if (ww < 4 || t <= 0 || t > 8) continue;
+            Vector3D miss = rel + w * t; double ml = miss.Length();
+            if (ml < inner) push += (ml > 1 ? miss / ml : Vector3D.Up) * 50 * (1 - t / 8) * (1 - ml / inner);
+        }
+    }
+    return want + push;
+}
+// <<< FRIENDLY AVOIDANCE v1.0 <<<
+
+public Program()
+{
+    LoadConfig();
+    FleetLoad(true);
+    foreach (var t in ListenTags.Split(',')) if (t.Trim() != "") _lTgt.Add(IGC.RegisterBroadcastListener(t.Trim().Contains("_") ? t.Trim() : t.Trim() + "_TGT"));
+    _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
+    GetBlocks();
+    Runtime.UpdateFrequency = UpdateFrequency.Update1;
+}
+
+void LoadConfig()
+{
+    MyIniParseResult r; if (!_ini.TryParse(Me.CustomData, out r)) return;
+    const string S = "Tube";
+    ListenTags = C(S, "Listen To IGC Tags", ListenTags);
+    Tag = C(S, "IGC Tag", Tag);
+    BlockTag = C(S, "Block Tag", BlockTag);
+    AutoLaunch = C(S, "Auto Launch When Released", AutoLaunch);
+    LaunchRange = C(S, "Max Target Distance", LaunchRange);
+    ArmRange = C(S, "Arm Warheads Within", ArmRange);
+    SafeDistance = C(S, "Safe Distance From Launch", SafeDistance);
+    MaxSpeed = C(S, "Max Speed", MaxSpeed);
+    TermTime = C(S, "Terminal Time", TermTime);
+    NavGain = C(S, "Nav Gain", NavGain);
+    ReAttack = C(S, "Re-Attack", ReAttack);
+    MaxRams = (int)C(S, "Max Rams", (double)MaxRams);
+    RunUp = C(S, "Run Up Distance", RunUp);
+    ImpactDv = C(S, "Impact Dv", ImpactDv);
+    FriendlyClear = C(S, "Friendly Clearance", FriendlyClear);
+    TargetLarge = C(S, "Target Large Grids", TargetLarge);
+    TargetSmall = C(S, "Target Small Grids", TargetSmall);
+    TargetNeutral = C(S, "Target Neutral/Unowned", TargetNeutral);
+    string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+}
+string C(string s, string k, string d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToString(d); }
+double C(string s, string k, double d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToDouble(d); }
+bool C(string s, string k, bool d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToBoolean(d); }
+
+bool Mine(IMyTerminalBlock b)
+{
+    if (b.CubeGrid != Me.CubeGrid) return false;
+    if (BlockTag == "")
+    {   // default: the PB's own name without the trailing " PB" ("Tube 3x3")
+        string n = Me.CustomName; if (n.EndsWith(" PB")) n = n.Substring(0, n.Length - 3);
+        BlockTag = n;
+    }
+    return b.CustomName.Contains(BlockTag);
+}
+
+void GetBlocks()
+{
+    _myGrid = Me.CubeGrid;
+    var ctrls = new List<IMyShipController>();
+    GridTerminalSystem.GetBlocksOfType(ctrls, Mine);
+    _rc = ctrls.Count > 0 ? ctrls[0] : null;
+    GridTerminalSystem.GetBlocksOfType(_gyros, Mine);
+    GridTerminalSystem.GetBlocksOfType(_thr, Mine);
+    GridTerminalSystem.GetBlocksOfType(_heads, Mine);
+    GridTerminalSystem.GetBlocksOfType(_cams, Mine);
+    GridTerminalSystem.GetBlocksOfType(_sensors, Mine);
+    GridTerminalSystem.GetBlocksOfType(_merges, Mine);
+    foreach (var c in _cams) c.EnableRaycast = true;
+    _fwd.Clear();
+    if (_rc != null) foreach (var t in _thr) if (Vector3D.Dot(t.WorldMatrix.Backward, _rc.WorldMatrix.Forward) > 0.9) _fwd.Add(t);
+    _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.8f;
+}
+
+bool Docked() { foreach (var m in _merges) if (m.IsConnected) return true; return false; }
+
+bool Valid(MyDetectedEntityInfo e)
+{
+    FaSee(e);
+    if (e.IsEmpty() || e.EntityId == Me.CubeGrid.EntityId) return false;
+    if (e.Type == MyDetectedEntityType.LargeGrid ? !TargetLarge : e.Type == MyDetectedEntityType.SmallGrid ? !TargetSmall : true) return false;
+    var r = e.Relationship;
+    return r == MyRelationsBetweenPlayerAndBlock.Enemies || (TargetNeutral && (r == MyRelationsBetweenPlayerAndBlock.Neutral || r == MyRelationsBetweenPlayerAndBlock.NoOwnership));
+}
+
+void Add(long id, Vector3D p, Vector3D v, double r)
+{
+    Track t;
+    if (!_contacts.TryGetValue(id, out t)) { t = new Track { Id = id }; _contacts[id] = t; }
+    double dt = _now - t.Seen;
+    if (t.Seen > 0 && dt > 0.05 && dt < 2) t.Acc = t.Acc * 0.7 + (v - t.Vel) / dt * 0.3;
+    t.Pos = p; t.Vel = v; t.Radius = Math.Max(r, 1.5); t.Seen = _now;
+}
+
+public void Main(string arg, UpdateType src)
+{
+    try { Tick(arg, src); }
+    catch (Exception ex) { _status = "ERROR " + ex.Message; Echo(_status); }
+}
+
+void Tick(string arg, UpdateType src)
+{
+    if (!string.IsNullOrWhiteSpace(arg)) Command(arg.Trim().ToLowerInvariant());
+    if ((src & UpdateType.Update1) == 0) return;
+    double dt = Runtime.TimeSinceLastRun.TotalSeconds; if (dt <= 0 || dt > 0.5) dt = 1 / 60.0;
+    _now += dt; _tick++;
+    if (Me.CubeGrid != _myGrid || _tick % 600 == 0) GetBlocks();
+    for (int li = 0; li < _lTgt.Count + FleetTgtL.Count; li++)
+    {
+        var l = li < _lTgt.Count ? _lTgt[li] : FleetTgtL[li - _lTgt.Count];
+        while (l.HasPendingMessage)
+        {
+            var m = l.AcceptMessage();
+            if (!(m.Data is MyTuple<long, Vector3D, Vector3D, double, long>)) continue;
+            var d = (MyTuple<long, Vector3D, Vector3D, double, long>)m.Data;
+            if (!FleetOk(d)) continue;
+            if (d.Item4 < 0) { _contacts.Remove(d.Item1); continue; }      // reported finished by the hive
+            Add(d.Item1, d.Item2, d.Item3, d.Item4);
+        }
+    }
+    while (_lCmd.HasPendingMessage) { var m = _lCmd.AcceptMessage(); if (m.Data is string) Command(((string)m.Data).ToLowerInvariant()); }
+    FleetPump(Command, p => { _home = p; _haveHome = true; });
+    if (_tick % 10 == 0)
+    {
+        foreach (var s in _sensors) { if (!s.IsWorking) continue; _sensed.Clear(); s.DetectedEntities(_sensed); foreach (var e in _sensed) if (Valid(e)) Add(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() / 2); }
+        var drop = new List<long>(); foreach (var kv in _contacts) if (_now - kv.Value.Seen > 5) drop.Add(kv.Key);
+        foreach (var id in drop) _contacts.Remove(id);
+        if (_tgt != null && !_contacts.ContainsKey(_tgt.Id)) _tgt = null;
+    }
+    if (_rc == null) { _status = "No remote control"; Show(); return; }
+
+    bool docked = Docked();
+    if (docked && _mode != Mode.WAIT && _mode != Mode.IDLE) { Release(); _mode = Mode.WAIT; }
+    if (_mode == Mode.WAIT && !docked && AutoLaunch && Nearest() != null) Launch();
+    if (_mode == Mode.HUNT || _mode == Mode.TERM) Hunt(dt);
+    else if (_mode == Mode.EXTEND) Extend(dt);
+    else if (_mode == Mode.RTB) Rtb(dt);
+    _prevVel = _rc.GetShipVelocities().LinearVelocity;
+    _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
+    if (_tick % 20 == 0) Show();
+}
+
+void SetMode(Mode m) { _mode = m; _modeT = _now; }
+
+void Command(string a)
+{
+    if (a.StartsWith("launch") || a.StartsWith("hunt")) { if (!Docked()) Launch(); else _status = "Still docked"; }
+    else if (a == "abort") { Disarm(); Release(); SetMode(Mode.IDLE); }
+    else if (a == "idle" || a == "stop") { Disarm(); Release(); SetMode(Mode.IDLE); }
+    else if (a == "rtb") { if (!Docked()) SetMode(Mode.RTB); }
+    else if (a == "lock") Lock();
+    else if (a == "disarm") Disarm();
+    else if (a == "reload") { LoadConfig(); FleetLoad(true); GetBlocks(); }
+}
+
+void Lock()
+{
+    foreach (var c in _cams)
+    {
+        if (!c.IsWorking || _rc == null || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.97 || !c.CanScan(LaunchRange)) continue;
+        var e = c.Raycast(LaunchRange);
+        if (!e.IsEmpty() && Valid(e)) { Add(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() / 2); _tgt = _contacts[e.EntityId]; _status = "Locked " + e.Name; }
+        else _status = "Nothing to lock";
+        return;
+    }
+    _status = "No camera ready";
+}
+
+Track Nearest()
+{
+    Track best = null; double bd = LaunchRange; Vector3D me = Me.GetPosition();
+    foreach (var t in _contacts.Values) { double d = Vector3D.Distance(t.Pos, me); if (d < bd) { bd = d; best = t; } }
+    return best;
+}
+
+void Launch()
+{
+    if (_tgt == null) _tgt = Nearest();
+    if (_tgt == null) { _status = "No target in range"; return; }
+    GetBlocks();
+    SetMode(Mode.HUNT); _launchPos = _rc.GetPosition(); _rams = 0; _slowT = 0;
+}
+
+// the segment me -> p passes within FriendlyClear of a non-enemy grid that is not the target (FRIENDLY AVOIDANCE obstacle list)
+bool FriendlyInWay(Vector3D me, Vector3D p)
+{
+    Vector3D seg = p - me; double sl = seg.Length(); if (sl < 1) return false;
+    Vector3D u = seg / sl;
+    foreach (var kv in _fa)
+    {
+        if (_contacts.ContainsKey(kv.Key)) continue;
+        var o = kv.Value; Vector3D oc = o.P + o.V * Math.Min(_now - o.T, 3);
+        double along = Vector3D.Dot(oc - me, u);
+        if (along < -o.R || along > sl + o.R) continue;
+        double off = (oc - me - u * MathHelper.Clamp(along, 0, sl)).Length();
+        if (off < o.R + FriendlyClear + _faR) return true;
+    }
+    return false;
+}
+
+void Hunt(double dt)
+{
+    if (_tgt == null) { _tgt = Nearest(); if (_tgt == null) { _status = "Lost target"; Release(); SetMode(Mode.WAIT); return; } }
+    // keep the lock with the nose camera when possible
+    double age = _now - _tgt.Seen;
+    Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
+    Vector3D tp = _tgt.Pos + _tgt.Vel * age, tv = _tgt.Vel;
+    if (age > 0.2)
+        foreach (var c in _cams)
+        {
+            double d0 = Vector3D.Distance(tp, c.GetPosition());
+            if (!c.IsWorking || !c.CanScan(d0 + 20) || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.9) continue;
+            var e = c.Raycast(tp + Vector3D.Normalize(tp - c.GetPosition()) * 3);
+            if (!e.IsEmpty() && Valid(e)) { Add(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() / 2); if (e.EntityId != _tgt.Id) _tgt = _contacts[e.EntityId]; }
+            break;
+        }
+    Vector3D rel = tp - me; double dist = rel.Length(); Vector3D los = rel / Math.Max(dist, 1);
+    double closing = Vector3D.Dot(myVel - tv, los);
+    double tgo = MathHelper.Clamp(dist / Math.Max(20, closing), 0, 10);
+    _rangeNow = dist; _closeNow = closing; _tgoNow = tgo;
+
+    // impact: a sudden velocity change, or touching the target while the closing speed has turned
+    bool hit = _tick > 5 && (myVel - _prevVel).Length() > ImpactDv && dist < _tgt.Radius + 30;
+    if (hit) { _rams++; Disarm(); _status = "IMPACT " + _rams + " at " + closing.ToString("0") + " m/s";
+        if (ReAttack && (MaxRams == 0 || _rams < MaxRams) && Healthy()) SetMode(Mode.EXTEND); else SetMode(Mode.HUNT); return; }
+
+    Vector3D pred = tp + tv * tgo + 0.5 * _tgt.Acc * tgo * tgo;
+    Vector3D want, nose;
+    double fmax = 0; foreach (var t in _fwd) if (t.IsWorking) fmax += t.MaxEffectiveThrust;
+    double mass = _rc.CalculateShipMass().PhysicalMass, amax = fmax > 0 ? fmax / mass : 1;
+    if (_mode == Mode.HUNT)
+    {
+        if (tgo < TermTime || dist < TermRange) { SetMode(Mode.TERM); _guardT = 0; }
+        want = Vector3D.Normalize(pred - me) * MaxSpeed;
+        bool launching = Vector3D.Distance(me, _launchPos) < SafeDistance;
+        if (launching) want = Vector3D.Normalize(want) * Math.Min(MaxSpeed, 30);
+        want = FaWant(want, me);   // FRIENDLY AVOIDANCE: keep clear of non-enemy grids
+        Vector3D need = (want - myVel) * Gain - g;
+        nose = need.LengthSquared() > 0.01 ? Vector3D.Normalize(need) : _rc.WorldMatrix.Forward;
+        Burn(need, nose, fmax, mass, dt);
+    }
+    else
+    {   // TERM: proportional navigation, all thrust used, speed held at the cap
+        if (_now - _guardT > 0.25)
+        {
+            _guardT = _now;
+            bool blocked = FriendlyInWay(me, pred);
+            if (!blocked)
+                foreach (var c in _cams)
+                {
+                    if (!c.IsWorking || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.97 || !c.CanScan(dist * 1.2 + 20)) continue;
+                    var he = c.Raycast(dist * 1.2 + 20);
+                    if (!he.IsEmpty() && he.EntityId != _tgt.Id && he.Relationship != MyRelationsBetweenPlayerAndBlock.Enemies && (he.Type == MyDetectedEntityType.LargeGrid || he.Type == MyDetectedEntityType.SmallGrid)) { blocked = true; }
+                    break;
+                }
+            if (!blocked && _tgt.Radius > 0)
+                foreach (var kv in _fa) { if (_contacts.ContainsKey(kv.Key)) continue; if (Vector3D.Distance(kv.Value.P, tp) < FriendlyClear + kv.Value.R) { blocked = true; break; } }
+            if (blocked) { _status = "ABORT friendly in the way"; Disarm(); SetMode(Mode.EXTEND); return; }
+        }
+        // proportional navigation: lateral acceleration from the line-of-sight rate, the rest of the thrust goes along the velocity
+        Vector3D vrel = myVel - tv, vHat = vrel.LengthSquared() > 1 ? Vector3D.Normalize(vrel) : _rc.WorldMatrix.Forward;
+        Vector3D losRate = Vector3D.Cross(rel, tv - myVel) / Math.Max(dist * dist, 1);
+        Vector3D aLat = Vector3D.Cross(losRate, los) * (NavGain * Math.Max(closing, 20));
+        aLat -= g - Vector3D.Dot(g, vHat) * vHat;
+        double lm = Math.Min(aLat.Length(), amax * 0.95);
+        if (aLat.Length() > lm && lm > 0) aLat = Vector3D.Normalize(aLat) * lm;
+        double along = Math.Sqrt(Math.Max(amax * amax - lm * lm, 0));
+        Vector3D dir = myVel.Length() > 5 ? Vector3D.Normalize(myVel) : los;
+        if (myVel.Length() < MaxSpeed * 0.9) dir = Vector3D.Normalize(dir + los);   // below the cap: lean along the line of sight
+        nose = Vector3D.Normalize(dir * along + aLat);
+        Aim(nose, dt);
+        double al = Vector3D.Dot(nose, _rc.WorldMatrix.Forward);
+        float pct = al > 0.9 && myVel.Length() < MaxSpeed * 1.02 ? 1f : 0.001f;
+        foreach (var t in _fwd) t.ThrustOverridePercentage = pct;
+        _rc.DampenersOverride = false;
+        // warheads (only when the player fitted some): arm in the terminal phase, never near home
+        bool clear = Vector3D.Distance(me, _launchPos) > SafeDistance;
+        if (_heads.Count > 0)
+        {
+            if (!_armed && clear && dist < ArmRange) { foreach (var w in _heads) w.IsArmed = true; _armed = true; }
+        }
+        // cannot close: a target running at our speed
+        if (closing < 5) { _slowT += dt; if (_slowT > 15) _status = "CANNOT CLOSE"; } else _slowT = 0;
+        if (_now - _modeT > 20 && closing < 0) { SetMode(Mode.HUNT); }   // overshot: re-plan
+    }
+    _status = (_mode == Mode.TERM ? "TERM " : "HUNT ") + dist.ToString("0") + " m  tgo " + tgo.ToString("0.0") + "s  rams " + _rams;
+}
+
+// fly away from the target (sideways of the line) until the run-up distance is reached, then hunt again
+void Extend(double dt)
+{
+    if (_tgt == null) { Release(); SetMode(Mode.WAIT); return; }
+    Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
+    Vector3D rel = me - _tgt.Pos; double dist = rel.Length();
+    double fmax = 0; foreach (var t in _fwd) if (t.IsWorking) fmax += t.MaxEffectiveThrust;
+    double mass = _rc.CalculateShipMass().PhysicalMass, amax = fmax > 0 ? fmax / mass : 1;
+    double run = RunUp > 0 ? RunUp : MathHelper.Clamp(1.3 * MaxSpeed * MaxSpeed / (2 * amax), 200, 800);
+    if (dist > run || _now - _modeT > 10) { SetMode(Mode.HUNT); return; }
+    Vector3D away = dist > 1 ? rel / dist : -_rc.WorldMatrix.Forward;
+    Vector3D side = Vector3D.Cross(away, _rc.WorldMatrix.Up); side = side.LengthSquared() > 0.01 ? Vector3D.Normalize(side) : _rc.WorldMatrix.Right;
+    Vector3D want = Vector3D.Normalize(away + side * 0.4) * MaxSpeed * 0.6;
+    want = FaWant(want, me);
+    Vector3D need = (want - myVel) * Gain - g;
+    Vector3D nose = need.LengthSquared() > 0.01 ? Vector3D.Normalize(need) : _rc.WorldMatrix.Forward;
+    Burn(need, nose, fmax, mass, dt);
+    _status = "EXTEND " + dist.ToString("0") + " / " + run.ToString("0") + " m  rams " + _rams;
+}
+
+// fly home at 40 m/s, flip-and-burn stop inside 50 m, then idle
+void Rtb(double dt)
+{
+    Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
+    Vector3D home = _haveHome ? _home : _launchPos;
+    Vector3D rel = home - me; double dist = rel.Length();
+    if (dist < 50 && myVel.Length() < 3) { Release(); SetMode(Mode.IDLE); _status = "Home"; return; }
+    double fmax = 0; foreach (var t in _fwd) if (t.IsWorking) fmax += t.MaxEffectiveThrust;
+    double mass = _rc.CalculateShipMass().PhysicalMass;
+    double sp = Math.Min(40, Math.Sqrt(2 * Math.Max(fmax / mass * 0.5, 1) * Math.Max(dist - 5, 0)));
+    Vector3D want = (dist > 1 ? rel / dist : Vector3D.Zero) * sp;
+    want = FaWant(want, me);
+    Vector3D need = (want - myVel) * Gain - g;
+    Vector3D nose = need.LengthSquared() > 0.01 ? Vector3D.Normalize(need) : _rc.WorldMatrix.Forward;
+    Burn(need, nose, fmax, mass, dt);
+    _status = "RTB " + dist.ToString("0") + " m";
+}
+
+// point-and-burn: nose along the needed push; burn only the aligned part
+void Burn(Vector3D need, Vector3D nose, double fmax, double mass, double dt)
+{
+    if (need.LengthSquared() > 0.01) Aim(nose, dt);
+    double along = Vector3D.Dot(need, _rc.WorldMatrix.Forward), mag = need.Length();
+    double gate = mag > 0 ? MathHelper.Clamp((along / mag - 0.8) / 0.2, 0, 1) : 0;
+    float pct = fmax > 0 ? (float)MathHelper.Clamp(along * mass / fmax * gate, 0, 1) : 0;
+    foreach (var t in _fwd) t.ThrustOverridePercentage = Math.Max(pct, 0.001f);
+    _rc.DampenersOverride = false;
+}
+
+// enough of the rear bank and the gyros still work to try another run
+bool Healthy()
+{
+    int w = 0; foreach (var t in _fwd) if (t.IsWorking) w++;
+    int gy = 0; foreach (var x in _gyros) if (x.IsWorking) gy++;
+    return _rc != null && _fwd.Count > 0 && w * 2 >= _fwd.Count && gy > 0;
+}
+
+void Aim(Vector3D desired, double dt)
+{
+    MatrixD m = _rc.WorldMatrix, inv = MatrixD.Transpose(m);
+    Vector3D d = Vector3D.Normalize(Vector3D.TransformNormal(desired, inv));
+    double ang = Math.Acos(MathHelper.Clamp(Vector3D.Dot(Vector3D.Forward, d), -1, 1));
+    Vector3D axis = Vector3D.Cross(Vector3D.Forward, d);
+    axis = axis.LengthSquared() > 1e-12 ? Vector3D.Normalize(axis) : Vector3D.Zero;
+    Vector3D err = axis * ang, derr = (err - _prevErr) / dt; _prevErr = err;
+    if (derr.LengthSquared() > 400) derr = Vector3D.Zero;
+    Vector3D w = Vector3D.TransformNormal(err * AimKp + derr * AimKd, m);
+    if (w.LengthSquared() > MaxTurn * MaxTurn) w = Vector3D.Normalize(w) * MaxTurn;
+    foreach (var gy in _gyros)
+    {
+        Vector3D l = Vector3D.TransformNormal(w, MatrixD.Transpose(gy.WorldMatrix));
+        gy.Pitch = -(float)l.X; gy.Yaw = -(float)l.Y; gy.Roll = -(float)l.Z; gy.GyroOverride = true;   // SE gyro sign convention
+    }
+}
+
+void Disarm() { foreach (var w in _heads) w.IsArmed = false; _armed = false; }
+void Release()
+{
+    foreach (var g in _gyros) { g.GyroOverride = false; }
+    foreach (var t in _thr) t.ThrustOverridePercentage = 0;
+    if (_rc != null) _rc.DampenersOverride = true;
+}
+
+void Show()
+{
+    string tl = _tgt != null ? (_rangeNow.ToString("0") + " m  closing " + _closeNow.ToString("0") + " m/s  tgo " + _tgoNow.ToString("0.0") + " s") : "none";
+    int w = 0; foreach (var t in _fwd) if (t.IsWorking) w++;
+    string s = "TUBE RAM v" + VER + "\nMode: " + _mode + (Docked() ? "  (docked)" : "") + "\nTarget : " + tl + "\nSpeed: " + (_rc != null ? _rc.GetShipVelocities().LinearVelocity.Length().ToString("0") : "-") + " m/s   Rams: " + _rams +
+               "\nThrusters: " + w + " / " + _fwd.Count + "\nContacts: " + _contacts.Count + (_heads.Count > 0 ? "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") : "") +
+               "\n" + _status + "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
+    if (_lcd != null) _lcd.WriteText(s);
+    Echo(s);
+}

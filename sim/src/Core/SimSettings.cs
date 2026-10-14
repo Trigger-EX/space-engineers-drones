@@ -51,6 +51,9 @@ namespace SeSim.Core
         public double CollisionDamagePatchM = 1.5;               // [I] blocks within this distance of the contact point share the damage (at least the deepest block)
         /// <summary>true (default): one Collision event per contact EPISODE (first closing contact after at least CollisionEpisodeGapTicks
         /// without contact between the pair); false: the old one event per CollisionEventCooldownTicks of contact.</summary>
+        /// <summary>true (a bug fix): when the two bodies have different cell sizes the FINER grid is the probe, so a small ship (a Tube ram drone) cannot slip between
+        /// the sparse block centres of a large one. Equal cell sizes keep the fewer-blocks rule (bit-identical). false = the old rule (docs/design/tube_drones.md 3.2).</summary>
+        public bool CollisionFineProbe = true;
         public bool CollisionEpisodeEvents = true;
         public int CollisionEpisodeGapTicks = 30;                // contact episode ends after this many ticks without contact (0.5 s)
         public bool GridSplitting = true;                        // disconnected parts become separate bodies

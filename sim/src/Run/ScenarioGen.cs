@@ -136,7 +136,7 @@ namespace SeSim.Run
             if (a == null || b == null) return null;
             var sc = Build(kind, a, b);
             if (sc.Name != name) sc.Name = name;
-            if (kind == "kamikaze") sc.SwarmCueSeconds = 0.5;   // as in Kamikaze(): the swarm is cued to its target
+            if (kind == "kamikaze" || kind == "ram") sc.SwarmCueSeconds = 0.5;   // as in Kamikaze(): the swarm is cued to its target
             sc.BlueprintCustomData = sc.RigidSubgrids = kind == "ship" || Array.IndexOf(a, "Ballista") >= 0;      // M6: warship scenarios start with the Custom Data the blueprint carries
             return sc;
         }

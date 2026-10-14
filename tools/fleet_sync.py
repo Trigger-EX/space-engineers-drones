@@ -7,7 +7,7 @@ Hooks that call the block (FleetLoad / FleetPump / FleetSend / FleetTgtL) are NO
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["GnatSwarmAI", "WaspAI", "WaspStaffAI", "BasiliskAI", "StaffAI", "StingerAI", "HornetMothership", "GnatMothership", "LongbowMothership", "AegisStaffAI", "MantisStaffAI", "LongbowStaffAI", "HornetStaffAI", "HarrierStaffAI", "LancerStaffAI"]
+SCRIPTS = ["GnatSwarmAI", "WaspAI", "WaspStaffAI", "BasiliskAI", "StaffAI", "StingerAI", "TubeRamAI", "HornetMothership", "GnatMothership", "LongbowMothership", "AegisStaffAI", "MantisStaffAI", "LongbowStaffAI", "HornetStaffAI", "HarrierStaffAI", "LancerStaffAI"]
 BEGIN, END = "// >>> FLEET LINK", "// <<< FLEET LINK <<<"
 
 def unlisted():

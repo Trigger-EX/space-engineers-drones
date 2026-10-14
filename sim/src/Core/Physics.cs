@@ -346,6 +346,7 @@ namespace SeSim.Core
         static void Contact(World w, SimSettings s, Body a, Body c)
         {
             Body probe = a.Blocks.Count <= c.Blocks.Count ? a : c;   // its block centres are the sample points
+            if (s.CollisionFineProbe && a.CellSize != c.CellSize) probe = a.CellSize < c.CellSize ? a : c;   // mixed grid sizes: the finer grid samples the coarser
             Body host = ReferenceEquals(probe, a) ? c : a;
             double k = 1.0 / host.CellSize;
             double bestDepth = 0; bool found = false;

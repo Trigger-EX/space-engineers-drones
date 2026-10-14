@@ -40,6 +40,8 @@ Everything below is what you need to continue. Read sections 1–4 before touchi
 | Printer ships | Not started (designs in §7) |
 | Simulation engine + fights + audit | Not started (plan in §9) |
 
+**Tube ram drones (Tube 2x2 / 2x4 / 3x3 / 4x4, `TubeRamAI.cs`) are built and sim-smoke-tested, not game-tested:** `docs/design/tube_drones.md` section 8 lists what is left (the `ram` scenario kind, ram metrics, salvo spacing).
+
 **Later work (after this handoff was written):** see `packages/changelog.md` (v2.0 to v2.4) and `docs/RESULTS.md`; v2.4 is the
 **kamikaze defence** against incoming swarms of small warhead drones (`docs/kamikaze-defence.md`, shared block `tools/kz_block.cs`
 synced by `tools/kz_sync.py`, sim scenario kind `kamikaze`).
