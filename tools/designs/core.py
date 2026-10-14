@@ -85,9 +85,11 @@ def hornet(lite=False):
     return C.add_support_pbs(bp)      # [Flight] + [Staff] (+ [Thrust]) PBs here, so the Hornets clamped into the Wing ships / cradle pods (attached as sub-grids, which build_all does not visit) carry the Staff PB too
 
 # ---------------------------------------------------------------------------------------------
-def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
+def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True, side=None):
     """Point-and-burn drone: the hull is 2 x 2 cells in section (x 0..1, y 0..1) and long; two axial ion thrusters back-to-back, gyro steering,
-    AI Offensive + Flight blocks on the tail, merge latch set flush into the belly (inside the section). Only the Left / Right cameras stand off the sides."""
+    AI Offensive + Flight blocks on the tail, merge latch set flush into the belly (inside the section). Only the Left / Right cameras stand off the sides.
+    side (experiment, testships 'Gnat Side*'): "add" = one side thruster across the tail (x 1, y 0..1, z 3, exhaust Up = pushes Down), the rear camera
+    moves one cell back (hull 8 long, still inside the 2 x 2 section); "norev" = the same, and the reverse thruster becomes armour."""
     import pods
     bp = Blueprint(name, "Small", seed=7, legacy_shapes=True)
     bp.add("MyObjectBuilder_RemoteControl", "SmallBlockRemoteControl", (1, 0, -2), name=f"{name} Remote Control", kind="ctrl", color=RED)
@@ -100,7 +102,8 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
     bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro", (1, 1, -2), "Forward", "Up", f"{name} Gyroscope", kind="gyro")
     bp.armor(1, 1, -1)
     # the two thrusters sit back-to-back on the same axis (column x 0, y 1), their mount ends touching; the cells in front of and behind them stay free
-    thr(bp, (0, 1, -3), "Forward", "Up", f"{name} Ion Reverse")
+    if side == "norev": bp.armor(0, 1, -3, RED); bp.armor(0, 1, -2, RED)      # the main thruster's mount face sits on this armour
+    else: thr(bp, (0, 1, -3), "Forward", "Up", f"{name} Ion Reverse")
     thr(bp, (0, 1, -1), "Backward", "Up", f"{name} Ion Main")
     ant(bp, (1, 1, 0), "Backward", "Up", f"{name} Antenna", 2500)   # lies along the hull (rear half in the tail cell), not standing on the roof
     cam(bp, (1, 0, -3), "Forward", "Up", f"{name} Camera")
@@ -110,10 +113,10 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
         # tail section: AI blocks in the lower right column, rear camera on the tail end
         bp.add("MyObjectBuilder_OffensiveCombatBlock", "SmallOffensiveCombat", (1, 0, 1), name=f"{name} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", "SmallFlightMovement", (1, 0, 2), name=f"{name} AI Flight [AI]", kind="ai")
-        cam(bp, (1, 0, 3), "Backward", "Up", f"{name} Camera Rear")
     else:       # no AI blocks: the same tail in armour, so both variants share the hull
         bp.armor(1, 0, 1, RED); bp.armor(1, 0, 2, RED)
-        cam(bp, (1, 0, 3), "Backward", "Up", f"{name} Camera Rear")
+    if side: thr(bp, (1, 0, 3), "Up", "Backward", f"{name} Ion Side")       # across the tail, both cells inside the section; the flame goes up
+    cam(bp, (1, 0, 4 if side else 3), "Backward", "Up", f"{name} Camera Rear")
     # PB mounts only on its front: it sits beside the tail, facing into it (orientation found by the mount rules)
     pods.orient_attached(bp, "MyObjectBuilder_MyProgrammableBlock", "SmallProgrammableBlock", (0, 0, 1), name=f"{name} PB",
                          extra=pb_extra(script) if script else '', kind="ctrl", color=RED)
@@ -124,9 +127,9 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
         else: raise AssertionError(f"{name}: no cell for the sensor")
     return finalize(bp)
 
-def gnat(lite=False):
-    name = "Gnat Lite" if lite else "Gnat"
-    bp = gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite)
+def gnat(lite=False, name=None, side=None):
+    name = name or ("Gnat Lite" if lite else "Gnat")
+    bp = gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite, side=side)
     # two PBs (docs/design/gnat_split.md): the frame's PB is the Flight half (GnatSwarmAI), the Staff half (FLEET LINK + LAUNCH, GnatStaffAI) sits on the tail.  No [Thrust] PB: point-and-burn.
     # In gnat(), not gnat_frame: the Stinger fallback shares the frame.  Placed by hand on the tail (armour seat, then the PB): the generic spare search would pick a cell off the 2 x 2 hull.
     import pods

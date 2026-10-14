@@ -46,12 +46,16 @@
 //   satellite (sat, orbit): FORM as a slowly turning vertical ring round the carrier / home point (ring size grows with the swarm)
 //   follow / escort = form: the formation sphere sits round whatever broadcasts the home point (a ship running a Mothership
 //   link), outside its hull, and moves with it (v1.11: the drones match the ship's velocity, so they keep up)
+//  SIDE THRUSTER (v1.15, experiment: Gnat Side / Gnat Side NoRev in tools/designs/core.py): thrusters across the nose axis
+//   that all push the same way are used too. The gyro rolls the ship so their push lies along the sideways need: in RUN
+//   they trim drift with the nose kept on the lead point (less nose tilt); in VectorFly the ship turns whichever of
+//   main / reverse / side needs the smallest turn toward the burn. Without side thrusters nothing changes.
 //  KAMIKAZE DEFENCE (v1.13; shared block tools/kz_block.cs, docs/kamikaze-defence.md): incoming swarms of small warhead drones are
 //   never written off as wrecks, become the priority target, and the drone backs away while firing and breaks sideways just
 //   before impact; spare camera rays track the swarm and the tracks are shared with the hive. Own [Kamikaze Defence] Custom Data section.
 // =====================================================================
 
-const string VER = "1.14-gnat-split";
+const string VER = "1.15-gnat-split";
 
 // ---------------- settings (Custom Data) ----------------
 string Tag = "GNAT";
@@ -100,7 +104,8 @@ Vector3D _hvP, _homeV; double _hvT = -99;   // carrier velocity from successive 
 IMyShipController _rc;
 List<IMyGyro> _gyros = new List<IMyGyro>();
 List<IMyThrust> _thr = new List<IMyThrust>();
-List<IMyThrust> _fwdThr = new List<IMyThrust>(), _revThr = new List<IMyThrust>();
+List<IMyThrust> _fwdThr = new List<IMyThrust>(), _revThr = new List<IMyThrust>(), _sideThr = new List<IMyThrust>();
+Vector3D _sideL; bool _vfSide;   // SIDE THRUSTER: push direction in the _ref frame; VectorFly is burning the side thrusters
 List<IMyUserControllableGun> _guns = new List<IMyUserControllableGun>();
 List<IMyCameraBlock> _cams = new List<IMyCameraBlock>();
 List<IMyBatteryBlock> _bats = new List<IMyBatteryBlock>();
@@ -1014,14 +1019,17 @@ void GetBlocks()
     ScanSlims();
     FindAi();
     _ref = _guns.Count > 0 ? (IMyTerminalBlock)_guns[0] : _rc;
-    _fwdThr.Clear(); _revThr.Clear();
+    _fwdThr.Clear(); _revThr.Clear(); _sideThr.Clear();
     if (_ref != null)
     {
         Vector3D nose = _ref.WorldMatrix.Forward;
+        MatrixD inv = MatrixD.Transpose(_ref.WorldMatrix);
         foreach (var t in _thr)
         {
             double d = Vector3D.Dot(t.WorldMatrix.Backward, nose); // thrust pushes opposite its exhaust
+            Vector3D pl = Vector3D.TransformNormal(t.WorldMatrix.Backward, inv);
             if (d > 0.9) _fwdThr.Add(t); else if (d < -0.9) _revThr.Add(t);
+            else if (Math.Abs(d) < 0.1 && (_sideThr.Count == 0 || Vector3D.Dot(pl, _sideL) > 0.9)) { if (_sideThr.Count == 0) _sideL = pl; _sideThr.Add(t); }   // SIDE THRUSTER: one push direction
             else if (!LkBurn) t.ThrustOverridePercentage = 0;          // off-axis thrusters are left alone (not under the Staff's take-off burn)
         }
     }
@@ -1466,7 +1474,12 @@ void Control(double dt)
         bool inRange = tof * ProjSpeed < FireRange;
         Vector3D accel = (FaWant(KzWant(tv + desRel + sep, me, MaxSpeed), me) - myVel) * AccelGain - grav;   // KAMIKAZE DEFENCE: back away along the nose axis (reverse thrusters)
         double axial = Vector3D.Dot(accel, aimDir);
-        Vector3D lat = accel - axial * aimDir;
+        Vector3D lat = accel - axial * aimDir, latAll = lat;
+        if (_sideThr.Count > 0)
+        {   // SIDE THRUSTER: roll its push onto the sideways need and burn the part it lines up with; the nose tilts only for the rest
+            double sa = Math.Min(Math.Max(0, Vector3D.Dot(lat, SideW())), AxisThrust(_sideThr) * _powerScale / mass);
+            Side(sa * mass); lat -= SideW() * sa;
+        }
         // trim drift by tilting the nose toward the needed sideways push:
         // only inside the fire window when in range, up to 25 deg while still closing in
         double win = Math.Max(0.4, Math.Atan((AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6) / Math.Max(dist, 1)) * 57.2958);
@@ -1476,7 +1489,7 @@ void Control(double dt)
         Vector3D los = _havePrev ? Vector3D.Cross(_prevAim, aimDir) / dt : Vector3D.Zero;
         if (los.LengthSquared() > 4) los = Vector3D.Normalize(los) * 2;
         _prevAim = aimDir; _havePrev = true;
-        Aim(nose, los, dt);
+        Aim(nose, los, dt, latAll);
         Axial(Vector3D.Dot(accel, _ref.WorldMatrix.Forward) * mass);
         _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(_ref.WorldMatrix.Forward, aimDir), -1, 1)) * 57.2958;
         _fireWinDeg = win;
@@ -1533,13 +1546,39 @@ void VectorFly(Vector3D accel, Vector3D grav, double mass, double aMax, Vector3D
         Axial(0); return;
     }
     Vector3D nd = need / mag;
-    bool useRev = _revThr.Count > 0 && (_fwdThr.Count == 0 || Vector3D.Dot(fwd, nd) < -0.2);
-    Aim(useRev ? -nd : nd, Vector3D.Zero, dt);
-    // burn only the part of the need the nose is lined up with, so we never add sideways error
-    double along = Vector3D.Dot(need, fwd);
-    double cosA = Math.Abs(along) / mag;
-    double gate = MathHelper.Clamp((cosA - 0.85) / 0.15, 0, 1);
-    Axial(along * mass * gate);
+    double cF = Vector3D.Dot(fwd, nd);
+    bool useRev = _revThr.Count > 0 && (_fwdThr.Count == 0 || cF < -0.2);
+    if (_sideThr.Count == 0)
+    {
+        Aim(useRev ? -nd : nd, Vector3D.Zero, dt);
+        // burn only the part of the need the nose is lined up with, so we never add sideways error
+        double along = Vector3D.Dot(need, fwd);
+        double cosA = Math.Abs(along) / mag;
+        double gate = MathHelper.Clamp((cosA - 0.85) / 0.15, 0, 1);
+        Axial(along * mass * gate);
+        return;
+    }
+    // SIDE THRUSTER: turn whichever push (main, reverse, side) needs the smallest turn onto the need (side: nose across it, then roll), with hysteresis
+    double turnAx = Math.Acos(MathHelper.Clamp(useRev ? -cF : cF, -1, 1)), turnS = Math.Asin(Math.Min(1, Math.Abs(cF)));
+    _vfSide = turnS + (_vfSide ? -0.25 : 0.25) < turnAx;
+    Vector3D lat = nd - fwd * cF, across = fwd - nd * cF;      // need across the nose; nose across the need (smallest turn)
+    if (_vfSide) Aim(across.LengthSquared() > 1e-4 ? across : Perp(nd), Vector3D.Zero, dt, nd);
+    else Aim(useRev ? -nd : nd, Vector3D.Zero, dt, lat);
+    // burn the part of the need the main/reverse and side pushes line up with (projections onto two crossed axes never add error)
+    Vector3D sw = SideW();
+    double fa = Vector3D.Dot(need, fwd), sa = Math.Max(0, Vector3D.Dot(need, sw));
+    if (_revThr.Count == 0) fa = Math.Max(0, fa);
+    double g = MathHelper.Clamp(((fwd * fa + sw * sa).Length() / mag - 0.85) / 0.15, 0, 1);
+    Axial(fa * mass * g); Side(sa * mass * g);
+}
+
+Vector3D SideW() { return Vector3D.TransformNormal(_sideL, _ref.WorldMatrix); }
+
+void Side(double force)
+{
+    double m = AxisThrust(_sideThr);
+    float p = force > 0 && m > 0 ? (float)MathHelper.Clamp(force / m * _powerScale, 0.002, 1) : 0f;
+    foreach (var t in _sideThr) t.ThrustOverridePercentage = p;
 }
 
 double AxisThrust(List<IMyThrust> l) { double f = 0; foreach (var t in l) if (t.IsWorking) f += t.MaxEffectiveThrust; return f; }
@@ -1593,7 +1632,7 @@ bool LineClear(Vector3D from, Vector3D dir, double dist)
     return true;
 }
 
-void Aim(Vector3D desiredFwd, Vector3D ffWorld, double dt)
+void Aim(Vector3D desiredFwd, Vector3D ffWorld, double dt, Vector3D rollTo = default(Vector3D))
 {
     if (_gyros.Count == 0 || desiredFwd.LengthSquared() < 1e-9) return;
     MatrixD refM = _ref.WorldMatrix, inv = MatrixD.Transpose(refM);
@@ -1603,6 +1642,11 @@ void Aim(Vector3D desiredFwd, Vector3D ffWorld, double dt)
     Vector3D axis = Vector3D.Cross(f, d);
     if (axis.LengthSquared() < 1e-12) axis = ang > 1 ? Vector3D.Up : Vector3D.Zero; else axis.Normalize();
     Vector3D err = axis * ang;
+    if (_sideThr.Count > 0 && rollTo.LengthSquared() > 1e-4)
+    {   // SIDE THRUSTER: roll (about the nose) so the side push turns onto rollTo
+        Vector3D r = Vector3D.TransformNormal(rollTo, inv), s = _sideL; r.Z = 0; s.Z = 0;
+        if (r.LengthSquared() > 1e-4 * rollTo.LengthSquared()) err.Z += Math.Atan2(s.X * r.Y - s.Y * r.X, s.X * r.X + s.Y * r.Y);
+    }
     Vector3D derr = (err - _prevErr) / dt;
     if (derr.LengthSquared() > 400) derr = Vector3D.Zero;
     _prevErr = err;
@@ -1647,7 +1691,7 @@ void Display()
     }
     else _sb.Append("Tgt  : none (").Append(_contacts.Count).Append(")\n\n");
     _sb.Append("Sens : ").Append(_sensors.Count).Append("  desig ").Append(_turrets.Count + _ctcs.Count).Append('\n');
-    _sb.Append("Thr  : fwd ").Append(_fwdThr.Count).Append(" rev ").Append(_revThr.Count).Append("  bat ").Append((_batFrac * 100).ToString("0")).Append("%\n");
+    _sb.Append("Thr  : fwd ").Append(_fwdThr.Count).Append(" rev ").Append(_revThr.Count).Append(" side ").Append(_sideThr.Count).Append(_sideThr.Count > 0 ? " " + (_sideThr[0].ThrustOverridePercentage * 100).ToString("0") + "%" : "").Append("  bat ").Append((_batFrac * 100).ToString("0")).Append("%\n");
     _sb.Append("Run  : ").Append(_avgMs.ToString("0.000")).Append(" ms\n");
     _sb.Append("Ins  : ").Append(Runtime.CurrentInstructionCount).Append(" / ").Append(Runtime.MaxInstructionCount).Append("  peak ").Append(_peakIns).Append('\n');
     if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
