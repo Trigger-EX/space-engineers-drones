@@ -1183,7 +1183,7 @@ def bay_geometry(printer, rec):
 def hive_ini(bays, max_drones, rack=False, relay=False, launch_tag='STINGER', target_tags='GNAT,HORNET,LONGBOW', extra=None, comments=(), launch=True):
     """Custom Data for HiveMotherAI.cs.  bays = [dict(n, tag, prefix, cap, max_prints, exit, geom)]  (geom = bay_geometry())"""
     L = [f'; {c}' for c in comments]
-    L += ['[Hive Mother]', f'Max Drones (all tags)={max_drones}', f'Rack Mode (keep docked, launch on targets)={"true" if rack else "false"}',
+    L += ['[Hive Mother]', f'Max Drones (all tags)={max_drones}', f'Rack Mode={"true" if rack else "false"}',
          f'Rack Launch Command Tag={launch_tag}', f'Rack Target Tags (enemy sightings that release a drone)={target_tags}',
          f'Relay Turret Targets To All Tags={"true" if relay else "false"}', 'Auto Start=true']
     for k, v in (extra or {}).items(): L.append(f'{k}={v}')
@@ -1192,8 +1192,8 @@ def hive_ini(bays, max_drones, rack=False, relay=False, launch_tag='STINGER', ta
     v3 = lambda v: ','.join(str(int(x)) for x in v)
     for b in bays:
         L += [f'[Bay {b["n"]}]', f'Tag={b["tag"]}', f'Prefix={b["prefix"]}', f'Max Alive={b["cap"]}', f'Max Prints={b.get("max_prints", 0)}']
-        if b.get('exit'): L.append(f'Exit Direction (printer axis the drone leaves along, blank means straight away from the merge block)={b["exit"]}')
         g = b.get('geom')
+        if b.get('exit') and not g: L.append(f'Exit Direction={b["exit"]}')
         if g:
             L += [f'Exit Direction={g["exit_dir"]}', f'Drone Box Min={v3(g["box_min"])}', f'Drone Box Max={v3(g["box_max"])}',
                   f'Drone Cell Count={g["blocks"]}', f'Drone Occupied Cells={g["cells"]}', 'Ignore Cells=' + ';'.join(v3(c) for c in g['ignore'])]

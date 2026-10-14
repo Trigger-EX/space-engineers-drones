@@ -200,7 +200,7 @@ void LoadConfig()
     MyIniParseResult r; if (!_ini.TryParse(Me.CustomData ?? "", out r)) return;
     const string S = "Hive Mother";
     MaxDrones = (int)C(S, "Max Drones (all tags)", MaxDrones);
-    RackMode = C(S, "Rack Mode (keep docked, launch on targets)", RackMode);
+    RackMode = C(S, "Rack Mode", RackMode);
     LaunchTag = C(S, "Rack Launch Command Tag", LaunchTag);
     TargetTags = C(S, "Rack Target Tags (enemy sightings that release a drone)", TargetTags);
     ChargeSeconds = C(S, "Max Charge Seconds", ChargeSeconds);
@@ -218,10 +218,10 @@ void LoadConfig()
     FinishTimeout = C(S, "Finish Timeout Seconds", FinishTimeout);
     FinishFallback = C(S, "Finish Fallback Seconds (used only without Drone Box keys)", FinishFallback);
     ArmSeconds = C(S, "Arm Max Seconds", ArmSeconds);
-    JoinSeconds = Math.Max(30, C(S, "Join Seconds (join is re-sent every 2 s, minimum 30)", JoinSeconds));
+    JoinSeconds = Math.Max(30, C(S, "Join Seconds", JoinSeconds));
     FusedGrace = C(S, "Fused Grace Seconds", FusedGrace);
     LaunchBurst = C(S, "Launch Burst Seconds", LaunchBurst);
-    string fch = C(S, "Fleet Channel (join command for freshly released drones, blank = off)", FleetCh).Trim();
+    string fch = C(S, "Fleet Channel", FleetCh).Trim();
     string fsec = C(S, "Fleet Secret", "").Trim();
     FleetCh = fch == "" ? "" : (fsec == "" ? fch.ToUpperInvariant() : fch.ToUpperInvariant() + "_" + fsec.ToUpperInvariant());
     Relay = C(S, "Relay Turret Targets To All Tags", Relay);
@@ -271,8 +271,7 @@ void GetBlocks()
         {
             bay.Tag = C(sec, "Tag", bay.Tag); bay.Prefix = C(sec, "Prefix", bay.Prefix); bay.Cap = (int)C(sec, "Max Alive", bay.Cap); bay.MaxPrints = (int)C(sec, "Max Prints", bay.MaxPrints);
             bool held = C(sec, "Hold", bay.Held); bay.Held = held;
-            string exl = C(sec, "Exit Direction (printer axis the drone leaves along, blank means straight away from the merge block)", bay.Exit);
-            if (_ini.ContainsKey(sec, "Exit Direction")) { string exs = _ini.Get(sec, "Exit Direction").ToString("").Trim(); if (exs != "") exl = exs; }   // short key = what printer_lib writes
+            string exl = C(sec, "Exit Direction", bay.Exit);   // blank = straight away from the merge block
             bay.Exit = exl;
             bay.SkipFinish = C(sec, "Skip Finish Check", false);
             bay.Burst = C(sec, "Launch Burst Seconds", LaunchBurst);
