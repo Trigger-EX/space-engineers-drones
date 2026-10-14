@@ -5,6 +5,7 @@
 - The tubes carry AI Offensive + AI Flight blocks (`[AI]`); `TubeRamAI` has a SEARCH mode (AI GATE block + camera confirm rays, as the Gnat) so a launched tube finds a target alone.
 - Recessed side thrusters on every tube (push up / down / left / right, nozzles flush with the hull, no reverse): `TubeRamAI` corrects its path with them instead of turning its flank to the target; the nose stays on the target in the terminal phase. Tubes are 0.5 m longer and 0.7 to 1.4 t heavier.
 - **Warhead tubes** `Tube 2x2 W` / `2x4 W` / `3x3 W` / `4x4 W`: a full layer of small warheads right under the front heavy-armour layer (same size and mass); `TubeRamAI` arms them at the last moment (20 m from the hull or 0.3 s out) and fires them on impact or by the nose camera's contact fuse; one-shot. Sim: 2 to 7 times the damage of the plain tubes against a Basilisk.
+- Tube detection as on the Ballista: AI Offensive rescans every 5 s (default 30), 20 s AI windows, long 2.6 km confirm ray from the nose camera, AI re-pick, `1st contact` screen line; `Start Mode (WAIT/HUNT)=HUNT` by default. Sim: first target 1 to 5 s instead of 21 to 80 s.
 - Sim: `CollisionFineProbe` (mixed grid sizes: the finer grid is the probe; small ships no longer slip through a large ship), a `TubeRamAI` ship counts as combat-capable, ad-hoc `ram/` scenarios are cued like `kamikaze`. Zips not rebuilt. Nothing about tube ramming is verified in the game.
 =======
 ### v2.7 (unreleased): Gnat split over two PBs
