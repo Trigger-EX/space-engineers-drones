@@ -4,7 +4,8 @@ Module contract: MODELS = {"<Name>": callable(lite: bool) -> sebp.Blueprint}.  S
 `python3 -I tools/designs/core.py` builds + validates every model and variant and prints one line each.
 
 DOCKING FACES (printers): the clamp face of the small merge block is its local Up (MERGE_CLAMP_FACE_SMALL in _common.py).
-  * Gnat   : merge block hangs one cell BELOW the belly (clamp face = Down). It is the lowest block of the drone.
+  * Gnat   : merge block set FLUSH into the belly (clamp face = Down), inside the 2 x 2 section: the outline is a hard requirement,
+             so no latch may stand off the hull (owner, 2026-10-14).  check_docking's flush mode.
   * Hornet : merge block sits on a 2-cell stalk behind the rear camera, between the main thrusters (clamp face = Backward).
              It sticks out 1 cell beyond the thruster tails. Keep the thrusters OFF while merged.
   * Longbows have no merge block (not printed).
@@ -82,12 +83,14 @@ def hornet(lite=False):
 # ---------------------------------------------------------------------------------------------
 def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
     """Point-and-burn drone: the hull is 2 x 2 cells in section (x 0..1, y 0..1) and long; two axial ion thrusters back-to-back, gyro steering,
-    AI Offensive + Flight blocks on the tail, belly merge latch (the only block below the hull). Only the Left / Right cameras stand off the sides."""
+    AI Offensive + Flight blocks on the tail, merge latch set flush into the belly (inside the section). Only the Left / Right cameras stand off the sides."""
     import pods
     bp = Blueprint(name, "Small", seed=7, legacy_shapes=True)
     bp.add("MyObjectBuilder_RemoteControl", "SmallBlockRemoteControl", (1, 0, -2), name=f"{name} Remote Control", kind="ctrl", color=RED)
     bat(bp, (1, 0, -1), f"{name} Battery")
-    bp.armor(1, 0, 0, RED)
+    # docking latch: the merge block takes the belly cell under the antenna, clamp face Down, flush with the hull (nothing below the 2 x 2 section)
+    if merge: merge_small(bp, (1, 0, 0), "Down", f"{name} Merge", flush=True)
+    else: bp.armor(1, 0, 0, RED)
     g = bp.add("MyObjectBuilder_SmallGatlingGun", "", (0, 0, -3), "Forward", "Up", f"{name} Gatling", GUN, kind="gun")
     bp.keep_clear(g, 6, "muzzle")
     bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro", (1, 1, -2), "Forward", "Up", f"{name} Gyroscope", kind="gyro")
@@ -115,9 +118,6 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
             try: pods.orient_attached(bp, "MyObjectBuilder_SensorBlock", "SmallBlockSensor", cell, name=f"{name} Sensor", kind="sensor"); break
             except AssertionError: pass
         else: raise AssertionError(f"{name}: no cell for the sensor")
-    if merge:
-        # docking latch: one merge block hung under the belly, the lowest block of the drone, clamp face Down
-        merge_small(bp, (1, -1, 0), "Down", f"{name} Merge")
     return finalize(bp)
 
 def gnat(lite=False):

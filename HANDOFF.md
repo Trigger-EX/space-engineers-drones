@@ -235,7 +235,7 @@ Rack mode must send `launch` on the **Stinger** tag, not the drone tag:
   2,000 m/s, ~60 s). Picks the "max accurate" range: the distance where a target dodging after the shot
   still gets hit (assumed dodge acceleration × flight time vs. target radius). Settles before firing, takes a
   fresh pre-shot raycast and checks for friendlies, jinks while reloading. Gravity drop is compensated.
-- **Gnat**: minimal swarm drone (v1.7 had 14 blocks; the redesign adds a sensor and merge block, and the tail now carries AI Offensive + AI Flight [AI] blocks: 21 blocks, 7 cells long; Lite stays 18 blocks without AI). **Two
+- **Gnat**: minimal swarm drone (v1.7 had 14 blocks; the redesign adds a sensor and a merge block set flush into the belly (nothing outside the 2 x 2 section), and the tail now carries AI Offensive + AI Flight [AI] blocks: 21 blocks, 7 cells long; Lite stays 18 blocks without AI). **Two
   axial ion thrusters** (forward + reverse). It moves by turning the whole ship ("point and burn"). Attacks
   in "yo-yo" runs: nose on target, close in, brake, back off and close again along the line of sight.
   Swarm ("hive") over IGC: leaderless slot numbers (sorted grid IDs), formation sphere, attack cone,

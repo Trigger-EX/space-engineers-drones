@@ -68,3 +68,10 @@ Every main design (Hornet, Harrier, Lancer, Wasp, Aegis, Basilisk, Longbow S/L, 
 - Windows: `run.bat -Plan plans\charge_standoff.plan` (a few lines only: `-Only charge-Hornet-300,charge-Hornet-default`). Linux: `./run_plan.sh plans/charge_standoff.plan`.
 - Then `python3 -I tools/charge_standoff_report.py results` prints one table per design (survival, hit rate, damage taken, closest approach, damage dealt) and marks the best standoff. Send that output back.
 - Needs `enemies\Tech Hunter` (shipped) and the blueprints of all ten designs in `out\Blueprints`.
+
+## Open tests, run until you stop it (`run_pending.sh`, `plans/pending.plan`)
+
+Linux: `./run_pending.sh` (options: `--jobs 12`, `--only charge-,retro-pirate-base`). It runs every line of `plans/pending.plan` in rounds: 5 seeds per line (the charge lines 20), then 10, 20, 40, ... Each round only adds new seeds, so whenever you stop, every test has about the same amount of data.
+- Covers: the charge test (all of `plans/charge_standoff.plan`), an on/off check of the 2026-10-14 loose fire window against the Pirate and the Tech Hunter, 1/2/4 Ballistas locking on and fighting the Tech Hunter, and a fresh 1v1 matrix as filler.
+- Stop: **Ctrl+C once**. Finished fights are kept, summaries are rewritten and `SE_results.zip` is packed; send that. Run it again later and it continues at the same round.
+- Progress: `results/pending_progress.txt` (one line per test per round).

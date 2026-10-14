@@ -1283,17 +1283,17 @@ Vector3D FaWant(Vector3D want, Vector3D me)
 // <<< FRIENDLY AVOIDANCE v1.0 <<<
 
 
-// >>> HARASSER LINK v1.0 (shared block of the Ballista Helm: IGC link to the Lookout module of the Spotter PB, docs/design/ballista_harasser_defence.md, tools/blocks_sync.py) >>>
+// >>> HARASSER LINK v1.1 (shared block of the Helm: IGC link to the LOOKOUT module of the Spotter PB (Ballista) or the Staff PB (Warden, Leviathan, Corsair), docs/design/ballista_harasser_defence.md, tools/blocks_sync.py) >>>
 // A small hostile craft that loiters and shoots (an AI drone launched by an enemy warship) is neither a kamikaze nor a wreck. The Spotter PB (same construct, name "[Spotter]...") finds it and
 // picks a velocity bias; this block applies it, so the Helm stays the only writer of thrusters and gyros. Key "HDEF<this PB's EntityId>", TransmissionDistance.CurrentConstruct (never leaves the ship).
-// The Helm sends (only while a "[Spotter]" PB is on the construct):
+// The Helm sends (only while a "[Spotter]" or "[Staff]" PB is on the construct; v1.1 added [Staff], where the Lookout runs when its Custom Data enables it):
 //   .H2A  MyTuple<int flags, Vector3D hitDir, double hitAge, double standoff, long tgtId, Vector3D tgtPos>   every 10 ticks: flags bit1 under fire, bit4 MANUAL, bit5 target radius >= 25,
 //         bits 8-11 link version (1), bits 16-30 the hit counter; hitDir is zero when no direction is known
 //   .HTK  MyTuple<long id, Vector3D pos, Vector3D vel, float radius, float age, int flags>   every 20 ticks, up to 4 contacts of radius <= 15 m seen in the last second
 //         (flags bit0 = incoming kamikaze: that stays the KAMIKAZE DEFENCE's job)
 // and listens on .A2H  MyTuple<Vector3D bias, Vector3D up, int flags, float ttl, long id1, long id2>   flags bit0 bias valid, bit1 drop the random jink, bit2 up request valid, bit3 a harasser
 //   is tracked (else the bias answers fire from an unseen bearing); id1, id2 = the harassers (the Helm does not make one of them its target while a larger one is about, and does not copy its velocity)
-// Everything times out after ttl (0.6 s): a silent or missing Spotter changes nothing, and ships without a "[Spotter]" PB are unaffected.
+// Everything times out after ttl (0.6 s): a silent or missing Lookout changes nothing, and ships without a "[Spotter]" or "[Staff]" PB are unaffected.
 // Script hooks: HdTick() after HlkTick(); "+ HdScore(t)" in the target score; tv zero when HdHar(_tgt.Id); "&& !HdJ()" on the jink term; want = HdWant(want, cap) right before the KzWant line;
 // HdUp() instead of Vector3D.Zero as the up of the two Aim() calls of Control() outside gravity; _sb.Append(HdStatus()) after KzStatus().
 // Uses from the script: _contacts, _now, _tick, _hitDir, _hitDirT, _hits, UnderFire, Man, _tgt, Standoff, FleetV(), KzLive(), Track, Me, GridTerminalSystem, IGC.
@@ -1313,7 +1313,7 @@ void HdTick()
     if (_tick % 300 == 1)
     {
         var l = new List<IMyProgrammableBlock>();
-        GridTerminalSystem.GetBlocksOfType(l, b => b != Me && b.IsSameConstructAs(Me) && b.CustomName.StartsWith("[Spotter]", StringComparison.OrdinalIgnoreCase));
+        GridTerminalSystem.GetBlocksOfType(l, b => b != Me && b.IsSameConstructAs(Me) && (b.CustomName.StartsWith("[Spotter]", StringComparison.OrdinalIgnoreCase) || b.CustomName.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase)));
         _hdSp = l.Count > 0;
     }
     if (!_hdSp) return;
@@ -1349,7 +1349,7 @@ Vector3D HdWant(Vector3D want, double cap)
     return want + _hdB;
 }
 string HdStatus() { return HdOn ? ((_hdF & 8) != 0 ? "!! HARASSER (evading)\n" : "!! FIRE FROM AN UNSEEN BEARING (evading)\n") : ""; }
-// <<< HARASSER LINK v1.0 <<<
+// <<< HARASSER LINK v1.1 <<<
 
 public Program()
 {

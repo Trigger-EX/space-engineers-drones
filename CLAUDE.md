@@ -9,6 +9,7 @@
 Space Engineers combat drones, printer ships, in-game C# scripts and a simulation engine. Read `HANDOFF.md` for the full project brief, status and lessons learned.
 - Never use DLC blocks in blueprints (the block index `defs.json` records each block's DLC).
 - Blueprint rule: delete old blueprint folders before copying new ones in-game (stale `.sbcB5` cache).
+- **Outline rule (owner, durable): never add a block that stands outside a drone's set outline**, above all a merge latch on a stalk or on the side. Drones with a fixed section (Gnat 2 x 2, Tube W x H, any drone whose spec gives a section or size) keep every block inside it. A drone that must dock gets its merge block set flush into the hull (`merge_small(..., flush=True)`, see the Gnat in `tools/designs/core.py`); if no hull cell can take it, ask the owner instead of growing the outline.
 
 ## Script size: there is no practical limit anymore (read before trimming or skipping a feature)
 - The 100,000-character cap is **per programmable block (PB)**, and a ship may carry any number of PBs. Wasp Split (`scripts/WaspFlightAI.cs` + `WaspStaffAI.cs`, `docs/design/wasp_split.md`, findings in `docs/audit/multi_pb_feasibility.md`) works in the real game: owner-tested, two PBs on one grid linked by IGC `TransmissionDistance.CurrentConstruct`.

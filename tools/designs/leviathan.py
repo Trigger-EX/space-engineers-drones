@@ -453,7 +453,8 @@ def _bridge(S, full):
     cd = f'[Ship]\nTag={TAG}\n'
     helm_cd = cd + HELM_DATA
     staff_cd = (cd + '\n[Staff]\nBlock Prefix=[SH]\nCockpit Surface=1\nHelm HUD Surface=0\nWing Surface=2\nTurret Target Group=Weapons\nTurret Target Names=Artillery,Assault\n\n[Wing]\nTypes=HORNET,WASP,HARRIER,LANCER,AEGIS,WATCHER\n'
-                '\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB 1\n\n[Hangar 2]\nGroup=[Hangar 2]\nPod=[Pod] Pod PB 2\n')
+                '\n[Hangar 1]\nGroup=[Hangar 1]\nPod=[Pod] Pod PB 1\n\n[Hangar 2]\nGroup=[Hangar 2]\nPod=[Pod] Pod PB 2\n'
+                '\n[Harasser Defence]\nEnabled=true\nMax Fire Range (m)=1700\nJink Speed (m/s)=10\nAway Speed (m/s)=15\n')   # LOOKOUT (harasser defence) runs in the Staff PB: docs/design/ballista_harasser_defence.md section 12
     S.cockpit = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (0, 13, 53), 'Forward', 'Up', nm('Bridge Cockpit'), toward='Down', kind='cockpit', settings={'IsMainCockpit': True})
     S.gunner = S.add('cockpit', 'MyObjectBuilder_Cockpit', 'LargeBlockCockpitSeat', (2, 13, 54), 'Forward', 'Up', nm('Gunnery Seat'), toward='Down', kind='cockpit')
     S.add('rc', 'MyObjectBuilder_RemoteControl', 'LargeBlockRemoteControl', (-2, 13, 54), 'Forward', 'Up', nm('Remote Control'), toward='Down', kind='ctrl')

@@ -1,0 +1,28 @@
+# Open sim tests (2026-10-14), run in rounds by ./run_pending.sh until you stop it (Ctrl+C or Enter):
+# round 1 runs every line with N=5 seeds, round 2 with N=10, then 20, 40, ... ({N*4} = four times N). Each round only adds new seeds
+# (--resume keeps every finished fight), so whenever you stop, every test has about the same amount of data.
+# Format as in the other plans: name | SimHost arguments   ({OUT} = results/<name>); "@plan FILE {SEEDS}" pulls in every line of FILE with
+# its "--seeds <n>" replaced by {SEEDS}.
+#
+# 1. Charge test (handoff "Next step"): every main design alone vs the Tech Hunter rushing at it at 100 m/s, per standoff.
+#    Same result folders as plans/charge_standoff.plan, so lines already run there are kept. Report: python3 -I tools/charge_standoff_report.py results
+@plan plans/charge_standoff.plan {N*4}
+#
+# 2. Retrofit of 2026-10-14 (docs/retrofit.md "Applied"): only checked on 27 pirate scenarios x 10 seeds. A/B by switching each
+#    change off in Custom Data (the Pirate ship and the Tech Hunter run no scripts, so only the drones change):
+#    base = shipped scripts; noloose = "Loose Fire Beyond Standoff=false" on the 7 gatling/rocket scripts.
+#    (The 5 s AI search interval is not tested: the sim stores UpdateTargetInterval but its AI block ignores it, a 1-seed check gave identical fights.)
+retro-pirate-base | run --kind pirate --seeds {N} --resume --out {OUT}
+retro-pirate-noloose | run --kind pirate --seeds {N} --resume --custom-data "[Hornet]\nLoose Fire Beyond Standoff=false\n[Lancer]\nLoose Fire Beyond Standoff=false\n[Harrier]\nLoose Fire Beyond Standoff=false\n[Aegis]\nLoose Fire Beyond Standoff=false\n[Basilisk]\nLoose Fire Beyond Standoff=false\n[Wasp]\nLoose Fire Beyond Standoff=false\n[Mantis]\nLoose Fire Beyond Standoff=false" --out {OUT}
+retro-th-base | run --kind enemy --enemies enemies --enemy-counts 1,3,6 --seeds {N} --resume --out {OUT}
+retro-th-noloose | run --kind enemy --enemies enemies --enemy-counts 1,3,6 --seeds {N} --resume --custom-data "[Hornet]\nLoose Fire Beyond Standoff=false\n[Lancer]\nLoose Fire Beyond Standoff=false\n[Harrier]\nLoose Fire Beyond Standoff=false\n[Aegis]\nLoose Fire Beyond Standoff=false\n[Basilisk]\nLoose Fire Beyond Standoff=false\n[Wasp]\nLoose Fire Beyond Standoff=false\n[Mantis]\nLoose Fire Beyond Standoff=false" --out {OUT}
+#
+# 3. Ballista wing lock-on (open question; the wing-spacing fix was checked on 3 seeds only): 1, 2 and 4 Ballistas vs a Tech Hunter
+#    holding at 2.2 km, and vs one flown like the pirate. Shots, hits and damage dealt per ship are in runs.jsonl.
+ballista-wing-hold | run --kind enemy --enemies enemies --enemy-fleets "Ballista;2xBallista;4xBallista" --enemy-brain hold --start-distance 2200:2200 --cap-seconds 120 --seeds {N} --resume --out {OUT}
+ballista-wing-pirate | run --kind enemy --enemies enemies --enemy-fleets "Ballista;2xBallista;4xBallista" --cap-seconds 300 --seeds {N} --resume --out {OUT}
+#
+# (Kamikaze defence is not in this plan: every kamikaze fight ends at 5 s in the current sim, the unarmed Stingers count as not combat capable.)
+#
+# 4. Filler: fresh 1v1 matrix with today's scripts (new baseline after the retrofit and the PB splits; also catches script exceptions).
+matrix-1v1 | run --kind 1v1 --seeds {N} --resume --out {OUT}

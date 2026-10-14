@@ -24,6 +24,17 @@ class GnatSplit(unittest.TestCase):
         n = len(bp.blocks); C.add_support_pbs(bp)
         self.assertEqual(len(bp.blocks), n, 'no [Thrust] PB (point-and-burn), no second Staff')
 
+    def test_outline_and_flush_latch(self):
+        """owner rule: nothing may stand outside the 2 x 2 section (only the Left / Right side cameras); the merge block is set flush into the belly"""
+        bp = designs.load()[0]['core'].MODELS['Gnat'](False)
+        for c, b in bp.occupancy().items():
+            if b['kind'] == 'cam' and b['fwd'] in ('Left', 'Right'): continue
+            self.assertTrue(0 <= c[0] <= 1 and 0 <= c[1] <= 1, f'{b["name"]} at {c} is outside the 2 x 2 section')
+        m = [b for b in bp.blocks if b['kind'] == 'merge']
+        self.assertEqual(len(m), 1)
+        self.assertTrue(m[0].get('flush'))
+        self.assertEqual(C.check_docking(bp, m[0]), 'Down')
+
     def test_what_moved(self):
         f, s = src('GnatSwarmAI.cs'), src('GnatStaffAI.cs')
         for gone in ('FleetLoad(', 'FleetPump(', 'FleetTgtL', '_flChan', 'LaunchStep(', 'LaunchCmd(', '_lnS'): self.assertNotIn(gone, f, gone)
