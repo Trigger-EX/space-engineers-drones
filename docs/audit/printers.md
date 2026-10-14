@@ -145,3 +145,11 @@ No simulation was run: the sim does not model any of the disputed mechanics (pri
 * **P6 projected PB and battery.** After a weld: PB Edit window shows the code; PB runs without a manual Recompile; owner shown; battery charge of the welded battery (full or 30 %?). (T5/T6 plus printers-09.)
 * **P7 compile.** Paste HiveMotherAI v2.2 onto a PB: it must compile (printers-10); report the first "ERROR ..." text if any.
 * **T1 merge face** (already in the list) stays as the first test for the rack/hangar use of merge blocks.
+
+## 6. Game test 2026-10-14 (Sprue Test, owner's world)
+
+* **printers-01 (fused): confirmed for the PB.** The PB welded from a projection reports the same grid id as the printer's PB; the neck armour stays when the projector is switched off (real blocks). The merge release cannot separate such a drone.
+* **printers-04 (projected PB): confirmed.** The welded PB compiled by itself about 10 s after the weld started, kept its Custom Data, runs, and is owned by the printer's owner (not the blueprint's). `ApplyAction("Recompile")` is indeed unnecessary.
+* **New: `GetCubeBlock` is null for plain armour.** 12 of 12 armour cells read null while 3 of 3 non-armour payload blocks were found. HiveMotherAI's FINISH scan and CradleBayAI's lane check use `GetCubeBlock` over cells that are mostly armour, so they would not see them. They need `CubeExists` as a second opinion (not done yet). `RemainingBlocks` reached 0 while the armour was still being welded or already built; do not read it as "armour built".
+* printers-09 (welded battery charge): inconclusive (0.05/0.05 seen 76 s after the weld).
+* Still untested: the grinder cut (P3), and the cycle 2 re-weld.
