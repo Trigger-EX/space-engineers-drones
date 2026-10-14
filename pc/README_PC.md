@@ -61,3 +61,10 @@ a full-ammo-range turret robustness run (turrets as if a pilot target-locked: ar
 - `results/search/leaderboard.csv`: every fleet tried, ranked (rewritten every 30 s and when you stop); the top 10 are printed at the end.
 - Options: `--max-drones 6`, `--min-drones 4`, `--models "Hornet,Gnat,Longbow L,Basilisk"`, `--target "Other Ship"`, `--enemy-brain hold`,
   `--cap-seconds 300`, `--jobs 12`. Running it again continues the same search (delete `results/search` to start over).
+
+## Charge test: standoff vs a Tech Hunter flying straight at the drone (`plans/charge_standoff.plan`)
+
+Every main design (Hornet, Harrier, Lancer, Wasp, Aegis, Basilisk, Longbow S/L, Mantis, Ballista) alone against the Tech Hunter rushing at it at 100 m/s from 3,000 m, once per standoff from 200 m up to the longest range its weapon is usable, plus the shipped default (101 lines x 20 seeds; regenerate with `python3 -I tools/gen_charge_plan.py --seeds N`).
+- Windows: `run.bat -Plan plans\charge_standoff.plan` (a few lines only: `-Only charge-Hornet-300,charge-Hornet-default`). Linux: `./run_plan.sh plans/charge_standoff.plan`.
+- Then `python3 -I tools/charge_standoff_report.py results` prints one table per design (survival, hit rate, damage taken, closest approach, damage dealt) and marks the best standoff. Send that output back.
+- Needs `enemies\Tech Hunter` (shipped) and the blueprints of all ten designs in `out\Blueprints`.
