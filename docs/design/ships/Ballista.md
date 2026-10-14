@@ -58,6 +58,10 @@ Owner's report: the Ballista did not notice enemies until they were well inside 
 * **The AI Offensive block is the detector** (2,500 m, all round) but its default search interval is 30 s [wiki], longer than the 6 s window. Changes (unverified in game): the Helm sets `UpdateTargetInterval` to 5 s on its AI blocks (`[Shrike] AI Search Interval (s)=5`, 0 = leave alone) and the Ballista's Custom Data gives the AI 20 s windows (`[AI Gate] AI Window (s)=20`, `Script Search Window (s)=5`).
 * If it is still blind in game: send `ai off` is not the fix (it removes the best detector); instead lock it by hand (cockpit/Remote Control lock + `assist`) or tell me what the AI Offensive block's terminal shows (found enemy, interval).
 
+### 3d. Firing while still closing (post-v2.7, not run in sim or game)
+
+Owner report: the Ballista chases a target that keeps its range and does not fire on the way in. The Helm never gated fire on standoff (the rails shoot out to `MaxFireRange` = 2,000 m; the standoff only steers the thrust), so the suspect is the aim window: with a hull-point aim (BREACH) `BatWin` shrinks to atan(3 m / range) with a floor of 0.3 degrees, which a heavy ship that is still turning and thrusting rarely holds at 1.8 km. New key `[Battery] Loose Fire Beyond Standoff` (default true): beyond `Standoff + 100` m the window is the whole silhouette (radius x 0.6), inside it the tight hull-point window applies again. Beyond 2,000 m nothing can fire (slug range). If it still holds fire in game, send the Helm screen `_err` / aim-error line.
+
 ### 3c. Standoff vs a 100 m/s charge (post-v2.7, sim)
 
 Tech Hunter flown straight at the Ballista at 100 m/s (`--pirate-rush true --pirate-cruise-speed 100`) from 3 km, 8 seeds per standoff, `tools/ballista_charge_sweep.py`. The sim Helm only notices the target at about 1.8 km, then flees at the 100 m/s cap (same as the charger), so the gap stops shrinking.

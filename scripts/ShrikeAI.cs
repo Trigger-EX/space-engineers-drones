@@ -930,6 +930,7 @@ void BatCfg()
     string p = Cfg(S, "Primary (AUTO/B1..B4)", "AUTO").Trim().ToUpperInvariant();
     _batFix = p.Length == 2 && p[0] == 'B' && p[1] >= '1' && p[1] <= '4' ? p[1] - '0' : 0;
     BatSo = Cfg(S, "Standoff By Weapons", BatSo);
+    LooseFar = Cfg(S, "Loose Fire Beyond Standoff", LooseFar);
     BatTur = Cfg(S, "Turret Only (AUTO/ON/OFF)", BatTur).Trim().ToUpperInvariant();
     BatCal = Cfg(S, "Auto Max Turn (AUTO/ON/OFF)", BatCal).Trim().ToUpperInvariant();
     BatSal = Cfg(S, "Salvo (AUTO/ON/OFF)", BatSal).Trim().ToUpperInvariant();
@@ -1026,7 +1027,8 @@ void BatStand()
 }
 
 // silhouette window (deg) of the tracked target at this range: the fire window of every battery
-double BatWin(double dist) { double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6; return Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol; }
+bool LooseFar = true;   // [Battery] Loose Fire Beyond Standoff: while still closing (range > Standoff + 100) the window is the whole silhouette, not the 3 m hull point
+double BatWin(double dist) { double aimR = AimActive(_tgt) && !(LooseFar && dist > Standoff + 100) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6; return Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol; }
 bool BatTO() { return BatTur == "ON" || (BatTur == "AUTO" && _turrets.Count > 0); }
 bool PdTgt(Track t) { return t != null && (KzLive(t.Id) || t.Radius <= PdRad); }
 bool BatOk(Bat b, double d)
