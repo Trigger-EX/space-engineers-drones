@@ -114,6 +114,7 @@ bool CloseScan = true;
 double ScanRange = 2000;     // auto-scan raycast distance
 double ScanCone = 30;        // auto-scan half-angle (deg)
 double AimKp = 2.5, AimKd = 0.8, MaxTurn = 1.2; // gyro tuning (rad/s): the big gyro must brake a 100 t ship
+double MinFireWinDeg = 0.1;  // floor of the fire window (deg), was 0.3
 double FireTol = 1.0;        // multiplier on silhouette fire window
 double FireTolUnlimited = 2.0;   // extra multiplier while the rocket stock is unknown (creative / empty launchers): a rocket costs nothing, a missed window costs seconds (sim: 1v1 hybrid 57 -> 61 %)
 double LeadScale = 1.0;      // scales the lead offset if shots land consistently ahead/behind
@@ -1342,6 +1343,7 @@ void LoadConfig()
     SepTakeover = Cfg(S, "Take Over From AI When A Wingmate Is Closer Than (m; 0 off)", SepTakeover);
     SepHold = Cfg(S, "Wingmate Separation Hold (s)", SepHold);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
+    MinFireWinDeg = Cfg(S, "Minimum Fire Window (deg)", MinFireWinDeg);
     FireTolUnlimited = Cfg(S, "Fire Window Multiplier (unlimited rockets)", FireTolUnlimited);
     LeadScale = Cfg(S, "Lead Scale (1: as calculated)", LeadScale);
     UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
@@ -1796,9 +1798,7 @@ void Control(double dt)
     bool haveAim = false;
     if (_tgt != null && _mode != Mode.RTB)   // (no guns = scout: still tracks with the nose cameras)
     {
-        Vector3D gunPos = Vector3D.Zero; int n = 0;
-        foreach (var g in _guns) if (g.IsFunctional) { gunPos += g.GetPosition(); n++; }
-        gunPos = n > 0 ? gunPos / n : me;
+        Vector3D gunPos = NextGunPos(me);   // each rocket leaves its OWN launcher: aim from the one that fires next, not from the average
         haveAim = Lead(_tgt, gunPos, myVel, out aimPoint, out aimDir);
         if (haveAim)
         {
@@ -1814,7 +1814,7 @@ void Control(double dt)
             double dist = Vector3D.Distance(aimPoint, gunPos);
             _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gunFwd, aimDir), -1, 1)) * 57.2958;
             double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;   // aiming at a hull point needs a tighter window
-            _fireWinDeg = Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol * (_rockets < 0 ? FireTolUnlimited : 1.0);
+            _fireWinDeg = Math.Max(MinFireWinDeg, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol * (_rockets < 0 ? FireTolUnlimited : 1.0);
             _gunPos = gunPos; _gunFwd = gunFwd; _impact = aimPoint; _impactDist = dist;
             shoot = FireGate(dist, aimPoint, gunPos);
         }
@@ -1974,6 +1974,19 @@ Vector3D _gunPos, _gunFwd, _impact; double _impactDist;
 string _gateWhy = "";
 double _salvoPauseUntil = 0, _lastShot = -99; int _salvoCount = 0;
 Dictionary<long, double> _nextShot = new Dictionary<long, double>();
+// Position of the launcher FireRockets will use next (first in list among those ready soonest), or the fallback.
+Vector3D NextGunPos(Vector3D fallback)
+{
+    Vector3D best = fallback; double bt = double.MaxValue;
+    foreach (var g in _guns)
+    {
+        if (!g.IsFunctional) continue;
+        double nx; if (!_nextShot.TryGetValue(g.EntityId, out nx)) nx = 0;
+        nx = Math.Max(_now, Math.Max(nx, Math.Max(_lastShot + RippleGap, _salvoPauseUntil)));
+        if (nx < bt - 1e-6) { bt = nx; best = g.GetPosition(); }
+    }
+    return best;
+}
 
 // All the reasons NOT to launch. Rockets can't be recalled, so be strict.
 bool FireGate(double dist, Vector3D impact, Vector3D gunPos)

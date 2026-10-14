@@ -52,6 +52,8 @@ double ScanRange = 1200;     // auto-scan raycast distance
 double ScanCone = 35;        // auto-scan half-angle (deg)
 double AimKp = 6, AimKd = 0.35, MaxTurn = 5; // gyro tuning (rad/s)
 double FireTol = 1.0;        // multiplier on silhouette fire window
+double MinFireWinDeg = 0.1;  // floor of the fire window (deg). Was 0.3 = 3 m at 600 m, wider than a small drone: sim, Gnat hit rate 30 -> 43 % with the aim taken from the launcher that fires next
+double MaxSideFireSpeed = 0; // 0 = off. Else: no launch while our speed ACROSS the barrel is above this (m/s): insurance if the rocket velocity model is wrong (sim: 0 -> 15 % hits under the wrong model)
 double LeadScale = 1.0;      // scales the lead offset if shots land consistently ahead/behind
 bool UseTargetAccel = true;
 bool SplitFocus = true;
@@ -968,6 +970,8 @@ void LoadConfig()
     SepRange = Cfg(S, "Wingmate Separation Range", SepRange);
     SepSpeed = Cfg(S, "Wingmate Separation Speed", SepSpeed);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
+    MinFireWinDeg = Cfg(S, "Minimum Fire Window (deg)", MinFireWinDeg);
+    MaxSideFireSpeed = Cfg(S, "Max Sideways Speed To Fire (0 off)", MaxSideFireSpeed);
     LeadScale = Cfg(S, "Lead Scale (1: as calculated)", LeadScale);
     UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
     SplitFocus = Cfg(S, "Split Targets Across Hive (false: focus fire)", SplitFocus);
@@ -1411,9 +1415,7 @@ void Control(double dt)
     bool haveAim = false;
     if (_tgt != null && _mode != Mode.RTB)   // (no guns = scout: still tracks with the nose cameras)
     {
-        Vector3D gunPos = Vector3D.Zero; int n = 0;
-        foreach (var g in _guns) if (g.IsFunctional) { gunPos += g.GetPosition(); n++; }
-        gunPos = n > 0 ? gunPos / n : me;
+        Vector3D gunPos = NextGunPos(me);   // each rocket leaves its OWN launcher (about 1.4 m off the ship axis): aim from the one that fires next, not from the average
         haveAim = Lead(_tgt, gunPos, myVel, out aimPoint, out aimDir);
         if (haveAim)
         {
@@ -1430,7 +1432,7 @@ void Control(double dt)
             _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gunFwd, aimDir), -1, 1)) * 57.2958;
             double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;   // aiming at a hull point needs a tighter window
             aimR = Math.Min(aimR, Math.Max(_tgt.Raw * 0.8, 0.5));   // a rocket must HIT a block to detonate: a wreck of one or two blocks is only ~0.5 m wide
-            _fireWinDeg = Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol;
+            _fireWinDeg = Math.Max(MinFireWinDeg, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol;
             _gunPos = gunPos; _gunFwd = gunFwd; _impact = aimPoint; _impactDist = dist;
             shoot = FireGate(dist, aimPoint, gunPos);
         }
@@ -1589,6 +1591,19 @@ bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, out Vector3D point, ou
 Vector3D _gunPos, _gunFwd, _impact; double _impactDist;
 string _gateWhy = "";
 double _salvoPauseUntil = 0, _lastShot = -99; int _salvoCount = 0;
+// Position of the launcher FireRockets will use next (first in list among those ready soonest), or the fallback.
+Vector3D NextGunPos(Vector3D fallback)
+{
+    Vector3D best = fallback; double bt = double.MaxValue;
+    foreach (var g in _guns)
+    {
+        if (!g.IsFunctional) continue;
+        double nx; if (!_nextShot.TryGetValue(g.EntityId, out nx)) nx = 0;
+        nx = Math.Max(_now, Math.Max(nx, Math.Max(_lastShot + RippleGap, _salvoPauseUntil)));
+        if (nx < bt - 1e-6) { bt = nx; best = g.GetPosition(); }
+    }
+    return best;
+}
 Dictionary<long, double> _nextShot = new Dictionary<long, double>();
 
 // All the reasons NOT to launch. Rockets can't be recalled, so be strict.
@@ -1601,6 +1616,7 @@ bool FireGate(double dist, Vector3D impact, Vector3D gunPos)
     if (dist > FireRange || _leadT > (_rockets >= 0 ? MaxLeadTime : MaxLeadTimeU)) { _gateWhy = "out of range"; return false; }
     if (dist < SafeRange) { _gateWhy = "too close (blast)"; return false; }
     if (_aimErrDeg >= _fireWinDeg) { _gateWhy = "not on target"; return false; }
+    if (MaxSideFireSpeed > 0) { Vector3D v = _rc.GetShipVelocities().LinearVelocity; double sd = (v - Vector3D.Dot(v, _gunFwd) * _gunFwd).Length(); if (sd > MaxSideFireSpeed) { _gateWhy = "moving sideways " + sd.ToString("0") + " m/s"; return false; } }
     // manoeuvring we cannot predict (average acceleration vs average size), integrated over the flight
     double unc = 0.5 * Math.Max(0, _tgt.AccMag - _tgt.EA().Length()) * _leadT * _leadT;
     if (unc > Math.Max(_tgt.Radius * JinkGateK, JinkGateMin)) { _gateWhy = "target jinking: miss " + unc.ToString("0") + " m"; return false; }
