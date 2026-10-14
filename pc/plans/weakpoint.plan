@@ -1,0 +1,16 @@
+# Hive weakpoint relay A/B (docs/design/hive_weakpoint.md): the wing shares one breach point over the FLEET channel (on) or every drone
+# keeps its own (off). Enemy: the 17,457-block Tech Hunter 90k (enemies_th90k/), flown like the pirate (closes in, circles), 10-minute cap.
+# Run in rounds so any stop leaves every line with the same amount of data (each round only adds seeds, --resume):
+#   ./run_pending.sh plans/weakpoint.plan --start-n 20          (round sizes 20, 40, 80, ...; add --jobs N to limit threads)
+# Report: python3 -I tools/th_report.py on=results/wp-game-on off=results/wp-game-off   (and wp-sim-on / wp-sim-off)
+#
+# "game" lines: --turret-ai-block-extends-range false = the game's 800 m turret limit (the drones' AI block does not lift the [Seeker]
+# turret to 2 km), the owner's premise. "sim" lines: the sim default (AI block lifts it to ammo range), seeker fleets only.
+# Off = "Use Fleet Weakpoints=false" and "Share Weakpoints=false" in the Flight script section ([Longbow] covers Longbow S and L).
+wp-game-on | run --kind enemy --enemies enemies_th90k --enemy-fleets "8xLongbow L;4xLongbow S+4xLongbow L;Longbow L Seeker+7xLongbow L;10xLongbow L Seeker;2xBasilisk Seeker+8xLongbow L;2xBasilisk Seeker+4xLongbow S+4xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N} --resume --out {OUT}
+wp-game-off | run --kind enemy --enemies enemies_th90k --enemy-fleets "8xLongbow L;4xLongbow S+4xLongbow L;Longbow L Seeker+7xLongbow L;10xLongbow L Seeker;2xBasilisk Seeker+8xLongbow L;2xBasilisk Seeker+4xLongbow S+4xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N} --resume --custom-data "[Longbow]\nUse Fleet Weakpoints=false\nShare Weakpoints=false\n[Basilisk]\nUse Fleet Weakpoints=false\nShare Weakpoints=false" --out {OUT}
+wp-sim-on | run --kind enemy --enemies enemies_th90k --enemy-fleets "Longbow L Seeker+7xLongbow L;10xLongbow L Seeker;2xBasilisk Seeker+8xLongbow L" --cap-seconds 600 --seeds {N} --resume --out {OUT}
+wp-sim-off | run --kind enemy --enemies enemies_th90k --enemy-fleets "Longbow L Seeker+7xLongbow L;10xLongbow L Seeker;2xBasilisk Seeker+8xLongbow L" --cap-seconds 600 --seeds {N} --resume --custom-data "[Longbow]\nUse Fleet Weakpoints=false\nShare Weakpoints=false\n[Basilisk]\nUse Fleet Weakpoints=false\nShare Weakpoints=false" --out {OUT}
+# Small fleets (cheap, many seeds): do the relay and the 800 m limit change a 3-drone fight?
+wp-small-on | run --kind enemy --enemies enemies_th90k --enemy-fleets "3xLongbow L;3xLongbow L Seeker;Basilisk Seeker+2xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N*2} --resume --out {OUT}
+wp-small-off | run --kind enemy --enemies enemies_th90k --enemy-fleets "3xLongbow L;3xLongbow L Seeker;Basilisk Seeker+2xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N*2} --resume --custom-data "[Longbow]\nUse Fleet Weakpoints=false\nShare Weakpoints=false\n[Basilisk]\nUse Fleet Weakpoints=false\nShare Weakpoints=false" --out {OUT}
