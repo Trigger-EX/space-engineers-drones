@@ -99,8 +99,8 @@ States: IDLE, WELD (`PLACED`, then `BUILT in Ns ... -> Q1 FUSED`), CHARGE, CUT /
 |---|---|
 | Paste: Sprue Test / No Grinder | `Sprue Test` pasted and ran (the guessed grinder XML was accepted; the grinder block is in the terminal list) |
 | Q1 fused | payload PB on the printer grid (both PBs report the same grid id; `onprinter=1`); neck armour stays with the projector off (real blocks, not the hologram) |
-| Q2b grinder on own grid (cut) | |
-| Q2 hand N2 + CUT2 | |
+| Q2b grinder on own grid (cut) | NO: 60 s of grinder time, neck `xxxxxxx -> xxxxxxx` (D3) |
+| Q2 hand N2 + CUT2 | SPLIT after the hand cut (payload on its own grid, printer kept its grid); CUT2 ground the other-grid neck (E1a): reach and geometry fine |
 | Q2c guards / payload damage | |
 | Q3 program / heartbeat / Custom Data | YES: compiled by itself about 10 s after the weld started (`COMPILED boot 1`), heartbeat rising, `cd=ok`, no Recompile |
 | Q3 owner (raw ids) | blueprint owner ...915, welded PB owner ...919 = the printer owner (the welder's owner replaces the blueprint's) |
@@ -115,7 +115,8 @@ States: IDLE, WELD (`PLACED`, then `BUILT in Ns ... -> Q1 FUSED`), CHARGE, CUT /
 3. **Plain armour cannot be read by `GetCubeBlock`** (12 of 12 armour cells read null, 0 of 7 non-armour cells did). The first script version needed the armour cells, so it never reached BUILT, kept the welders running and its `cut` checks were blind; the current script reads armour with `CubeExists` and falls back as described in section 5. The jump from "neck not found" to "neck is real" came from switching the projector off (blocks stayed) and the guards line (27/31 = exactly the 4 armour guards).
 4. **Consequences outside this rig (not fixed here):** the `HiveMotherAI.cs` FINISH scan (counts unique blocks by `GetCubeBlock` over the drone box) and the lane check of `CradleBayAI.cs` (`GetCubeBlock != null`, so armour in the lane is invisible) assume armour is readable; both need `CubeExists` as a second opinion before they can be trusted in the game. The flown drones' damage scan skips cells with `GetCubeBlock == null`, so it never counted armour.
 5. **Second run (clean paste of v3, 2026-10-14): armour is readable with `CubeExists`.** The neck map reads `xxxxxxx` at cut start: `GetCubeBlock` is null and `CubeExists` is true for all 7 armour cells. The weld ended by itself (BUILT after the settle timer, welders off) and `charge` ran.
-6. Still open: the cut itself (Q2: the owner suspects the grinder's reach, see the control in section 6), the push and the second cycle (Q4).
+6. **Third run (`Sprue Test Close`, 2026-10-14): D3 confirmed, then E1a.** The first `cut` (grinder working, tip one block from the fused neck) left the neck unchanged for the whole 60 s window (`neck xxxxxxx -> xxxxxxx`): **a ship grinder does not grind blocks of its own grid**, as Keen's old source says (`MyShipToolBase.CanInteractWithSelf` false, only the welder overrides it). After the owner hand-ground N2 the log shows `SPLIT c1 in state HAND: printer kept its grid yes` and the payload PB on its own grid (`my grid 902146 (a new grid)`); the second `cut` (CUT2, `neck ..xxxxx`) then ground the neck on that other grid (the owner's photo: the middle cells reduced to wireframe). So the grinder reaches the neck from the Close position, and **option A as written (grinder on the printer grid) is dead**. The sphere radius (1.3 m in the block data) and the layout are fine; the grinder must be on a DIFFERENT grid than the neck (A': a rotor head, `Sprue Test Head`).
+7. Still open: the end of CUT2, the push and leaving, the second weld (Q4), and A'.
 
 ## 10. Sprue Test Close (grinder pointing at the neck)
 

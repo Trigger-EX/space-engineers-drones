@@ -253,6 +253,7 @@ void StartCut(bool force)
 {
     var gr = Grinder();
     if (gr == null) { _auto = false; Log("cut refused: no grinder on this grid (No Grinder fallback: place one first)"); return; }
+    if (!_split && _st == "WELD" && _tBu < 0 && !force) { _auto = false; Log("cut refused: still welding, wait for BUILT (or: cut force)"); return; }
     string pos = GPos(gr);
     if (pos.Length > 0 && !force) { _auto = false; Log("cut refused: grinder" + pos + " (x+ = toward the welders, y+ = projector side, z+ = toward the printer). Fix it, or: cut force"); return; }
     int f; string map; _nn0 = Cells(_neck, out f, out _nmin0, out map, out _nsum0);
@@ -325,7 +326,7 @@ void Printer(string a, double dt)
         else { if (_split) _cyc++; StartWeld(); }
     }
     else if (a == "cut" || a == "cut force") StartCut(a == "cut force");
-    else if (a == "charge") StartCharge();
+    else if (a == "charge" || a == "charge force") { if (_st == "WELD" && _tBu < 0 && a != "charge force") Log("charge refused: still welding, wait for BUILT (or: charge force)"); else StartCharge(); }
     else if (a == "hand") { Tools(false, false); Bats(ChargeMode.Auto); SetPush("hold"); Go("HAND"); _auto = false; Log("HAND: payload on HOLD. Grind ONLY neck cell N2 (the 2nd red cell from the yellow stub) with your hand grinder; leave N1"); }
     else if (a == "push") { if (_pp == null) Log("no payload PB known"); else { bool ok = false; try { ok = _pp.TryRun("push"); } catch (Exception) { } if (ok) { _pushMode = "pushed"; _stuck = false; if (_st == "FREE") _ts = 0; } Log("TryRun(push) on the payload PB: " + (ok ? "true" : "false") + (ok ? "" : " -> run push on Sprue Payload PB from its own terminal")); } }
     else if (a == "auto")
