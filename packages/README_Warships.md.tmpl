@@ -87,7 +87,7 @@ toolbar slots use (a `Run` slot may not be able to carry a typed argument: step 
 | `status`, `reload` | refresh the screen / re-read Custom Data and re-scan blocks |
 | `hunt` `guard` `rtb` `idle` `manual` `auto` `assist hud\|fbw\|off` `lock` `unlock` `next` `range <m>` `home` `aim <mode>` `breach on\|off` | forwarded to the Helm (below) |
 
-**Helm PB**: `guard` (hold the home point, engage within Guard Radius), `hunt` (chase and engage), `rtb`, `idle` (release everything: thrusters and gyros off, dampeners on), `lock` (raycast-lock
+**Helm PB**: `guard` (hold the home point, engage within Guard Radius), `sentry` (hold this spot until a target comes within `Sentry Range (m)`, 2.5 km, then chase it with no leash and come back), `hunt` (chase and engage), `rtb`, `idle` (release everything: thrusters and gyros off, dampeners on), `lock` (raycast-lock
 what the front camera points at), `unlock`, `next` (ignore this target for 60 s), `range <m>` (stand-off), `home` (set home here), `aim AUTO|BREACH|ENGINES|FACING|SPREAD|CENTER`,
 `breach on|off`, `ai on|off` (use the AI blocks to search), `reload`, and the manual-flight words `manual`, `auto`, `pilot` (toggle), `assist hud|fbw|off`.
 The Helm starts in `REACT` (it saves its mode): weapons, turrets and target tracking are live, but the ship does not yaw round, scan with its cameras or hand itself to the AI blocks

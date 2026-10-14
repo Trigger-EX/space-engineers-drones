@@ -23,8 +23,11 @@
 //         with boresight / spiral rays. The first valid contact (or an IGC cue) takes the ship back and starts HUNT. Same pattern as the Gnat.
 //
 //  START: Start Mode (WAIT/HUNT) = HUNT by default: once off its rack (or pasted free) it hunts by itself.
+//  SENTRY (command `sentry`, or Start Mode SENTRY): holds the spot where it was given (or where it came off the rack), runs the AI search
+//         there, and rams anything that comes within Sentry Range (2,500 m = the AI Offensive block's search range), wherever it goes;
+//         with no target left it flies back to the spot and waits again. Kept across a world reload (Storage).
 //
-//  COMMANDS: launch (hunt) | abort | idle (stop) | rtb | lock | disarm | reload
+//  COMMANDS: launch (hunt) | sentry | abort | idle (stop) | rtb | lock | disarm | reload
 // =====================================================================
 const string VER = "1.0";
 
@@ -34,6 +37,7 @@ double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 20, SafeDistance = 150, Ga
 double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300;
 int MaxRams = 0;
 double NoseSetback = 0; bool ContactFuse = true, AiSearch = true, StartHunt = true; double AiConfirmRange = 1300, AiConfirmLong = 2600, AiRepick = 20; double _launchTry = -99;
+double SentryRange = 2500; bool StartSentry = false, _sentry = false, _sentryUp = false; Vector3D _post;   // SENTRY: wake on a target this close (the AI Offensive block's search range)
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false, ReAttack = true;
 double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
 
@@ -78,7 +82,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,ready,sentry,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -353,8 +357,12 @@ public Program()
     foreach (var t in ListenTags.Split(',')) if (t.Trim() != "") _lTgt.Add(IGC.RegisterBroadcastListener(t.Trim().Contains("_") ? t.Trim() : t.Trim() + "_TGT"));
     _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
     GetBlocks();
+    var p = (Storage ?? "").Split(';'); double x, y, z;
+    if (p.Length == 4 && p[0] == "SENTRY" && double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z)) { _sentry = true; _post = new Vector3D(x, y, z); }
     Runtime.UpdateFrequency = UpdateFrequency.Update1;
 }
+
+public void Save() { Storage = _sentry ? string.Join(";", "SENTRY", _post.X.ToString("R"), _post.Y.ToString("R"), _post.Z.ToString("R")) : ""; }
 
 void LoadConfig()
 {
@@ -365,7 +373,9 @@ void LoadConfig()
     BlockTag = C(S, "Block Tag", BlockTag);
     AutoLaunch = C(S, "Auto Launch When Released", AutoLaunch);
     AiSearch = C(S, "AI Block Search", AiSearch);
-    StartHunt = C(S, "Start Mode (WAIT/HUNT)", StartHunt ? "HUNT" : "WAIT").Trim().ToUpperInvariant() != "WAIT";
+    string sm = C(S, "Start Mode (WAIT/HUNT)", StartSentry ? "SENTRY" : StartHunt ? "HUNT" : "WAIT").Trim().ToUpperInvariant();   // (SENTRY works too)
+    StartHunt = sm != "WAIT" && sm != "SENTRY"; StartSentry = sm == "SENTRY";
+    SentryRange = C(S, "Sentry Range (m)", SentryRange);
     AiRepick = C(S, "AI Re-pick After (s)", AiRepick);
     AiConfirmRange = C(S, "AI Confirm Raycast Range", AiConfirmRange);
     AiConfirmLong = C(S, "AI Confirm Long Raycast Range", AiConfirmLong);
@@ -495,9 +505,11 @@ void Tick(string arg, UpdateType src)
 
     bool docked = Docked();
     if (docked && _mode != Mode.WAIT && _mode != Mode.IDLE) { AiOff(); Release(); _mode = Mode.WAIT; }
+    if (docked) { _sentry = false; _sentryUp = false; }
+    else if (_mode == Mode.WAIT && !_sentryUp && (_sentry || StartSentry)) Sentry(_sentry);   // SENTRY: take up the post (pasted free, off the rack, or after a reload)
     // Start Mode HUNT (default): off the rack (or pasted free) it goes hunting by itself, with the AI blocks if nobody gave it a target;
     // WAIT: only `launch` or a target in range (Auto Launch When Released) starts it. Tried every 2 s, not every tick (Launch re-scans the blocks)
-    if (_mode == Mode.WAIT && !docked && ((AutoLaunch && Nearest() != null) || (StartHunt && _now - _launchTry > 2))) { _launchTry = _now; Launch(); }
+    if (_mode == Mode.WAIT && !docked && (((AutoLaunch || _sentry) && Nearest() != null) || (StartHunt && !_sentry && _now - _launchTry > 2))) { _launchTry = _now; Launch(); }
     if (_mode == Mode.SEARCH) Search(dt);
     else if (_mode == Mode.HUNT || _mode == Mode.TERM) Hunt(dt);
     else if (_mode == Mode.EXTEND) Extend(dt);
@@ -511,6 +523,8 @@ void SetMode(Mode m) { _mode = m; _modeT = _now; }
 
 void Command(string a)
 {
+    if (a == "sentry") { if (!Docked()) { Disarm(); AiOff(); Sentry(false); } else _status = "Still docked"; return; }
+    if (a.StartsWith("launch") || a.StartsWith("hunt") || a == "abort" || a == "idle" || a == "stop" || a == "rtb") _sentry = false;
     if (a.StartsWith("launch") || a.StartsWith("hunt")) { if (!Docked()) Launch(); else _status = "Still docked"; }
     else if (a == "abort") { Disarm(); AiOff(); Release(); SetMode(Mode.IDLE); }
     else if (a == "idle" || a == "stop") { Disarm(); AiOff(); Release(); SetMode(Mode.IDLE); }
@@ -533,9 +547,19 @@ void Lock()
     _status = "No camera ready";
 }
 
+// SENTRY: hold this spot (keep = keep the post from before a reload); the AI blocks search from here, anything within Sentry Range wakes it
+void Sentry(bool keep)
+{
+    if (_rc == null) return;
+    if (!keep) _post = _rc.GetPosition();
+    _sentry = true; _sentryUp = true; _tgt = null; Release(); GetBlocks();
+    if (Vector3D.DistanceSquared(_rc.GetPosition(), _post) > 2500) { SetMode(Mode.RTB); return; }
+    SetMode(AiSearch && _ai.Count > 0 ? Mode.SEARCH : Mode.WAIT); _launchPos = _post; _rams = 0; _status = "Sentry: holding post";
+}
+
 Track Nearest()
 {
-    Track best = null; double bd = LaunchRange; Vector3D me = Me.GetPosition();
+    Track best = null; double bd = _sentry ? Math.Min(LaunchRange, SentryRange) : LaunchRange; Vector3D me = Me.GetPosition();   // SENTRY: only what comes within Sentry Range wakes it
     foreach (var t in _contacts.Values) { double d = Vector3D.Distance(t.Pos, me); if (d < bd) { bd = d; best = t; } }
     return best;
 }
@@ -572,7 +596,7 @@ bool FriendlyInWay(Vector3D me, Vector3D p)
 
 void Hunt(double dt)
 {
-    if (_tgt == null) { _tgt = Nearest(); if (_tgt == null) { _status = "Lost target"; Release(); SetMode(AiSearch && _ai.Count > 0 ? Mode.SEARCH : Mode.WAIT); return; } }
+    if (_tgt == null) { _tgt = Nearest(); if (_tgt == null) { _status = "Lost target"; Release(); SetMode(_sentry ? Mode.RTB : AiSearch && _ai.Count > 0 ? Mode.SEARCH : Mode.WAIT); return; } }
     // keep the lock with the nose camera when possible
     double age = _now - _tgt.Seen;
     Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
@@ -750,7 +774,7 @@ void Search(double dt)
 // fly away from the target (sideways of the line) until the run-up distance is reached, then hunt again
 void Extend(double dt)
 {
-    if (_tgt == null) { Release(); SetMode(Mode.WAIT); return; }
+    if (_tgt == null) { Release(); SetMode(_sentry ? Mode.RTB : Mode.WAIT); return; }
     Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
     Vector3D rel = me - _tgt.Pos; double dist = rel.Length();
     double fmax = 0; foreach (var t in _fwd) if (t.IsWorking) fmax += t.MaxEffectiveThrust;
@@ -771,9 +795,10 @@ void Extend(double dt)
 void Rtb(double dt)
 {
     Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
-    Vector3D home = _haveHome ? _home : _launchPos;
+    if (_sentry && _tick % 30 == 0 && Nearest() != null) { Launch(); return; }   // SENTRY: something came within range on the way back
+    Vector3D home = _sentry ? _post : _haveHome ? _home : _launchPos;
     Vector3D rel = home - me; double dist = rel.Length();
-    if (dist < 50 && myVel.Length() < 3) { Release(); SetMode(Mode.IDLE); _status = "Home"; return; }
+    if (dist < 50 && myVel.Length() < 3) { Release(); if (_sentry) Sentry(true); else { SetMode(Mode.IDLE); _status = "Home"; } return; }
     double fmax = 0; foreach (var t in _fwd) if (t.IsWorking) fmax += t.MaxEffectiveThrust;
     double mass = _rc.CalculateShipMass().PhysicalMass;
     double sp = Math.Min(40, Math.Sqrt(2 * Math.Max(fmax / mass * 0.5, 1) * Math.Max(dist - 5, 0)));
@@ -869,7 +894,7 @@ void Show()
 {
     string tl = _tgt != null ? (_rangeNow.ToString("0") + " m  closing " + _closeNow.ToString("0") + " m/s  tgo " + _tgoNow.ToString("0.0") + " s") : "none";
     int w = 0; foreach (var t in _fwd) if (t.IsWorking) w++;
-    string s = "TUBE RAM v" + VER + "\nMode: " + _mode + (Docked() ? "  (docked)" : "") + "\nTarget : " + tl + "\nSpeed: " + (_rc != null ? _rc.GetShipVelocities().LinearVelocity.Length().ToString("0") : "-") + " m/s   Rams: " + _rams +
+    string s = "TUBE RAM v" + VER + "\nMode: " + _mode + (_sentry ? "  SENTRY" : "") + (Docked() ? "  (docked)" : "") + "\nTarget : " + tl + "\nSpeed: " + (_rc != null ? _rc.GetShipVelocities().LinearVelocity.Length().ToString("0") : "-") + " m/s   Rams: " + _rams +
                "\nThrusters: " + w + " / " + _fwd.Count + "\nContacts: " + _contacts.Count + (_heads.Count > 0 ? "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") : "") +
                "\n" + (_fc != "" ? "1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago\n" : "") + AiGateStatus() + _status + "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
     if (_lcd != null) _lcd.WriteText(s);
