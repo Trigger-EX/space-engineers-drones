@@ -40,7 +40,7 @@ Block Prefix=[SH]
 
 [Shrike]
 IGC Tag=BALLISTA
-AI Block Search Assist=false
+AI Block Search Assist=true
 Start Mode (GUARD/HUNT/ASSIST/IDLE)=HUNT
 Standoff Range=1600
 Min Range=900
@@ -51,6 +51,7 @@ Combat Speed=100
 [Battery]
 Primary (AUTO/B1..B4)=B1
 Standoff By Weapons=true
+Salvo (AUTO/ON/OFF)=ON
 """
 
 GUNC = (0.0, -0.81, -0.45)

@@ -22,6 +22,8 @@ New `scripts/TurretAI.cs` (v1.0, 17,316 of 100,000 characters) and `tools/design
   So **no combat result exists for these turrets**; K-T1..K-T12 in `packages/unknowns.md` list what only the game can answer.
 - Tests: `tools/tests/test_turrets.py` (19), the Warden / Leviathan / Corsair / Shrike / m6 tests updated for the new blocks and names. `stubs.cs`: `IMyMotorStator` and friends.
 ### v2.8 (unreleased): BALLISTA railgun drone, probe foundry, Peeper probe, Spotter
+- **Ballista fixes after the first game test** (zips not rebuilt): `AI Block Search Assist=true` (the cameras alone never found a target; sim 0/4 -> 4/4 kills); `[Battery] Salvo (AUTO/ON/OFF)` in ShrikeAI (default OFF, Ballista ON): all rails fire in one tick instead of one gun
+  per slot; ShrikeAI no longer switches "AI Behavior" on when the assist is off (suspected cause of the ship flying off at paste, unverified); Helm budget 81,600 characters. Details `docs/design/ships/Ballista.md` 3a.
 - **Ballista** (`tools/designs/ballista.py`, large grid, `Ballista` / `Ballista Lite`): 27 Large Railguns, 16 large hydrogen thrusters (31 m/s2 fore / aft, 16 m/s2 elsewhere), 12 gyros, no armour beyond a breech wall;
   about 7,200 PCU with its foundry (8,200 with a live probe). Runs the Warden Helm recipe (AUTO aim is BREACH on large grids). Design record `docs/design/ships/Ballista.md`.
 - **Peeper** (`tools/designs/peeper.py`, `scripts/PeeperAI.cs`): 4.6 t unarmed probe with one ammunition-free small turret; orbits the Ballista's target, cycles the turret targeting group power / weapons / power /

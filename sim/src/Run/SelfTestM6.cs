@@ -133,7 +133,7 @@ namespace SeSim.Run
         static void Debug(string model)
         {
             _idleEnemy = Environment.GetEnvironmentVariable("M6_DEBUG_HUNT") == null;
-            var sc = Fight(model, Environment.GetEnvironmentVariable("M6_DEBUG_ENEMY") ?? "Hornet", 500, null, "0.5", "Helm:hunt");
+            var sc = Fight(model, Environment.GetEnvironmentVariable("M6_DEBUG_ENEMY") ?? "Hornet", Environment.GetEnvironmentVariable("M6_DEBUG_DIST") != null ? double.Parse(Environment.GetEnvironmentVariable("M6_DEBUG_DIST"), Inv) : 500, null, "0.5", "Helm:hunt");
             _idleEnemy = false;
             Go(sc, 0, Environment.GetEnvironmentVariable("M6_DEBUG_SECS") != null ? int.Parse(Environment.GetEnvironmentVariable("M6_DEBUG_SECS")) : 40, (w, sh, helm, staff, host) =>
             {

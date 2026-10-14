@@ -33,7 +33,22 @@ the Helm and Spotter PBs and the Remote Control (y = 4 deck). Mast on the wall: 
 ## 3. Control
 
 * **Helm** `[Helm][SH] Ballista Helm` runs `ShrikeAI.cs` with the Warden's recipe: weapon battery `[B1]` = the 27 rails (RAIL class, 2,000 m), `Standoff By Weapons=true` keeps about 85 % of the railgun range,
-  `Combat Speed=100`, jinking on. Against large grids of radius >= 25 m the Helm's AUTO aim is BREACH (hold one hull point and drill it); that is what the Spotter feed steers. IGC Tag `BALLISTA`.
+  `Combat Speed=100`, jinking on. **`AI Block Search Assist=true`** (unlike the Warden): the ship has no turrets, and its cameras alone cannot find anything (6 cameras bank ~6 rays/s of 1.8 km; a 5 degree wide ship is hit by
+  about one ray in a thousand, so in the sim it never saw a Pirate that shot it from 2 km down to 500 m). The AI Offensive block's 2.5 km search points the nose, the cameras confirm it. **`[Battery] Salvo=ON`**: all 27 rails fire in
+  the same tick (see section 3a). Against large grids of radius >= 25 m the Helm's AUTO aim is BREACH (hold one hull point and drill it); that is what the Spotter feed steers. IGC Tag `BALLISTA`.
+### 3a. Salvo, AI assist, and what was changed after the first game test (post-v2.7)
+
+Owner's report: the Ballista did not notice enemies until they were well inside turret range, fired one railgun every ~8 s instead of the volley, and ran off the moment it was pasted.
+* **Detection** [sim, stand-in AI]: before, `Assist=false`: 0 targets and 0 shots in 100 s in 4 of 4 seeds (Pirate at 2.0-2.7 km, 30-60 k damage taken). After, `Assist=true`: target held at 1.9-2.4 km after 3-18 s, one 27-gun salvo, 14-19 hits, Pirate dead in
+  17-31 s, no damage taken (4 seeds). Idle with the AI assist on the Ballista stays within ~30 m of the paste point (sim). The Warden recipe switched the assist off because an idle warship wanders while the AI block searches; that is a
+  stand-in observation, not a game one. If the real AI Flight block flies the Ballista off, send `ai off` to the Helm (the ship then finds targets only by camera).
+* **Salvo** (`[Battery] Salvo (AUTO/ON/OFF)`, default OFF so the other ships are unchanged; the Ballista writes ON): the old single-shot logic fired one round-robin gun per slot (Reload x 1.1 / guns + 0.5 s), never the battery. Now every working gun
+  gets `ShootOnce` in one tick; after 1 s the guns whose magazine shrank are counted: 70 % or more fired = next salvo after Reload x 1.1 + 0.5 s (~66 s), fewer = the rest are still charging (retry in 4 s), none = retry in 2 s. Sim: 27 rails in one
+  tick. In the game the capacitor recharge is power-bound (about 100 s for 27 rails on the Ballista's 360 MW + batteries), so the second salvo may be partial.
+* **Run-off at paste** [unverified, not reproduced in the sim]: the AI gate (`AiGateFind`) switched "AI Behavior" on on every [AI] block whenever the ship had any, even with `AI Block Search Assist=false`. If the game honours that switch on its own
+  (independent of the block's On/Off), the AI Flight block flies the ship away from the first tick. The Helm now leaves the AI blocks alone unless the assist is on (`if (AiAssist) AiGateFind(_ai)`; `ai on|off` re-runs it). With the assist on again the
+  AI blocks do fly the ship while it searches; if the Ballista still leaves its paste point, the next suspects are an inbound `FLEET_HOME` (set `[Fleet] Accept Home=false` in the Helm's Custom Data) and the sensor/AI blocks' own default settings.
+
 * **Spotter** `[Spotter][SH] Ballista Spotter` runs `SpotterAI.cs` (section 5).
 * No cockpit: a drone. Hand flying needs a seat added by hand (the Helm switches to MANUAL when somebody sits in a flight seat).
 
@@ -73,7 +88,7 @@ Ballista's two rear connectors the way the Cradle Pod docks in the Warden's hang
 2. **A turret without ammunition may not acquire or aim**, and the targeting groups may not pick subsystems of an enemy grid from outside. `SeekerProbe.cs` answers this in 5 minutes (put it on any ship with a turret).
 3. Components: creative mode needs none; in survival the foundry's welders need the probe's components (about 1 t of steel plate, 4.6 t of parts) fed by hand.
 4. Not run anywhere: the sim has no probe, foundry or Spotter models. Compile-checked only (`tools/compile_check.sh`, stand-in API).
-5. Helm size: the hook raised ShrikeAI to 80,547 of the Helm's 80,600-character budget (design budget 80,000, hard cap 85,000, the Programmable Block takes 100,000).
+5. Helm size: the hook raised ShrikeAI to 80,547 characters (the salvo took it to ~81,200 of a budget now 81,600) (design budget 80,000, hard cap 85,000, the Programmable Block takes 100,000).
 6. The foundry's 12 welders cost 150 PCU each (1,800 of its ~2,800); fewer welders would save PCU but the bay's reach guarantees (`reach.py`) assume them.
 7. Lite Ballista prints Lite probes: they cannot identify anything. Use Full.
 
