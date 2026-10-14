@@ -89,7 +89,7 @@ def get_drone(key, lite):
         mod, model, tag, latch = DRONES[key]
         if mod == 'stinger' and not HAVE_STINGER: bp = _stinger_fallback(lite)
         else: bp = importlib.import_module(mod).MODELS[model](lite)
-        if latch: bp = PL.with_latch(bp)
+        if latch: bp = PL.with_flush_latch(bp)            # outline rule (CLAUDE.md): merge block set into the hull, never on a stalk
         _DRONE_CACHE[k] = bp
     return _DRONE_CACHE[k]
 

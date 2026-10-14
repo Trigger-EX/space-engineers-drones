@@ -14,3 +14,10 @@ Zips not rebuilt.
 - `Tube Foundry` / `Tube W Foundry`: one bay each for Tube 2x2, 2x4, 3x3, 4x4 (W = the warhead tubes). Each tube has a small latch stalk with a merge block. A printed tube stays still while welded on, then hunts once released. With no enemy around it searches with its AI blocks. Keep the W foundry away from anything you want to keep.
 - `Midge Nest`: 2 bays of scriptless Midges (EXPERIMENTAL). Hive Mother switches the Midge's AI behaviour on as it releases it. Report whether the released Midge flies. A Midge cannot report in, so each bay prints 3 and stops; run `reload` on the Hive Mother PB to print more.
 Same checks as before: time from print finish to release, any FAULT, whether the drone leaves cleanly.
+
+## Re-solved shipyards (2026-10-14, Hive Mother v2.8)
+Your Aegis test showed the welders reach less far than the printers were designed for: the 3 blocks left in each Aegis bay are exactly the ones the smaller
+reach misses. Every bay is now solved so that each drone block is reached with that smaller reach; delete the old folders and paste fresh copies of
+Aegis Shipyard, Hornet Forge, Harrier Forge, Wasp Foundry, Lancer Foundry, Watcher Pad, Fleet Forge, Escort Carrier, Probe Foundry.
+"Component stock empty" no longer appears in a creative world (it was really "blocks out of reach").
+Longbow Foundry and Mantis Foundry are NOT included: no welder layout can reach 2-3 blocks buried inside those drones (see the chat for the options).
