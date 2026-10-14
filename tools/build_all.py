@@ -153,7 +153,7 @@ def build_one(task):
     row = dict(kind=kind, module=modname, model=model, lite=lite, label=label, ok=False, problems=[])
     try:
         bp = _MODS[modname].MODELS[model](lite)
-        if not os.environ.get("NO_SUPPORT"): C.add_support_pbs(bp)                                           # [Thrust] PB for THRUST VECTORING, [Staff] PB for the split drones
+        C.add_support_pbs(bp)                                          # [Thrust] PB for THRUST VECTORING, [Staff] PB for the split drones
         C.finalize(bp)
         row['name'] = bp.name
         if bp.name != label: row['problems'].append(f'blueprint name {bp.name!r} != expected {label!r}')

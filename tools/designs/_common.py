@@ -453,6 +453,7 @@ def chamfer_room(S, res, env, box, name='room', max_blocks=None):
 # ---- support PBs (appended for THRUST VECTORING and the Flight/Staff split; docs/thrust-vectoring.md) ----
 SUPPORT_STAFF = {'AEGIS': 'AegisStaffAI.cs', 'MANTIS': 'MantisStaffAI.cs', 'LONGBOW': 'LongbowStaffAI.cs', 'WASP': 'WaspStaffAI.cs'}
 _SMALL_PB, _LARGE_PB = 'SmallProgrammableBlock', 'LargeProgrammableBlock'
+NO_SUPPORT_PBS = ('Twin PB Test', 'Hornet Pilot Test')   # sim probe ships with a pinned PB count (SelfTestM0): no support PBs
 
 def _orientations():
     out = []
@@ -497,6 +498,7 @@ def add_support_pbs(bp):
     (SPLIT LINK) is renamed `[Flight] ...` and gets its `[Staff] ...` PB (scripts/<Drone>StaffAI.cs). Idempotent: a design that already carries them is left alone."""
     import re
     from xml.sax.saxutils import unescape
+    if bp.name.replace(' Lite', '') in NO_SUPPORT_PBS: return bp
     pbs = [b for b in bp.blocks if b['sub'] in (_SMALL_PB, _LARGE_PB) and '<Program>' in (b.get('extra') or '')]
     prog = {id(b): unescape(b['extra']) for b in pbs}
     names = [(b['name'] or '') for b in pbs]
@@ -507,7 +509,7 @@ def add_support_pbs(bp):
         return n[:-3] if n.endswith(' PB') else n
     for b in list(pbs):
         p = prog[id(b)]
-        if 'LkInit(' in p and not os.environ.get('NO_STAFF') and not any(n.startswith('[Staff]') for n in names):
+        if 'LkInit(' in p and not any(n.startswith('[Staff]') for n in names):
             m = re.search(r'string Tag\s*=\s*"([A-Z]+)"', p)
             assert m and m.group(1) in SUPPORT_STAFF, f'{bp.name}: no Staff script known for the Flight half ({m and m.group(1)})'
             if not (b['name'] or '').startswith('[Flight]'): b['name'] = f'[Flight] {base(b)} PB'

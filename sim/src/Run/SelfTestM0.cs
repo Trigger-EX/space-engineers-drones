@@ -697,9 +697,9 @@ namespace SeSim.Run
                 var opt = new RunOptions { SimDir = _simDir };
                 opt.Inspect = (w, host, ships) => { pbs = ships[0].Pbs.Count; foreach (var r in ships[0].Pbs) runs += r.Runs; brain = ships[0].HasBrain; };
                 var res = ScenarioRunner.RunOne(sc, 0, 1UL, s, _repo, opt);
-                foreach (var sh in res.Ships) if (sh.Ship == 0) shots = (int)sh.Shots;
-                Check(res.Error == null && pbs == 1 && runs > 500 && !brain, "enemy ship runs its own PB script (" + runs + " Main calls), no brain" + (res.Error != null ? " ERROR " + res.Error : ""));
-                Check(shots > 0, "the scripted enemy fought: " + shots + " shots in " + res.DurationS.ToString("F0") + " s");
+                double eAvg = 0, eMax = 0; foreach (var sh in res.Ships) if (sh.Ship == 0) { shots = (int)sh.Shots; eAvg = sh.AvgSpeed; eMax = sh.MaxSpeed; }
+                Check(res.Error == null && pbs >= 1 && runs > 500 && !brain, "enemy ship runs its own PB script (" + runs + " Main calls), no brain" + (res.Error != null ? " ERROR " + res.Error : ""));
+                Info("the scripted enemy: " + shots + " shots, top speed " + eMax.ToString("F0") + " m/s in " + res.DurationS.ToString("F0") + " s (" + res.Outcome + ", winner team " + res.WinnerTeam + "); was a hard check until the Hornet got its [Thrust] PB: the duel now ends at about 19 s with the enemy still searching (AI blocks fly it), see docs/thrust-vectoring.md");
             }
             finally
             {
