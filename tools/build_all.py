@@ -3,6 +3,9 @@
 
     python3 -I tools/build_all.py [--jobs N] [--only "Name" ...] [--out DIR] [--no-zip]
 
+0. skips models that are already up to date: out/.build_cache.json keeps, per model, a fingerprint of the build inputs (tools/*.py, tools/designs/*.py,
+   shapes.json, defs*.json and the scripts/*.cs the model embeds) and the sha256 of the files written to out/Blueprints/<Name>/.  A model is skipped when the
+   fingerprint is unchanged and the files on disk still match their checksums (its validation row is reused for MODELS.md and the zips).  --force rebuilds all.
 1. imports every design module (tools/designs/*.py; absent modules are reported and skipped),
 2. builds every model in its Full variant ("<Name>") into  out/Blueprints/<Name>/{bp.sbc,thumb.png}.  The Lite variants ("<Name> Lite") are
    built by tools/build_lite.py (same code, lite=True), which is rarely needed,
@@ -17,7 +20,7 @@
 Exit code 1 if any model fails or any check fails.  The printers dominate the run time (bay solver), so models are built in parallel
 (fork pool; --jobs, default = CPU count).
 """
-import sys, os, re, time, zipfile, argparse, traceback
+import sys, os, re, time, zipfile, argparse, traceback, hashlib, json, glob
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
@@ -86,6 +89,61 @@ COMMAND_DOC = {
 HIVE_DOC = {'stop': 'stop printing, all welders off'}
 PAL_ALL = dict(C.PAL, welder=(70, 190, 90), proj=(150, 90, 40), cargo=(120, 100, 70))
 CPU_HEAVY_FIRST = {'printer': 0, 'ship': 0, 'drone': 1, 'test': 1}
+
+# ---------------------------------------------------------------------------------------------
+# up-to-date check (skip models whose inputs and output files are unchanged)
+# ---------------------------------------------------------------------------------------------
+CACHE_NAME = '.build_cache.json'
+OUT_FILES = ('bp.sbc', 'thumb.png')
+
+def sha_file(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''): h.update(chunk)
+    return h.hexdigest()
+
+def code_fingerprint():
+    """one hash over everything except the scripts that a design module reads to build a blueprint"""
+    files = sorted(glob.glob(os.path.join(HERE, '*.py')) + glob.glob(os.path.join(HERE, 'designs', '*.py')) + [os.path.join(HERE, 'shapes.json')]
+                   + glob.glob(os.path.join(ROOT, 'defs*.json')))
+    h = hashlib.sha256()
+    for p in files:
+        h.update(os.path.relpath(p, ROOT).encode() + b'\0' + (sha_file(p).encode() if os.path.exists(p) else b'-') + b'\0')
+    return h.hexdigest()
+
+def model_key(code_fp, scripts):
+    h = hashlib.sha256(code_fp.encode())
+    for s in sorted(scripts):
+        p = os.path.join(SCRIPTS_DIR, s)
+        h.update(s.encode() + b'\0' + (sha_file(p).encode() if os.path.exists(p) else b'-') + b'\0')
+    return h.hexdigest()
+
+def load_cache(path):
+    try:
+        with open(path, encoding='utf-8') as f: return json.load(f)
+    except (OSError, ValueError): return {}
+
+def save_cache(path, cache):
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f: json.dump(cache, f, indent=0, default=str)
+    os.replace(tmp, path)
+
+def cached_row(cache, task, code_fp):
+    """the stored row of `task` if its inputs are unchanged and its output files still match their checksums, else None"""
+    kind, modname, model, lite, outroot = task
+    label = model + (' Lite' if lite else '')
+    e = cache.get(label)
+    if not e or e.get('key') != model_key(code_fp, e['row'].get('scripts', [])): return None
+    folder = e['row'].get('folder')
+    if not folder or os.path.abspath(folder) != os.path.abspath(os.path.join(outroot, 'Blueprints', e['row'].get('name', label))): return None
+    if os.path.exists(os.path.join(folder, 'bp.sbcB5')): return None
+    for f in OUT_FILES:
+        p = os.path.join(folder, f)
+        if not os.path.exists(p) or sha_file(p) != e['files'].get(f): return None
+    return e['row']
+
+def cache_entry(row, code_fp):
+    return dict(key=model_key(code_fp, row['scripts']), files={f: sha_file(os.path.join(row['folder'], f)) for f in OUT_FILES}, row=row)
 
 # ---------------------------------------------------------------------------------------------
 # build + validate one model (runs in a pool worker)
@@ -409,6 +467,7 @@ def main(argv, lites=(False,)):
     ap.add_argument('--only', nargs='*', help='build only these model names (base names, e.g. "Hornet" "Hive Mother"); zips are then skipped unless --zip (written to <out>/dist_partial)')
     ap.add_argument('--out', default=os.path.join(ROOT, 'out'))
     ap.add_argument('--no-zip', action='store_true')
+    ap.add_argument('--force', action='store_true', help='rebuild every model even when its inputs and output files are unchanged')
     ap.add_argument('--zip', action='store_true', help='with --only: also write the zips and READMEs of the packages that have models among the built ones, into <out>/dist_partial (tests the packaging path without the full build)')
     a = ap.parse_args(argv)
     t0 = time.time()
@@ -427,14 +486,28 @@ def main(argv, lites=(False,)):
     os.makedirs(bp_root, exist_ok=True)
     tasks.sort(key=lambda t: CPU_HEAVY_FIRST[t[0]])
     rows = []
-    if a.jobs > 1 and len(tasks) > 1:
+    cache_path = os.path.join(a.out, CACHE_NAME)
+    cache = {} if a.force else load_cache(cache_path)
+    code_fp = code_fingerprint()
+    todo = []
+    for t in tasks:
+        r = None if a.force else cached_row(cache, t, code_fp)
+        if r is None: todo.append(t)
+        else:
+            r = dict(r, secs=0.0, cached=True); rows.append(r); report(r)
+    if len(todo) < len(tasks): print(f'{len(tasks) - len(todo)} of {len(tasks)} models up to date (skipped), {len(todo)} to build')
+    def done(r):
+        rows.append(r); report(r)
+        label = r['label']
+        if r['ok']: cache[label] = cache_entry(r, code_fp)
+        else: cache.pop(label, None)
+        save_cache(cache_path, cache)
+    if a.jobs > 1 and len(todo) > 1:
         import multiprocessing as mp
-        with mp.get_context('fork').Pool(min(a.jobs, len(tasks))) as pool:
-            for r in pool.imap_unordered(build_one, tasks, 1):
-                rows.append(r); report(r)
+        with mp.get_context('fork').Pool(min(a.jobs, len(todo))) as pool:
+            for r in pool.imap_unordered(build_one, todo, 1): done(r)
     else:
-        for t in tasks:
-            r = build_one(t); rows.append(r); report(r)
+        for t in todo: done(build_one(t))
     order = {(t[2], t[3]): i for i, t in enumerate(sorted(tasks, key=lambda t: (list(designs.ALL_MODULES).index(t[1]), t[2], t[3])))}
     rows.sort(key=lambda r: order[(r['model'], r['lite'])])
     ok_rows = [r for r in rows if r['ok']]
@@ -481,8 +554,9 @@ def main(argv, lites=(False,)):
 
 def report(r):
     if r['ok']:
+        took = 'up to date' if r.get('cached') else f'{r["secs"]:.0f}s'
         print(f'PASS {r["label"]:<24} {r["kind"]:<7} {r["blocks"]:>3} blocks {r["mass"]:>8.0f} kg  accel {fmt_acc(r)}  PCU {r["pcu"]:>5}  '
-              f'scripts {",".join(s[:-3] for s in r["scripts"]) or "-"}  [{r["secs"]:.0f}s]', flush=True)
+              f'scripts {",".join(s[:-3] for s in r["scripts"]) or "-"}  [{took}]', flush=True)
     else:
         print(f'FAIL {r["label"]}: ' + ' | '.join(p.splitlines()[0] for p in r['problems']), flush=True)
 
