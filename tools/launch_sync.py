@@ -10,9 +10,9 @@ Copy of the mechanism of tools/fleet_sync.py (same CRLF handling).
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["GnatSwarmAI", "WaspAI", "WaspStaffAI", "BasiliskAI", "StingerAI", "AegisStaffAI", "MantisStaffAI", "LongbowStaffAI", "HornetStaffAI", "HarrierStaffAI", "LancerStaffAI"]
+SCRIPTS = ["GnatSwarmAI", "WaspAI", "WaspStaffAI", "StingerAI", "AegisStaffAI", "MantisStaffAI", "LongbowStaffAI", "HornetStaffAI", "HarrierStaffAI", "LancerStaffAI"]
 REQUIRED = ["HornetStaffAI", "HarrierStaffAI"]
-EXCLUDE = ["BasiliskAI"]        # no merge block on this ship and no room: the block is deliberately NOT carried (never added, never required)
+EXCLUDE = ["BasiliskStaffAI"]        # no merge block on this ship (not printable): the Staff carries no LAUNCH, a fleet "launch" / "join" would start a take-off burn
 BEGIN, END = "// >>> LAUNCH", "// <<< LAUNCH <<<"
 
 def unlisted():

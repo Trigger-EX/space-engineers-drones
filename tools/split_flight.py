@@ -5,7 +5,8 @@ takes their place. Edits the script in place (git has the original) and asserts 
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-AMMO = {"HornetDroneAI": "(int)(_ammoFrac * 100)", "HarrierAI": "(int)(_ammoFrac * 100)", "LancerAI": "(int)(_ammoFrac * 100)", "AegisAI": "(int)(_ammoFrac * 100)", "MantisAI": "(int)(_ammoFrac * 100)", "LongbowSniperAI": "(int)(_ammoFrac * 100)"}
+AMMO = {"HornetDroneAI": "(int)(_ammoFrac * 100)", "HarrierAI": "(int)(_ammoFrac * 100)", "LancerAI": "(int)(_ammoFrac * 100)", "AegisAI": "(int)(_ammoFrac * 100)", "MantisAI": "(int)(_ammoFrac * 100)", "LongbowSniperAI": "(int)(_ammoFrac * 100)", "BasiliskAI": "_rockets"}
+GATE = {"BasiliskAI": "_gateWhy"}      # what the Staff screen shows as the hold reason (default: none)
 
 def main(name):
     p = os.path.join(ROOT, "scripts", name + ".cs")
@@ -20,24 +21,25 @@ def main(name):
         nonlocal s
         i = s.index("// >>> " + block); j = s.index("// <<< " + block, i); j = s.index("\n", j) + 1
         s = s[:i] + s[j:]
-    for b in ("FLEET LINK", "FOLLOW", "LAUNCH"): drop(b)
+    hasL = "// >>> LAUNCH" in s       # (the Basilisk has no merge block and no LAUNCH block)
+    for b in ("FLEET LINK", "FOLLOW") + (("LAUNCH",) if hasL else ()): drop(b)
     lk = open(os.path.join(ROOT, "tools", "lk_block.cs"), encoding="utf-8").read()
     m = re.search(r"^public Program\(\)", s, re.M)
-    s = s[:m.start()] + lk + f"int LkAmmo() {{ return {AMMO[name]}; }}   // ammo for the Staff screen (0-254)\nstring LkGate() {{ return \"\"; }}\n\n" + s[m.start():]
-    nl = len(re.findall(r"\n *LaunchLoad\(\);(?=\n)", s))      # (Hornet / Harrier call LaunchLoad() on a line of its own in the constructor)
+    s = s[:m.start()] + lk + f"int LkAmmo() {{ return {AMMO[name]}; }}   // ammo for the Staff screen (0-254)\nstring LkGate() {{ return {GATE.get(name, '\"\"')}; }}\n\n" + s[m.start():]
+    nl = len(re.findall(r"\n *LaunchLoad\(\);(?=\n)", s)) if hasL else 0      # (Hornet / Harrier call LaunchLoad() on a line of its own in the constructor)
     if nl: rep(r"\n *LaunchLoad\(\);(?=\n)", "", nl, True)
     rep(r'(?m)^( *(?:case "reload": LoadConfig\(\); )?)FleetLoad\(true\); ', r"\1", 2, True)   # (code lines only: the hook comments name FleetLoad(true) too)
-    rep(r"LaunchLoad\(\); ", "", 2 - nl, True)
+    if hasL: rep(r"LaunchLoad\(\); ", "", 2 - nl, True)
     rep(r" FollowLoad\(\);", "", 2, True)
     rep(r"FoSat = true; ", "", 1, True)
     rep("ReadIGC(); FollowStep(); ReadSwarm();", "ReadIGC(); LkRead(); ReadSwarm();")
     rep(r"FoSetSat\((?:true|false)\); ", "", 2, True)
-    rep(r' *case "armed": case "launch": case "disarm": LaunchCmd\(w\[0\]\); break;\n', "", 1, True)
+    if hasL: rep(r' *case "armed": case "launch": case "disarm": LaunchCmd\(w\[0\]\); break;\n', "", 1, True)
     rep("foreach (var fl in FleetTgtL) ReadTgt(fl);", "ReadTgt(_lkTgt);")
     rep(r" *FleetPump\(Command, p => \{ _dynHome = p; _dynHomeT = _now; \}\);\n", "", 1, True)
     rep("FoEngage", "LkEngage", 2)
     rep("if (_mode == Mode.FOLLOW && FollowKnown()) return FollowPos();", "if (_mode == Mode.FOLLOW && _lkOwner) return _lkOwnerP;")
-    rep(r"if \(LaunchStep\([^\n]*?\)\) return;", "if (LkBurn) return;   // take-off burn: the Staff PB flies (LAUNCH block)", 1, True)
+    if hasL: rep(r"if \(LaunchStep\([^\n]*?\)\) return;", "if (LkBurn) return;   // take-off burn: the Staff PB flies (LAUNCH block)", 1, True)
     rep("(FollowRadius() + 40)", "65")
     rep("if (_mode == Mode.FOLLOW && FollowKnown()) want = FollowWant(me, aBrake, Separation(me)) + Evade();",
         "if (_mode == Mode.FOLLOW && LkWantOk) want = _lkWant + ((_lkFl & 2) != 0 ? Vector3D.Zero : Separation(me)) + Evade();")
@@ -50,6 +52,12 @@ def main(name):
     rep("        Command(arg);\n", '        { Command(arg); if (_lkK != "") IGC.SendBroadcastMessage(_lkK + ".CMD", arg, TransmissionDistance.CurrentConstruct); }   // (the Staff PB handles launch / armed / disarm / follow / satellite / reload)\n')
     rep(r"( *)(_lHome = IGC\.RegisterBroadcastListener\(Tag \+ \"_HOME\"\);)", r"\1LkInit();\n\1\2", 1, True)
     if re.search(r"^ *FaBeacon\(\);\n", s, re.M): rep(r" *FaBeacon\(\);\n", "", 1, True)   # (Wasp Flight leaves the beacon to the Staff)
+    if name == "BasiliskAI":      # code nothing calls once the status screen has left: HiveStatus / AiStatus (only the old screen) and MatesInLine / MateClear (never called)
+        def cut(a, b):
+            nonlocal s
+            i = s.index(a); j = s.index(b, i); s = s[:i] + s[j:]
+        cut("string HiveStatus()", "class Mate {"); cut("string AiStatus()", "bool AiModeOk()")
+        cut("// Friendly-fire gate from the IGC positions", "void CheckLineOfFire(")
     # the status screen lives in the Staff PB
     i = s.index("\nvoid Display()\n{"); j = s.index("\n}\n", i) + 3
     disp = '''

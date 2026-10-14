@@ -7,7 +7,7 @@ Hooks that call the block (LkInit / LkRead / LkSend / LkBurn / ... ) and the per
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["WaspFlightAI", "AegisAI", "MantisAI", "LongbowSniperAI", "HornetDroneAI", "HarrierAI", "LancerAI"]
+SCRIPTS = ["WaspFlightAI", "AegisAI", "MantisAI", "LongbowSniperAI", "HornetDroneAI", "HarrierAI", "LancerAI", "BasiliskAI"]
 BEGIN, END = "// >>> SPLIT LINK", "// <<< SPLIT LINK <<<"
 
 def unlisted():

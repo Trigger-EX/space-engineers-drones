@@ -1,3 +1,6 @@
+### v2.7 (unreleased): Basilisk split over two PBs
+- `BasiliskAI.cs` (95.5k) is now the Flight half (82.1k: tracking, lead, rockets, aim, KZ, avoidance, AI gate, thrust link); new `BasiliskStaffAI.cs` (23k: fleet link, FOLLOW/SATELLITE, status screen, watchdog; no LAUNCH, the ship has no merge block) sits in the `[Staff] Basilisk PB` cell; the `[Thrust]` PB comes from build_all. Basilisk and Basilisk Seeker. `docs/design/basilisk_split.md`. Sim: combat bit-identical to the single-PB ship (1v1 vs Hornet, 10 seeds); follow-test and kill-PB runs as before. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): bays find a split drone's PB
 - `HiveMotherAI.FindDrone` and `CradleBayAI.Mine/FindDrone` now accept `[Staff] <Prefix> PB` and `[Flight] <Prefix> PB` (a split drone) next to the plain `<Prefix> PB`, arm the Staff PB first (it holds LAUNCH and the `[Launch]` keys), then Flight, and never `[Thrust]` or a `[Spare]` PB. Before, every split Hornet/Watcher/Harrier/Lancer/Wasp/Aegis/Mantis/Longbow fell back to the JOIN message only. Sim: dock-launch Hornet/Harrier and `--cradle` 3 seeds pass except `Cradle Test: spinning host (expect: waits)`, which fails the same way without this change. Release zips NOT rebuilt.
 

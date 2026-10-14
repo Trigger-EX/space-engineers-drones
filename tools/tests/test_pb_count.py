@@ -36,7 +36,7 @@ class PbCount(unittest.TestCase):
         self.assertEqual(sum(x.startswith('[Thrust]') for x in n), 1, n)
 
     def test_reserved_spares(self):
-        for mod, model in (('core', 'Gnat'), ('extra', 'Basilisk'), ('extra', 'Basilisk Seeker')):
+        for mod, model in (('core', 'Gnat'),):
             for lite in (False,):      # Lite is retired (CLAUDE.md)
                 bp = build(mod, model, lite)
                 spare = [b for b in bp.blocks if b['xtype'] == spares.PB_X and 'Spare' in b['name']]
