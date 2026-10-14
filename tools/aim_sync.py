@@ -9,15 +9,18 @@ feeds BreachHit, the status line shows AimInfo(), SeekerSetup() runs after the c
 """
 import os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI"]
+SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI"]
 BEGIN, END = "// >>> BREACH + SEEKER", "// <<< BREACH + SEEKER <<<"
+# Left at v1.0: the legacy single-PB Wasp (99.8k, no blueprint since the Wasp runs WaspFlightAI) has no SPLIT LINK to carry the weakpoint relay
+# and no room for it (docs/design/hive_weakpoint.md section 5).
+FROZEN = ["WaspAI"]
 
 def unlisted():
     """Scripts that carry this block's marker but are not in SCRIPTS (or are on EXCLUDE): a new script would otherwise silently skip the sync."""
     d = os.path.join(ROOT, "scripts"); skip = globals().get("EXCLUDE", [])
     out = []
     for f in sorted(os.listdir(d)):
-        if f.endswith(".cs") and (f[:-3] not in SCRIPTS or f[:-3] in skip):
+        if f.endswith(".cs") and f[:-3] not in FROZEN and (f[:-3] not in SCRIPTS or f[:-3] in skip):
             with open(os.path.join(d, f), encoding="utf-8") as h:
                 if BEGIN in h.read(): out.append(f[:-3])
     return out
@@ -43,23 +46,37 @@ HOOKS = [
      '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
      '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
      '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
-     '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'),
+     '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
+     '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
+     '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
+     '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'),
     ('        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n',
      '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
      '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
-     '        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;\n'),
+     '        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;\n'
+     '        case "wp": if (w.Length > 1) WpOn = WpShare = w[1] == "on"; break;\n'),
 ]
 # earlier wirings of a hook (anchor -> list of texts that a previous version of this tool put in its place)
 PREVIOUS = {
     'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n': [
         'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'],
     '    AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n': [
+        # v1.0 (newest first: the shorter, older wirings below are prefixes of it)
+        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
+        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
+        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
+        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
+        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
+        '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n',
         '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
         '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
         '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
         '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
         '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'],
     '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n': [
+        '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
+        '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
+        '        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;\n',
         '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
         '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'],
 }
