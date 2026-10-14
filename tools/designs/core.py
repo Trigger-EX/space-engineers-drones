@@ -81,47 +81,56 @@ def hornet(lite=False):
 
 # ---------------------------------------------------------------------------------------------
 def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
-    """Point-and-burn drone: two axial ion thrusters back-to-back, gyro steering, AI Offensive + Flight blocks on the tail, belly merge latch."""
+    """Point-and-burn drone: the hull is 2 x 2 cells in section (x 0..1, y 0..1) and long; two axial ion thrusters back-to-back, gyro steering,
+    AI Offensive + Flight blocks on the tail, belly merge latch (the only block below the hull). Only the Left / Right cameras stand off the sides."""
+    import pods
     bp = Blueprint(name, "Small", seed=7, legacy_shapes=True)
     bp.add("MyObjectBuilder_RemoteControl", "SmallBlockRemoteControl", (1, 0, -2), name=f"{name} Remote Control", kind="ctrl", color=RED)
     bat(bp, (1, 0, -1), f"{name} Battery")
     bp.armor(1, 0, 0, RED)
     g = bp.add("MyObjectBuilder_SmallGatlingGun", "", (0, 0, -3), "Forward", "Up", f"{name} Gatling", GUN, kind="gun")
     bp.keep_clear(g, 6, "muzzle")
-    # PB mounts only on its front: face it into the battery from the side
-    bp.add("MyObjectBuilder_MyProgrammableBlock", "SmallProgrammableBlock", (2, 0, -1), "Left", "Up", f"{name} PB",
-           extra=pb_extra(script) if script else '', kind="ctrl", color=RED)
     bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro", (1, 1, -2), "Forward", "Up", f"{name} Gyroscope", kind="gyro")
     bp.armor(1, 1, -1)
-    # the two thrusters sit back-to-back on the same axis, their mount ends touching
+    # the two thrusters sit back-to-back on the same axis (column x 0, y 1), their mount ends touching; the cells in front of and behind them stay free
     thr(bp, (0, 1, -3), "Forward", "Up", f"{name} Ion Reverse")
     thr(bp, (0, 1, -1), "Backward", "Up", f"{name} Ion Main")
-    ant(bp, (1, 1, 0), "Up", "Backward", f"{name} Antenna", 2500)
+    ant(bp, (1, 1, 0), "Backward", "Up", f"{name} Antenna", 2500)   # lies along the hull (rear half in the tail cell), not standing on the roof
     cam(bp, (1, 0, -3), "Forward", "Up", f"{name} Camera")
     cam(bp, (2, 0, -2), "Right", "Up", f"{name} Camera Right")
-    cam(bp, (1, -1, -2), "Down", "Forward", f"{name} Camera Down")
+    cam(bp, (-1, 0, 0), "Left", "Up", f"{name} Camera Left")
     if ai:
-        # tail section (2 cells longer than v2.7): AI blocks, rear camera on the new tail end
+        # tail section: AI blocks in the lower right column, rear camera on the tail end
         bp.add("MyObjectBuilder_OffensiveCombatBlock", "SmallOffensiveCombat", (1, 0, 1), name=f"{name} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", "SmallFlightMovement", (1, 0, 2), name=f"{name} AI Flight [AI]", kind="ai")
         cam(bp, (1, 0, 3), "Backward", "Up", f"{name} Camera Rear")
-    else:
-        cam(bp, (1, 0, 1), "Backward", "Up", f"{name} Camera Rear")
-    cam(bp, (-1, 0, 0), "Left", "Up", f"{name} Camera Left")
-    cam(bp, (1, 2, -1), "Up", "Backward", f"{name} Camera Up")
+    else:       # no AI blocks: the same tail in armour, so both variants share the hull
+        bp.armor(1, 0, 1, RED); bp.armor(1, 0, 2, RED)
+        cam(bp, (1, 0, 3), "Backward", "Up", f"{name} Camera Rear")
+    # PB mounts only on its front: it sits beside the tail, facing into it (orientation found by the mount rules)
+    pods.orient_attached(bp, "MyObjectBuilder_MyProgrammableBlock", "SmallProgrammableBlock", (0, 0, 1), name=f"{name} PB",
+                         extra=pb_extra(script) if script else '', kind="ctrl", color=RED)
     if sensor:
-        bp.add("MyObjectBuilder_SensorBlock", "SmallBlockSensor", (2, 0, 0), "Right", "Up", f"{name} Sensor", kind="sensor")
+        for cell in ((1, 1, 2), (1, 1, 3), (1, 1, -3)):    # first cell where the sensor seats on a neighbour (360 degree sensor: any spot will do)
+            try: pods.orient_attached(bp, "MyObjectBuilder_SensorBlock", "SmallBlockSensor", cell, name=f"{name} Sensor", kind="sensor"); break
+            except AssertionError: pass
+        else: raise AssertionError(f"{name}: no cell for the sensor")
     if merge:
-        # docking latch: belly stalk (armour + merge); the merge block is the lowest block, clamp face Down
-        bp.armor(1, -1, 0, RED)
-        merge_small(bp, (1, -2, 0), "Down", f"{name} Merge")
+        # docking latch: one merge block hung under the belly, the lowest block of the drone, clamp face Down
+        merge_small(bp, (1, -1, 0), "Down", f"{name} Merge")
     return finalize(bp)
 
 def gnat(lite=False):
     name = "Gnat Lite" if lite else "Gnat"
     bp = gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite)
-    # one blank PB reserved for the Staff half (FLEET LINK + LAUNCH leave GnatSwarmAI, 87 k minified; docs/design/pb_headroom.md); in gnat(), not gnat_frame: the Stinger fallback shares the frame
-    spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=name)
+    # one blank PB reserved for the Staff half (FLEET LINK + LAUNCH leave GnatSwarmAI, 87 k minified; docs/design/pb_headroom.md); in gnat(), not gnat_frame: the Stinger fallback shares the frame.
+    # Placed by hand on the tail (armour seat, then the PB): the generic spare search would pick a cell off the 2 x 2 hull.
+    import pods
+    zs = 3
+    bp.armor(0, 0, 2, RED)
+    spares.check_name(f"[Spare] {name} PB 2")
+    pods.orient_attached(bp, spares.PB_X, "SmallProgrammableBlock", (0, 0, zs), name=f"[Spare] {name} PB 2", kind="ctrl", color=RED)
+    bp.validate()
     return bp
 
 # ---------------------------------------------------------------------------------------------
