@@ -1,75 +1,89 @@
 {
-  "_doc": "Shared in-game script blocks kept identical by tools/blocks_sync.py (control_arch D8). One entry per block: file = the block text (marker comments included), scripts = the scripts/*.cs files that carry it, anchor = regex of the line the block is inserted before when a script has none yet (default ^public Program\\(\\)), name = the marker word (markers are '// >>> NAME v...' and '// <<< NAME v...'). The seven blocks that predate this file keep their own tools/*_sync.py (lists inside); blocks_sync.py --check runs them too, so ONE command checks every shared block. New blocks (MANUAL, BATTERY, HELMLINK, ...) are added here, not as an eighth hard-coded sync script.",
-  "legacy": [
-    "lead_sync.py",
-    "ai_gate_sync.py",
-    "fleet_sync.py",
-    "follow_sync.py",
-    "kz_sync.py",
-    "launch_sync.py",
-    "aim_sync.py"
-  ],
-  "blocks": {
-    "BREACH": {
-      "file": "tools/breach_block.cs",
-      "scripts": [
-        "ShrikeAI"
-      ],
-      "anchor": "^// =+\\n//  v1\\.8: AI-BLOCK HYBRID SEARCH"
-    },
-    "MANUAL": {
-      "file": "tools/manual_block.cs",
-      "scripts": [
-        "ShrikeAI"
-      ]
-    },
-    "HELMLINK": {
-      "file": "tools/helmlink_block.cs",
-      "scripts": [
-        "ShrikeAI"
-      ]
-    },
-    "BATTERY": {
-      "file": "tools/battery_block.cs",
-      "scripts": [
-        "ShrikeAI"
-      ]
-    },
-    "FRIENDLY AVOIDANCE": {
-      "file": "tools/fa_block.cs",
-      "scripts": [
-        "HornetDroneAI",
-        "GnatSwarmAI",
-        "LongbowSniperAI",
-        "LancerAI",
-        "HarrierAI",
-        "AegisAI",
-        "BasiliskAI",
-        "TubeRamAI",
-        "WaspFlightAI",
-        "ShrikeAI",
-        "MantisAI"
-      ]
-    },
-    "FRIENDLY BEACON": {
-      "file": "tools/fb_block.cs",
-      "scripts": [
-        "WaspAI",
-        "ShrikeAI"
-      ]
-    },
-    "HARASSER LINK": {
-      "file": "tools/hd_block.cs",
-      "scripts": [
-        "ShrikeAI"
-      ]
-    },
-    "LOOKOUT": {
-      "file": "tools/lookout_block.cs",
-      "scripts": [
-        "SpotterAI",
-        "StaffAI"
-      ]
-    }
+ "_doc": "Shared in-game script blocks kept identical by tools/blocks_sync.py (control_arch D8). One entry per block: file = the block text (marker comments included), scripts = the scripts/*.cs files that carry it, anchor = regex of the line the block is inserted before when a script has none yet (default ^public Program\\(\\)), name = the marker word (markers are '// >>> NAME v...' and '// <<< NAME v...'). The seven blocks that predate this file keep their own tools/*_sync.py (lists inside); blocks_sync.py --check runs them too, so ONE command checks every shared block. New blocks (MANUAL, BATTERY, HELMLINK, ...) are added here, not as an eighth hard-coded sync script.",
+ "legacy": [
+  "lead_sync.py",
+  "ai_gate_sync.py",
+  "fleet_sync.py",
+  "follow_sync.py",
+  "kz_sync.py",
+  "launch_sync.py",
+  "aim_sync.py"
+ ],
+ "blocks": {
+  "BREACH": {
+   "file": "tools/breach_block.cs",
+   "scripts": [
+    "ShrikeAI"
+   ],
+   "anchor": "^// =+\\n//  v1\\.8: AI-BLOCK HYBRID SEARCH"
+  },
+  "MANUAL": {
+   "file": "tools/manual_block.cs",
+   "scripts": [
+    "ShrikeAI"
+   ]
+  },
+  "HELMLINK": {
+   "file": "tools/helmlink_block.cs",
+   "scripts": [
+    "ShrikeAI"
+   ]
+  },
+  "BATTERY": {
+   "file": "tools/battery_block.cs",
+   "scripts": [
+    "ShrikeAI"
+   ]
+  },
+  "FRIENDLY AVOIDANCE": {
+   "file": "tools/fa_block.cs",
+   "scripts": [
+    "HornetDroneAI",
+    "GnatSwarmAI",
+    "LongbowSniperAI",
+    "LancerAI",
+    "HarrierAI",
+    "AegisAI",
+    "BasiliskAI",
+    "TubeRamAI",
+    "WaspFlightAI",
+    "ShrikeAI",
+    "MantisAI"
+   ]
+  },
+  "FRIENDLY BEACON": {
+   "file": "tools/fb_block.cs",
+   "scripts": [
+    "WaspAI",
+    "ShrikeAI"
+   ]
+  },
+  "HARASSER LINK": {
+   "file": "tools/hd_block.cs",
+   "scripts": [
+    "ShrikeAI"
+   ]
+  },
+  "LOOKOUT": {
+   "file": "tools/lookout_block.cs",
+   "scripts": [
+    "SpotterAI",
+    "StaffAI"
+   ]
+  },
+  "PRINTER GUARD": {
+   "file": "tools/printer_guard_block.cs",
+   "scripts": [
+    "AegisAI",
+    "GnatSwarmAI",
+    "HarrierAI",
+    "HornetDroneAI",
+    "LancerAI",
+    "LongbowSniperAI",
+    "MantisAI",
+    "StingerAI",
+    "WaspFlightAI"
+   ]
   }
+ }
 }

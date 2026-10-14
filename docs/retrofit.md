@@ -17,6 +17,9 @@ Shared script blocks (`tools/blocks.json`, `tools/*_sync.py`) are the cheapest w
 
 (none)
 
+## Applied 2026-10-14 (printer guard)
+- **PRINTER GUARD** shared block (`tools/printer_guard_block.cs`, blocks.json): a flight PB flies nothing while its grid holds a `[Bay` block or the Hive Mother PB (owner: a printed Watcher flew the Watcher Pad) and re-reads its blocks once it has split off. Applied to AegisAI, GnatSwarmAI, HarrierAI, HornetDroneAI, LancerAI, LongbowSniperAI, MantisAI, StingerAI, WaspFlightAI (TubeRamAI has its own). Not needed: BasiliskAI, ShrikeAI (never printed).
+
 ## Applied 2026-10-14 (SENTRY mode, owner request "sentry mode for all drones")
 
 | Improvement | Applied to | Not applied to (why) |
