@@ -289,7 +289,7 @@ string GPos(IMyFunctionalBlock g)                 // "" when the grinder sits wh
     bool ok = dd == Vector3I.Zero && g.Max - _d == V(S("Grinder Max", "0,0,0")) && g.Orientation.Forward.ToString() == S("Grinder Forward", "Up");
     if (ok) return "";
     return " pos WRONG move x" + (dd.X >= 0 ? "+" : "") + dd.X + " y" + (dd.Y >= 0 ? "+" : "") + dd.Y + " z" + (dd.Z >= 0 ? "+" : "") + dd.Z +
-        (g.Orientation.Forward.ToString() == S("Grinder Forward", "Up") ? (dd == Vector3I.Zero ? " turn about tip" : "") : " tip->y+");
+        (g.Orientation.Forward.ToString() == S("Grinder Forward", "Up") ? (dd == Vector3I.Zero ? " turn about tip" : "") : " tip->" + S("Grinder Forward", "Up"));
 }
 void Watch()
 {
