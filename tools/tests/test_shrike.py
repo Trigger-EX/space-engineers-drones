@@ -31,7 +31,7 @@ def named(bp, text):
 class ContractTests(unittest.TestCase):
     def test_module_contract(self):
         self.assertEqual(list(S.MODELS), ['Shrike'])
-        self.assertEqual(S.SCRIPTS, ['ShrikeAI.cs', 'TurretAI.cs'])
+        self.assertEqual(S.SCRIPTS, ['ShrikeAI.cs', 'StaffAI.cs', 'TurretAI.cs'])
         self.assertIn('Shrike', S.DOCS)
         self.assertGreater(len(S.DOCS['Shrike']), 100)
         self.assertIn('3 magazines', S.DOCS['Shrike'])          # the ammunition limitation is stated in the README sentence

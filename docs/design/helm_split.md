@@ -1,6 +1,15 @@
 # Helm Split: moving the off-hot-path modules of ShrikeAI.cs into the Staff PB
 
-Status: plan (2026-10-14), nothing implemented. Pattern: `docs/design/wasp_split.md`. Rules: CLAUDE.md "Script size".
+Status: **implemented 2026-10-14, cuts 1 and 3** (fleet channel, damage sensing). **Cut 2 (cockpit HUD page and Run menu of MANUAL) is not moved yet**: it would take the Helm from 81,100 to about 79,000, and it
+touches the pilot-facing HUD (extra latency for a lag-sensitive display), so it waits for an in-game look at the split first. Measured: ShrikeAI.cs **81,100** minified (was 86,228; gate 86,000, restored),
+StaffAI.cs **29,054** (was about 23,000). Pattern: `docs/design/wasp_split.md`. Rules: CLAUDE.md "Script size".
+
+Implemented as planned, with these differences: the Shrike's `[Staff] Shrike` PB is the blank `[Spare] Shrike PB` reserved by `shrike_shipped()` (`spares.add_spare_pbs(..., reserved_ok=True, extra=...)`); `[Fleet]`
+migration copies the seven keys once at split start; a Staff-side `SplitStep` replaces `FleetPump` (it filters `msg.Source == IGC.Me` and the 50 m home rule); `.TGT` is capped at 20 ids per Update10 run, latest per id.
+
+Checks: `selftest hsplit` (sim/src/Run/SelfTestHelmSplit.cs, 7 checks, 3 seeds each: split on, FLEET_TGT -> Helm contact in 2-6 ticks, FLEET_CMD hunt / launch routing, FLEET_HOME rules, Staff hit counter = Helm
+hit counter in a duel, Staff killed -> one hit and `_hlkLost`), `tools/tests/test_helm_split.py`, `selftest m2 m3 m6` green; `m1`, `m4`, `m5` fail exactly as before the split (pre-existing). Regression runs (deterministic, 10 seeds
+Shrike vs Hornet: 8 timeouts / 2 wins before and after; Warden and Corsair vs Pirate, 3 seeds: identical numbers; Ballista vs a 100 m/s Tech Hunter, 10 seeds: 0 hits, closest 940 m).
 
 ## 0. Problem and numbers (measured with `tools/minify_cs.py` on the current tree)
 `scripts/ShrikeAI.cs` is the Helm of Shrike, Corsair, Warden, Leviathan and Ballista: **86,228** minified (165,060 raw). The gate `SCRIPT_LIMITS` in

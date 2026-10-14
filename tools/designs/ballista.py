@@ -184,10 +184,10 @@ def _core(S, full):
                    custom_data=f'[Ship]\nTag={TAG}\n' + HELM_DATA, extra=pb_extra(_script('ShrikeAI.cs')) if _script('ShrikeAI.cs') else '')
     S.spotter = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (0, 4, 11), 'Forward', 'Up', '[Spotter][SH] Ballista Spotter', toward='Down', kind='ctrl',
                       custom_data=f'[Ship]\nTag={TAG}\n', extra=pb_extra(_script('SpotterAI.cs')) if _script('SpotterAI.cs') else '')
-    # headroom: a third, empty PB (no program) beside the Spotter, so a module can move off the Helm over IGC later without a new blueprint.  Its name must not start
-    # with [Staff] (the Helm turns its Staff link on for that) nor contain the Hive Mother name (the Spotter would take it for the foundry).
-    S.spare = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (1, 4, 11), 'Forward', 'Up', nm('Spare PB'), toward='Down', kind='ctrl',
-                    custom_data=f'[Ship]\nTag={TAG}\n')
+    # the Staff half of the Helm (docs/design/helm_split.md): fleet channel relay and damage sensing run here, so ShrikeAI stays under its size gate.  Its name must start with [Staff] (the Helm
+    # switches its link on for that) and carry the [SH] prefix (the Staff only adopts blocks with the Block Prefix).  Mothership=false: the Ballista carries no drones, so no <Type>_HOME / FLEET_HOME.
+    S.spare = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (1, 4, 11), 'Forward', 'Up', '[Staff][SH] Ballista Staff', toward='Down', kind='ctrl',
+                    custom_data=f'[Ship]\nTag={TAG}\n\n[Staff]\nBlock Prefix=[SH]\nMothership=false\n', extra=pb_extra(_script('StaffAI.cs')) if _script('StaffAI.cs') else '')
     # the two large connectors on the rear face of the battery deck: the probe foundry docks here
     S.conns = [S.add('conn', 'MyObjectBuilder_ShipConnector', 'Connector', (x, 3, 12), 'Backward', 'Up', nm(f'Foundry Connector {"AB"[i]}'), toward='Forward', kind='conn')
                for i, x in enumerate((0, 1))]
@@ -356,7 +356,7 @@ DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 
         'The Helm keeps the stand-off and turns the ship onto the target. A small probe foundry docked on its rear connectors prints a Peeper probe when a big target is engaged; the probe circles the target and its turret finds the '
         'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 8,200 PCU with the foundry, 9,300 with a live probe. Three large reactors (900 MW) and 13 batteries cover the 1,026 MW the 27 rails draw to recharge together. Nothing has run in the game.'}
 MODEL_NOTES = {'Ballista': 'Needs a world PCU limit of 10,000 or more. The foundry connectors are written locked (the Spotter presses Connect if they ever come up unlocked). Lite has no sensor / AI blocks and prints Lite probes (no turret, so they find nothing): use Full.'}
-SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
+SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
 
 # ---------------------------------------------------------------------------------------------
 def numbers(bp):

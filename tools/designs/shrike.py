@@ -24,7 +24,7 @@ import sebp_toolbar as TB
 from sebp_inv import Item
 
 NAME = 'Shrike'
-SCRIPTS = ['ShrikeAI.cs', 'TurretAI.cs']
+SCRIPTS = ['ShrikeAI.cs', 'StaffAI.cs', 'TurretAI.cs']
 TURRET_CELL = (0, 9, 22)           # the PD2S stator's lower cell: on the spine (top y = 8) behind the canopy (y 9, z 17..19)
 TAG = '[SH] '                     # host-ship prefix (control_arch 3.6 / grids_bays 6.3): Helm collects blocks by prefix AND grid
 
@@ -487,7 +487,9 @@ def shrike(lite=False):
 def shrike_shipped(lite=False):
     """the blueprint that ships: one blank PB reserved for a Staff half (FLEET LINK receive + AI GATE leave ShrikeAI, 86 k minified; docs/design/pb_headroom.md).  shrike() stays as it was for the tests and the warship modules."""
     bp = shrike(lite)
-    spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=NAME + (' Lite' if lite else ''))
+    # the Staff half of the Helm (docs/design/helm_split.md): fleet channel relay + damage sensing; Mothership=false: the Shrike carries no drones
+    spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, name='[Staff] Shrike', custom_data='[Ship]\nTag=SH\n\n[Staff]\nMothership=false\n',
+                         extra=pb_extra(_script('StaffAI.cs')) if _script('StaffAI.cs') else '', reserved_ok=True)
     return bp
 
 MODELS = {NAME: shrike_shipped}

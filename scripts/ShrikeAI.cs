@@ -98,13 +98,6 @@ IMyTerminalBlock _aimRef;
 
 // IGC
 IMyBroadcastListener _lTgt, _lCrit, _lCmd, _lHome;
-string ListenTags = "HORNET,SHRIKE,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER";   // other fleets' target feeds ("<TAG>_TGT"), same tuple on every fleet
-List<IMyBroadcastListener> _lFeed = new List<IMyBroadcastListener>();
-void RegisterFeeds()
-{
-    foreach (var t in ListenTags.Split(','))
-    { string tt = t.Trim().ToUpperInvariant(); if (tt != "" && tt != Tag.ToUpperInvariant()) _lFeed.Add(IGC.RegisterBroadcastListener(tt + "_TGT")); }
-}
 
 // tracking
 class Track
@@ -175,98 +168,7 @@ double _aimErrDeg = 0, _fireWinDeg = 0, _leadT = 0;
 double _avgMs = 0; int _peakIns = 0;   // instruction counter: PB limit is Runtime.MaxInstructionCount per run
 StringBuilder _sb = new StringBuilder();
 
-// >>> FLEET LINK v1.0 (shared block: identical in every drone script and carrier relay, see docs/hive-protocol.md) >>>
-// A common IGC channel for ALL drone types, used IN ADDITION to the per-type tags (HORNET_TGT, GNAT_CMD, ...), which are untouched.
-//   <ch>_TGT   MyTuple<long id, Vector3D pos, Vector3D vel, double radius, long sender>   same tuple as <TAG>_TGT; radius < 0 = finished
-//   <ch>_HOME  Vector3D (rally point)        <ch>_CMD  string (one command, e.g. "hunt", "rtb", "launch")
-// <ch> = Channel, plus "_" + Secret when a secret is set (IGC reaches every PB in antenna range, so use a secret in multiplayer).
-// Own [Fleet] section in Custom Data (defaults are written on first run, "reload" re-reads them):
-//   Channel=FLEET   Secret=   Listen Tags=   Extra Broadcast Tags=FLEET   Accept Commands=true   Allowed Commands=...   Accept Home=true
-// Script hooks (the only lines a script needs): FleetLoad(true) after LoadConfig(); FleetPump(Command, home setter) in ReadIGC();
-// drain every listener in FleetTgtL with the same handler as _lTgt (skip a message when !FleetOk(d)); FleetSend(tuple) next to each
-// IGC.SendBroadcastMessage(Tag + "_TGT", ...) (shares and radius -1 "finished" messages).
-List<IMyBroadcastListener> FleetTgtL = new List<IMyBroadcastListener>();   // target listeners (fleet channel + Listen Tags)
-IMyBroadcastListener _flCmd, _flHome;
-List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
-List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
-string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
-bool _flCmdOn = true, _flHomeOn = true;
-
-string FleetTag(string t, string ch)
-{
-    t = t.Trim();
-    if (t.Length == 0) return "";
-    if (t.ToUpperInvariant() == "FLEET") return ch == "" ? "" : ch + "_TGT";
-    return t.IndexOf('_') >= 0 ? t : t.ToUpperInvariant() + "_TGT";
-}
-
-void FleetLoad(bool listen)
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Fleet";
-    if (!ini.ContainsKey(S, "Channel")) ini.Set(S, "Channel", "FLEET");
-    if (!ini.ContainsKey(S, "Secret")) ini.Set(S, "Secret", "");
-    if (!ini.ContainsKey(S, "Listen Tags")) ini.Set(S, "Listen Tags", "");
-    if (!ini.ContainsKey(S, "Extra Broadcast Tags")) ini.Set(S, "Extra Broadcast Tags", "FLEET");
-    if (!ini.ContainsKey(S, "Accept Commands")) ini.Set(S, "Accept Commands", true);
-    if (!ini.ContainsKey(S, "Allowed Commands")) ini.Set(S, "Allowed Commands", _flAllowed);
-    if (!ini.ContainsKey(S, "Accept Home")) ini.Set(S, "Accept Home", true);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    string ch = ini.Get(S, "Channel").ToString("FLEET").Trim().ToUpperInvariant().Replace(" ", "");
-    string sec = ini.Get(S, "Secret").ToString("").Trim().Replace(" ", "");
-    if (ch != "" && sec != "") ch = ch + "_" + sec;
-    _flChan = ch;
-    _flCmdOn = ini.Get(S, "Accept Commands").ToBoolean(true);
-    _flHomeOn = ini.Get(S, "Accept Home").ToBoolean(true);
-    _flAllowed = ini.Get(S, "Allowed Commands").ToString(_flAllowed).ToLowerInvariant();
-    var tin = new List<string>(); var tout = new List<string>();
-    if (ch != "") tin.Add(ch + "_TGT");
-    foreach (var t in ini.Get(S, "Listen Tags").ToString("").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tin.Contains(x)) tin.Add(x); }
-    foreach (var t in ini.Get(S, "Extra Broadcast Tags").ToString("FLEET").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tout.Contains(x)) tout.Add(x); }
-    _flOut = tout;
-    string key = string.Join("|", tin.ToArray()) + "#" + ch + "#" + (listen ? "1" : "0");
-    if (key == _flKey) return;
-    _flKey = key;
-    foreach (var l in _flAll) IGC.DisableBroadcastListener(l);
-    _flAll.Clear(); FleetTgtL.Clear(); _flCmd = null; _flHome = null;
-    if (!listen) return;
-    foreach (var x in tin) { var l = IGC.RegisterBroadcastListener(x); _flAll.Add(l); FleetTgtL.Add(l); }
-    if (ch != "")
-    {
-        _flCmd = IGC.RegisterBroadcastListener(ch + "_CMD"); _flAll.Add(_flCmd);
-        _flHome = IGC.RegisterBroadcastListener(ch + "_HOME"); _flAll.Add(_flHome);
-    }
-}
-
-bool FleetV(Vector3D v) { return Math.Abs(v.X) < 1e9 && Math.Abs(v.Y) < 1e9 && Math.Abs(v.Z) < 1e9; }   // false for NaN and absurd values
-bool FleetOk(MyTuple<long, Vector3D, Vector3D, double, long> d)
-{
-    return d.Item1 != Me.CubeGrid.EntityId && FleetV(d.Item2) && FleetV(d.Item3) && d.Item4 < 1e5 && !double.IsNaN(d.Item4);
-}
-
-void FleetPump(Action<string> onCmd, Action<Vector3D> onHome)
-{
-    while (_flCmd != null && _flCmd.HasPendingMessage)
-    {
-        var m = _flCmd.AcceptMessage();
-        if (!_flCmdOn || !(m.Data is string)) continue;
-        string c = ((string)m.Data).Trim().ToLowerInvariant();
-        int sp = c.IndexOf(' '); string w = sp < 0 ? c : c.Substring(0, sp);
-        if (w.Length > 0 && ("," + _flAllowed + ",").Contains("," + w + ",")) onCmd(c);
-    }
-    while (_flHome != null && _flHome.HasPendingMessage)
-    {
-        var m = _flHome.AcceptMessage();
-        if (_flHomeOn && m.Data is Vector3D && FleetV((Vector3D)m.Data)) onHome((Vector3D)m.Data);
-    }
-}
-
-void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { foreach (var t in _flOut) IGC.SendBroadcastMessage(t, tup); }
-void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_HOME", p); }
-void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
-// <<< FLEET LINK <<<
+// (the fleet channel and the other fleets' feeds live in the Staff PB since the Helm split: docs/design/helm_split.md; the Helm hears them as "<Ship Tag>.TGT" and ".S2H")
 
 // >>> AI GATE v1.1 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
 // The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
@@ -1191,13 +1093,17 @@ string BatStatus()
 }
 // <<< BATTERY v1.0 <<<
 
-// >>> HELMLINK v1.1 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
+// >>> HELMLINK v1.2 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
 // The Helm sends, with TransmissionDistance.CurrentConstruct (never leaves the ship, no secret needed), on "<Ship Tag>.<suffix>" (Ship Tag default SHIP, [Link] in Custom Data):
 //   .HB     long tick                                                   heartbeat every "Heartbeat (s)" (0.5): the Staff releases every override when it stays silent for 1.5 s
 //   .H2S    MyTuple<int flags, long tgtId, Vector3D tgtPos, Vector3D tgtVel, float tgtRadius, float batt>   5 Hz: flags bit0-2 mode (0 IDLE 1 GUARD 2 HUNT 4 RTB 5 MANUAL 6 ASSIST 7 REACT),
 //           bit3 pilot seated, bit4 firing, bit6 dead-man timer armed, bit7 degraded (no thruster or no gyro)
 //   .PILOT  MyTuple<int mode, int seated>                               on change
-// and listens on .S2H  MyTuple<string cmd, Vector3D rally, double radius>   (cmd = any Command() verb; rally / radius are for the wing, unused here).
+//   .FLT    MyTuple<long id, Vector3D pos, Vector3D vel, double radius, long sender>   the Helm's own target shares and "finished" (radius < 0): the Staff copies them to the fleet channel
+//   H2S flags bit 8 (256) = "split Helm" (v1.2): the Staff then takes over the fleet channel, the other fleets' target feeds and damage sensing (docs/design/helm_split.md)
+// and listens on .S2H  MyTuple<string cmd, Vector3D rally, double radius>   (cmd = any Command() verb; an EMPTY cmd carries the fleet home point in rally),
+//   .TGT  the fleet / feed target tuple (as .FLT), relayed by the Staff,   .DMG  MyTuple<int hits, Vector3D hitDir, float hitDirAge>  hit counter and direction from the Staff's damage scan, 1 Hz (also its liveness beat).
+// The Helm counts a hit only when the counter grows while the link was already alive; silence for 3 s after it was heard counts as one hit (a destroyed Staff means damage).
 // The link is optional: [Link] Enable (AUTO/ON/OFF) = AUTO switches it on while a PB named "[Staff] ..." is on the construct, so the single-PB ships are untouched.
 // Script hooks: HlkCfg() at the end of LoadConfig; HlkBlocks() at the end of GetBlocks; HlkTick() once per Update1 tick after ManTick().
 // Uses from the script: Cfg(), Command(), Man, _occ, _mode (Mode.IDLE/GUARD/HUNT/ASSIST/RTB), _tgt (Track), _now, _tick, _firing, _dm, _thr, _gyros, _batFrac.
@@ -1205,7 +1111,7 @@ string BatStatus()
 // blocks of drones that are merged to the ship's cradles (they are blocks of the SAME grid while clamped) are never adopted: Own(b) replaces b.IsSameConstructAs(Me) in the lists.
 // Ship Tag also falls back to the [Ship] Tag key of the ship designs' Custom Data.
 bool Own(IMyTerminalBlock b) { return b.IsSameConstructAs(Me) && (HlkPre == "" || b.CustomName.StartsWith(HlkPre, StringComparison.OrdinalIgnoreCase)); }
-bool HlkOn; string HlkShip = "SHIP", HlkEn = "AUTO", HlkPre = "", _hlkKey = ""; double HlkHb = 0.5; int _hlkMd = -9, _hlkSeat = -9; IMyBroadcastListener _hlkIn;
+bool HlkOn, _hlkLost; string HlkShip = "SHIP", HlkEn = "AUTO", HlkPre = "", _hlkKey = ""; double HlkHb = 0.5, _hlkDmgT = -99; int _hlkMd = -9, _hlkSeat = -9, _hlkHits; IMyBroadcastListener _hlkIn, _hlkTgt, _hlkDmg;
 void HlkCfg()
 {
     HlkEn = Cfg("Link", "Enable (AUTO/ON/OFF)", HlkEn).Trim().ToUpperInvariant(); HlkShip = Cfg("Link", "Ship Tag", _ini.Get("Ship", "Tag").ToString(HlkShip)).Trim().ToUpperInvariant(); HlkPre = Cfg("Link", "Block Prefix", HlkPre).Trim(); HlkHb = Math.Max(0.1, Cfg("Link", "Heartbeat (s)", HlkHb));
@@ -1217,29 +1123,45 @@ void HlkBlocks()
     HlkOn = HlkEn == "ON" || (HlkEn != "OFF" && l.Count > 0);
     string k = HlkOn ? HlkShip : "";
     if (k == _hlkKey) return;
-    if (_hlkIn != null) IGC.DisableBroadcastListener(_hlkIn);
-    _hlkIn = k == "" ? null : IGC.RegisterBroadcastListener(k + ".S2H"); _hlkKey = k;
+    foreach (var x in new[] { _hlkIn, _hlkTgt, _hlkDmg }) if (x != null) IGC.DisableBroadcastListener(x);
+    _hlkIn = k == "" ? null : IGC.RegisterBroadcastListener(k + ".S2H"); _hlkTgt = k == "" ? null : IGC.RegisterBroadcastListener(k + ".TGT"); _hlkDmg = k == "" ? null : IGC.RegisterBroadcastListener(k + ".DMG"); _hlkKey = k;
 }
+bool FleetV(Vector3D v) { return Math.Abs(v.X) < 1e9 && Math.Abs(v.Y) < 1e9 && Math.Abs(v.Z) < 1e9; }   // false for NaN and absurd values
+bool FleetOk(MyTuple<long, Vector3D, Vector3D, double, long> d) { return d.Item1 != Me.CubeGrid.EntityId && FleetV(d.Item2) && FleetV(d.Item3) && d.Item4 < 1e5 && !double.IsNaN(d.Item4); }
+void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { if (HlkOn) IGC.SendBroadcastMessage(HlkShip + ".FLT", tup, TransmissionDistance.CurrentConstruct); }   // the Staff copies it to the fleet channel
 void HlkTick()
 {
     if (!HlkOn || _hlkIn == null) return;
     while (_hlkIn.HasPendingMessage)
     {
         var m = _hlkIn.AcceptMessage();
-        if (m.Data is MyTuple<string, Vector3D, double>) { string c = ((MyTuple<string, Vector3D, double>)m.Data).Item1; if (!string.IsNullOrEmpty(c)) Command(c); }
+        if (!(m.Data is MyTuple<string, Vector3D, double>)) continue;
+        var d = (MyTuple<string, Vector3D, double>)m.Data;
+        if (!string.IsNullOrEmpty(d.Item1)) Command(d.Item1); else if (FleetV(d.Item2)) { _dynHome = d.Item2; _dynHomeT = _now; }   // (empty verb: the fleet home point)
     }
+    ReadTgt(_hlkTgt);
+    while (_hlkDmg.HasPendingMessage)
+    {
+        var m = _hlkDmg.AcceptMessage();
+        if (!(m.Data is MyTuple<int, Vector3D, float>)) continue;
+        var d = (MyTuple<int, Vector3D, float>)m.Data;
+        if (_now - _hlkDmgT < 3 && d.Item1 > _hlkHits) { _hitAt = _now; _hits++; }   // a hit only when the link was already alive: a recompiled Staff restarts at 0, a recompiled Helm must not read an old count as a hit
+        _hlkHits = d.Item1; _hlkDmgT = _now; _hlkLost = false;
+        if (d.Item3 < 5 && d.Item2.LengthSquared() > 0.01) { _hitDir = d.Item2; _hitDirT = _now - d.Item3; }
+    }
+    if (!_hlkLost && _hlkDmgT > -90 && _now - _hlkDmgT > 3) { _hlkLost = true; _hitAt = _now; _hits++; }   // the Staff went silent: count one hit (a destroyed PB means damage)
     var cc = TransmissionDistance.CurrentConstruct;
     if (_tick % Math.Max(1, (int)(HlkHb * 60)) == 3) IGC.SendBroadcastMessage(HlkShip + ".HB", (long)_tick, cc);
     int md = Man ? 5 : _mode == Mode.ASSIST ? 6 : _mode == Mode.REACT ? 7 : (int)_mode, seat = _occ ? 1 : 0;
     if (md != _hlkMd || seat != _hlkSeat) { _hlkMd = md; _hlkSeat = seat; IGC.SendBroadcastMessage(HlkShip + ".PILOT", new MyTuple<int, int>(md, seat), cc); }
     if (_tick % 12 == 5)
     {
-        int f = md | seat << 3 | (_firing ? 16 : 0) | (_dm.Count > 0 && !Man ? 64 : 0) | (_thr.Count == 0 || _gyros.Count == 0 ? 128 : 0);
+        int f = md | seat << 3 | 256 | (_firing ? 16 : 0) | (_dm.Count > 0 && !Man ? 64 : 0) | (_thr.Count == 0 || _gyros.Count == 0 ? 128 : 0);
         var t = _tgt;
         IGC.SendBroadcastMessage(HlkShip + ".H2S", new MyTuple<int, long, Vector3D, Vector3D, float, float>(f, t != null ? t.Id : 0, t != null ? t.P(_now) : Vector3D.Zero, t != null ? t.V(_now) : Vector3D.Zero, t != null ? (float)t.Radius : 0, (float)_batFrac), cc);
     }
 }
-// <<< HELMLINK v1.1 <<<
+// <<< HELMLINK v1.2 <<<
 
 // >>> FRIENDLY BEACON v1.0 (shared block, synced by tools/blocks_sync.py, see docs/friendly-avoidance.md) >>>
 // The sending half of FRIENDLY AVOIDANCE for the scripts that have no room for the whole block (Mantis, Wasp: 100,000-character limit) and
@@ -1353,6 +1275,7 @@ Vector3D FaWant(Vector3D want, Vector3D me)
 }
 // <<< FRIENDLY AVOIDANCE v1.0 <<<
 
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
@@ -1363,7 +1286,7 @@ public Program()
     catch (Exception ex) { CtorErr("config", ex); }
     try
     {
-        FleetLoad(true); KzLoad(); AiGateLoad();
+        KzLoad(); AiGateLoad();
     }
     catch (Exception ex) { CtorErr("modules", ex); }
     try
@@ -1390,7 +1313,6 @@ public Program()
         _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
         _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
         _lCrit = IGC.RegisterBroadcastListener(Tag + "_AIM");
-        RegisterFeeds();
         _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
     }
     catch (Exception ex) { CtorErr("listeners", ex); }
@@ -1452,8 +1374,6 @@ void Tick(string arg, UpdateType src)
 
     ReadIGC(); ReadSwarm();
     if (_tick % 6 == 3) BroadcastStatus();
-    if (!Hot()) StepSlimScan();
-    if (_tick % 4 == 3) CheckDamage();
     if (_tick % 6 == 0) PollDesignators();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
@@ -1492,7 +1412,7 @@ void Command(string a)
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
             double r; if (w.Length > 1 && double.TryParse(w[1], out r)) Standoff = MathHelper.Clamp(r, MinRange, MaxFireRange); break;
-        case "reload": LoadConfig(); FleetLoad(true); KzLoad(); AiGateLoad(); GetBlocks(); break;
+        case "reload": LoadConfig(); KzLoad(); AiGateLoad(); GetBlocks(); break;
     }
 }
 
@@ -1552,7 +1472,6 @@ void GetBlocks()
     GridTerminalSystem.GetBlocksOfType(_ctcs, b => Own(b));
     GridTerminalSystem.GetBlocksOfType(_bats, b => Own(b));
     foreach (var c in _cams) c.EnableRaycast = true;
-    ScanSlims();
     FindAi();
 
     for (int i = 0; i < 6; i++) _thrDir[i].Clear();
@@ -1625,8 +1544,6 @@ void PollDesignators()
 void ReadIGC()
 {
     ReadTgt(_lTgt);
-    foreach (var fl in _lFeed) ReadTgt(fl);
-    foreach (var fl in FleetTgtL) ReadTgt(fl);
     while (_lCmd.HasPendingMessage)
     {
         var msg = _lCmd.AcceptMessage();
@@ -1648,7 +1565,6 @@ void ReadIGC()
         if (_bId != t.Id) { _bId = t.Id; _bOn = false; _bBad.Clear(); }
         if (!BreachBad(d.Item2) && (!_bOn || (_bS - d.Item2).LengthSquared() > 25)) BreachSet(d.Item2, Vector3D.TransformNormal(Vector3D.Normalize(fl), MatrixD.Transpose(t.O)));   // (a stalled point is in _bBad: it is not fed back in)
     }
-    FleetPump(Command, p => { if (!HlkOn || (p - Me.GetPosition()).LengthSquared() > 2500) { _dynHome = p; _dynHomeT = _now; } });   // (the Staff of my own ship broadcasts HOME = my own position: not a home)
 }
 
 void ReadTgt(IMyBroadcastListener l)
@@ -2290,9 +2206,8 @@ bool Forwardish(IMyCameraBlock c) { return Vector3D.Dot(c.WorldMatrix.Forward, _
 Dictionary<long, double> _ignore = new Dictionary<long, double>();
 Dictionary<long, int> _share = new Dictionary<long, int>(), _count = new Dictionary<long, int>();
 List<Track> _live = new List<Track>();
-List<IMySlimBlock> _slims = new List<IMySlimBlock>();
-List<double> _slimHp = new List<double>(); Vector3D _hitDir; double _hitDirT = -99;
-double _integ = -1, _hitAt = -99; int _hits = 0;
+Vector3D _hitDir; double _hitDirT = -99;   // damage sensing runs in the Staff PB (".DMG"); HlkTick sets these
+double _hitAt = -99; int _hits = 0;
 Vector3D _assist; double _assistT = -99;
 Vector3D _evade; double _evadeNext = 0; int _evadeHits = 0; Random _evRng = new Random();
 string _crash = "";
@@ -2354,70 +2269,6 @@ double HiveScore(Track t)
         return rank < sh ? -300 : 900;
     }
     return cnt >= sh ? 900 : -250 * (sh - cnt);
-}
-
-// Every block's integrity; a drop means this drone is being hit.
-// Incremental: walking the whole bounding box in one tick blows the PB instruction limit once the drone is
-// merged into a printer (one huge grid). Starts a pass; StepSlimScan() does SlimCellsPerTick cells per tick.
-List<IMySlimBlock> _slimsNew = new List<IMySlimBlock>(); HashSet<Vector3I> _slimSeen = new HashSet<Vector3I>();
-IMyCubeGrid _slimsGrid, _scanGrid; bool _slimBusy = false; int _sx, _sy, _sz, _mnx, _mny, _mnz, _mxx, _mxy, _mxz;
-const int SlimCellsPerTick = 200, SlimMaxCells = 30000;
-void ScanSlims()
-{
-    var g = Me.CubeGrid;
-    if (_slimsGrid != g) { _slims.Clear(); _integ = -1; }
-    _slimBusy = false;
-    Vector3I mn = g.Min, mx = g.Max;
-    if ((long)(mx.X - mn.X + 1) * (mx.Y - mn.Y + 1) * (mx.Z - mn.Z + 1) > SlimMaxCells) return;   // docked to something big: skip
-    _scanGrid = g; _slimsNew.Clear(); _slimSeen.Clear();
-    _mnx = mn.X; _mny = mn.Y; _mnz = mn.Z; _mxx = mx.X; _mxy = mx.Y; _mxz = mx.Z;
-    _sx = _mnx; _sy = _mny; _sz = _mnz; _slimBusy = true;
-}
-void StepSlimScan()
-{
-    if (!_slimBusy) return;
-    var g = _scanGrid;
-    if (g != Me.CubeGrid) { _slimBusy = false; return; }
-    for (int n = 0; n < SlimCellsPerTick; n++)
-    {
-        var p = new Vector3I(_sx, _sy, _sz);
-        if (g.CubeExists(p)) { var s = g.GetCubeBlock(p); if (s != null && _slimSeen.Add(s.Position)) _slimsNew.Add(s); }
-        if (++_sz > _mxz) { _sz = _mnz; if (++_sy > _mxy) { _sy = _mny; if (++_sx > _mxx) { _slimBusy = false; break; } } }
-    }
-    if (_slimBusy) return;
-    _slims.Clear(); _slims.AddRange(_slimsNew); _slimsGrid = g; _integ = -1;   // swap in the finished pass
-}
-int _cdI; double _cdSum; Vector3D _cdHd; bool _cdCmp;
-void CheckDamage()   // (sliced: CdSlice blocks per call - a 1,300-block ship read them all in one tick, 58,000 IL instructions against the 50,000 limit)
-{
-    var g = Me.CubeGrid; int n = _slims.Count;
-    if (_cdI == 0)
-    {
-        _cdCmp = _integ >= 0 && _slimHp.Count == n;
-        if (!_cdCmp) { _slimHp.Clear(); for (int i = 0; i < n; i++) _slimHp.Add(0); }
-        _cdSum = 0; _cdHd = Vector3D.Zero;
-    }
-    if (_slimHp.Count != n) { _cdI = 0; return; }   // (a new scan pass was swapped in)
-    // which side was hit: blocks that lost integrity since the last pass, as directions from the grid centre (the shooter is out that way)
-    Vector3D gc = g.WorldVolume.Center;
-    for (int e = Math.Min(n, _cdI + 150); _cdI < e; _cdI++)
-    {
-        var s = _slims[_cdI];
-        double v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0;
-        _cdSum += v;
-        if (_cdCmp && _slimHp[_cdI] - v > 0.5) { Vector3D d = g.GridIntegerToWorld(s.Position) - gc; double l = d.Length(); if (l > 0.3) _cdHd += d / l; }
-        _slimHp[_cdI] = v;
-    }
-    if (_cdI < n) return;
-    _cdI = 0; Vector3D hd = _cdHd;
-    if (hd.LengthSquared() > 0.01)
-    {
-        hd.Normalize();
-        Vector3D m = _now - _hitDirT < 3 ? _hitDir * 0.6 + hd * 0.4 : hd;
-        if (m.LengthSquared() > 0.01) { _hitDir = Vector3D.Normalize(m); _hitDirT = _now; }
-    }
-    if (_integ >= 0 && _cdSum < _integ - 0.5) { _hitAt = _now; _hits++; }
-    _integ = _cdSum;
 }
 
 // Random evasive velocity while under fire (new direction every 1-2.5 s and on every new hit).

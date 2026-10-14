@@ -167,7 +167,7 @@ namespace SeSim.Run
             Check(link && hbN >= 8 && trips == 0 && txt.Contains("HELM  ok"), model + ": HELMLINK on, the Staff has " + hbN + " heartbeats in 7 s, no trip");
         }
         static bool IsDrone(Body b) { foreach (var k in b.Blocks) { var pb = k.Api as SimProgrammableBlock; if (pb != null && pb.CustomNameValue != null && !pb.CustomNameValue.StartsWith("[")) return true; } return false; }
-        /// <summary>the fighter has one PB: the Helm finds its own blocks, flies in MANUAL without a fight, and its only dead-man is Timer D (no Staff to release the overrides)</summary>
+        /// <summary>the fighter: the Helm finds its own blocks, flies in MANUAL without a fight, and its only dead-man is Timer D (the Staff PB is the Helm split half, not a bay Staff)</summary>
         static void TestShrike()
         {
             Console.WriteLine("-- 0 Shrike (one PB) --");
@@ -178,9 +178,9 @@ namespace SeSim.Run
                 if (w.Tick != 4 * 60) return;
                 gy = Own<IMyGyro>(sh); th = Own<IMyThrust>(sh); gn = Own<IMyUserControllableGun>(sh);
                 hg = Count(Fld<object>(helm, "_gyros")); ht = Count(Fld<object>(helm, "_thr")); hn = Count(Fld<object>(helm, "_guns")); hd = Count(Fld<object>(helm, "_dm")); hs = Count(Fld<object>(helm, "_seats"));
-                wired = staff == null && Fld<bool>(helm, "HlkOn");          // v2.7 rotor turrets: the Shrike's Helm Custom Data has [Link] Enable=ON, so the Turret PB gets .H2S although there is no Staff
+                wired = staff != null && Fld<bool>(helm, "HlkOn");          // Helm split: the shipped Shrike carries a [Staff] PB (Mothership=false) and a Turret PB; the link is on (Custom Data [Link] Enable=ON)
             });
-            Check(gy > 0 && hg == gy && ht == th && hn == gn && hd == 1 && hs == 1 && wired, "Shrike: the Helm holds all " + gy + " gyros, " + th + " thrusters, " + gn + " guns, one dead-man timer and one seat; no Staff, link on for the Turret PB (" + hg + "/" + ht + "/" + hn + "/" + hd + "/" + hs + ")");
+            Check(gy > 0 && hg == gy && ht == th && hn == gn && hd == 1 && hs == 1 && wired, "Shrike: the Helm holds all " + gy + " gyros, " + th + " thrusters, " + gn + " guns, one dead-man timer and one seat; the Staff PB and the Turret PB are linked (" + hg + "/" + ht + "/" + hn + "/" + hd + "/" + hs + ")");
             TestManual("Shrike");
             int ok = 0; const int N = 2;
             for (int seed = 0; seed < N; seed++)

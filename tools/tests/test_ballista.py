@@ -43,7 +43,7 @@ def src(name):
 class ShipTests(unittest.TestCase):
     def test_module_contract(self):
         self.assertEqual(list(B.MODELS), ['Ballista'])
-        self.assertEqual(B.SCRIPTS, ['ShrikeAI.cs', 'SpotterAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs'])
+        self.assertEqual(B.SCRIPTS, ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs'])
 
     def test_27_large_railguns_pre_loaded(self):
         bp = full_no_foundry()
@@ -117,21 +117,20 @@ class ShipTests(unittest.TestCase):
     def test_names_the_scripts_rely_on(self):
         bp = full_no_foundry()
         names = [b['name'] for b in bp.blocks if b['name']]
-        self.assertTrue(all(n.startswith('[SH]') or n.startswith('[Helm][SH]') or n.startswith('[Spotter][SH]') for n in names), 'every block carries the [SH] prefix')
+        self.assertTrue(all(n.startswith('[SH]') or n.startswith('[Helm][SH]') or n.startswith('[Spotter][SH]') or n.startswith('[Staff][SH]') for n in names), 'every block carries the [SH] prefix')
         self.assertEqual(sum(1 for n in names if n.startswith('[Helm]')), 1)
         self.assertEqual(sum(1 for n in names if n.startswith('[Spotter]')), 1)
         self.assertEqual(sum(1 for n in names if 'Foundry Connector' in n), 2)
 
-    def test_three_pbs_and_the_spare_is_empty_and_inert(self):
+    def test_three_pbs_helm_spotter_and_staff(self):
         for lite in (False, True):
             bp = B.ballista(lite, with_foundry=False)
             pbs = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
             self.assertEqual(len(pbs), 3)
-            spare = [b for b in pbs if 'Spare' in b['name']]
-            self.assertEqual(len(spare), 1)
-            self.assertFalse(spare[0]['extra'], 'the spare PB carries no program')
-            self.assertFalse(spare[0]['name'].lower().startswith('[staff]'), 'the Helm would switch its Staff link on')
-            self.assertNotIn('Hive Mother', spare[0]['name'])
+            staff = [b for b in pbs if b['name'].lower().startswith('[staff]')]
+            self.assertEqual(len(staff), 1)
+            self.assertIn('Mothership=false', staff[0]['custom_data'])      # the Ballista carries no drones: no <Type>_HOME / FLEET_HOME
+            self.assertNotIn('Hive Mother', staff[0]['name'])               # (the Spotter would take it for the foundry)
 
 
 def sebp_dirs():
@@ -237,7 +236,7 @@ class ScriptWiringTests(unittest.TestCase):
     def test_scripts_are_embedded(self):
         bp = full_no_foundry()
         progs = [b['extra'] for b in bp.blocks if '<Program>' in (b.get('extra') or '')]
-        self.assertEqual(len(progs), 2)
+        self.assertEqual(len(progs), 3)        # Helm, Spotter, Staff
         fb = lite_docked().foundry
         self.assertTrue(any('<Program>' in (b.get('extra') or '') for b in fb.blocks))
         pee = P.peeper(True)

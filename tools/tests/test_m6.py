@@ -8,7 +8,7 @@ Pure python (builds Shrike, Corsair, Warden and, for one test, the Leviathan; ab
   * the ship tag agrees between the Helm ([Link] Ship Tag / [Ship] Tag), the Staff ([Staff] Ship Tag / [Ship] Tag) and the pod PBs ([Pod] Tag);
   * [Link] Block Prefix == [Staff] Block Prefix and every thruster, gyro, gun, turret, battery, seat, camera and the dead-man timer of a prefixed ship carries it;
   * the Helm finds a dead-man timer ("deadman" in its name) and a seat; the Staff's [Hangar n] Pod= names a PB, its Group= a block group; the bay's Merge= / Timer= names exist;
-  * the script sizes: ShrikeAI <= 90,000 minified characters, every other <= 100,000;
+  * the script sizes: ShrikeAI <= 86,000 minified characters, every other <= 100,000;
   * the packager files the warships as kind 'ship', the test ships as 'test', the drones as 'drone'.
 """
 import os, re, sys, unittest

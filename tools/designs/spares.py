@@ -54,7 +54,7 @@ def _try(bp, occ, cell, sub, kw):
     except AssertionError:
         return None
 
-def add_spare_pbs(bp, total=3, name='[Spare] {model} PB {i}', model=None, swap_armor=True, custom_data=None, min_enclosed=1, anchor=None, max_tries=300, color=None):
+def add_spare_pbs(bp, total=3, name='[Spare] {model} PB {i}', model=None, swap_armor=True, custom_data=None, min_enclosed=1, anchor=None, max_tries=300, color=None, extra=None, reserved_ok=False):
     """add PBs until `bp` has `total` (default 3); returns the new blocks.  `name` takes {model} (default bp.name) and {i} (the PB's number: have+1 ...)."""
     have = pb_count(bp)
     need = total - have
@@ -69,8 +69,9 @@ def add_spare_pbs(bp, total=3, name='[Spare] {model} PB {i}', model=None, swap_a
     for k in range(need):
         i = have + k + 1
         nm = name.format(model=model, i=i)
-        check_name(nm)
+        if not reserved_ok: check_name(nm)      # (reserved_ok: the PB is meant to carry a script that looks up the name, e.g. the Staff the Helm links to)
         kw = dict(name=nm, color=color, kind='ctrl', custom_data=custom_data)
+        if extra: kw['extra'] = extra
         occ = bp.occupancy()
         xs = [c[0] for c in occ]; ys = [c[1] for c in occ]; zs = [c[2] for c in occ]
         lo = (min(xs), min(ys), min(zs)); hi = (max(xs), max(ys), max(zs))

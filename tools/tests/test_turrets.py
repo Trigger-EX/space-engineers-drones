@@ -332,7 +332,7 @@ class ShipTests(unittest.TestCase):
         sh = ship('Shrike')
         for b in sh.blocks:                                  # on the Shrike EVERY other functional block wears [SH] (or is the Helm / the turret PB)
             if b['xtype'].endswith('_CubeBlock') or not b['name']: continue
-            self.assertTrue(b['name'].startswith(('[SH] ', '[Helm] ', '[TU] ')), b['name'])
+            self.assertTrue(b['name'].startswith(('[SH] ', '[Helm] ', '[TU] ', '[Staff] ')), b['name'])
 
     def test_swing_spheres_do_not_overlap_and_parked_poses_are_free(self):
         for name in ('Shrike', 'Corsair', 'Warden', 'Leviathan'):

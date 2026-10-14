@@ -36,7 +36,7 @@ class PbCount(unittest.TestCase):
         self.assertEqual(sum(x.startswith('[Thrust]') for x in n), 1, n)
 
     def test_reserved_spares(self):
-        for mod, model in (('core', 'Gnat'), ('extra', 'Basilisk'), ('extra', 'Basilisk Seeker'), ('shrike', 'Shrike')):
+        for mod, model in (('core', 'Gnat'), ('extra', 'Basilisk'), ('extra', 'Basilisk Seeker')):
             for lite in (False,):      # Lite is retired (CLAUDE.md)
                 bp = build(mod, model, lite)
                 spare = [b for b in bp.blocks if b['xtype'] == spares.PB_X and 'Spare' in b['name']]
@@ -46,6 +46,13 @@ class PbCount(unittest.TestCase):
                 self.assertFalse(b['name'].lower().startswith(spares.RESERVED_START), b['name'])
                 self.assertNotIn('hive mother', b['name'].lower())
                 bp.validate()
+
+    def test_shrike_carries_the_staff_half_of_the_helm(self):      # (the blank PB reserved for it became [Staff] Shrike: docs/design/helm_split.md)
+        bp = build('shrike', 'Shrike', False)
+        st = [b for b in bp.blocks if b['xtype'] == spares.PB_X and b['name'].startswith('[Staff]')]
+        self.assertEqual(len(st), 1, names(bp))
+        self.assertTrue((st[0].get('extra') or '').strip(), 'the Staff carries StaffAI.cs')
+        bp.validate()
 
     def test_spares_do_not_grow_the_blueprint(self):
         import core, spares as S
