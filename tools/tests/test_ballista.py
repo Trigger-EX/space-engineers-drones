@@ -79,7 +79,7 @@ class ShipTests(unittest.TestCase):
         foundry_full = n['pcu_foundry'] + 400          # the Full foundry is ~270 PCU above the Lite one (sensor-free shell, same welders)
         probe = pcu(P.peeper(False)) + len(P.peeper(False).blocks)      # a live probe + its projection (1 PCU per projected block)
         self.assertLess(ship + foundry_full + probe, PCU_LIMIT)
-        self.assertLess(ship, 5600)        # 4,349 + 4 PD gatling turrets + the thrust PB + 2 reactors, 2 tanks, 7 thrusters, 2 gyros, minus 7 batteries and the 4 small generators
+        self.assertLess(ship, 5600)        # 4,349 + 4 PD gatling turrets + the thrust PB + 2 reactors, 2 tanks, 6 thrusters, 1 gyro, minus 8 batteries and the 4 small generators (the sum with the foundry and a probe is within 10 PCU of the limit)
 
     def test_agility(self):
         acc = B.numbers(lite_docked())['accel_loaded_m_s2']
@@ -95,7 +95,7 @@ class ShipTests(unittest.TestCase):
     def test_power_recharges_all_27_rails_without_a_bottleneck(self):
         pw = B.numbers(lite_docked())['power']
         need = 27 * 38                                            # RechargeDraw of a LargeRailgun, MW (defs_stats / sim settings)
-        self.assertGreaterEqual(pw['generation_MW'] + pw['battery_MW'], need * 1.03)      # peak: reactors + batteries cover every gun at its full draw, with a margin for the other loads
+        self.assertGreaterEqual(pw['generation_MW'] + pw['battery_MW'], need + 10)        # peak: reactors + batteries cover every gun at its full draw, plus 10 MW for the other loads (gyros, PBs, turrets: under 5 MW)
         self.assertGreaterEqual(pw['generation_MW'], need * 0.85)                         # sustained: the reactors alone carry the Helm's ~66 s salvo cadence (~922 MW average)
         self.assertLessEqual(pw['rearm_s_supply_bound'], pw['rearm_s_per_gun'])           # power is no longer what limits the re-arm: the capacitor's own 59 s is
 

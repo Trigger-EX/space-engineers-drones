@@ -37,9 +37,9 @@ PD_RAILS = set()      # {(x, r) for x in (-1, 0, 1) for r in (0, 2)} would tag s
 PD_TURRETS = (((-4, 6, 7), 'Up', 'Top P'), ((2, 6, 7), 'Up', 'Top S'), ((-4, -3, 7), 'Down', 'Belly P'), ((2, -3, 7), 'Down', 'Belly S'))
 COLS = tuple(range(-4, 5))        # 9 columns of railguns
 ROWS = 3                          # 3 rows (2 cells each) -> 27 guns
-N_GYRO = 14
+N_GYRO = 13
 # battery cells (x, z) of the y = 3 deck left empty to pay for the added reactors' mass: none of them carries a block above it
-BAT_DROP = {(-2, 9), (-1, 9), (-1, 10), (1, 10), (-1, 11), (-2, 11), (2, 11)}       # 14 of 21 kept (168 MW, 42 MWh)
+BAT_DROP = {(-2, 9), (-1, 9), (1, 9), (-1, 10), (1, 10), (-1, 11), (-2, 11), (2, 11)}       # 13 of 21 kept (156 MW, 39 MWh)
 
 HELM_DATA = """
 [Link]
@@ -145,10 +145,10 @@ def _pods(S):
 
 def _aux(S):
     """power and thrust added for the 27-gun recharge (docs/design/ships/Ballista.md section 9): two more large reactors on the top deck (300 MW each: the railguns
-    ask 27 x 38 = 1,026 MW to recharge together and the first reactor set gave 360 MW), and two extra hydrogen tanks with thrusters, which give back the acceleration the
+    ask 27 x 38 = 1,026 MW to recharge together and the first reactor set gave 360 MW), and two extra hydrogen tanks with thrusters (6 in all), which give back the acceleration the
     reactors' 148 t take away.  Top deck (y 6..8, over the rails; the rails' top patch is the seat): reactors at x -4..-2 and 2..4, z 4..6; a tank in front of the
     port reactor (z 1..3) carries an upward-exhaust thruster (pushes down) and a brake.  Belly (y -3..-1, under the rails): one tank at x -1..1, z 4..6 carries
-    all five of its free faces (down, left, right, brake, main), which add one push in each of the six directions together with the top tank."""
+    four of its free faces (down, left, right, main; the brake lane is left out: the back push already has 5 thrusters, and the 10,000 PCU brief is full), which add a push in every direction together with the top tank (up, down, left, right, forward, back)."""
     bp = S.bp
     for n, x in enumerate((-4, 2), 2):
         S.add('reactor', 'MyObjectBuilder_Reactor', 'LargeBlockLargeGenerator', (x, 6, 4), 'Forward', 'Up', nm(f'Reactor Large {n}'), toward='Down', kind='reactor',
@@ -158,7 +158,7 @@ def _aux(S):
     for role, mn, ex, up, label in (
             ('vert', (-4, 9, 1), 'Up', 'Forward', 'Aux Top Vertical'), ('brake', (-4, 6, -2), 'Forward', 'Up', 'Aux Top Brake'),
             ('vert', (-1, -6, 4), 'Down', 'Forward', 'Aux Belly Vertical'), ('out', (-4, -3, 4), 'Left', 'Up', 'Aux Belly Lateral P'),
-            ('out', (2, -3, 4), 'Right', 'Up', 'Aux Belly Lateral S'), ('brake', (-1, -3, 1), 'Forward', 'Up', 'Aux Belly Brake'),
+            ('out', (2, -3, 4), 'Right', 'Up', 'Aux Belly Lateral S'),
             ('main', (-1, -3, 7), 'Backward', 'Up', 'Aux Belly Main')):
         b = S.fixed('thr_' + role, 'MyObjectBuilder_Thrust', 'LargeBlockLargeHydrogenThrust', mn, ex, up, nm(f'Thruster {label}'), GUND, kind='thr')
         bp.keep_clear(b, 3, 'exhaust')
@@ -352,9 +352,9 @@ def ballista(lite=False, with_foundry=True):
     return C.finalize(bp)
 
 MODELS = {'Ballista': ballista}
-DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 3 battery behind a thin frame of 23 large hydrogen thrusters (32 m/s2 forward, 39 back, 19 on the other axes, 14 gyros), 1.35 M of slug damage per salvo at 2,000 m. '
+DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 3 battery behind a thin frame of 22 large hydrogen thrusters (33 m/s2 forward and back, 20 on the other axes, 13 gyros), 1.35 M of slug damage per salvo at 2,000 m. '
         'The Helm keeps the stand-off and turns the ship onto the target. A small probe foundry docked on its rear connectors prints a Peeper probe when a big target is engaged; the probe circles the target and its turret finds the '
-        'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 8,300 PCU with the foundry, 9,300 with a live probe. Three large reactors (900 MW) and 14 batteries cover the 1,026 MW the 27 rails draw to recharge together. Nothing has run in the game.'}
+        'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 8,200 PCU with the foundry, 9,300 with a live probe. Three large reactors (900 MW) and 13 batteries cover the 1,026 MW the 27 rails draw to recharge together. Nothing has run in the game.'}
 MODEL_NOTES = {'Ballista': 'Needs a world PCU limit of 10,000 or more. The foundry connectors are written locked (the Spotter presses Connect if they ever come up unlocked). Lite has no sensor / AI blocks and prints Lite probes (no turret, so they find nothing): use Full.'}
 SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
 
