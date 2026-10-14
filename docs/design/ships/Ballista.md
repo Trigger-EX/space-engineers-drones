@@ -73,6 +73,13 @@ Tech Hunter flown straight at the Ballista at 100 m/s (`--pirate-rush true --pir
 
 Caveats [sim, stand-in AI]: one notice distance only (a later notice shrinks the margin); the Tech Hunter's turrets never fired in the 1,600+ runs, so "hit" is damage taken; never run in the game.
 
+### 3d. Idle spin (game: five pasted Ballistas spun round each other and did not see a Tech Hunter parked 2.2 km away)
+
+* In HUNT with no target the Helm yaws the whole ship round as a camera "radar sweep" (`SweepDir`, half the turn rate). On a 900 t ship that is a continuous spin: [sim, 5 Ballistas, Tech Hunter held at 2.2 km] mean 0.7 rad/s in the first 30 s, first target at 37 s.
+* `Auto Camera Scan=false` in the Ballista's Helm Custom Data (the AI Offensive block is its detector; the 1.8 km camera rays cover too little of the sky to help): mean 0.2 rad/s, first target at 8 s, all five fire [sim, 1 seed each, stand-in AI].
+* A cockpit added by hand is not seen as a seat unless its name starts with `[SH]` (the Helm only uses blocks with the `[Link] Block Prefix`), so it does not switch the Helm to MANUAL. Rename it `[SH] Cockpit` for hand flying.
+* [unverified] why the target was seen the moment the cockpit was used in the game; the Helm status now shows `1st contact <m> v <speed> <source>`.
+
 * **Spotter** `[Spotter][SH] Ballista Spotter` runs `SpotterAI.cs` (section 5).
 * No cockpit: a drone. Hand flying needs a seat added by hand (the Helm switches to MANUAL when somebody sits in a flight seat).
 

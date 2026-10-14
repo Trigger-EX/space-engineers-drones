@@ -47,6 +47,7 @@ Min Range=900
 Evasive Jinking=true
 Orbit Speed=30
 Combat Speed=100
+Auto Camera Scan=false
 
 [AI Gate]
 AI Window (s)=20
