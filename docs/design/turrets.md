@@ -1,4 +1,4 @@
-# Rotor + hinge AI turrets (v2.8)
+# Rotor + hinge / rotor + rotor AI turrets (v2.8, rotor elevation v2.9)
 
 Key `turrets`. Generator `tools/designs/turrets.py`, script `scripts/TurretAI.cs` (v1.0), tests `tools/tests/test_turrets.py`.
 Nothing here has been pasted or run in the game. The simulator has no rotor model (section 9), so there is no combat result for these turrets, only geometry, compile and
@@ -161,3 +161,29 @@ mode, angle limits, the pose chain of `top_pose`) plus a head-grid weapon model 
 * Staff watchdog: heartbeat `.TUR` missing for 3 s -> switch the vanilla turrets' targeting on (they are on already; this would be for a Custom Turret Controller variant).
 * A gunner seat that takes a mount (`IsUnderControl` handover).
 * Group the head guns on the head grid and give the cockpit a Run slot with `hold` / `free`.
+
+## 11. Rotor elevation: full-sphere turrets (PD4LR, PD2SR)
+
+Asked for: one azimuth rotor plus a multi-hinge or rotor elevation with full mobility. Chosen: **rotor elevation**. Parallel hinges stay inside the hinge's -90..+90 range (half-space) and
+two driven joints carrying one head close a loop of grids, which the blueprint format cannot even express (a grid has one parent link). A second rotor has no limit, so with the free azimuth
+the bore reaches the whole sphere. Generator `turrets.py` models `PD4LR` (large) and `PD2SR` (small); script `TurretAI.cs` 1.1; tests in `test_turrets.py`.
+
+```
+host --- MotorAdvancedStator (azimuth) --- top grid: rotor head (0,0,0) + elevation STATOR (cells (-1,1,0),(0,1,0), Up = grid Left, horizontal) --- head grid: ROTOR head (0,0,0) + armour + guns
+```
+
+* PD4LR elevation joint: `MotorStator/LargeStator` -> `MotorRotor/SmallRotor` (offset 0.8293 m, **seen**, 2 pairs in the Tech Hunter). PD2SR: `SmallAdvancedStatorSmall` -> `SmallAdvancedRotorSmall` (0.21 m, UNSEEN, as the azimuth).
+  The rotor head sits 0.17 / 0.08 cell off the azimuth axis, which is the stator's own measured offset (`add_turret` places the box so it is the smallest of the four layouts).
+* A rotor head has only its Top face as a mount, so the head grows from `(0,1,0)` along the elevation axis: plate cells `y = 1..3`, guns at `y = 2 + gy`, camera at `(-2, 2, 0)`. The bore therefore runs 1 m (large) /
+  0.5 m (small) beside the pivot, harmless at 700 m. Bore at angle 0/0 is the azimuth axis, as for the hinge, so the Move/Fire masks and the pointing law share all their conventions.
+* **Pointing law**, as section 2 but without the clamp: `phi = atan2(|c|, a.d)` over 0..pi, `ee = Wrap(-sg phi - El.Angle)`, `sg` as before (keeps the azimuth move within 90 deg). A target below the mount's horizon is
+  reachable; the hull is handled by the masks only (`Horizon Margin` is ignored, `Below` is never set). `test_pd4lr_pointing_law` / `test_pd2sr_pointing_law`: 300 random directions over the whole sphere, bore error < 1e-6 rad.
+* **Masks**: 36 azimuth rows x 36 elevation bins (-180..+170 deg, 10 deg), 9 hex digits per row; the mount section says `Elevation=ROTOR`, `El Min=-180`, `El Step=10`, `El Bins=36` (a hinge mount has none of the keys:
+  19 bins, 5 digits, as before). The script reads these keys, keeps the rows in `long`, and sets the rotor's limits to `float.MinValue/MaxValue` (hinge: +-1.5708).
+* **Cost**: the elevation stator is a 5 m (large) / 1 m (small) body that swings round the azimuth axis: radius 3.75 m large. Swing sphere of the head 2.4 m (hinge: 1.9). PCU/mass: see `mounts_stats`.
+* **Ships**: the default is unchanged (hinge). `TURRET_ELEVATION=rotor` in the environment makes `add_turret` swap `PD4L -> PD4LR`, `PD2S -> PD2SR`. Trial with that switch: Shrike and Corsair build;
+  Warden builds (dorsal pair loses 70 deg of azimuth to the tower, the ventral pair none, coverage 51 % / 61 % of all bins = nearly the whole upper hemisphere); **Leviathan fails** at the keel sites
+  (the recess is too tight for the 3.75 m stator radius). Fix before switching the ships: a pedestal cell under the keel turrets or hinge models at those two sites.
+* `check_mounts` for a rotor model: coverage minimum halved (the lower half is hull), the parked pose may hit at up to 40 % of the azimuths (masked), the report carries `blocked_az`.
+* Not measured (new): **K-T13** a stator carrying a rotor whose Top face is armoured and a head built entirely on that face pastes and attaches; **K-T14** `Angle` of an unlimited rotor (wrapped by the script,
+  but the sign check relies on it moving); **K-T15** `LowerLimitRad = float.MinValue` accepted as "no limit"; **K-T16** the small-grid pair 0.21 m.

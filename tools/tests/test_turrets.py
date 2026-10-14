@@ -32,7 +32,7 @@ def deck(grid, n=7):
 def mk(model):
     key = ('mk', model)
     if key not in _CACHE:
-        host = deck('Large' if model == 'PD4L' else 'Small')
+        host = deck(T.HOST_OF[model])
         _CACHE[key] = (host, T.add_turret(host, 1, (0, 1, 0), 'Up', model=model))
     return _CACHE[key]
 
@@ -156,6 +156,47 @@ class PointingTests(unittest.TestCase):
     def test_pd4l_pointing_law(self): self.check('PD4L')
     def test_pd2s_pointing_law(self): self.check('PD2S')
 
+    def check_rotor(self, model):
+        """rotor elevation: no horizon clamp, the elevation wraps (Wrap in TurretAI.cs), every direction of the sphere is reached"""
+        host, m = mk(model)
+        a = (0, 1, 0)
+        wrap = lambda x: (x + math.pi) % (2 * math.pi) - math.pi
+        def hax(alpha):
+            pt = MU.top_pose(host, m.stator, m.top, m.rotor, alpha)
+            return pt.rot.apply(MU.block_pose(m.top, m.hinge).rot.up)
+        def bore(alpha, theta):
+            _, ph = T._poses(m, alpha, theta); return ph.rot.apply((-1, 0, 0))
+        random.seed(11); worst = 0.0; below = 0; far = 0.0
+        for _ in range(300):
+            al0, th0 = random.uniform(0, 2 * math.pi), random.uniform(-math.pi, math.pi)
+            d = nrm((random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1)))
+            if d[1] < 0: below += 1
+            h = hax(al0); c = cross(a, d); sn = math.sqrt(dot(c, c)); cs = dot(a, d); phi = math.atan2(sn, cs)
+            hd = tuple(x / sn for x in c); sg = 1 if dot(h, hd) >= 0 else -1; hd = tuple(sg * x for x in hd)
+            ea = -sa(h, hd, a); ee = wrap(-sg * phi - th0)            # exactly the formulas of TurretAI.cs Control() for Rotor
+            far = max(far, abs(ea))
+            b = bore(al0 + ea, th0 + ee)
+            worst = max(worst, math.acos(max(-1, min(1, dot(b, d)))))
+        self.assertLess(worst, 1e-6); self.assertGreater(below, 100)
+        self.assertLessEqual(far, math.pi / 2 + 1e-9)               # the sign choice keeps the azimuth move within 90 deg
+
+    def test_pd4lr_pointing_law(self): self.check_rotor('PD4LR')
+    def test_pd2sr_pointing_law(self): self.check_rotor('PD2SR')
+
+    def test_rotor_bore_at_pi_points_into_the_hull(self):
+        for model in ('PD4LR', 'PD2SR'):
+            host, m = mk(model)
+            _, ph = T._poses(m, 0.0, 0.0)
+            self.assertLess(MU._norm(MU._sub(ph.rot.apply((-1, 0, 0)), (0, 1, 0))), 1e-9)
+            _, ph = T._poses(m, 0.4, math.pi)
+            self.assertLess(MU._norm(MU._sub(ph.rot.apply((-1, 0, 0)), (0, -1, 0))), 1e-9)
+
+    def test_rotor_head_sits_near_the_azimuth_axis(self):
+        for model in ('PD4LR', 'PD2SR'):
+            host, m = mk(model)
+            c = T.hinge_centre(m); st = MU.block_pose(host, m.stator).pos
+            self.assertLess(math.hypot(c[0] - st[0], c[2] - st[2]), 0.5)
+
     def test_bore_at_zero_is_the_azimuth_axis_and_the_hinge_reaches_the_horizon(self):
         for model in ('PD4L', 'PD2S'):
             host, m = mk(model)
@@ -173,7 +214,7 @@ class PointingTests(unittest.TestCase):
 
 class ModelTests(unittest.TestCase):
     def test_models_validate_without_dlc(self):
-        for model in ('PD4L', 'PD2S'):
+        for model in ('PD4L', 'PD2S', 'PD4LR', 'PD2SR'):
             host, m = mk(model)
             for g, _ in host.grids():
                 g.validate()
@@ -181,7 +222,7 @@ class ModelTests(unittest.TestCase):
                 for b in g.blocks: self.assertNotIn('Prototech', b['sub'])
 
     def test_every_turret_block_is_named_tu(self):
-        for model in ('PD4L', 'PD2S'):
+        for model in ('PD4L', 'PD2S', 'PD4LR', 'PD2SR'):
             host, m = mk(model)
             names = [b['name'] for g, _ in host.grids() for b in g.blocks if b['name'] and not b['xtype'].endswith('_CubeBlock') and g is not host]
             self.assertTrue(names)
@@ -199,6 +240,16 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(hinge.findtext('LimitsActive'), 'true')
             self.assertAlmostEqual(float(hinge.findtext('MaxAngle')), math.pi / 2, places=5)
             self.assertAlmostEqual(float(hinge.findtext('MinAngle')), -math.pi / 2, places=5)
+
+    def test_rotor_elevation_is_unlimited_and_the_models_are_laid_out(self):
+        for model, guns, est in (('PD4LR', 4, 'MotorStator'), ('PD2SR', 2, 'MotorAdvancedStator')):
+            host, m = mk(model)
+            self.assertEqual(len(m.guns), guns); self.assertEqual(m.elev, 'rotor')
+            xml = host.build_xml('Deck')
+            el = [b for b in ET.fromstring(xml).iter() if (b.findtext('CustomName') or '').endswith('Elevation')][0]
+            self.assertTrue((el.get(X + 'type') or '').endswith(est))
+            self.assertEqual(el.findtext('LimitsActive'), 'false')
+            self.assertEqual(sum(1 for g, _ in host.grids() for b in g.blocks if b['xtype'].endswith('Rotor')), 2)
 
     def test_stats(self):
         s = T.mounts_stats([mk('PD4L')[1]])
@@ -228,10 +279,26 @@ class MaskTests(unittest.TestCase):
         blocked = [k for k, v in fb.items() if v]
         self.assertTrue(blocked)
 
+    def test_rotor_masks_have_36_bins_and_the_custom_data_says_so(self):
+        host, m = mk('PD4LR')
+        mv, fr = T.masks(m)
+        self.assertEqual((len(mv), len(fr)), (324, 324))
+        self.assertEqual(set(mv), {'0'})
+        # the whole sphere minus the deck: the bore points into the deck below the horizon, not above it
+        fb = T.fire_mask(m)
+        up = [fb[(a, e)] for a in range(T.AZ_BINS) for e in (14, 18, 22)]      # elevation -40, 0, +40 deg: above the horizon
+        dn = [fb[(a, e)] for a in range(T.AZ_BINS) for e in (0, 35)]           # -180, +170: into the hull
+        self.assertFalse(any(up)); self.assertGreater(sum(dn), len(dn) * 0.9)
+        cd = T.turret_custom_data(host, [m], 'WARDEN')
+        for k in ('Elevation=ROTOR', 'El Min=-180', 'El Bins=36'): self.assertIn(k, cd)
+        self.assertEqual(len(re.findall(r'Move Mask=[0-9A-F]{324}\n', cd)), 1)
+
     def test_pack_is_36_rows_of_19_bits(self):
         bl = {(a, e): (a == 3 and e == 18) for a in range(T.AZ_BINS) for e in range(T.EL_BINS)}
         s = T._pack(bl)
         self.assertEqual(s[15:20], '40000')                  # row 3, bit 18
+        bl = {(a, e): (a == 3 and e == 35) for a in range(T.AZ_BINS) for e in range(36)}
+        self.assertEqual(T._pack(bl, 36)[27:36], '800000000')    # rotor: row 3, bit 35, 9 digits
 
 
 class ShipTests(unittest.TestCase):

@@ -1,5 +1,5 @@
 // =====================================================================
-//  TURRET AI  v1.0  - drives the rotor + hinge turrets of the warships (tools/designs/turrets.py, docs/design/turrets.md).
+//  TURRET AI  v1.1  - drives the rotor + hinge / rotor + rotor turrets of the warships (tools/designs/turrets.py, docs/design/turrets.md).
 //  For Space Engineers (vanilla). Paste into ONE Programmable Block named "[TU] Turret PB" on the ship's main grid. Update1. Needs no other script, but is fed by the Helm.
 //
 //  A TURRET = azimuth stator "[TU] T<n> Azimuth" (axis = the stator's Up) -> top grid -> hinge "[TU] T<n> Elevation" (axis = the hinge's Up, horizontal) -> head grid with
@@ -7,6 +7,8 @@
 //  so a turret covers the half-space on its outward side. Pointing it at a direction d: the hinge axis must be perpendicular to both the azimuth axis a and d, i.e.
 //  +-(a x d); the azimuth turns the hinge axis there and the hinge opens by angle(a, d). (The angle conventions come from the owner's Tech Hunter: the top turns
 //  by -Angle about the stator's Up; calibrated at start-up anyway.)
+//  ROTOR ELEVATION (v1.1): the "Elevation" motor may be a second ROTOR (no limits, Custom Data [Mount Tn] Elevation=ROTOR): the guns then reach the whole sphere (elevation -180..+170,
+//  azimuth free, the horizon clamp is off; the hull is handled by the masks only). The hinge models are unchanged.
 //
 //  TARGETS (merged by entity id, extrapolated with velocity and a capped acceleration):
 //   <Ship Tag>.H2S      the Helm's selected target (5 Hz, TransmissionDistance.CurrentConstruct): MyTuple<int flags, long id, Vector3D pos, Vector3D vel, float radius, float batt>
@@ -20,13 +22,13 @@
 //  ARGUMENTS  free | helm | hold | park | reload | status
 //  CUSTOM DATA  [Ship] Tag ([Link] Ship Tag of the Helm, default SHIP)
 //   [Turret]  Prefix [TU], Listen Tags (fleet feeds), Fire Mode, Range 700, Park Delay 8, Gain 4, Max Rate 3, Max Accel 12, Torque, Braking Torque, Lead Accel 0.5, Horizon Margin 0.05
-//   [Mount Tn]  Move Mask / Fire Mask (36 azimuth rows of 5 hex digits, bit j = hinge bin j of 19 (-90..+90 in 10 deg), 1 = blocked; written by the generator), Stow El, Rate Scale
+//   [Mount Tn]  Move Mask / Fire Mask (36 azimuth rows of ceil(El Bins / 4) hex digits, bit j = elevation bin j, 1 = blocked; hinge: 19 bins -90..+90, rotor: 36 bins -180..+170 (Elevation=ROTOR, El Min, El Step, El Bins); written by the generator), Stow El, Rate Scale
 //  NOT MEASURED IN THE GAME: the tops attach after the paste, the motor sign conventions, the rotor velocity limit (30 rpm large / 60 rpm small assumed), whether ammunition passes
 //   the rotor and hinge (the guns carry their own), the small-grid stators (Shrike, Corsair), the mask accuracy. See packages/unknowns.md.
 // =====================================================================
 
-const string VER = "1.0";
-const int AzBins = 36, ElBins = 19;
+const string VER = "1.1";
+const int AzBins = 36;
 const double MuzzleLen = 1.0, BulletSpeed = 800;
 
 MyIni _ini = new MyIni();
@@ -44,7 +46,7 @@ class Trk
 class Mt
 {
     public int N; public IMyMotorStator Az, El; public IMyCameraBlock Cam; public List<IMyUserControllableGun> Guns = new List<IMyUserControllableGun>();
-    public int[] Move = new int[AzBins], Fire = new int[AzBins]; public bool HasMasks;
+    public long[] Move = new long[AzBins], Fire = new long[AzBins]; public bool HasMasks, Rotor; public int ElBins = 19; public double ElMin = -90, ElStep = 10;
     public string State = "NEW", Why = ""; public double StowEl, RateScale = 1, CmdA, CmdE, T, NoTgtSince, HoldUntil, RayT, CalT, Aim, Range;
     public double SgnA = 1, SgnE = 1, CalA0, CalE0; public int Cal; public long Tid; public bool Shooting, Below; public double ShootT;
 }
@@ -83,10 +85,10 @@ void LoadConfig()
     string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
 }
 
-static int Mask(string s, int row)
+static long Mask(string s, int row, int nd)
 {
-    int v = 0; if (s.Length < (row + 1) * 5) return 0;
-    for (int i = 0; i < 5; i++) { int d; if (!int.TryParse(s.Substring(row * 5 + i, 1), System.Globalization.NumberStyles.HexNumber, null, out d)) d = 0; v = v * 16 + d; }
+    long v = 0; if (s.Length < (row + 1) * nd) return 0;
+    for (int i = 0; i < nd; i++) { int d; if (!int.TryParse(s.Substring(row * nd + i, 1), System.Globalization.NumberStyles.HexNumber, null, out d)) d = 0; v = v * 16 + d; }
     return v;
 }
 
@@ -138,9 +140,12 @@ void Discover()
         foreach (var c in _camAll) { int n2; string r2; if (NameOf(c.CustomName, out n2, out r2) && n2 == n && r2.StartsWith("Camera")) m.Cam = c; }
         string sec = "Mount T" + n;
         m.StowEl = C(sec, "Stow El", 0.0); m.RateScale = C(sec, "Rate Scale", 1.0);
+        m.Rotor = C(sec, "Elevation", "HINGE").Trim().ToUpperInvariant() == "ROTOR";
+        m.ElMin = C(sec, "El Min", m.Rotor ? -180.0 : -90.0); m.ElStep = Math.Max(1.0, C(sec, "El Step", 10.0)); m.ElBins = (int)Math.Max(2, Math.Min(60, C(sec, "El Bins", m.Rotor ? 36.0 : 19.0)));
+        int nd = (m.ElBins + 3) / 4;
         string mv = C(sec, "Move Mask", ""), fr = C(sec, "Fire Mask", "");
-        m.HasMasks = mv.Length >= AzBins * 5 && fr.Length >= AzBins * 5;
-        for (int i = 0; i < AzBins; i++) { m.Move[i] = m.HasMasks ? Mask(mv, i) : 0; m.Fire[i] = m.HasMasks ? Mask(fr, i) : 0; }
+        m.HasMasks = mv.Length >= AzBins * nd && fr.Length >= AzBins * nd;
+        for (int i = 0; i < AzBins; i++) { m.Move[i] = m.HasMasks ? Mask(mv, i, nd) : 0; m.Fire[i] = m.HasMasks ? Mask(fr, i, nd) : 0; }
         if (m.El == null || m.Guns.Count == 0) { m.State = "OFF"; m.Why = m.El == null ? "no hinge" : "no guns"; }
         else if (m.State == "OFF" || m.State == "NEW") { m.State = "CAL"; m.Cal = 0; m.Why = ""; }
         nm.Add(m);
@@ -154,7 +159,8 @@ void Discover()
         m.Az.Torque = (float)TorqueCfg; m.Az.BrakingTorque = (float)BrakeCfg; m.El.Torque = (float)TorqueCfg; m.El.BrakingTorque = (float)BrakeCfg;
         m.Az.RotorLock = false; m.El.RotorLock = false;
         if (m.Cam != null) m.Cam.EnableRaycast = true;
-        m.El.LowerLimitRad = -1.5708f; m.El.UpperLimitRad = 1.5708f;
+        if (m.Rotor) { m.El.LowerLimitRad = float.MinValue; m.El.UpperLimitRad = float.MaxValue; }
+        else { m.El.LowerLimitRad = -1.5708f; m.El.UpperLimitRad = 1.5708f; }
     }
     string o2 = _ini.ToString(); if (o2 != Me.CustomData) Me.CustomData = o2;
 }
@@ -252,11 +258,12 @@ bool Lead(Trk t, Vector3D muz, out Vector3D aim, out double tof)
 
 static double SA(Vector3D u, Vector3D v, Vector3D ax) { return Math.Atan2(Vector3D.Dot(ax, Vector3D.Cross(u, v)), Vector3D.Dot(u, v)); }
 static double Wrap(double x) { while (x > Math.PI) x -= 2 * Math.PI; while (x < -Math.PI) x += 2 * Math.PI; return x; }
-static bool Blocked(int[] mask, double az, double el)
+static bool Blocked(Mt m, long[] mask, double az, double el)
 {
     int ai = (int)Math.Round(MathHelper.ToDegrees(Wrap(az) < 0 ? Wrap(az) + 2 * Math.PI : Wrap(az)) / 10.0) % AzBins;
-    int ej = (int)Math.Round((MathHelper.ToDegrees(el) + 90) / 10.0); if (ej < 0) ej = 0; if (ej >= ElBins) ej = ElBins - 1;
-    return ((mask[ai] >> ej) & 1) != 0;
+    double ed = MathHelper.ToDegrees(m.Rotor ? Wrap(el) : el);
+    int ej = (int)Math.Round((ed - m.ElMin) / m.ElStep); if (m.Rotor) ej = ((ej % m.ElBins) + m.ElBins) % m.ElBins; else if (ej < 0) ej = 0; if (ej >= m.ElBins) ej = m.ElBins - 1;
+    return ((mask[ai] >> ej) & 1L) != 0;
 }
 
 Vector3D MuzzleOf(Mt m, out Vector3D bore)
@@ -281,7 +288,7 @@ double Score(Mt m, Trk t, Vector3D muz, Vector3D bore, Vector3D a, out Vector3D 
     rng = aim.Length(); if (rng > Range * 1.15) return -1e9;
     d = aim / rng;
     double cosphi = Vector3D.Dot(a, d);
-    if (cosphi < -Math.Sin(HorizonMargin)) return -1e9;                                    // below this mount's horizon: the hull is in the way
+    if (!m.Rotor && cosphi < -Math.Sin(HorizonMargin)) return -1e9;                                    // below this mount's horizon: the hull is in the way
     Vector3D rv = t.V - _hostV, rn = (t.At(_now) - muz); double dist = Math.Max(1, rn.Length()); rn /= dist;
     double closing = -Vector3D.Dot(rv, rn); t.Closing = closing;
     double sc = 100 - dist / 10 - 20 * Math.Acos(MathHelper.Clamp(Vector3D.Dot(bore, d), -1, 1)) / Math.PI;
@@ -324,9 +331,9 @@ void Control(Mt m, double dt)
     {
         m.NoTgtSince = _now; m.State = "TRACK";
         Vector3D c = Vector3D.Cross(a, d); double sn = c.Length(), cs = Vector3D.Dot(a, d), phi = Math.Atan2(sn, cs);
-        m.Below = phi > Math.PI / 2; if (m.Below) phi = Math.PI / 2;
+        m.Below = !m.Rotor && phi > Math.PI / 2; if (m.Below) phi = Math.PI / 2;
         Vector3D hd = sn > 1e-3 ? c / sn : h; double sg = Vector3D.Dot(h, hd) >= 0 ? 1 : -1; hd *= sg;
-        double ea = phi < 0.04 ? 0 : -SA(h, hd, a), ee = (-sg * phi) - curE;
+        double ea = phi < 0.04 ? 0 : -SA(h, hd, a), ee = Wrap((-sg * phi) - curE);
         // feed-forward from the line-of-sight rate
         Vector3D rv = cur.V - _hostV, rn = Vector3D.Normalize(cur.At(_now) - muz); double dist = Math.Max(20, (cur.At(_now) - muz).Length());
         Vector3D dd = Vector3D.Cross(Vector3D.Cross(rn, rv) / dist, d);
@@ -347,7 +354,7 @@ void Control(Mt m, double dt)
     {
         if (m.State == "TRACK") { m.State = "PARK"; }
         Shoot(m, false);
-        if (_now - m.NoTgtSince > ParkDelay) { m.State = "PARK"; rateE = Gain * (m.StowEl - curE); }
+        if (_now - m.NoTgtSince > ParkDelay) { m.State = "PARK"; rateE = Gain * Wrap(m.StowEl - curE); }
         else rateE = 0;
         rateA = 0;
     }
@@ -356,20 +363,20 @@ void Control(Mt m, double dt)
     rateA = MathHelper.Clamp(rateA, -mr, mr); rateE = MathHelper.Clamp(rateE, -mr, mr);
     if (m.HasMasks)
     {
-        if (!Blocked(m.Move, curA, curE))
+        if (!Blocked(m, m.Move, curA, curE))
         {
-            if (Blocked(m.Move, curA + rateA * 0.12, curE)) rateA = 0;
-            if (Blocked(m.Move, curA, curE + rateE * 0.12)) rateE = 0;
-            if (Blocked(m.Move, curA + rateA * 0.12, curE + rateE * 0.12)) { rateA = 0; rateE = 0; }
+            if (Blocked(m, m.Move, curA + rateA * 0.12, curE)) rateA = 0;
+            if (Blocked(m, m.Move, curA, curE + rateE * 0.12)) rateE = 0;
+            if (Blocked(m, m.Move, curA + rateA * 0.12, curE + rateE * 0.12)) { rateA = 0; rateE = 0; }
         }
     }
-    if ((curE > 1.55 && rateE > 0) || (curE < -1.55 && rateE < 0)) rateE = 0;
+    if (!m.Rotor && ((curE > 1.55 && rateE > 0) || (curE < -1.55 && rateE < 0))) rateE = 0;
     double ma = MaxAccel * dt;
     m.CmdA += MathHelper.Clamp(rateA - m.CmdA, -ma, ma); m.CmdE += MathHelper.Clamp(rateE - m.CmdE, -ma, ma);
     m.Az.TargetVelocityRad = (float)(m.CmdA * m.SgnA); m.El.TargetVelocityRad = (float)(m.CmdE * m.SgnE);
     // ---- fire gate
     bool fire = have && !m.Below && errAng <= tol && rng <= Range && _now - cur.Seen < 0.6 && MayFire(cur) && _now >= m.HoldUntil
-        && !(m.HasMasks && Blocked(m.Fire, curA, curE));
+        && !(m.HasMasks && Blocked(m, m.Fire, curA, curE));
     if (fire && _now - m.RayT > 0.5) { m.RayT = _now; FriendlyCheck(m, rng); fire = _now >= m.HoldUntil; }
     Shoot(m, fire);
 }
@@ -409,7 +416,7 @@ void Calibrate(Mt m, double dt, double curA, double curE)
         m.El.TargetVelocityRad = 0.35f; m.Az.TargetVelocityRad = 0;
         if (m.CalT > 0.25)
         {
-            double d = curE - m.CalE0; m.SgnE = d >= 0 ? 1 : -1; if (Math.Abs(d) < 0.01) { m.Why = "hinge did not move"; }
+            double d = Wrap(curE - m.CalE0); m.SgnE = d >= 0 ? 1 : -1; if (Math.Abs(d) < 0.01) { m.Why = m.Rotor ? "elevation rotor did not move" : "hinge did not move"; }
             m.El.TargetVelocityRad = 0; m.Cal = 2; m.CalT = 0;
         }
     }
