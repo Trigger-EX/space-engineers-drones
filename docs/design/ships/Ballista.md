@@ -32,7 +32,7 @@ the Helm and Spotter PBs and the Remote Control (y = 4 deck). Mast on the wall: 
 
 ## 3. Control
 
-* **Helm** `[Helm][SH] Ballista Helm` runs `ShrikeAI.cs` with the Warden's recipe: weapon battery `[B1]` = the 27 rails (RAIL class, 2,000 m), `Standoff By Weapons=true` keeps about 85 % of the railgun range,
+* **Helm** `[Helm][SH] Ballista Helm` runs `ShrikeAI.cs` with the Warden's recipe: weapon battery `[B1]` = the 27 rails (RAIL class, 2,000 m), `Standoff By Weapons=false` holds `Standoff Range=1600` (80 % of the 2,000 m range; with it true, `BatStand` weighs hit chance against a threat step at 1,000 m and parks the ship at exactly 1,000 m),
   `Combat Speed=100`, jinking on. **`AI Block Search Assist=true`** (unlike the Warden): the ship has no turrets, and its cameras alone cannot find anything (6 cameras bank ~6 rays/s of 1.8 km; a 5 degree wide ship is hit by
   about one ray in a thousand, so in the sim it never saw a Pirate that shot it from 2 km down to 500 m). The AI Offensive block's 2.5 km search points the nose, the cameras confirm it. **`[Battery] Salvo=ON`**: all 27 rails fire in
   the same tick (see section 3a). Against large grids of radius >= 25 m the Helm's AUTO aim is BREACH (hold one hull point and drill it); that is what the Spotter feed steers. IGC Tag `BALLISTA`.

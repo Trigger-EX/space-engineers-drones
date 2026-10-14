@@ -50,7 +50,7 @@ Combat Speed=100
 
 [Battery]
 Primary (AUTO/B1..B4)=B1
-Standoff By Weapons=true
+Standoff By Weapons=false
 Salvo (AUTO/ON/OFF)=ON
 """
 
