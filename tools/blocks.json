@@ -47,14 +47,14 @@
         "BasiliskAI",
         "TubeRamAI",
         "WaspFlightAI",
-        "ShrikeAI"
+        "ShrikeAI",
+        "MantisAI"
       ]
     },
     "FRIENDLY BEACON": {
       "file": "tools/fb_block.cs",
       "scripts": [
         "WaspAI",
-        "MantisAI",
         "ShrikeAI"
       ]
     },

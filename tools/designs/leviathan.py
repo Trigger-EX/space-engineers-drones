@@ -68,6 +68,7 @@ HUD Surface=0
 
 [Battery]
 Standoff By Weapons=false
+Kamikaze Rail Hold Range (m)=250
 """
 # spare magazines in each of the four ammunition lockers (the conveyor network feeds the artillery / assault / rocket turrets from them; the railguns are not fed)
 LOCKER_RESERVE = [Item.ammo('LargeRailgunAmmo', 20), Item.ammo('LargeCalibreAmmo', 100), Item.ammo('MediumCalibreAmmo', 150),

@@ -16,8 +16,8 @@ if it was installed before the release zips are rebuilt.
 
 | Block | File | In | Does |
 |---|---|---|---|
-| `FRIENDLY AVOIDANCE` | `tools/fa_block.cs` | Hornet, Gnat, Longbow S/L, Lancer, Harrier, Aegis, Basilisk, Wasp Flight, **Shrike Helm** (2026-10-14) | beacon + sightings + steering (`FaWant`) |
-| `FRIENDLY BEACON` | `tools/fb_block.cs` | Mantis, Wasp, Shrike Helm | beacon only (`FaBeacon`); the Helm keeps it besides the full block: 10 Hz, and also while parked / IDLE / ASSIST / flown by hand, when `FaWant` does not run |
+| `FRIENDLY AVOIDANCE` | `tools/fa_block.cs` | Hornet, Gnat, Longbow S/L, Lancer, Harrier, Aegis, Basilisk, Wasp Flight, **Shrike Helm** (2026-10-14), **Mantis Flight** (2026-10-14 retrofit) | beacon + sightings + steering (`FaWant`) |
+| `FRIENDLY BEACON` | `tools/fb_block.cs` | Wasp (the old single-PB WaspAI.cs, not shipped), Shrike Helm | beacon only (`FaBeacon`); the Helm keeps it besides the full block: 10 Hz, and also while parked / IDLE / ASSIST / flown by hand, when `FaWant` does not run |
 
 * **Beacon**: every script with either block broadcasts `MyTuple<long id, Vector3D centre, Vector3D velocity, float radius>` (the grid's
   `WorldVolume`) on the IGC channel `DRONE_SPACE` (4 Hz from the avoidance block, 10 Hz from `BroadcastStatus` for the beacon block). Needs no
@@ -31,12 +31,12 @@ if it was installed before the release zips are rebuilt.
 * **Rocks** (2026-10-14): an asteroid reported with a hit point (a camera ray; every scan goes through `Valid()`) is kept as a 40 m sphere on that
   point for 60 s (one per 40 m cell, at most 150 obstacles) and gets the same barrier / ramp / sidestep. Sensors give no hit point, so only rays count.
   Not in the sim (it has no voxels): `avoid-test --rock` injects an asteroid report through the sensors (before: 5 m from the point; now 89 m).
-  Aegis is at 99,989 of 100,000 characters. Wasp Split Flight (76 k) has the full block; the single-PB Mantis and Wasp only beacon (they have no room: moving a module such as launch, follow or display into a second PB would make it).
+  Aegis is at 99,989 of 100,000 characters. Wasp Split Flight (76 k) has the full block; the old single-PB Wasp only beacons. The Mantis has the full block since the 2026-10-14 retrofit (docs/retrofit.md): after the Flight/Staff split its beacon block was dead code (the hook sat in the status code that moved to the Staff PB), so it neither dodged nor beaconed.
 * **Not applied** in RTB and IDLE, to an obstacle whose sphere I am inside (launching, merged, docked), to my target, or to any current contact
   (IGC cannot tell friend from foe: an enemy running the same beacon must not be dodged).
 * **No Custom Data keys**: several scripts are within 1-4 k of the 100,000-character limit; the constants are in the block.
 
-**Not covered.** `MantisAI` (99,720) and `WaspAI` (99,197) have no room for the steering, so they are seen but do not dodge. `StingerAI` (warhead drones), `PeeperAI`, `SpotterAI` are untouched. A
+**Not covered.** `WaspAI` (99,197, the old single-PB Wasp, no longer shipped) has no room for the steering, so it is seen but does not dodge. `StingerAI` (warhead drones), `PeeperAI`, `SpotterAI` are untouched. A
 friendly that neither beacons nor is ever seen by a camera or sensor (no antenna, outside every scan) is still invisible; fitting a sensor
 to the drones would close that.
 
