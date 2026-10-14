@@ -1,7 +1,17 @@
+### v2.7 (unreleased): SPRUE TEST (option-A printer test rig)
+Why: the printer audit (`docs/audit/printers.md` printers-01) says a welded drone is fused to the printer grid, and option A cuts it loose by grinding an armour neck. This rig tests that in one creative-world session. Design, procedure and decision tree: `docs/design/sprue_test.md`; owner copy: `test_designs/Sprue Test/`.
+- **New test ships** `Sprue Test` and `Sprue Test No Grinder` (`tools/designs/sprue_test.py`, kind `test`: built by `build_all.py --only ...`, never packaged): a 25-block printer (3 welders, a Small Ship Grinder, projector, battery, PB) that prints a 7-cell armour neck plus a dummy drone (battery, PB, one ion thruster). 733 PCU (633 without the grinder).
+- **`scripts/SprueProbe.cs`** (22,698 characters minified) runs on both PBs: weld, charge, cut, hand, push, auto, stop, snap, reset. It reports fused or not, whether the grinder cuts its own grid, the welded PB and battery state, whether the payload leaves and whether the neck re-welds, on the PB screen and in Custom Data `[Log]`.
+- **The ship-grinder XML is a guess** (the legacy small-welder form with the grinder type); the `No Grinder` model is the fallback (place the grinder by hand).
+- **Source finding:** Keen's old public source says a ship grinder skips blocks of its own grid (`MyShipToolBase.CanInteractWithSelf` is false; only `MyShipWelder` overrides it). If that holds in the current game, a grinder on the printer cannot cut a neck that is welded onto the printer, and option A as written is dead; the rig measures it and carries a hand-cut control (grind N2 by hand, then `cut`) that shows whether a grinder works on another grid. The next design would be a grinder on a rotor/hinge head (A') or the projector on a rotor head (option B).
+- The new script and blueprints change the simulator's provenance key (`sim/src/Run/Program.cs`): finish or restart interrupted `pc/` plan runs before using `--resume`.
+- Tests: `tools/tests/test_sprue_test.py` (10). No simulation was run (the simulator models neither fused grids nor grinders). Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): Ballista wing collisions
 - Three Ballistas pasted together flew into each other. The Shrike Helm now has the full `FRIENDLY AVOIDANCE` steering (was beacon only) and the AI Flight blocks yield to it (`FaYield`); sim `wing-test`: hull collisions 3 of 16 runs -> 0, closest approach 24 m -> 92 m. Helm 83.8 k minified, 85.0 k with the thrust-vector link (limit 86,000). `docs/friendly-avoidance.md`. Release zips NOT rebuilt.
 ### v2.7 (unreleased): THREE PBs PER BLUEPRINT (headroom), Ballista first
 - Every blueprint carries at least three Programmable Blocks, so a module can move off an over-full PB over IGC without a new blueprint (CLAUDE.md "Script size"). Ballista: Helm, Spotter and an empty `[SH] Ballista Spare PB` (no program) on the battery deck at (1, 4, 11), next to the Spotter. The spare's name starts with neither `[Staff]` (the Helm switches its Staff link on for that) nor contains `Hive Mother PB` (the Spotter would take it for the foundry). Release zips NOT rebuilt.
+
 
 ### v2.7 (unreleased): SATELLITE 400 m, READY mode, rocks
 - **Satellite Distance default 400 m** (was 100) in every FOLLOW-block script, the Gnat and WaspStaff: a wider surveillance net and time to react to the ship moving. Custom Data keys already written in a PB keep their value.

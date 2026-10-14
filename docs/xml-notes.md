@@ -279,3 +279,4 @@ the file says what to look at after each paste. Nothing of the extension has bee
 * **Test ships** (`tools/designs/testships.py`, kind `test`: built by `build_all.py --only ...`, never packaged, no Lite variant): `Hornet Pilot Test`, `Twin PB Test`.
 * `tools/blocks_sync.py` + `tools/blocks.json`: one driver for all shared script blocks (new blocks are listed in the json; `--check` also runs the seven older `*_sync.py`).
 
+* `Sprue Test` / `Sprue Test No Grinder` (`tools/designs/sprue_test.py`, test ships, not packaged): `ShipGrinder/SmallShipGrinder` is registered at build time in `sebp.HAND` as a GUESS (the legacy small-welder form with the grinder `xsi:type`; process-global once registered). The only guessed shape of the rig; fallback model without the grinder.

@@ -19,7 +19,7 @@ for _p in (HERE, TOOLS):
 DRONE_MODULES = ('core', 'wasp', 'support', 'extra', 'pods', 'shrike', 'corsair', 'warden', 'leviathan', 'ballista', 'peeper')   # everything that is built as a flying ship (the last five: the warships and the pod, docs/design/)
 SHIP_MODULES = ('pods', 'shrike', 'corsair', 'warden', 'leviathan', 'ballista')    # packaged as kind 'ship' (the Warships zips); the others are kind 'drone'
 PRINTER_MODULES = ('printers',)
-TEST_MODULES = ('testships', 'shrike_test', 'cradle_test', 'wasp_split')      # sim/generator test ships (kind 'test'): built into out/Blueprints, never packaged or listed in MODELS.md
+TEST_MODULES = ('testships', 'shrike_test', 'cradle_test', 'wasp_split', 'sprue_test')      # sim/generator test ships (kind 'test'): built into out/Blueprints, never packaged or listed in MODELS.md
 ALL_MODULES = DRONE_MODULES + PRINTER_MODULES + TEST_MODULES
 
 def load(names=ALL_MODULES):

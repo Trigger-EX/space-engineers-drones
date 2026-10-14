@@ -1,0 +1,20 @@
+# Sprue Test (test copy: does option A release a printed drone?)
+
+Copy BOTH folders from `Blueprints/` into your Space Engineers Blueprints folder (delete any old "Sprue Test" folders first: stale `.sbcB5` cache).
+World: a NEW world, game mode CREATIVE (not Survival with creative tools: ship welders then need components), in SPACE, at least 1 km from any safe zone and asteroid, in-game scripts ON (Experimental mode). Note for the report: game mode, welder/grinder speed multipliers, safe zone nearby yes/no.
+Paste "Sprue Test". If the paste fails, paste "Sprue Test No Grinder" (and send the game log of the failed paste) and place a Small Ship Grinder by hand: its back face on the yellow seat cube, its long body lying flat against red neck cells 3-5 on the side AWAY from the green welders, its tip pointing the way the brown projector sticks out of the core, one cell past the neck. The Sprue PB screen says "grinder pos OK" when it sits right, or "pos WRONG move x.. y.. z.." (x+ = toward the welders, y+ = projector side, z+ = toward the printer core).
+Both PBs carry SprueProbe (also in Scripts/). Commands: terminal, select "Sprue PB", type the word into Argument, press Run. If you cannot see a PB screen: K menu, select the PB: the same text is on the right.
+  weld   -> 1-3 min, wait for "BUILT ... Q1 FUSED". Screenshot the Sprue Payload PB terminal now (it is still on the printer grid).
+  charge -> 30 s.
+  cut    -> up to 60 s. "NO SPLIT ... UNTOUCHED (valid, D3)" is the EXPECTED result, not a broken rig: continue with hand. If "SPLIT ... CUT OK": screenshot the payload PB screen within 15 s, then it pushes itself away ("PAYLOAD LEFT").
+  hand   -> grind ONLY the 2nd red neck cell from the yellow stub (N2) with your hand grinder -> "SPLIT". Then cut (60 s), then push.
+  weld   -> the neck and a new payload are welded again (cycle 2). Before it, delete any loose 1-block grid (Info tab grid list).
+  auto   -> only completes when cut gives SPLIT; otherwise use the steps above.
+Stay out of the grinder's reach while it is ON. Screenshot the Sprue PB screen (the RESULTS block holds the answers) after each step, and copy the [Log] part of Sprue PB's Custom Data (it also holds the payload's log as P: lines) into the report.
+If something goes wrong:
+  blank PB screen -> world In-game scripts + Experimental ON; K > PB > Edit: code there? Recompile; if empty paste Scripts/SprueProbe.cs.
+  the t number on line 1 stops counting -> copy the red error text from the PB terminal, then Recompile.
+  both pastes fail -> send %AppData%\SpaceEngineers\SpaceEngineers_*.log.
+  WELD STALL "nothing buildable" -> projector terminal Offset must read X 0, Y 1, Z 2.
+  WELD STALL "NO payload block on my grid" -> Creative mode? safe zone? If you SEE welded grey blocks, that is a result (not fused): do NOT hand-weld, screenshot the Info tab grid list and the payload PB.
+Design and decision tree: docs/design/sprue_test.md. No simulation was run (the simulator models neither fused grids nor grinders). Zips not rebuilt.
