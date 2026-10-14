@@ -1,5 +1,5 @@
 // =====================================================================
-//  TUBE RAM AI  v1.0  - kinetic ram drone (small grid, no weapon)
+//  TUBE RAM AI  v1.1  - kinetic ram drone (small grid, no weapon)
 // ---------------------------------------------------------------------
 //  Tube 2x2 / 2x4 / 3x3 / 4x4 (docs/design/tube_drones.md). Sits passive until launched (off its rack or by
 //  command), then flies at the nearest enemy and slams into it at full speed. After an impact it backs off
@@ -23,10 +23,12 @@
 //         with boresight / spiral rays. The first valid contact (or an IGC cue) takes the ship back and starts HUNT. Same pattern as the Gnat.
 //
 //  START: Start Mode (WAIT/HUNT) = HUNT by default: once off its rack (or pasted free) it hunts by itself.
+//  PRINTED (v1.1): held while its grid holds a [Bay block or the Hive Mother PB (still welded to the printer), hunts once the merge pair lets go;
+//  sends <Tag>_SWARM every second so the printer counts it and reprints it after a ram.
 //
 //  COMMANDS: launch (hunt) | abort | idle (stop) | rtb | lock | disarm | reload
 // =====================================================================
-const string VER = "1.0";
+const string VER = "1.1";
 
 string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE,TUBE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
 string Tag = "TUBE", BlockTag = "";
@@ -405,6 +407,7 @@ bool Mine(IMyTerminalBlock b)
 void GetBlocks()
 {
     _myGrid = Me.CubeGrid;
+    _onPr = OnPrinter();
     var ctrls = new List<IMyShipController>();
     GridTerminalSystem.GetBlocksOfType(ctrls, Mine);
     _rc = ctrls.Count > 0 ? ctrls[0] : null;
@@ -431,7 +434,16 @@ void GetBlocks()
     _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.8f;
 }
 
-bool Docked() { foreach (var m in _merges) if (m.IsConnected) return true; return false; }
+// printed by a Hive Mother: until the merge pair lets go the tube is part of the PRINTER's grid, so every thruster and gyro found on "my" grid
+// may be the printer's. Held (treated as docked) while this grid holds a [Bay block or the Hive Mother PB.
+bool _onPr;
+bool OnPrinter()
+{
+    var l = new List<IMyTerminalBlock>();
+    GridTerminalSystem.GetBlocksOfType(l, b => b.CubeGrid == Me.CubeGrid && b != Me && (b.CustomName.Contains("[Bay") || (b is IMyProgrammableBlock && b.CustomData.Contains("[Hive Mother]"))));
+    return l.Count > 0;
+}
+bool Docked() { if (_onPr) return true; foreach (var m in _merges) if (m.IsConnected) return true; return false; }
 
 bool Valid(MyDetectedEntityInfo e)
 {
@@ -468,7 +480,10 @@ void Tick(string arg, UpdateType src)
     if ((src & UpdateType.Update1) == 0) return;
     double dt = Runtime.TimeSinceLastRun.TotalSeconds; if (dt <= 0 || dt > 0.5) dt = 1 / 60.0;
     _now += dt; _tick++;
-    if (Me.CubeGrid != _myGrid || _tick % 600 == 0) GetBlocks();
+    if (Me.CubeGrid != _myGrid || _tick % 600 == 0 || (_onPr && _tick % 30 == 0)) GetBlocks();
+    // heartbeat for the printer's drone count (Hive Mother counts <Tag>_SWARM senders): a rammed tube stops sending and gets reprinted
+    if (!_onPr && _rc != null && _tick % 60 == 0)
+        IGC.SendBroadcastMessage(Tag + "_SWARM", new MyTuple<long, Vector3D, Vector3D, long, int>(Me.CubeGrid.EntityId, _rc.GetPosition(), _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, 0));
     for (int li = 0; li < _lTgt.Count + FleetTgtL.Count; li++)
     {
         var l = li < _lTgt.Count ? _lTgt[li] : FleetTgtL[li - _lTgt.Count];

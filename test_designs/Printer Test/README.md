@@ -9,3 +9,8 @@ World: CREATIVE, space, in-game scripts ON, no safe zone near. Paste Hive Mother
 3. RELEASE: the Gnat should come free, burn away for 4 s and start guarding/orbiting the printer. The bay then prints the next one (Max Drones 8).
 Report: screenshots of the Hive Mother PB screen at FINISH, at RELEASE and after a Gnat flew off; any FAULT text; whether the Gnat orbits. If a bay shows FAULT "FUSED", send the PB's terminal text.
 Zips not rebuilt.
+
+## New printers (2026-10-14, Hive Mother v2.7 script)
+- `Tube Foundry` / `Tube W Foundry`: one bay each for Tube 2x2, 2x4, 3x3, 4x4 (W = the warhead tubes). Each tube has a small latch stalk with a merge block. A printed tube stays still while welded on, then hunts once released. With no enemy around it searches with its AI blocks. Keep the W foundry away from anything you want to keep.
+- `Midge Nest`: 2 bays of scriptless Midges (EXPERIMENTAL). Hive Mother switches the Midge's AI behaviour on as it releases it. Report whether the released Midge flies. A Midge cannot report in, so each bay prints 3 and stops; run `reload` on the Hive Mother PB to print more.
+Same checks as before: time from print finish to release, any FAULT, whether the drone leaves cleanly.

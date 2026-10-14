@@ -59,6 +59,11 @@ A Midge printed by projector + welder comes with every setting at default, **AI 
   its toolbar entries reference block ids that do not exist until paste, and the shape for filled toolbar slots has never been seen. Test T7 in
   `docs/research.md` decides whether this is possible. Until then: switch on by hand.
 
+**2026-10-14: `Midge Nest` (2 bays) does it from the printer side.** HiveMotherAI v2.7 finds the Midge's AI Flight / Offensive / Defensive blocks while
+the Midge is still welded to the printer and runs `OnOff_On` + `ActivateBehavior_On` on them in the same tick it switches the merge blocks off
+(the 10X Missle Platform showed `ActivateBehavior_On` is a real toolbar action). Untested in the game: the AI may act for one tick while still
+attached. A Midge never reports in, so each bay prints at most `Max Prints` (3) Midges; `reload` on the Hive Mother PB restarts the count.
+
 If the projected AI blocks arrive with no settings at all, the Midge printer has no reliable scriptless path and the user should print Midge Lite or
 Gnats.
 

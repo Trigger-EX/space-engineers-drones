@@ -2,7 +2,7 @@
 <Definitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ShipBlueprints>
     <ShipBlueprint xsi:type="MyObjectBuilder_ShipBlueprintDefinition">
-      <Id Type="MyObjectBuilder_ShipBlueprintDefinition" Subtype="Hive Mother [62b975d677]" />
+      <Id Type="MyObjectBuilder_ShipBlueprintDefinition" Subtype="Hive Mother [aef33d584c]" />
       <DisplayName>Hive Mother</DisplayName>
       <CubeGrids>
         <CubeGrid>
@@ -846,7 +846,7 @@
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MergeBlock">
               <SubtypeName>SmallShipSmallMergeBlock</SubtypeName>
               <EntityId>616845684871523651</EntityId>
-              <Min x="-5" y="5" z="0" />
+              <Min x="-6" y="5" z="0" />
               <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -861,199 +861,13 @@
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="4" z="0" />
+              <Min x="-6" y="4" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="3" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="7" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-6" y="11" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="9" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-2" y="4" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-1" y="4" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="4" z="-3" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-6" y="12" z="-1" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-6" y="12" z="-2" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="11" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="4" z="2" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="4" z="5" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="4" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="6" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="5" z="7" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="4" z="-4" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-6" y="12" z="-3" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="8" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-6" y="12" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="10" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="11" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="0" y="4" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="4" z="4" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="6" z="8" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="4" z="1" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="4" z="7" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="4" z="-2" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="4" z="-1" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-3" y="5" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="4" z="7" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-6" y="12" z="-4" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="6" z="7" />
+              <Min x="-6" y="3" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
@@ -1065,27 +879,207 @@
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="4" z="6" />
+              <Min x="-2" y="4" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-5" y="11" z="0" />
+              <Min x="-10" y="9" z="-1" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="-4" y="4" z="3" />
+              <Min x="-10" y="9" z="-2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-10" y="8" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-10" y="9" z="1" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="3" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-9" y="4" z="1" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="6" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-9" y="5" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-8" y="4" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="0" y="5" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-3" y="4" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-7" y="4" z="7" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-7" y="5" z="8" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-9" y="7" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-10" y="9" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-9" y="4" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="5" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-1" y="5" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-2" y="5" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-7" y="4" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-7" y="5" z="7" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-9" y="6" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-10" y="9" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-9" y="4" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="1" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="7" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-5" y="4" z="4" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-9" y="8" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="0" y="5" z="1" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-6" y="4" z="7" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
               <EntityId>133947718273463218</EntityId>
-              <Min x="-4" y="8" z="-3" />
-              <BlockOrientation Forward="Down" Up="Forward" />
+              <Min x="-5" y="6" z="-1" />
+              <BlockOrientation Forward="Left" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1120,7 +1114,8 @@
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
               <EntityId>610511953191518137</EntityId>
-              <Min x="-7" y="4" z="1" />
+              <Min x="-10" y="3" z="-3" />
+              <BlockOrientation Forward="Right" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1155,8 +1150,7 @@
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
               <EntityId>719993048056448025</EntityId>
-              <Min x="-7" y="9" z="1" />
-              <BlockOrientation Forward="Down" Up="Forward" />
+              <Min x="-8" y="3" z="1" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1191,8 +1185,7 @@
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
               <EntityId>588757051354923966</EntityId>
-              <Min x="-7" y="9" z="-6" />
-              <BlockOrientation Forward="Backward" Up="Up" />
+              <Min x="-8" y="6" z="5" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1227,8 +1220,7 @@
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
               <EntityId>835271101877186671</EntityId>
-              <Min x="-8" y="4" z="-5" />
-              <BlockOrientation Forward="Backward" Up="Up" />
+              <Min x="-8" y="8" z="-2" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1263,8 +1255,8 @@
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
               <EntityId>841332952898803822</EntityId>
-              <Min x="-4" y="6" z="1" />
-              <BlockOrientation Forward="Down" Up="Forward" />
+              <Min x="-4" y="5" z="2" />
+              <BlockOrientation Forward="Left" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1299,8 +1291,8 @@
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
               <EntityId>339086071589181253</EntityId>
-              <Min x="-4" y="4" z="-3" />
-              <BlockOrientation Forward="Left" Up="Up" />
+              <Min x="-11" y="6" z="-4" />
+              <BlockOrientation Forward="Backward" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1332,45 +1324,10 @@
               <NumberInGrid>7</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
-              <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>504546478245219599</EntityId>
-              <Min x="-6" y="7" z="5" />
-              <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
-              <Owner>144115188075855915</Owner>
-              <BuiltBy>144115188075855915</BuiltBy>
-              <ShareMode>Faction</ShareMode>
-              <DeformationRatio>0.5</DeformationRatio>
-              <ComponentContainer>
-                <Components>
-                  <ComponentData>
-                    <TypeId>MyInventoryBase</TypeId>
-                    <Component xsi:type="MyObjectBuilder_Inventory">
-                      <CanPutItems>true</CanPutItems>
-                      <Items />
-                      <nextItemId>0</nextItemId>
-                      <Volume>15.625</Volume>
-                      <Mass>9223372036854.775807</Mass>
-                      <MaxItemCount>2147483647</MaxItemCount>
-                      <Size xsi:nil="true" />
-                      <InventoryFlags>CanSend</InventoryFlags>
-                      <RemoveEntityOnEmpty>false</RemoveEntityOnEmpty>
-                    </Component>
-                  </ComponentData>
-                </Components>
-              </ComponentContainer>
-              <CustomName>Welder 8 [Bay 1] (Hive Mother)</CustomName>
-              <ShowOnHUD>false</ShowOnHUD>
-              <ShowInTerminal>true</ShowInTerminal>
-              <ShowInToolbarConfig>true</ShowInToolbarConfig>
-              <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>8</NumberInGrid>
-              <Enabled>false</Enabled>
-            </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Projector">
               <SubtypeName>SmallProjector</SubtypeName>
-              <EntityId>600977812724185959</EntityId>
-              <Min x="-5" y="3" z="-1" />
+              <EntityId>504546478245219599</EntityId>
+              <Min x="-7" y="3" z="0" />
               <ColorMaskHSV x="0.6" y="0.3" z="0.1" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -1402,14 +1359,6 @@
                   <LocalPositionAndOrientation xsi:nil="true" />
                   <GridSizeEnum>Small</GridSizeEnum>
                   <CubeBlocks>
-                    <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-                      <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-                      <Min x="1" y="0" z="0" />
-                      <IntegrityPercent>1.52590219E-05</IntegrityPercent>
-                      <BuildPercent>1.52590219E-05</BuildPercent>
-                      <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
-                      <BuiltBy>144115188075855915</BuiltBy>
-                    </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
                       <SubtypeName>SmallBlockArmorBlock</SubtypeName>
                       <Min x="1" y="1" z="-1" />
@@ -1536,9 +1485,28 @@
                       <OnlyDischargeEnabled>false</OnlyDischargeEnabled>
                       <ChargeMode>0</ChargeMode>
                     </MyObjectBuilder_CubeBlock>
+                    <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MergeBlock">
+                      <SubtypeName>SmallShipSmallMergeBlock</SubtypeName>
+                      <EntityId>750762199283402235</EntityId>
+                      <Min x="1" y="0" z="0" />
+                      <IntegrityPercent>1.52590219E-05</IntegrityPercent>
+                      <BuildPercent>1.52590219E-05</BuildPercent>
+                      <BlockOrientation Forward="Forward" Up="Down" />
+                      <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
+                      <Owner>144115188075855915</Owner>
+                      <BuiltBy>144115188075855915</BuiltBy>
+                      <ShareMode>Faction</ShareMode>
+                      <CustomName>Gnat Merge</CustomName>
+                      <ShowOnHUD>false</ShowOnHUD>
+                      <ShowInTerminal>true</ShowInTerminal>
+                      <ShowInToolbarConfig>true</ShowInToolbarConfig>
+                      <ShowInInventory>true</ShowInInventory>
+                      <NumberInGrid>1</NumberInGrid>
+                      <Enabled>true</Enabled>
+                    </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_SmallGatlingGun">
                       <SubtypeName />
-                      <EntityId>750762199283402235</EntityId>
+                      <EntityId>863357647551422164</EntityId>
                       <Min x="0" y="0" z="-3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1584,7 +1552,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Gyro">
                       <SubtypeName>SmallBlockGyro</SubtypeName>
-                      <EntityId>863357647551422164</EntityId>
+                      <EntityId>710233807953961985</EntityId>
                       <Min x="1" y="1" z="-2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1602,7 +1570,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
                       <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-                      <EntityId>710233807953961985</EntityId>
+                      <EntityId>383523975197534633</EntityId>
                       <Min x="0" y="1" z="-3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1636,7 +1604,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
                       <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-                      <EntityId>383523975197534633</EntityId>
+                      <EntityId>547790943397088201</EntityId>
                       <Min x="0" y="1" z="-1" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1671,7 +1639,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_RadioAntenna">
                       <SubtypeName>SmallBlockRadioAntenna</SubtypeName>
-                      <EntityId>547790943397088201</EntityId>
+                      <EntityId>430508361066675327</EntityId>
                       <Min x="1" y="1" z="0" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1697,7 +1665,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>430508361066675327</EntityId>
+                      <EntityId>178615357484166780</EntityId>
                       <Min x="1" y="0" z="-3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1717,7 +1685,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>178615357484166780</EntityId>
+                      <EntityId>147296330165874507</EntityId>
                       <Min x="2" y="0" z="-2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1738,7 +1706,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>147296330165874507</EntityId>
+                      <EntityId>314130474406830468</EntityId>
                       <Min x="-1" y="0" z="0" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1759,7 +1727,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_OffensiveCombatBlock">
                       <SubtypeName>SmallOffensiveCombat</SubtypeName>
-                      <EntityId>314130474406830468</EntityId>
+                      <EntityId>194694449820672936</EntityId>
                       <Min x="1" y="0" z="1" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1777,7 +1745,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_FlightMovementBlock">
                       <SubtypeName>SmallFlightMovement</SubtypeName>
-                      <EntityId>194694449820672936</EntityId>
+                      <EntityId>590898936845880308</EntityId>
                       <Min x="1" y="0" z="2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1795,7 +1763,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>590898936845880308</EntityId>
+                      <EntityId>418572081332718693</EntityId>
                       <Min x="1" y="0" z="3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -1816,7 +1784,7 @@
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MyProgrammableBlock">
                       <SubtypeName>SmallProgrammableBlock</SubtypeName>
-                      <EntityId>418572081332718693</EntityId>
+                      <EntityId>361340981417343314</EntityId>
                       <Min x="0" y="0" z="1" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -2074,7 +2042,7 @@ want=AiGate(want);if(want!=_aiOn){_aiOn=want;_firing=false;if(want)Release();for
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_SensorBlock">
                       <SubtypeName>SmallBlockSensor</SubtypeName>
-                      <EntityId>361340981417343314</EntityId>
+                      <EntityId>367799963991494874</EntityId>
                       <Min x="1" y="1" z="2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -2111,25 +2079,6 @@ want=AiGate(want);if(want!=_aiOn){_aiOn=want;_firing=false;if(want)Release();for
                       <DetectFriendly>true</DetectFriendly>
                       <DetectNeutral>true</DetectNeutral>
                       <DetectEnemy>true</DetectEnemy>
-                    </MyObjectBuilder_CubeBlock>
-                    <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MergeBlock">
-                      <SubtypeName>SmallShipSmallMergeBlock</SubtypeName>
-                      <EntityId>367799963991494874</EntityId>
-                      <Min x="1" y="-1" z="0" />
-                      <IntegrityPercent>1.52590219E-05</IntegrityPercent>
-                      <BuildPercent>1.52590219E-05</BuildPercent>
-                      <BlockOrientation Forward="Forward" Up="Down" />
-                      <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
-                      <Owner>144115188075855915</Owner>
-                      <BuiltBy>144115188075855915</BuiltBy>
-                      <ShareMode>Faction</ShareMode>
-                      <CustomName>Gnat Merge</CustomName>
-                      <ShowOnHUD>false</ShowOnHUD>
-                      <ShowInTerminal>true</ShowInTerminal>
-                      <ShowInToolbarConfig>true</ShowInToolbarConfig>
-                      <ShowInInventory>true</ShowInInventory>
-                      <NumberInGrid>1</NumberInGrid>
-                      <Enabled>true</Enabled>
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MyProgrammableBlock">
                       <SubtypeName>SmallProgrammableBlock</SubtypeName>
@@ -2314,9 +2263,9 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                 </MyObjectBuilder_CubeGrid>
               </ProjectedGrids>
               <ProjectionOffset>
-                <X>0</X>
+                <X>-1</X>
                 <Y>-4</Y>
-                <Z>-1</Z>
+                <Z>1</Z>
               </ProjectionOffset>
               <ProjectionRotation>
                 <X>0</X>
@@ -2352,10 +2301,16 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="-6" y="2" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MergeBlock">
               <SubtypeName>SmallShipSmallMergeBlock</SubtypeName>
-              <EntityId>494452984725258919</EntityId>
-              <Min x="5" y="5" z="0" />
+              <EntityId>600977812724185959</EntityId>
+              <Min x="6" y="5" z="0" />
               <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2370,13 +2325,31 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="4" z="0" />
+              <Min x="6" y="4" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="3" z="0" />
+              <Min x="6" y="3" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="7" y="4" z="1" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="7" y="4" z="7" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="7" y="4" z="4" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
@@ -2388,67 +2361,25 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="7" y="9" z="0" />
+              <Min x="3" y="4" z="1" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="6" z="8" />
+              <Min x="12" y="5" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="7" y="11" z="0" />
+              <Min x="2" y="9" z="-1" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="11" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="4" y="12" z="-4" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="4" y="11" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="4" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="4" z="6" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="4" z="3" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="4" z="-2" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="4" z="-1" />
+              <Min x="2" y="9" z="-2" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
@@ -2460,13 +2391,25 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="7" y="6" z="0" />
+              <Min x="2" y="8" z="2" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="6" z="7" />
+              <Min x="2" y="9" z="1" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="7" y="4" z="3" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="7" y="4" z="6" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
@@ -2478,97 +2421,67 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="7" y="8" z="0" />
+              <Min x="3" y="5" z="2" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="11" z="0" />
+              <Min x="3" y="7" z="2" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="4" y="12" z="-1" />
+              <Min x="4" y="4" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="4" y="12" z="-2" />
+              <Min x="3" y="4" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="7" y="10" z="0" />
+              <Min x="5" y="5" z="8" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="4" z="2" />
+              <Min x="10" y="5" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="4" z="5" />
+              <Min x="5" y="4" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="4" z="-3" />
+              <Min x="2" y="9" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="7" y="5" z="0" />
+              <Min x="7" y="4" z="2" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="5" z="7" />
+              <Min x="11" y="5" z="0" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="4" y="12" z="-3" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="5" y="4" z="-4" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="7" y="7" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="4" y="12" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="9" y="4" z="0" />
-              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
-              <BuiltBy>144115188075855915</BuiltBy>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="4" z="4" />
+              <Min x="7" y="4" z="5" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
@@ -2580,7 +2493,37 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
               <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-              <Min x="6" y="4" z="1" />
+              <Min x="5" y="5" z="7" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="3" y="4" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="9" y="4" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="3" y="6" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="3" y="8" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="12" y="5" z="1" />
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
@@ -2590,11 +2533,17 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="2" y="9" z="2" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>810945555695556611</EntityId>
-              <Min x="6" y="8" z="-3" />
-              <BlockOrientation Forward="Down" Up="Forward" />
+              <EntityId>494452984725258919</EntityId>
+              <Min x="7" y="6" z="-1" />
+              <BlockOrientation Forward="Left" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2623,13 +2572,14 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ShowInTerminal>true</ShowInTerminal>
               <ShowInToolbarConfig>true</ShowInToolbarConfig>
               <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>9</NumberInGrid>
+              <NumberInGrid>8</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>188380149866977975</EntityId>
-              <Min x="3" y="4" z="1" />
+              <EntityId>810945555695556611</EntityId>
+              <Min x="2" y="3" z="-3" />
+              <BlockOrientation Forward="Right" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2658,14 +2608,13 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ShowInTerminal>true</ShowInTerminal>
               <ShowInToolbarConfig>true</ShowInToolbarConfig>
               <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>10</NumberInGrid>
+              <NumberInGrid>9</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>312325261145676750</EntityId>
-              <Min x="3" y="9" z="1" />
-              <BlockOrientation Forward="Down" Up="Forward" />
+              <EntityId>188380149866977975</EntityId>
+              <Min x="4" y="3" z="1" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2694,14 +2643,13 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ShowInTerminal>true</ShowInTerminal>
               <ShowInToolbarConfig>true</ShowInToolbarConfig>
               <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>11</NumberInGrid>
+              <NumberInGrid>10</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>680610212558200594</EntityId>
-              <Min x="3" y="9" z="-6" />
-              <BlockOrientation Forward="Backward" Up="Up" />
+              <EntityId>312325261145676750</EntityId>
+              <Min x="4" y="6" z="5" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2730,14 +2678,13 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ShowInTerminal>true</ShowInTerminal>
               <ShowInToolbarConfig>true</ShowInToolbarConfig>
               <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>12</NumberInGrid>
+              <NumberInGrid>11</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>662629578714684891</EntityId>
-              <Min x="2" y="4" z="-5" />
-              <BlockOrientation Forward="Backward" Up="Up" />
+              <EntityId>680610212558200594</EntityId>
+              <Min x="4" y="8" z="-2" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2766,14 +2713,14 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ShowInTerminal>true</ShowInTerminal>
               <ShowInToolbarConfig>true</ShowInToolbarConfig>
               <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>13</NumberInGrid>
+              <NumberInGrid>12</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>116373210317760060</EntityId>
-              <Min x="6" y="6" z="1" />
-              <BlockOrientation Forward="Down" Up="Forward" />
+              <EntityId>662629578714684891</EntityId>
+              <Min x="8" y="5" z="2" />
+              <BlockOrientation Forward="Left" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2802,14 +2749,14 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ShowInTerminal>true</ShowInTerminal>
               <ShowInToolbarConfig>true</ShowInToolbarConfig>
               <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>14</NumberInGrid>
+              <NumberInGrid>13</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
               <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>702916406363517069</EntityId>
-              <Min x="6" y="4" z="-3" />
-              <BlockOrientation Forward="Left" Up="Up" />
+              <EntityId>116373210317760060</EntityId>
+              <Min x="1" y="6" z="-4" />
+              <BlockOrientation Forward="Backward" Up="Up" />
               <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2838,48 +2785,13 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ShowInTerminal>true</ShowInTerminal>
               <ShowInToolbarConfig>true</ShowInToolbarConfig>
               <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>15</NumberInGrid>
-              <Enabled>false</Enabled>
-            </MyObjectBuilder_CubeBlock>
-            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_ShipWelder">
-              <SubtypeName>SmallShipWelder</SubtypeName>
-              <EntityId>482553640725031042</EntityId>
-              <Min x="4" y="7" z="5" />
-              <ColorMaskHSV x="0.12" y="0.75" z="0.05" />
-              <Owner>144115188075855915</Owner>
-              <BuiltBy>144115188075855915</BuiltBy>
-              <ShareMode>Faction</ShareMode>
-              <DeformationRatio>0.5</DeformationRatio>
-              <ComponentContainer>
-                <Components>
-                  <ComponentData>
-                    <TypeId>MyInventoryBase</TypeId>
-                    <Component xsi:type="MyObjectBuilder_Inventory">
-                      <CanPutItems>true</CanPutItems>
-                      <Items />
-                      <nextItemId>0</nextItemId>
-                      <Volume>15.625</Volume>
-                      <Mass>9223372036854.775807</Mass>
-                      <MaxItemCount>2147483647</MaxItemCount>
-                      <Size xsi:nil="true" />
-                      <InventoryFlags>CanSend</InventoryFlags>
-                      <RemoveEntityOnEmpty>false</RemoveEntityOnEmpty>
-                    </Component>
-                  </ComponentData>
-                </Components>
-              </ComponentContainer>
-              <CustomName>Welder 8 [Bay 2] (Hive Mother)</CustomName>
-              <ShowOnHUD>false</ShowOnHUD>
-              <ShowInTerminal>true</ShowInTerminal>
-              <ShowInToolbarConfig>true</ShowInToolbarConfig>
-              <ShowInInventory>true</ShowInInventory>
-              <NumberInGrid>16</NumberInGrid>
+              <NumberInGrid>14</NumberInGrid>
               <Enabled>false</Enabled>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Projector">
               <SubtypeName>SmallProjector</SubtypeName>
-              <EntityId>324731344776965025</EntityId>
-              <Min x="5" y="3" z="-1" />
+              <EntityId>702916406363517069</EntityId>
+              <Min x="5" y="3" z="0" />
               <ColorMaskHSV x="0.6" y="0.3" z="0.1" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -2911,14 +2823,6 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                   <LocalPositionAndOrientation xsi:nil="true" />
                   <GridSizeEnum>Small</GridSizeEnum>
                   <CubeBlocks>
-                    <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
-                      <SubtypeName>SmallBlockArmorBlock</SubtypeName>
-                      <Min x="1" y="0" z="0" />
-                      <IntegrityPercent>1.52590219E-05</IntegrityPercent>
-                      <BuildPercent>1.52590219E-05</BuildPercent>
-                      <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
-                      <BuiltBy>144115188075855915</BuiltBy>
-                    </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
                       <SubtypeName>SmallBlockArmorBlock</SubtypeName>
                       <Min x="1" y="1" z="-1" />
@@ -3045,9 +2949,28 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                       <OnlyDischargeEnabled>false</OnlyDischargeEnabled>
                       <ChargeMode>0</ChargeMode>
                     </MyObjectBuilder_CubeBlock>
+                    <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MergeBlock">
+                      <SubtypeName>SmallShipSmallMergeBlock</SubtypeName>
+                      <EntityId>459358132867225440</EntityId>
+                      <Min x="1" y="0" z="0" />
+                      <IntegrityPercent>1.52590219E-05</IntegrityPercent>
+                      <BuildPercent>1.52590219E-05</BuildPercent>
+                      <BlockOrientation Forward="Forward" Up="Down" />
+                      <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
+                      <Owner>144115188075855915</Owner>
+                      <BuiltBy>144115188075855915</BuiltBy>
+                      <ShareMode>Faction</ShareMode>
+                      <CustomName>Gnat Merge</CustomName>
+                      <ShowOnHUD>false</ShowOnHUD>
+                      <ShowInTerminal>true</ShowInTerminal>
+                      <ShowInToolbarConfig>true</ShowInToolbarConfig>
+                      <ShowInInventory>true</ShowInInventory>
+                      <NumberInGrid>1</NumberInGrid>
+                      <Enabled>true</Enabled>
+                    </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_SmallGatlingGun">
                       <SubtypeName />
-                      <EntityId>459358132867225440</EntityId>
+                      <EntityId>612633823065990369</EntityId>
                       <Min x="0" y="0" z="-3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3093,7 +3016,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Gyro">
                       <SubtypeName>SmallBlockGyro</SubtypeName>
-                      <EntityId>612633823065990369</EntityId>
+                      <EntityId>507789150922134560</EntityId>
                       <Min x="1" y="1" z="-2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3111,7 +3034,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
                       <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-                      <EntityId>507789150922134560</EntityId>
+                      <EntityId>206213003956621303</EntityId>
                       <Min x="0" y="1" z="-3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3145,7 +3068,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
                       <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-                      <EntityId>206213003956621303</EntityId>
+                      <EntityId>875875214656040797</EntityId>
                       <Min x="0" y="1" z="-1" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3180,7 +3103,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_RadioAntenna">
                       <SubtypeName>SmallBlockRadioAntenna</SubtypeName>
-                      <EntityId>875875214656040797</EntityId>
+                      <EntityId>101861795180528558</EntityId>
                       <Min x="1" y="1" z="0" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3206,7 +3129,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>101861795180528558</EntityId>
+                      <EntityId>180760664527634787</EntityId>
                       <Min x="1" y="0" z="-3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3226,7 +3149,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>180760664527634787</EntityId>
+                      <EntityId>400421686418220483</EntityId>
                       <Min x="2" y="0" z="-2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3247,7 +3170,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>400421686418220483</EntityId>
+                      <EntityId>272482732434732086</EntityId>
                       <Min x="-1" y="0" z="0" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3268,7 +3191,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_OffensiveCombatBlock">
                       <SubtypeName>SmallOffensiveCombat</SubtypeName>
-                      <EntityId>272482732434732086</EntityId>
+                      <EntityId>775302111712963932</EntityId>
                       <Min x="1" y="0" z="1" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3286,7 +3209,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_FlightMovementBlock">
                       <SubtypeName>SmallFlightMovement</SubtypeName>
-                      <EntityId>775302111712963932</EntityId>
+                      <EntityId>709421142974143609</EntityId>
                       <Min x="1" y="0" z="2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3304,7 +3227,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CameraBlock">
                       <SubtypeName>SmallCameraBlock</SubtypeName>
-                      <EntityId>709421142974143609</EntityId>
+                      <EntityId>671962527150995626</EntityId>
                       <Min x="1" y="0" z="3" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3325,7 +3248,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MyProgrammableBlock">
                       <SubtypeName>SmallProgrammableBlock</SubtypeName>
-                      <EntityId>671962527150995626</EntityId>
+                      <EntityId>332947934939035754</EntityId>
                       <Min x="0" y="0" z="1" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3583,7 +3506,7 @@ want=AiGate(want);if(want!=_aiOn){_aiOn=want;_firing=false;if(want)Release();for
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_SensorBlock">
                       <SubtypeName>SmallBlockSensor</SubtypeName>
-                      <EntityId>332947934939035754</EntityId>
+                      <EntityId>484530450888410406</EntityId>
                       <Min x="1" y="1" z="2" />
                       <IntegrityPercent>1.52590219E-05</IntegrityPercent>
                       <BuildPercent>1.52590219E-05</BuildPercent>
@@ -3620,25 +3543,6 @@ want=AiGate(want);if(want!=_aiOn){_aiOn=want;_firing=false;if(want)Release();for
                       <DetectFriendly>true</DetectFriendly>
                       <DetectNeutral>true</DetectNeutral>
                       <DetectEnemy>true</DetectEnemy>
-                    </MyObjectBuilder_CubeBlock>
-                    <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MergeBlock">
-                      <SubtypeName>SmallShipSmallMergeBlock</SubtypeName>
-                      <EntityId>484530450888410406</EntityId>
-                      <Min x="1" y="-1" z="0" />
-                      <IntegrityPercent>1.52590219E-05</IntegrityPercent>
-                      <BuildPercent>1.52590219E-05</BuildPercent>
-                      <BlockOrientation Forward="Forward" Up="Down" />
-                      <ColorMaskHSV x="0.98" y="0.65" z="0.05" />
-                      <Owner>144115188075855915</Owner>
-                      <BuiltBy>144115188075855915</BuiltBy>
-                      <ShareMode>Faction</ShareMode>
-                      <CustomName>Gnat Merge</CustomName>
-                      <ShowOnHUD>false</ShowOnHUD>
-                      <ShowInTerminal>true</ShowInTerminal>
-                      <ShowInToolbarConfig>true</ShowInToolbarConfig>
-                      <ShowInInventory>true</ShowInInventory>
-                      <NumberInGrid>1</NumberInGrid>
-                      <Enabled>true</Enabled>
                     </MyObjectBuilder_CubeBlock>
                     <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MyProgrammableBlock">
                       <SubtypeName>SmallProgrammableBlock</SubtypeName>
@@ -3823,9 +3727,9 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                 </MyObjectBuilder_CubeGrid>
               </ProjectedGrids>
               <ProjectionOffset>
-                <X>0</X>
+                <X>-1</X>
                 <Y>-4</Y>
-                <Z>-1</Z>
+                <Z>1</Z>
               </ProjectionOffset>
               <ProjectionRotation>
                 <X>0</X>
@@ -3861,9 +3765,15 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
               <BuiltBy>144115188075855915</BuiltBy>
             </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="6" y="2" z="0" />
+              <ColorMaskHSV x="0.07" y="0.55" z="0.1" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>139651608059682673</EntityId>
+              <EntityId>482553640725031042</EntityId>
               <Min x="0" y="0" z="3" />
               <BlockOrientation Forward="Backward" Up="Up" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -3896,7 +3806,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>575859604649966104</EntityId>
+              <EntityId>324731344776965025</EntityId>
               <Min x="-1" y="0" z="3" />
               <BlockOrientation Forward="Backward" Up="Up" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -3929,7 +3839,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>524497323072200308</EntityId>
+              <EntityId>139651608059682673</EntityId>
               <Min x="0" y="0" z="-4" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
               <BuiltBy>144115188075855915</BuiltBy>
@@ -3961,7 +3871,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>647188584798153026</EntityId>
+              <EntityId>575859604649966104</EntityId>
               <Min x="-1" y="0" z="-4" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
               <BuiltBy>144115188075855915</BuiltBy>
@@ -3993,7 +3903,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>528128722190845183</EntityId>
+              <EntityId>524497323072200308</EntityId>
               <Min x="0" y="-4" z="0" />
               <BlockOrientation Forward="Down" Up="Forward" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -4026,7 +3936,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>621002320566208158</EntityId>
+              <EntityId>647188584798153026</EntityId>
               <Min x="-1" y="-4" z="0" />
               <BlockOrientation Forward="Down" Up="Forward" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -4059,8 +3969,8 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>644615868238968417</EntityId>
-              <Min x="0" y="3" z="1" />
+              <EntityId>528128722190845183</EntityId>
+              <Min x="0" y="3" z="-2" />
               <BlockOrientation Forward="Up" Up="Forward" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
               <BuiltBy>144115188075855915</BuiltBy>
@@ -4090,10 +4000,16 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
               <NumberInGrid>7</NumberInGrid>
               <Enabled>true</Enabled>
             </MyObjectBuilder_CubeBlock>
+            <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_CubeBlock">
+              <SubtypeName>SmallBlockArmorBlock</SubtypeName>
+              <Min x="2" y="2" z="3" />
+              <ColorMaskHSV x="0.58" y="-0.78" z="-0.25" />
+              <BuiltBy>144115188075855915</BuiltBy>
+            </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>212954648881054807</EntityId>
-              <Min x="1" y="3" z="0" />
+              <EntityId>621002320566208158</EntityId>
+              <Min x="2" y="3" z="3" />
               <BlockOrientation Forward="Up" Up="Forward" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
               <BuiltBy>144115188075855915</BuiltBy>
@@ -4125,7 +4041,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>252345839443693409</EntityId>
+              <EntityId>644615868238968417</EntityId>
               <Min x="3" y="0" z="0" />
               <BlockOrientation Forward="Right" Up="Up" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -4158,7 +4074,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>468688896136117088</EntityId>
+              <EntityId>212954648881054807</EntityId>
               <Min x="3" y="-1" z="0" />
               <BlockOrientation Forward="Right" Up="Up" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -4191,7 +4107,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>440157540372018908</EntityId>
+              <EntityId>252345839443693409</EntityId>
               <Min x="-4" y="0" z="0" />
               <BlockOrientation Forward="Left" Up="Up" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -4224,7 +4140,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_Thrust">
               <SubtypeName>SmallBlockSmallThrust</SubtypeName>
-              <EntityId>622601032321177433</EntityId>
+              <EntityId>468688896136117088</EntityId>
               <Min x="-4" y="-1" z="0" />
               <BlockOrientation Forward="Left" Up="Up" />
               <ColorMaskHSV x="0" y="-0.81" z="-0.55" />
@@ -4257,8 +4173,8 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_RadioAntenna">
               <SubtypeName>SmallBlockRadioAntenna</SubtypeName>
-              <EntityId>372427207548583220</EntityId>
-              <Min x="-2" y="3" z="1" />
+              <EntityId>440157540372018908</EntityId>
+              <Min x="-2" y="3" z="-2" />
               <BlockOrientation Forward="Up" Up="Forward" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
               <Owner>144115188075855915</Owner>
@@ -4281,7 +4197,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_MyProgrammableBlock">
               <SubtypeName>SmallProgrammableBlock</SubtypeName>
-              <EntityId>386945687051645139</EntityId>
+              <EntityId>622601032321177433</EntityId>
               <Min x="1" y="1" z="0" />
               <BlockOrientation Forward="Right" Up="Up" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
@@ -4409,7 +4325,7 @@ _sb.Append("Battery: ").Append((_batt*100).ToString("0")).Append("%\n");if(_gate
                           <item>
                             <Key>74de02b3-27f9-4960-b1c4-27351f2b06d1</Key>
                             <Value>; Components for ONE drone of each type (stock the [Stock] cargo / feed the welders in survival; a creative world needs none):
-; Gnat: Computer 51, Construction 36, Detector 14, Display 2, InteriorPlate 11, LargeTube 7, MetalGrid 2, Motor 11, PowerCell 2, RadioCommunication 5, SmallTube 8, SteelPlate 62, Thrust 2
+; Gnat: Computer 51, Construction 36, Detector 14, Display 2, InteriorPlate 11, LargeTube 7, MetalGrid 2, Motor 11, PowerCell 2, RadioCommunication 5, SmallTube 8, SteelPlate 61, Thrust 2
 [Hive Mother]
 Max Drones (all tags)=8
 Rack Mode=false
@@ -4426,22 +4342,22 @@ Prefix=Gnat
 Max Alive=8
 Max Prints=0
 Exit Direction=Forward
-Drone Box Min=-7,6,-3
-Drone Box Max=-4,8,3
-Drone Cell Count=20
-Drone Occupied Cells=26
-Ignore Cells=-7,6,-3;-7,6,-2;-7,6,-1;-7,6,0;-7,6,1;-7,6,2;-7,6,3;-6,6,-3;-6,6,-2;-6,6,-1;-6,6,0;-6,6,1;-6,6,2;-6,6,3;-5,5,0;-5,6,1;-5,6,2;-5,6,3;-4,6,-3;-4,6,-2;-4,6,-1;-4,6,1;-4,6,2;-4,6,3;-4,7,1;-4,7,2;-4,7,3;-4,8,-3;-4,8,-2;-4,8,-1;-4,8,1;-4,8,2;-4,8,3
+Drone Box Min=-8,6,-3
+Drone Box Max=-5,7,3
+Drone Cell Count=19
+Drone Occupied Cells=25
+Ignore Cells=-6,5,0;-5,6,-1;-5,6,0;-5,6,1;-5,7,-1;-5,7,0;-5,7,1
 [Bay 2]
 Tag=GNAT
 Prefix=Gnat
 Max Alive=8
 Max Prints=0
 Exit Direction=Forward
-Drone Box Min=3,6,-3
-Drone Box Max=6,8,3
-Drone Cell Count=20
-Drone Occupied Cells=26
-Ignore Cells=3,6,-3;3,6,-2;3,6,-1;3,6,0;3,6,1;3,6,2;3,6,3;4,6,-3;4,6,-2;4,6,-1;4,6,0;4,6,1;4,6,2;4,6,3;5,5,0;5,6,1;5,6,2;5,6,3;6,6,-3;6,6,-2;6,6,-1;6,6,1;6,6,2;6,6,3;6,7,1;6,7,2;6,7,3;6,8,-3;6,8,-2;6,8,-1;6,8,1;6,8,2;6,8,3
+Drone Box Min=4,6,-3
+Drone Box Max=7,7,3
+Drone Cell Count=19
+Drone Occupied Cells=25
+Ignore Cells=6,5,0;7,6,-1;7,6,0;7,6,1;7,7,-1;7,7,0;7,7,1
 </Value>
                           </item>
                         </dictionary>
@@ -4457,37 +4373,37 @@ Ignore Cells=3,6,-3;3,6,-2;3,6,-1;3,6,0;3,6,1;3,6,2;3,6,3;4,6,-3;4,6,-2;4,6,-1;4
               <ShowInInventory>true</ShowInInventory>
               <NumberInGrid>1</NumberInGrid>
               <Enabled>true</Enabled>
-              <Program>const string VER="2.6";const int MaxBays=12;int MaxDrones=8;bool RackMode=false;string LaunchTag="STINGER";double ChargeSeconds=25,CooldownSeconds=1,StallSeconds=45,BuildTimeout=600,FaultSeconds=60;double NudgeSeconds=1.5,NudgePower=0.25,GapSeconds=1.0,RecompileWait=3,MatchRadius=12;double ArmourSettle=2,FinishTimeout=360,FinishFallback=90,ArmSeconds=3,JoinSeconds=40,FusedGrace=8,LaunchBurst=4;string FleetCh="FLEET";const int ScanBudget=150;int ParallelBuilds=2;bool Printing=true,WeldersStayOn=true,DoRecompile=false,Relay=false;int _peakIns=0;MyIni _ini=new MyIni();double _now,_dt;long _tick;Dictionary&lt;string,double&gt;_joinUntil=new Dictionary&lt;string,double&gt;(),_joinNext=new Dictionary&lt;string,double&gt;();
-int _rackLaunchLeft=0;class Bay{public int N;public string Tag="GNAT",Prefix="Gnat";public bool Held;public int Cap=8,MaxPrints=0,Printed=0;public IMyProjector Proj;public List&lt;IMyShipWelder&gt;Welders=new List&lt;IMyShipWelder&gt;();public IMyShipMergeBlock Merge;public IMyShipMergeBlock DMerge;public IMyProgrammableBlock DPb;public List&lt;IMyBatteryBlock&gt;DBats=new List&lt;IMyBatteryBlock&gt;();public string State="IDLE";public double T;public int Rem= -1;public double LastProgress;public bool SawWork,Recompiled,Nudged;public string Msg="";public int Faults;public Vector3D Away;public string Exit="";public bool HasBox,SkipFinish,Starved,PassOk,HavePass;
-public Vector3I BMin,BMax;public int Cells,Tol;public string BoxRaw="NONE",CfgWarn="";public HashSet&lt;long&gt;Ignore=new HashSet&lt;long&gt;(),Seen=new HashSet&lt;long&gt;();public long ScanIdx;public int PBlocks,PCells,PBad,LBlocks,LCells,LBad,PBlind,LBlind;public double OkSince= -1;public float PInteg,LInteg;public List&lt;string&gt;PBadL=new List&lt;string&gt;();public string LBadText="";public double FinishT,Burst= -1;public IMyShipWelder KickW;public double KickT;public int KickIdx;public bool Armed,LaunchWritten,RackLaunch;public double FusedT;public string ProjErr="";public List&lt;IMyTimerBlock&gt;Timers=new List&lt;IMyTimerBlock&gt;();
-public double TimerSeen= -999;}class ErrRec{public string Text;public double T,Last;public int N=1;}List&lt;Bay&gt;_bays=new List&lt;Bay&gt;();Dictionary&lt;string,IMyBroadcastListener&gt;_lSwarm=new Dictionary&lt;string,IMyBroadcastListener&gt;();Dictionary&lt;string,Dictionary&lt;long,double&gt;&gt;_alive=new Dictionary&lt;string,Dictionary&lt;long,double&gt;&gt;();Dictionary&lt;string,int&gt;_cap=new Dictionary&lt;string,int&gt;();List&lt;IMyBroadcastListener&gt;_lTgt=new List&lt;IMyBroadcastListener&gt;();string TargetTags="GNAT,HORNET,LONGBOW";Dictionary&lt;long,double&gt;_targets=new Dictionary&lt;long,double&gt;();int _launched=0;IMyTextSurface _lcd;StringBuilder _sb=new StringBuilder();
-List&lt;IMyTerminalBlock&gt;_stock=new List&lt;IMyTerminalBlock&gt;();List&lt;IMyThrust&gt;_thr=new List&lt;IMyThrust&gt;();List&lt;IMyLargeTurretBase&gt;_turrets=new List&lt;IMyLargeTurretBase&gt;();List&lt;IMyTurretControlBlock&gt;_ctcs=new List&lt;IMyTurretControlBlock&gt;();List&lt;IMyTerminalBlock&gt;_tmp=new List&lt;IMyTerminalBlock&gt;();List&lt;IMyProgrammableBlock&gt;_pbs=new List&lt;IMyProgrammableBlock&gt;();List&lt;IMyBatteryBlock&gt;_bats=new List&lt;IMyBatteryBlock&gt;();List&lt;IMyShipMergeBlock&gt;_mergesAll=new List&lt;IMyShipMergeBlock&gt;();string _where="init",_screen="";int _errTotal;HashSet&lt;IMyTerminalBlock&gt;_dead=new HashSet&lt;IMyTerminalBlock&gt;();List&lt;ErrRec&gt;_errs=new List&lt;ErrRec&gt;();
-public Program(){Runtime.UpdateFrequency=UpdateFrequency.Update10;_where="constructor LoadConfig";try{LoadConfig();}catch(Exception ex){Err(ex,null);}_where="constructor GetBlocks";try{GetBlocks();}catch(Exception ex){Err(ex,null);}_where="constructor listeners";try{if(RackMode)foreach(var t in TargetTags.Split(','))if(t.Trim()!="")_lTgt.Add(IGC.RegisterBroadcastListener(t.Trim()+"_TGT"));}catch(Exception ex){Err(ex,null);}try{Show();Echo(_screen);}catch(Exception){}}void Err(Exception ex,Bay b){string frame="";try{string st=ex.ToString();if(st!=null){string f=null;foreach(var ln in st.Split('\n'))if(ln.IndexOf("Program.",StringComparison.Ordinal)&gt;=0){
-f=ln.Trim();break;}if(f==null){int nl=st.IndexOf('\n');f=(nl&gt;0?st.Substring(0,nl):st).Trim();}int pr=f.IndexOf('(');if(pr&gt;0)f=f.Substring(0,pr);if(f.StartsWith("at "))f=f.Substring(3);if(f.Length&gt;50)f=f.Substring(f.Length-50);frame=f;}}catch(Exception){}string text=ex.GetType().FullName+": "+ex.Message+" | at: "+_where+(b!=null?" | bay "+b.N+" state "+b.State:"")+(frame!=""?" | in "+frame:"");_errTotal++;if(_errs.Count&gt;0&amp;&amp;_errs[_errs.Count-1].Text==text){_errs[_errs.Count-1].N++;_errs[_errs.Count-1].Last=_now;}else{_errs.Add(new ErrRec{Text=text,T=_now,Last=_now});if(_errs.Count&gt;3)_errs.RemoveAt(0);
-}try{Echo("ERROR "+text);}catch(Exception){}}string ErrText(){if(_errs.Count==0)return"";var sb=new StringBuilder("ERRORS ("+_errTotal+" total, last 3):\n");foreach(var e in _errs)sb.Append(" t=").Append((int)e.T).Append("s").Append(e.N&gt;1?" x"+e.N+" until t="+(int)e.Last+"s":"").Append(": ").Append(e.Text).Append('\n');return sb.ToString();}void BayFail(Bay b,Exception ex){Err(ex,b);try{if(b.State!="FAULT"){b.State="FAULT";b.T=_now;b.Faults++;}b.Msg="EXCEPTION "+ex.GetType().FullName+": "+ex.Message+" (at "+_where+")";b.KickW=null;}catch(Exception){}}bool Gone(IMyTerminalBlock x){if(x==null)return true;
-try{return GridTerminalSystem.GetBlockWithId(x.EntityId)==null;}catch(Exception){return true;}}bool SetOn(IMyFunctionalBlock x,bool on){if(x==null||_dead.Contains(x))return false;try{if(x.Enabled!=on)x.Enabled=on;return true;}catch(Exception ex){_dead.Add(x);Err(ex,null);return false;}}bool Projecting(Bay b){try{return b.Proj!=null&amp;&amp;b.Proj.IsProjecting;}catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading IsProjecting";Err(ex,b);return false;}}int RemainingOf(Bay b){try{return b.Proj.RemainingBlocks;}catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading RemainingBlocks";Err(ex,b);
-return-1;}}int TotalOf(Bay b){try{return b.Proj.TotalBlocks;}catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading TotalBlocks";Err(ex,b);return-1;}}int BuildableOf(Bay b){try{return b.Proj.BuildableBlocksCount;}catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading BuildableBlocksCount";Err(ex,b);return-1;}}int RemNow(Bay b){return Projecting(b)?Math.Max(-1,RemainingOf(b)): -1;}void LoadConfig(){MyIniParseResult r;if(!_ini.TryParse(Me.CustomData??"",out r))return;const string S="Hive Mother";MaxDrones=(int)C(S,"Max Drones (all tags)",MaxDrones);RackMode=C(S,"Rack Mode",RackMode);
-LaunchTag=C(S,"Rack Launch Command Tag",LaunchTag);TargetTags=C(S,"Rack Target Tags (enemy sightings that release a drone)",TargetTags);ChargeSeconds=C(S,"Max Charge Seconds",ChargeSeconds);CooldownSeconds=C(S,"Cooldown Seconds",CooldownSeconds);WeldersStayOn=C(S,"Welders Stay On Through Release",WeldersStayOn);StallSeconds=C(S,"Stall Warning Seconds",StallSeconds);BuildTimeout=C(S,"Build Timeout Seconds",BuildTimeout);FaultSeconds=C(S,"Fault Retry Seconds",FaultSeconds);ParallelBuilds=(int)C(S,"Parallel Builds",ParallelBuilds);DoRecompile=C(S,"Recompile Drone PB Before Release",DoRecompile);RecompileWait=C(S,"Recompile Wait Seconds",RecompileWait);
-NudgeSeconds=C(S,"Release Nudge Seconds",NudgeSeconds);NudgePower=C(S,"Release Nudge Power (0-1)",NudgePower);GapSeconds=C(S,"Release Gap Seconds",GapSeconds);MatchRadius=C(S,"Drone Match Radius m",MatchRadius);FinishTimeout=C(S,"Finish Timeout Seconds",FinishTimeout);ArmourSettle=C(S,"Armour Settle Seconds",ArmourSettle);FinishFallback=C(S,"Finish Fallback Seconds (used only without Drone Box keys)",FinishFallback);ArmSeconds=C(S,"Arm Max Seconds",ArmSeconds);JoinSeconds=Math.Max(30,C(S,"Join Seconds",JoinSeconds));FusedGrace=C(S,"Fused Grace Seconds",FusedGrace);LaunchBurst=C(S,"Launch Burst Seconds",LaunchBurst);
-string fch=C(S,"Fleet Channel",FleetCh).Trim();string fsec=C(S,"Fleet Secret","").Trim();FleetCh=fch==""?"":(fsec==""?fch.ToUpperInvariant():fch.ToUpperInvariant()+"_"+fsec.ToUpperInvariant());Relay=C(S,"Relay Turret Targets To All Tags",Relay);Printing=C(S,"Auto Start",Printing);string o=_ini.ToString();if(o!=Me.CustomData)Me.CustomData=o;}void SetHold(Bay b,bool v){b.Held=v;try{MyIniParseResult r;if(_ini.TryParse(Me.CustomData??"",out r)){_ini.Set("Bay "+b.N,"Hold",v);string o=_ini.ToString();if(o!=Me.CustomData)Me.CustomData=o;}}catch(Exception ex){Err(ex,b);}}string C(string s,string k,string d){
-if(!_ini.ContainsKey(s,k))_ini.Set(s,k,d);return _ini.Get(s,k).ToString(d);}double C(string s,string k,double d){if(!_ini.ContainsKey(s,k))_ini.Set(s,k,d);return _ini.Get(s,k).ToDouble(d);}bool C(string s,string k,bool d){if(!_ini.ContainsKey(s,k))_ini.Set(s,k,d);return _ini.Get(s,k).ToBoolean(d);}void GetBlocks(){_dead.Clear();var old=_bays;var nb=new List&lt;Bay&gt;();var projs=new List&lt;IMyProjector&gt;();var welders=new List&lt;IMyShipWelder&gt;();var merges=new List&lt;IMyShipMergeBlock&gt;();var timers=new List&lt;IMyTimerBlock&gt;();_where="GetBlocks find bay blocks";GridTerminalSystem.GetBlocksOfType(projs,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));
-GridTerminalSystem.GetBlocksOfType(welders,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));GridTerminalSystem.GetBlocksOfType(merges,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));GridTerminalSystem.GetBlocksOfType(timers,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));_cap.Clear();MyIniParseResult r;bool iniOk=_ini.TryParse(Me.CustomData??"",out r);for(int n=1;n&lt;=MaxBays;n++){string tag="[Bay "+n+"]";string sec="Bay "+n;Bay bay=null;foreach(var o in old)if(o.N==n)bay=o;if(bay==null)bay=new Bay{N=n};_where="GetBlocks bay "+n+" assign blocks";
-var oldProj=bay.Proj;var oldMerge=bay.Merge;bay.Proj=null;bay.Merge=null;bay.Welders.Clear();bay.Timers.Clear();foreach(var p in projs)if(p.CustomName.Contains(tag))bay.Proj=p;foreach(var m in merges)if(m.CustomName.Contains(tag))bay.Merge=m;foreach(var w in welders)if(w.CustomName.Contains(tag))bay.Welders.Add(w);foreach(var tm in timers)if(tm.CustomName.Contains(tag))bay.Timers.Add(tm);if(bay.Proj==null||bay.Merge==null)continue;if((oldProj!=null&amp;&amp;oldProj!=bay.Proj)||(oldMerge!=null&amp;&amp;oldMerge!=bay.Merge)){bay.DPb=null;bay.DMerge=null;bay.DBats.Clear();bay.KickW=null;}if(bay.KickW!=null&amp;&amp; !bay.Welders.Contains(bay.KickW))bay.KickW=null;
-bay.ProjErr="";_where="GetBlocks bay "+n+" config";if(iniOk)try{bay.Tag=C(sec,"Tag",bay.Tag);bay.Prefix=C(sec,"Prefix",bay.Prefix);bay.Cap=(int)C(sec,"Max Alive",bay.Cap);bay.MaxPrints=(int)C(sec,"Max Prints",bay.MaxPrints);bool held=C(sec,"Hold",bay.Held);bay.Held=held;string exl=C(sec,"Exit Direction",bay.Exit);bay.Exit=exl;bay.SkipFinish=C(sec,"Skip Finish Check",false);bay.Burst=C(sec,"Launch Burst Seconds",LaunchBurst);bay.Cells=(int)C(sec,"Drone Cell Count",0.0);bay.Tol=(int)C(sec,"Drone Cell Tolerance",2.0);string bmin=C(sec,"Drone Box Min","").Trim(),bmax=C(sec,"Drone Box Max","").Trim(),ign=C(sec,"Ignore Cells","").Trim();
-ParseBox(bay,bmin,bmax,ign);}catch(Exception ex){Err(ex,bay);bay.CfgWarn="config error: "+ex.Message;}nb.Add(bay);int c;if(!_cap.TryGetValue(bay.Tag,out c)||bay.Cap&gt;c)_cap[bay.Tag]=bay.Cap;if(!_lSwarm.ContainsKey(bay.Tag)|| !_alive.ContainsKey(bay.Tag)){_lSwarm[bay.Tag]=IGC.RegisterBroadcastListener(bay.Tag+"_SWARM");_alive[bay.Tag]=new Dictionary&lt;long,double&gt;();_joinUntil[bay.Tag]=0;_joinNext[bay.Tag]=0;}}_bays=nb;_where="GetBlocks save config";if(iniOk){string o=_ini.ToString();if(o!=Me.CustomData)Me.CustomData=o;}_where="GetBlocks KeepProjection";foreach(var b2 in _bays)KeepProjection(b2);_where="GetBlocks stock/thrusters";
-GridTerminalSystem.GetBlocksOfType(_stock,b=&gt;b!=null&amp;&amp;b.CustomName.Contains("[Stock]")&amp;&amp;b.IsSameConstructAs(Me));GridTerminalSystem.GetBlocksOfType(_thr,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CubeGrid==Me.CubeGrid);if(Relay){_where="GetBlocks turrets";GridTerminalSystem.GetBlocksOfType(_turrets,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me));GridTerminalSystem.GetBlocksOfType(_ctcs,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me));}_where="GetBlocks LCD surface";IMyTextSurface sf=null;try{if(Me.SurfaceCount&gt;0)sf=Me.GetSurface(0);}catch(Exception ex){Err(ex,null);}if(sf!=null){_lcd=sf;try{_lcd.ContentType=ContentType.TEXT_AND_IMAGE;
-_lcd.FontSize=0.7f;}catch(Exception ex){Err(ex,null);}}}void KeepProjection(Bay b){if(b==null||b.Proj==null)return;try{if(!b.Proj.GetValue&lt;bool&gt;("KeepProjection"))b.Proj.SetValue&lt;bool&gt;("KeepProjection",true);}catch(Exception){}}static long Key(int x,int y,int z){return((long)(x+1048576)&lt;&lt;42)|((long)(y+1048576)&lt;&lt;21)|(long)(z+1048576);}static bool ParseV3(string s,out int x,out int y,out int z){x=y=z=0;var p=s.Split(',');return p.Length==3&amp;&amp;int.TryParse(p[0].Trim(),out x)&amp;&amp;int.TryParse(p[1].Trim(),out y)&amp;&amp;int.TryParse(p[2].Trim(),out z);}void ParseBox(Bay b,string bmin,string bmax,string ign){string raw=bmin+"|"+bmax+"|"+ign;
-if(raw==b.BoxRaw)return;b.BoxRaw=raw;b.HasBox=false;b.CfgWarn="";b.Ignore.Clear();b.ScanIdx=0;b.Seen.Clear();int x0,y0,z0,x1,y1,z1;if(bmin==""&amp;&amp;bmax=="")return;if(!ParseV3(bmin,out x0,out y0,out z0)|| !ParseV3(bmax,out x1,out y1,out z1)){b.CfgWarn="Drone Box keys unreadable (use x,y,z)";return;}int ax=Math.Min(x0,x1),ay=Math.Min(y0,y1),az=Math.Min(z0,z1),bx=Math.Max(x0,x1),by=Math.Max(y0,y1),bz=Math.Max(z0,z1);long vol=(long)(bx-ax+1)*(by-ay+1)*(bz-az+1);if(vol&gt;200000){b.CfgWarn="Drone Box too large ("+vol+" cells)";return;}b.BMin=new Vector3I(ax,ay,az);b.BMax=new Vector3I(bx,by,bz);foreach(var c in ign.Split(';')){
-int ix,iy,iz;if(c.Trim()!=""&amp;&amp;ParseV3(c,out ix,out iy,out iz))b.Ignore.Add(Key(ix,iy,iz));}b.HasBox=true;}public void Main(string arg,UpdateType src){try{Tick(arg,src);}catch(Exception ex){Err(ex,null);}try{if(_errs.Count&gt;0&amp;&amp;_screen.IndexOf("ERRORS")&lt;0)Show();}catch(Exception){}try{Echo(_screen);}catch(Exception){}}void Sect(string name,Action a){_where=name;try{a();}catch(Exception ex){Err(ex,null);}}void Tick(string arg,UpdateType src){if(!string.IsNullOrWhiteSpace(arg))Sect("command '"+arg+"'",()=&gt;Command(arg.Trim().ToLowerInvariant()));if((src&amp;UpdateType.Update10)==0)return;double dt=Runtime.TimeSinceLastRun.TotalSeconds;
-if(dt&lt;=0||dt&gt;2)dt=1/6.0;_now+=dt;_dt=dt;_tick++;if(_tick%60==0)Sect("GetBlocks",GetBlocks);Sect("IGC swarm messages",ReadSwarm);Sect("IGC target messages",ReadTargets);Sect("expire drones/targets",Expire);Sect("IGC home broadcast",()=&gt;{if(_tick%6==0){foreach(var tag in _lSwarm.Keys)IGC.SendBroadcastMessage(tag+"_HOME",Me.CubeGrid.WorldVolume.Center);}});if(Relay&amp;&amp;_tick%2==0)Sect("relay targets",RelayTargets);Sect("send joins",SendJoins);int building=0,docked=0;foreach(var b in _bays){if(b.State=="BUILD"||b.State=="FINISH"||b.State=="CHARGE")building++;if(b.State=="DOCKED")docked++;}var bays=_bays;
-foreach(var b in bays){_where="bay "+b.N+" "+b.State;try{StepBay(b,ref building,ref docked);}catch(Exception ex){BayFail(b,ex);}}try{_peakIns=Math.Max(_peakIns,Runtime.CurrentInstructionCount);}catch(Exception){}if(_tick%3==0)Sect("display",Show);}void ReadSwarm(){foreach(var kv in _lSwarm){Dictionary&lt;long,double&gt;dict;if(kv.Value==null|| !_alive.TryGetValue(kv.Key,out dict))continue;while(kv.Value.HasPendingMessage){var m=kv.Value.AcceptMessage();if(m.Data is MyTuple&lt;long,Vector3D,Vector3D,long,int&gt;){long id=((MyTuple&lt;long,Vector3D,Vector3D,long,int&gt;)m.Data).Item1;if(!dict.ContainsKey(id)){_joinNext[kv.Key]=0;
-double ju;_joinUntil.TryGetValue(kv.Key,out ju);_joinUntil[kv.Key]=Math.Max(ju,_now+6);}dict[id]=_now;}}}}void ReadTargets(){foreach(var l in _lTgt){if(l==null)continue;while(l.HasPendingMessage){var m=l.AcceptMessage();if(!(m.Data is MyTuple&lt;long,Vector3D,Vector3D,double,long&gt;))continue;var d=(MyTuple&lt;long,Vector3D,Vector3D,double,long&gt;)m.Data;if(d.Item4&lt;0)_targets.Remove(d.Item1);else _targets[d.Item1]=_now;}}}void Expire(){var drop=new List&lt;long&gt;();foreach(var dict in _alive.Values){drop.Clear();foreach(var kv in dict)if(_now-kv.Value&gt;6)drop.Add(kv.Key);foreach(var id in drop)dict.Remove(id);
-}drop.Clear();foreach(var kv in _targets)if(_now-kv.Value&gt;6)drop.Add(kv.Key);foreach(var id in drop)_targets.Remove(id);}int Alive(string tag){Dictionary&lt;long,double&gt;d;return _alive.TryGetValue(tag,out d)?d.Count:0;}int AliveAll(){int n=0;foreach(var d in _alive.Values)n+=d.Count;return n;}bool InCycle(Bay b){return b.State=="BUILD"||b.State=="FINISH"||b.State=="CHARGE"||b.State=="ARM"||b.State=="RELEASE";}int Pending(string tag){int n=0;foreach(var b in _bays)if(b.Tag==tag&amp;&amp;InCycle(b))n++;return n;}int PendingAll(){int n=0;foreach(var b in _bays)if(InCycle(b))n++;return n;}void SendJoins(){foreach(var tag in _lSwarm.Keys){
-double ju,jn;if(!_joinUntil.TryGetValue(tag,out ju)|| !_joinNext.TryGetValue(tag,out jn))continue;if(_now&gt;=ju||_now&lt;jn)continue;_joinNext[tag]=_now+2;IGC.SendBroadcastMessage(tag+"_JOIN","join");if(FleetCh!="")IGC.SendBroadcastMessage(FleetCh+"_CMD","join");if(_rackLaunchLeft&gt;0){_rackLaunchLeft--;IGC.SendBroadcastMessage(LaunchTag+"_CMD","launch");}}}bool Wants(Bay b,int docked){if(!Printing||b.Held)return false;if(b.MaxPrints&gt;0&amp;&amp;b.Printed&gt;=b.MaxPrints)return false;if(RackMode)return docked&lt;_bays.Count;int cap;if(!_cap.TryGetValue(b.Tag,out cap))cap=b.Cap;return Alive(b.Tag)+Pending(b.Tag)&lt;cap&amp;&amp;AliveAll()+PendingAll()&lt;MaxDrones;
-}void StepBay(Bay b,ref int building,ref int docked){double t=_now-b.T;if(b.Proj==null||b.Merge==null){Fault(b,"bay blocks missing (projector or merge block)");return;}if(_tick%30==7){_where="bay "+b.N+" "+b.State+" check blocks still exist";if(Gone(b.Proj)||Gone(b.Merge)){Fault(b,"projector or merge block was removed/destroyed");GetBlocks();return;}b.Welders.RemoveAll(w=&gt;Gone(w));if(b.KickW!=null&amp;&amp; !b.Welders.Contains(b.KickW))b.KickW=null;}_where="bay "+b.N+" "+b.State+" timer chain";if(TimerChainRunning(b)){b.Msg="timer cycle running - script paused (stop the bay's timers to resume)";return;
-}if(b.Msg.StartsWith("timer cycle running")){b.Msg="";if(b.State!="FAULT"){b.State="IDLE";b.T=_now;b.DPb=null;b.DMerge=null;b.DBats.Clear();b.KickW=null;}}switch(b.State){case"IDLE":if(building&lt;ParallelBuilds&amp;&amp;Wants(b,docked)){StartBuild(b);building++;Power(b,true);}else Power(b,false);break;case"BUILD":Power(b,true);_where="bay "+b.N+" BUILD projector read";int rem=RemNow(b);if(rem!=b.Rem){b.Rem=rem;b.LastProgress=_now;}if(rem&gt;0)b.SawWork=true;if((b.SawWork||t&gt;15)&amp;&amp;rem==0){EnterFinish(b);break;}_where="bay "+b.N+" BUILD diagnose";b.Msg=Diagnose(b);_where="bay "+b.N+" BUILD stall";Stall(b);if(b.Starved)b.T+=_dt;
-else if(t&gt;BuildTimeout)Fault(b,"build timeout: "+(rem&gt;=0?rem+" of "+TotalOf(b)+" blocks not placed":"no projection")+(b.Msg!=""?" ("+b.Msg+")":""));break;case"FINISH":Power(b,true);_where="bay "+b.N+" FINISH check";StepFinish(b,t);break;case"CHARGE":Power(b,StayOn());_where="bay "+b.N+" CHARGE find drone";FindDrone(b);_where="bay "+b.N+" CHARGE recompile drone PB";if(DoRecompile&amp;&amp; !b.Recompiled&amp;&amp;b.DPb!=null){b.Recompiled=true;try{b.DPb.Enabled=true;b.DPb.ApplyAction("Recompile");}catch(Exception ex){Err(ex,b);b.Msg="drone PB recompile failed: "+ex.GetType().FullName;}b.Recompiled=true;b.T=_now;
-t=0;}if(b.DMerge==null&amp;&amp;t&gt;8){Fault(b,"no drone merge block found (prefix "+b.Prefix+")");break;}_where="bay "+b.N+" CHARGE batteries";bool ready=t&gt;(b.Recompiled?RecompileWait:0)&amp;&amp;DroneCharged(b);if(ready||t&gt;ChargeSeconds+RecompileWait){if(RackMode){b.State="DOCKED";docked++;}else Release(b);}break;case"DOCKED":if(_targets.Count&gt;_launched&amp;&amp;_targets.Count&gt;0){_launched++;Release(b);}break;case"ARM":Power(b,StayOn());_where="bay "+b.N+" ARM drone PB";if(!b.Armed)b.Armed=Arm(b);if(b.Armed||t&gt;=ArmSeconds)Separate(b);break;case"RELEASE":_where="bay "+b.N+" RELEASE nudge";Nudge(b,t);if(t&gt;=GapSeconds+NudgeSeconds){
+              <Program>const string VER="2.7";const int MaxBays=12;int MaxDrones=8;bool RackMode=false;string LaunchTag="STINGER";double ChargeSeconds=25,CooldownSeconds=1,StallSeconds=45,BuildTimeout=600,FaultSeconds=60;double NudgeSeconds=1.5,NudgePower=0.25,GapSeconds=1.0,RecompileWait=3,MatchRadius=12;double ArmourSettle=2,FinishTimeout=360,FinishFallback=90,ArmSeconds=3,JoinSeconds=40,FusedGrace=8,LaunchBurst=4;string FleetCh="FLEET";const int ScanBudget=150;int ParallelBuilds=2;bool Printing=true,WeldersStayOn=true,DoRecompile=false,Relay=false;int _peakIns=0;MyIni _ini=new MyIni();double _now,_dt;long _tick;Dictionary&lt;string,double&gt;_joinUntil=new Dictionary&lt;string,double&gt;(),_joinNext=new Dictionary&lt;string,double&gt;();
+int _rackLaunchLeft=0;class Bay{public int N;public string Tag="GNAT",Prefix="Gnat";public bool Held;public int Cap=8,MaxPrints=0,Printed=0;public IMyProjector Proj;public List&lt;IMyShipWelder&gt;Welders=new List&lt;IMyShipWelder&gt;();public IMyShipMergeBlock Merge;public IMyShipMergeBlock DMerge;public List&lt;IMyTerminalBlock&gt;Ai=new List&lt;IMyTerminalBlock&gt;();public IMyProgrammableBlock DPb;public List&lt;IMyBatteryBlock&gt;DBats=new List&lt;IMyBatteryBlock&gt;();public string State="IDLE";public double T;public int Rem= -1;public double LastProgress;public bool SawWork,Recompiled,Nudged;public string Msg="";public int Faults;
+public Vector3D Away;public string Exit="";public bool HasBox,SkipFinish,Starved,PassOk,HavePass;public Vector3I BMin,BMax;public int Cells,Tol;public string BoxRaw="NONE",CfgWarn="";public HashSet&lt;long&gt;Ignore=new HashSet&lt;long&gt;(),Seen=new HashSet&lt;long&gt;();public long ScanIdx;public int PBlocks,PCells,PBad,LBlocks,LCells,LBad,PBlind,LBlind;public double OkSince= -1;public float PInteg,LInteg;public List&lt;string&gt;PBadL=new List&lt;string&gt;();public string LBadText="";public double FinishT,Burst= -1;public IMyShipWelder KickW;public double KickT;public int KickIdx;public bool Armed,LaunchWritten,RackLaunch;
+public double FusedT;public string ProjErr="";public List&lt;IMyTimerBlock&gt;Timers=new List&lt;IMyTimerBlock&gt;();public double TimerSeen= -999;}class ErrRec{public string Text;public double T,Last;public int N=1;}List&lt;Bay&gt;_bays=new List&lt;Bay&gt;();Dictionary&lt;string,IMyBroadcastListener&gt;_lSwarm=new Dictionary&lt;string,IMyBroadcastListener&gt;();Dictionary&lt;string,Dictionary&lt;long,double&gt;&gt;_alive=new Dictionary&lt;string,Dictionary&lt;long,double&gt;&gt;();Dictionary&lt;string,int&gt;_cap=new Dictionary&lt;string,int&gt;();List&lt;IMyBroadcastListener&gt;_lTgt=new List&lt;IMyBroadcastListener&gt;();string TargetTags="GNAT,HORNET,LONGBOW";Dictionary&lt;long,double&gt;_targets=new Dictionary&lt;long,double&gt;();
+int _launched=0;IMyTextSurface _lcd;StringBuilder _sb=new StringBuilder();List&lt;IMyTerminalBlock&gt;_stock=new List&lt;IMyTerminalBlock&gt;();List&lt;IMyThrust&gt;_thr=new List&lt;IMyThrust&gt;();List&lt;IMyLargeTurretBase&gt;_turrets=new List&lt;IMyLargeTurretBase&gt;();List&lt;IMyTurretControlBlock&gt;_ctcs=new List&lt;IMyTurretControlBlock&gt;();List&lt;IMyTerminalBlock&gt;_tmp=new List&lt;IMyTerminalBlock&gt;();List&lt;IMyProgrammableBlock&gt;_pbs=new List&lt;IMyProgrammableBlock&gt;();List&lt;IMyBatteryBlock&gt;_bats=new List&lt;IMyBatteryBlock&gt;();List&lt;IMyShipMergeBlock&gt;_mergesAll=new List&lt;IMyShipMergeBlock&gt;();string _where="init",_screen="";int _errTotal;HashSet&lt;IMyTerminalBlock&gt;_dead=new HashSet&lt;IMyTerminalBlock&gt;();
+List&lt;ErrRec&gt;_errs=new List&lt;ErrRec&gt;();public Program(){Runtime.UpdateFrequency=UpdateFrequency.Update10;_where="constructor LoadConfig";try{LoadConfig();}catch(Exception ex){Err(ex,null);}_where="constructor GetBlocks";try{GetBlocks();}catch(Exception ex){Err(ex,null);}_where="constructor listeners";try{if(RackMode)foreach(var t in TargetTags.Split(','))if(t.Trim()!="")_lTgt.Add(IGC.RegisterBroadcastListener(t.Trim()+"_TGT"));}catch(Exception ex){Err(ex,null);}try{Show();Echo(_screen);}catch(Exception){}}void Err(Exception ex,Bay b){string frame="";try{string st=ex.ToString();if(st!=null){string f=null;
+foreach(var ln in st.Split('\n'))if(ln.IndexOf("Program.",StringComparison.Ordinal)&gt;=0){f=ln.Trim();break;}if(f==null){int nl=st.IndexOf('\n');f=(nl&gt;0?st.Substring(0,nl):st).Trim();}int pr=f.IndexOf('(');if(pr&gt;0)f=f.Substring(0,pr);if(f.StartsWith("at "))f=f.Substring(3);if(f.Length&gt;50)f=f.Substring(f.Length-50);frame=f;}}catch(Exception){}string text=ex.GetType().FullName+": "+ex.Message+" | at: "+_where+(b!=null?" | bay "+b.N+" state "+b.State:"")+(frame!=""?" | in "+frame:"");_errTotal++;if(_errs.Count&gt;0&amp;&amp;_errs[_errs.Count-1].Text==text){_errs[_errs.Count-1].N++;_errs[_errs.Count-1].Last=_now;
+}else{_errs.Add(new ErrRec{Text=text,T=_now,Last=_now});if(_errs.Count&gt;3)_errs.RemoveAt(0);}try{Echo("ERROR "+text);}catch(Exception){}}string ErrText(){if(_errs.Count==0)return"";var sb=new StringBuilder("ERRORS ("+_errTotal+" total, last 3):\n");foreach(var e in _errs)sb.Append(" t=").Append((int)e.T).Append("s").Append(e.N&gt;1?" x"+e.N+" until t="+(int)e.Last+"s":"").Append(": ").Append(e.Text).Append('\n');return sb.ToString();}void BayFail(Bay b,Exception ex){Err(ex,b);try{if(b.State!="FAULT"){b.State="FAULT";b.T=_now;b.Faults++;}b.Msg="EXCEPTION "+ex.GetType().FullName+": "+ex.Message+" (at "+_where+")";
+b.KickW=null;}catch(Exception){}}bool Gone(IMyTerminalBlock x){if(x==null)return true;try{return GridTerminalSystem.GetBlockWithId(x.EntityId)==null;}catch(Exception){return true;}}bool SetOn(IMyFunctionalBlock x,bool on){if(x==null||_dead.Contains(x))return false;try{if(x.Enabled!=on)x.Enabled=on;return true;}catch(Exception ex){_dead.Add(x);Err(ex,null);return false;}}bool Projecting(Bay b){try{return b.Proj!=null&amp;&amp;b.Proj.IsProjecting;}catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading IsProjecting";Err(ex,b);return false;}}int RemainingOf(Bay b){try{return b.Proj.RemainingBlocks;}
+catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading RemainingBlocks";Err(ex,b);return-1;}}int TotalOf(Bay b){try{return b.Proj.TotalBlocks;}catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading TotalBlocks";Err(ex,b);return-1;}}int BuildableOf(Bay b){try{return b.Proj.BuildableBlocksCount;}catch(Exception ex){b.ProjErr=ex.GetType().FullName+" reading BuildableBlocksCount";Err(ex,b);return-1;}}int RemNow(Bay b){return Projecting(b)?Math.Max(-1,RemainingOf(b)): -1;}void LoadConfig(){MyIniParseResult r;if(!_ini.TryParse(Me.CustomData??"",out r))return;const string S="Hive Mother";
+MaxDrones=(int)C(S,"Max Drones (all tags)",MaxDrones);RackMode=C(S,"Rack Mode",RackMode);LaunchTag=C(S,"Rack Launch Command Tag",LaunchTag);TargetTags=C(S,"Rack Target Tags (enemy sightings that release a drone)",TargetTags);ChargeSeconds=C(S,"Max Charge Seconds",ChargeSeconds);CooldownSeconds=C(S,"Cooldown Seconds",CooldownSeconds);WeldersStayOn=C(S,"Welders Stay On Through Release",WeldersStayOn);StallSeconds=C(S,"Stall Warning Seconds",StallSeconds);BuildTimeout=C(S,"Build Timeout Seconds",BuildTimeout);FaultSeconds=C(S,"Fault Retry Seconds",FaultSeconds);ParallelBuilds=(int)C(S,"Parallel Builds",ParallelBuilds);
+DoRecompile=C(S,"Recompile Drone PB Before Release",DoRecompile);RecompileWait=C(S,"Recompile Wait Seconds",RecompileWait);NudgeSeconds=C(S,"Release Nudge Seconds",NudgeSeconds);NudgePower=C(S,"Release Nudge Power (0-1)",NudgePower);GapSeconds=C(S,"Release Gap Seconds",GapSeconds);MatchRadius=C(S,"Drone Match Radius m",MatchRadius);FinishTimeout=C(S,"Finish Timeout Seconds",FinishTimeout);ArmourSettle=C(S,"Armour Settle Seconds",ArmourSettle);FinishFallback=C(S,"Finish Fallback Seconds (used only without Drone Box keys)",FinishFallback);ArmSeconds=C(S,"Arm Max Seconds",ArmSeconds);JoinSeconds=Math.Max(30,C(S,"Join Seconds",JoinSeconds));
+FusedGrace=C(S,"Fused Grace Seconds",FusedGrace);LaunchBurst=C(S,"Launch Burst Seconds",LaunchBurst);string fch=C(S,"Fleet Channel",FleetCh).Trim();string fsec=C(S,"Fleet Secret","").Trim();FleetCh=fch==""?"":(fsec==""?fch.ToUpperInvariant():fch.ToUpperInvariant()+"_"+fsec.ToUpperInvariant());Relay=C(S,"Relay Turret Targets To All Tags",Relay);Printing=C(S,"Auto Start",Printing);string o=_ini.ToString();if(o!=Me.CustomData)Me.CustomData=o;}void SetHold(Bay b,bool v){b.Held=v;try{MyIniParseResult r;if(_ini.TryParse(Me.CustomData??"",out r)){_ini.Set("Bay "+b.N,"Hold",v);string o=_ini.ToString();
+if(o!=Me.CustomData)Me.CustomData=o;}}catch(Exception ex){Err(ex,b);}}string C(string s,string k,string d){if(!_ini.ContainsKey(s,k))_ini.Set(s,k,d);return _ini.Get(s,k).ToString(d);}double C(string s,string k,double d){if(!_ini.ContainsKey(s,k))_ini.Set(s,k,d);return _ini.Get(s,k).ToDouble(d);}bool C(string s,string k,bool d){if(!_ini.ContainsKey(s,k))_ini.Set(s,k,d);return _ini.Get(s,k).ToBoolean(d);}void GetBlocks(){_dead.Clear();var old=_bays;var nb=new List&lt;Bay&gt;();var projs=new List&lt;IMyProjector&gt;();var welders=new List&lt;IMyShipWelder&gt;();var merges=new List&lt;IMyShipMergeBlock&gt;();var timers=new List&lt;IMyTimerBlock&gt;();
+_where="GetBlocks find bay blocks";GridTerminalSystem.GetBlocksOfType(projs,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));GridTerminalSystem.GetBlocksOfType(welders,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));GridTerminalSystem.GetBlocksOfType(merges,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));GridTerminalSystem.GetBlocksOfType(timers,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CustomName.Contains("[Bay"));_cap.Clear();MyIniParseResult r;bool iniOk=_ini.TryParse(Me.CustomData??"",out r);for(int n=1;n&lt;=MaxBays;n++){string tag="[Bay "+n+"]";
+string sec="Bay "+n;Bay bay=null;foreach(var o in old)if(o.N==n)bay=o;if(bay==null)bay=new Bay{N=n};_where="GetBlocks bay "+n+" assign blocks";var oldProj=bay.Proj;var oldMerge=bay.Merge;bay.Proj=null;bay.Merge=null;bay.Welders.Clear();bay.Timers.Clear();foreach(var p in projs)if(p.CustomName.Contains(tag))bay.Proj=p;foreach(var m in merges)if(m.CustomName.Contains(tag))bay.Merge=m;foreach(var w in welders)if(w.CustomName.Contains(tag))bay.Welders.Add(w);foreach(var tm in timers)if(tm.CustomName.Contains(tag))bay.Timers.Add(tm);if(bay.Proj==null||bay.Merge==null)continue;if((oldProj!=null&amp;&amp;oldProj!=bay.Proj)||(oldMerge!=null&amp;&amp;oldMerge!=bay.Merge)){
+bay.DPb=null;bay.DMerge=null;bay.DBats.Clear();bay.KickW=null;}if(bay.KickW!=null&amp;&amp; !bay.Welders.Contains(bay.KickW))bay.KickW=null;bay.ProjErr="";_where="GetBlocks bay "+n+" config";if(iniOk)try{bay.Tag=C(sec,"Tag",bay.Tag);bay.Prefix=C(sec,"Prefix",bay.Prefix);bay.Cap=(int)C(sec,"Max Alive",bay.Cap);bay.MaxPrints=(int)C(sec,"Max Prints",bay.MaxPrints);bool held=C(sec,"Hold",bay.Held);bay.Held=held;string exl=C(sec,"Exit Direction",bay.Exit);bay.Exit=exl;bay.SkipFinish=C(sec,"Skip Finish Check",false);bay.Burst=C(sec,"Launch Burst Seconds",LaunchBurst);bay.Cells=(int)C(sec,"Drone Cell Count",0.0);
+bay.Tol=(int)C(sec,"Drone Cell Tolerance",2.0);string bmin=C(sec,"Drone Box Min","").Trim(),bmax=C(sec,"Drone Box Max","").Trim(),ign=C(sec,"Ignore Cells","").Trim();ParseBox(bay,bmin,bmax,ign);}catch(Exception ex){Err(ex,bay);bay.CfgWarn="config error: "+ex.Message;}nb.Add(bay);int c;if(!_cap.TryGetValue(bay.Tag,out c)||bay.Cap&gt;c)_cap[bay.Tag]=bay.Cap;if(!_lSwarm.ContainsKey(bay.Tag)|| !_alive.ContainsKey(bay.Tag)){_lSwarm[bay.Tag]=IGC.RegisterBroadcastListener(bay.Tag+"_SWARM");_alive[bay.Tag]=new Dictionary&lt;long,double&gt;();_joinUntil[bay.Tag]=0;_joinNext[bay.Tag]=0;}}_bays=nb;_where="GetBlocks save config";
+if(iniOk){string o=_ini.ToString();if(o!=Me.CustomData)Me.CustomData=o;}_where="GetBlocks KeepProjection";foreach(var b2 in _bays)KeepProjection(b2);_where="GetBlocks stock/thrusters";GridTerminalSystem.GetBlocksOfType(_stock,b=&gt;b!=null&amp;&amp;b.CustomName.Contains("[Stock]")&amp;&amp;b.IsSameConstructAs(Me));GridTerminalSystem.GetBlocksOfType(_thr,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me)&amp;&amp;b.CubeGrid==Me.CubeGrid);if(Relay){_where="GetBlocks turrets";GridTerminalSystem.GetBlocksOfType(_turrets,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me));GridTerminalSystem.GetBlocksOfType(_ctcs,b=&gt;b!=null&amp;&amp;b.IsSameConstructAs(Me));}_where="GetBlocks LCD surface";
+IMyTextSurface sf=null;try{if(Me.SurfaceCount&gt;0)sf=Me.GetSurface(0);}catch(Exception ex){Err(ex,null);}if(sf!=null){_lcd=sf;try{_lcd.ContentType=ContentType.TEXT_AND_IMAGE;_lcd.FontSize=0.7f;}catch(Exception ex){Err(ex,null);}}}void KeepProjection(Bay b){if(b==null||b.Proj==null)return;try{if(!b.Proj.GetValue&lt;bool&gt;("KeepProjection"))b.Proj.SetValue&lt;bool&gt;("KeepProjection",true);}catch(Exception){}}static long Key(int x,int y,int z){return((long)(x+1048576)&lt;&lt;42)|((long)(y+1048576)&lt;&lt;21)|(long)(z+1048576);}static bool ParseV3(string s,out int x,out int y,out int z){x=y=z=0;var p=s.Split(',');return p.Length==3&amp;&amp;int.TryParse(p[0].Trim(),out x)&amp;&amp;int.TryParse(p[1].Trim(),out y)&amp;&amp;int.TryParse(p[2].Trim(),out z);
+}void ParseBox(Bay b,string bmin,string bmax,string ign){string raw=bmin+"|"+bmax+"|"+ign;if(raw==b.BoxRaw)return;b.BoxRaw=raw;b.HasBox=false;b.CfgWarn="";b.Ignore.Clear();b.ScanIdx=0;b.Seen.Clear();int x0,y0,z0,x1,y1,z1;if(bmin==""&amp;&amp;bmax=="")return;if(!ParseV3(bmin,out x0,out y0,out z0)|| !ParseV3(bmax,out x1,out y1,out z1)){b.CfgWarn="Drone Box keys unreadable (use x,y,z)";return;}int ax=Math.Min(x0,x1),ay=Math.Min(y0,y1),az=Math.Min(z0,z1),bx=Math.Max(x0,x1),by=Math.Max(y0,y1),bz=Math.Max(z0,z1);long vol=(long)(bx-ax+1)*(by-ay+1)*(bz-az+1);if(vol&gt;200000){b.CfgWarn="Drone Box too large ("+vol+" cells)";
+return;}b.BMin=new Vector3I(ax,ay,az);b.BMax=new Vector3I(bx,by,bz);foreach(var c in ign.Split(';')){int ix,iy,iz;if(c.Trim()!=""&amp;&amp;ParseV3(c,out ix,out iy,out iz))b.Ignore.Add(Key(ix,iy,iz));}b.HasBox=true;}public void Main(string arg,UpdateType src){try{Tick(arg,src);}catch(Exception ex){Err(ex,null);}try{if(_errs.Count&gt;0&amp;&amp;_screen.IndexOf("ERRORS")&lt;0)Show();}catch(Exception){}try{Echo(_screen);}catch(Exception){}}void Sect(string name,Action a){_where=name;try{a();}catch(Exception ex){Err(ex,null);}}void Tick(string arg,UpdateType src){if(!string.IsNullOrWhiteSpace(arg))Sect("command '"+arg+"'",()=&gt;Command(arg.Trim().ToLowerInvariant()));
+if((src&amp;UpdateType.Update10)==0)return;double dt=Runtime.TimeSinceLastRun.TotalSeconds;if(dt&lt;=0||dt&gt;2)dt=1/6.0;_now+=dt;_dt=dt;_tick++;if(_tick%60==0)Sect("GetBlocks",GetBlocks);Sect("IGC swarm messages",ReadSwarm);Sect("IGC target messages",ReadTargets);Sect("expire drones/targets",Expire);Sect("IGC home broadcast",()=&gt;{if(_tick%6==0){foreach(var tag in _lSwarm.Keys)IGC.SendBroadcastMessage(tag+"_HOME",Me.CubeGrid.WorldVolume.Center);}});if(Relay&amp;&amp;_tick%2==0)Sect("relay targets",RelayTargets);Sect("send joins",SendJoins);int building=0,docked=0;foreach(var b in _bays){if(b.State=="BUILD"||b.State=="FINISH"||b.State=="CHARGE")building++;
+if(b.State=="DOCKED")docked++;}var bays=_bays;foreach(var b in bays){_where="bay "+b.N+" "+b.State;try{StepBay(b,ref building,ref docked);}catch(Exception ex){BayFail(b,ex);}}try{_peakIns=Math.Max(_peakIns,Runtime.CurrentInstructionCount);}catch(Exception){}if(_tick%3==0)Sect("display",Show);}void ReadSwarm(){foreach(var kv in _lSwarm){Dictionary&lt;long,double&gt;dict;if(kv.Value==null|| !_alive.TryGetValue(kv.Key,out dict))continue;while(kv.Value.HasPendingMessage){var m=kv.Value.AcceptMessage();if(m.Data is MyTuple&lt;long,Vector3D,Vector3D,long,int&gt;){long id=((MyTuple&lt;long,Vector3D,Vector3D,long,int&gt;)m.Data).Item1;
+if(!dict.ContainsKey(id)){_joinNext[kv.Key]=0;double ju;_joinUntil.TryGetValue(kv.Key,out ju);_joinUntil[kv.Key]=Math.Max(ju,_now+6);}dict[id]=_now;}}}}void ReadTargets(){foreach(var l in _lTgt){if(l==null)continue;while(l.HasPendingMessage){var m=l.AcceptMessage();if(!(m.Data is MyTuple&lt;long,Vector3D,Vector3D,double,long&gt;))continue;var d=(MyTuple&lt;long,Vector3D,Vector3D,double,long&gt;)m.Data;if(d.Item4&lt;0)_targets.Remove(d.Item1);else _targets[d.Item1]=_now;}}}void Expire(){var drop=new List&lt;long&gt;();foreach(var dict in _alive.Values){drop.Clear();foreach(var kv in dict)if(_now-kv.Value&gt;6)drop.Add(kv.Key);
+foreach(var id in drop)dict.Remove(id);}drop.Clear();foreach(var kv in _targets)if(_now-kv.Value&gt;6)drop.Add(kv.Key);foreach(var id in drop)_targets.Remove(id);}int Alive(string tag){Dictionary&lt;long,double&gt;d;return _alive.TryGetValue(tag,out d)?d.Count:0;}int AliveAll(){int n=0;foreach(var d in _alive.Values)n+=d.Count;return n;}bool InCycle(Bay b){return b.State=="BUILD"||b.State=="FINISH"||b.State=="CHARGE"||b.State=="ARM"||b.State=="RELEASE";}int Pending(string tag){int n=0;foreach(var b in _bays)if(b.Tag==tag&amp;&amp;InCycle(b))n++;return n;}int PendingAll(){int n=0;foreach(var b in _bays)if(InCycle(b))n++;
+return n;}void SendJoins(){foreach(var tag in _lSwarm.Keys){double ju,jn;if(!_joinUntil.TryGetValue(tag,out ju)|| !_joinNext.TryGetValue(tag,out jn))continue;if(_now&gt;=ju||_now&lt;jn)continue;_joinNext[tag]=_now+2;IGC.SendBroadcastMessage(tag+"_JOIN","join");if(FleetCh!="")IGC.SendBroadcastMessage(FleetCh+"_CMD","join");if(_rackLaunchLeft&gt;0){_rackLaunchLeft--;IGC.SendBroadcastMessage(LaunchTag+"_CMD","launch");}}}bool Wants(Bay b,int docked){if(!Printing||b.Held)return false;if(b.MaxPrints&gt;0&amp;&amp;b.Printed&gt;=b.MaxPrints)return false;if(RackMode)return docked&lt;_bays.Count;int cap;if(!_cap.TryGetValue(b.Tag,out cap))cap=b.Cap;
+return Alive(b.Tag)+Pending(b.Tag)&lt;cap&amp;&amp;AliveAll()+PendingAll()&lt;MaxDrones;}void StepBay(Bay b,ref int building,ref int docked){double t=_now-b.T;if(b.Proj==null||b.Merge==null){Fault(b,"bay blocks missing (projector or merge block)");return;}if(_tick%30==7){_where="bay "+b.N+" "+b.State+" check blocks still exist";if(Gone(b.Proj)||Gone(b.Merge)){Fault(b,"projector or merge block was removed/destroyed");GetBlocks();return;}b.Welders.RemoveAll(w=&gt;Gone(w));if(b.KickW!=null&amp;&amp; !b.Welders.Contains(b.KickW))b.KickW=null;}_where="bay "+b.N+" "+b.State+" timer chain";if(TimerChainRunning(b)){b.Msg="timer cycle running - script paused (stop the bay's timers to resume)";
+return;}if(b.Msg.StartsWith("timer cycle running")){b.Msg="";if(b.State!="FAULT"){b.State="IDLE";b.T=_now;b.DPb=null;b.DMerge=null;b.DBats.Clear();b.KickW=null;}}switch(b.State){case"IDLE":if(building&lt;ParallelBuilds&amp;&amp;Wants(b,docked)){StartBuild(b);building++;Power(b,true);}else Power(b,false);break;case"BUILD":Power(b,true);_where="bay "+b.N+" BUILD projector read";int rem=RemNow(b);if(rem!=b.Rem){b.Rem=rem;b.LastProgress=_now;}if(rem&gt;0)b.SawWork=true;if((b.SawWork||t&gt;15)&amp;&amp;rem==0){EnterFinish(b);break;}_where="bay "+b.N+" BUILD diagnose";b.Msg=Diagnose(b);_where="bay "+b.N+" BUILD stall";Stall(b);
+if(b.Starved)b.T+=_dt;else if(t&gt;BuildTimeout)Fault(b,"build timeout: "+(rem&gt;=0?rem+" of "+TotalOf(b)+" blocks not placed":"no projection")+(b.Msg!=""?" ("+b.Msg+")":""));break;case"FINISH":Power(b,true);_where="bay "+b.N+" FINISH check";StepFinish(b,t);break;case"CHARGE":Power(b,StayOn());_where="bay "+b.N+" CHARGE find drone";FindDrone(b);_where="bay "+b.N+" CHARGE recompile drone PB";if(DoRecompile&amp;&amp; !b.Recompiled&amp;&amp;b.DPb!=null){b.Recompiled=true;try{b.DPb.Enabled=true;b.DPb.ApplyAction("Recompile");}catch(Exception ex){Err(ex,b);b.Msg="drone PB recompile failed: "+ex.GetType().FullName;}b.Recompiled=true;
+b.T=_now;t=0;}if(b.DMerge==null&amp;&amp;t&gt;8){Fault(b,"no drone merge block found (prefix "+b.Prefix+")");break;}_where="bay "+b.N+" CHARGE batteries";bool ready=t&gt;(b.Recompiled?RecompileWait:0)&amp;&amp;DroneCharged(b);if(ready||t&gt;ChargeSeconds+RecompileWait){if(RackMode){b.State="DOCKED";docked++;}else Release(b);}break;case"DOCKED":if(_targets.Count&gt;_launched&amp;&amp;_targets.Count&gt;0){_launched++;Release(b);}break;case"ARM":Power(b,StayOn());_where="bay "+b.N+" ARM drone PB";if(!b.Armed)b.Armed=Arm(b);if(b.Armed||t&gt;=ArmSeconds)Separate(b);break;case"RELEASE":_where="bay "+b.N+" RELEASE nudge";Nudge(b,t);if(t&gt;=GapSeconds+NudgeSeconds){
 _where="bay "+b.N+" RELEASE check separation";if(StillAttached(b)){if(b.FusedT&lt;=0)b.FusedT=_now;SetOn(b.Merge,false);SetOn(b.DMerge,false);b.Msg="separating... drone still on the printer grid";if(_now-b.FusedT&gt;FusedGrace){Fault(b,"FUSED: drone is still on the printer grid "+FusedGrace+" s after merge off - grind the drone's merge stalk by hand; see docs");SetHold(b,true);}break;}b.FusedT=0;b.Msg="";b.State="COOLDOWN";b.T=_now;_joinUntil[b.Tag]=Math.Max(_joinUntil[b.Tag],_now+JoinSeconds);_joinNext[b.Tag]=0;if(b.RackLaunch)_rackLaunchLeft=3;}break;case"COOLDOWN":_where="bay "+b.N+" COOLDOWN projector read";
 bool cleared=RemNow(b)&gt;0;if(t&gt;CooldownSeconds&amp;&amp;(cleared||t&gt;CooldownSeconds*4)){SetOn(b.Merge,true);b.State="IDLE";b.T=_now;b.DPb=null;b.DMerge=null;if(_launched&gt;0&amp;&amp;_targets.Count==0)_launched=0;}break;case"FAULT":Power(b,false);if(!b.Held&amp;&amp;t&gt;FaultSeconds){b.State="IDLE";b.T=_now;}break;}}bool TimerChainRunning(Bay b){if(b.Timers.Count==0)return false;foreach(var tm in b.Timers){try{if(tm.IsCountingDown)b.TimerSeen=_now;}catch(Exception){}}return _now-b.TimerSeen&lt;3;}void StartBuild(Bay b){b.State="BUILD";b.T=_now;b.Rem= -1;b.LastProgress=_now;b.SawWork=false;SetOn(b.Merge,true);b.Msg="";b.Nudged=false;
 b.DPb=null;b.DMerge=null;b.DBats.Clear();b.KickW=null;b.Starved=false;b.Armed=false;b.LaunchWritten=false;b.Recompiled=false;b.ProjErr="";KeepProjection(b);}void Fault(Bay b,string why){b.State="FAULT";b.T=_now;b.Msg=why;b.Faults++;Power(b,false);}void EnterFinish(Bay b){b.State="FINISH";b.T=_now;b.FinishT=_now;b.LastProgress=_now;b.Msg="";b.Recompiled=false;b.Starved=false;ResetScan(b);b.HavePass=false;b.LBad=0;b.LBlocks=0;b.LCells=0;b.LBlind=0;b.LInteg= -1;b.LBadText="";b.OkSince= -1;}void ResetScan(Bay b){b.ScanIdx=0;b.Seen.Clear();b.PBlocks=b.PCells=b.PBad=b.PBlind=0;b.PInteg=0;b.PBadL.Clear();
@@ -4505,21 +4421,22 @@ return"STALLED: "+b.Rem+" blocks left ("+bc+" buildable) - out of weld reach or 
 if(d&lt;bd){bd=d;best=b;}}catch(Exception){}}return best;}void FindDrone(Bay b){if(b.DPb!=null&amp;&amp;b.DMerge!=null)return;Vector3D mp;try{mp=b.Merge.GetPosition();}catch(Exception ex){Err(ex,b);return;}GridTerminalSystem.GetBlocksOfType(_mergesAll,x=&gt;x!=null&amp;&amp;x.CustomName.StartsWith(b.Prefix)&amp;&amp; !x.CustomName.Contains("[Bay"));b.DMerge=null;double bd=1e9;foreach(var m in _mergesAll){try{Vector3D q=m.GetPosition();double d=Vector3D.Distance(q,mp);if(d&lt;bd&amp;&amp;d&lt;MatchRadius&amp;&amp;Nearest(q)==b){bd=d;b.DMerge=m;}}catch(Exception){}}GridTerminalSystem.GetBlocksOfType(_pbs,x=&gt;x!=null&amp;&amp;x!=Me&amp;&amp; !x.CustomName.Contains("[Bay")&amp;&amp;(x.CustomName.StartsWith(b.Prefix)||x.CustomName.StartsWith("[Staff] "+b.Prefix)||x.CustomName.StartsWith("[Flight] "+b.Prefix)));
 b.DPb=null;bd=1e9;int br=9;foreach(var p in _pbs){try{Vector3D q=p.GetPosition();double d=Vector3D.Distance(q,mp);int r=p.CustomName.StartsWith("[Staff]")?0:p.CustomName.StartsWith("[Flight]")?1:2;if((r&lt;br||(r==br&amp;&amp;d&lt;bd))&amp;&amp;Nearest(q)==b){br=r;bd=d;b.DPb=p;}}catch(Exception){}}GridTerminalSystem.GetBlocksOfType(_bats,x=&gt;x!=null&amp;&amp;x.CustomName.StartsWith(b.Prefix)&amp;&amp; !x.CustomName.Contains("[Bay"));b.DBats.Clear();foreach(var x in _bats){try{if(Nearest(x.GetPosition())==b)b.DBats.Add(x);}catch(Exception){}}}bool DroneCharged(Bay b){if(b.DBats.Count==0)return true;foreach(var x in b.DBats){try{if(x.CurrentStoredPower&lt;x.MaxStoredPower*0.95f)return false;
 }catch(Exception){}}return true;}void Release(Bay b){Power(b,StayOn());FindDrone(b);b.Away=Vector3D.Zero;if(b.DMerge!=null){try{Vector3D d=b.DMerge.GetPosition()-b.Merge.GetPosition();if(d.LengthSquared()&gt;1e-6)b.Away= -Vector3D.Normalize(d);}catch(Exception ex){Err(ex,b);b.DMerge=null;}}if(!string.IsNullOrEmpty(b.Exit)){MatrixD g=Me.CubeGrid.WorldMatrix;Vector3D ex=Vector3D.Zero;switch(b.Exit.Trim()){case"Forward":ex=g.Forward;break;case"Backward":ex=g.Backward;break;case"Up":ex=g.Up;break;case"Down":ex=g.Down;break;case"Left":ex=g.Left;break;case"Right":ex=g.Right;break;}if(ex.LengthSquared()&gt;0.5)b.Away= -ex;
-}b.RackLaunch=RackMode;b.Armed=false;b.LaunchWritten=false;b.FusedT=0;b.Msg="";b.State="ARM";b.T=_now;b.Nudged=false;}bool StillAttached(Bay b){if(b.DPb==null&amp;&amp;b.DMerge==null)return false;try{var g=b.Merge.CubeGrid;if(g==null)return false;return(b.DPb==null||b.DPb.CubeGrid==g)&amp;&amp;(b.DMerge==null||b.DMerge.CubeGrid==g);}catch(Exception ex){Err(ex,b);return false;}}bool Arm(Bay b){FindDrone(b);if(b.DPb==null){b.Msg="ARM: drone PB not visible - relying on the JOIN broadcast";return false;}try{if(!b.LaunchWritten){b.LaunchWritten=true;_where="bay "+b.N+" ARM write drone Custom Data";var ini=new MyIni();
-MyIniParseResult r;if(ini.TryParse(b.DPb.CustomData??"",out r)){ini.Set("Launch","Auto",!RackMode);ini.Set("Launch","Burst Seconds",b.Burst&gt;=0?b.Burst:LaunchBurst);Vector3D da= -b.Away;ini.Set("Launch","Away X",da.X);ini.Set("Launch","Away Y",da.Y);ini.Set("Launch","Away Z",da.Z);ini.Set("Launch","Exit Direction",b.Exit==null?"":b.Exit.Trim());ini.Set("Launch","Armed",true);b.DPb.CustomData=ini.ToString();}else b.Msg="ARM: drone Custom Data unreadable - relying on the JOIN broadcast";}_where="bay "+b.N+" ARM run drone PB";b.DPb.Enabled=true;bool ok=b.DPb.TryRun("armed");if(!ok)b.Msg="ARM: drone PB did not run (TryRun false: not compiled or not working yet?) - relying on the JOIN broadcast";
-else b.Msg="";return ok;}catch(Exception ex){Err(ex,b);b.Msg="ARM failed ("+ex.GetType().FullName+") - relying on the JOIN broadcast";b.DPb=null;return false;}}void Separate(Bay b){_where="bay "+b.N+" Separate batteries";foreach(var x in b.DBats){try{if(x.ChargeMode!=ChargeMode.Auto)x.ChargeMode=ChargeMode.Auto;}catch(Exception ex){Err(ex,b);}}_where="bay "+b.N+" Separate merge blocks off";SetOn(b.Merge,false);SetOn(b.DMerge,false);b.State="RELEASE";b.T=_now;b.Nudged=false;b.Printed++;}void Nudge(Bay b,double t){if(b.Away.LengthSquared()&lt;0.5)return;bool on=t&lt;NudgeSeconds;if(!on&amp;&amp; !b.Nudged)return;
-foreach(var th in _thr){try{if(th.CustomName.StartsWith(b.Prefix))continue;if(Vector3D.Dot(th.WorldMatrix.Backward,b.Away)&gt;0.85)th.ThrustOverridePercentage=on?(float)NudgePower:0f;}catch(Exception){}}b.Nudged=on;}void RelayTargets(){foreach(var t in _turrets){try{if(t.IsFunctional&amp;&amp;t.HasTarget)SendTarget(t.GetTargetedEntity());}catch(Exception){}}foreach(var c in _ctcs){try{if(c.IsFunctional&amp;&amp;c.HasTarget)SendTarget(c.GetTargetedEntity());}catch(Exception){}}}void SendTarget(MyDetectedEntityInfo e){if(e.IsEmpty()||e.Relationship!=MyRelationsBetweenPlayerAndBlock.Enemies)return;var msg=new MyTuple&lt;long,Vector3D,Vector3D,double,long&gt;(e.EntityId,e.Position,new Vector3D(e.Velocity),e.BoundingBox.Size.Length()*0.5,Me.EntityId);
-foreach(var tag in _lSwarm.Keys)IGC.SendBroadcastMessage(tag+"_TGT",msg);}void Command(string a){var w=a.Split(' ');int n;switch(w[0]){case"start":Printing=true;break;case"stop":Printing=false;foreach(var b in _bays){try{Power(b,false);}catch(Exception ex){Err(ex,b);}}break;case"max":if(w.Length&gt;1&amp;&amp;int.TryParse(w[1],out n))MaxDrones=n;break;case"release":foreach(var b in _bays)if((b.State=="DOCKED"||b.State=="CHARGE")&amp;&amp;(w.Length&lt;2||(int.TryParse(w[1],out n)&amp;&amp;n==b.N)))Release(b);break;case"hold":if(w.Length&gt;1&amp;&amp;int.TryParse(w[1],out n))foreach(var b in _bays)if(b.N==n)SetHold(b,true);break;case"unhold":if(w.Length&gt;1&amp;&amp;int.TryParse(w[1],out n))foreach(var b in _bays)if(b.N==n){
-SetHold(b,false);if(b.State=="FAULT")b.State="IDLE";}break;case"relay":Relay=w.Length&lt;2||w[1]!="off";break;case"reload":LoadConfig();GetBlocks();_errs.Clear();_errTotal=0;break;}}void Show(){int docked=0;foreach(var d0 in _bays)if(d0.State=="DOCKED")docked++;_sb.Clear();_sb.Append("HIVE MOTHER v").Append(VER).Append(Printing?"  PRINTING":"  STOPPED");if(_errs.Count&gt;0)_sb.Append("   !! ").Append(_errTotal).Append(" ERROR").Append(_errTotal==1?"":"S");_sb.Append('\n');if(RackMode)_sb.Append("Rack: ").Append(docked).Append(" docked, targets ").Append(_targets.Count).Append('\n');else _sb.Append("Drones alive: ").Append(AliveAll()).Append(" / ").Append(MaxDrones).Append("   building ").Append(PendingAll()).Append('\n');
-foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.Tag).Append(": ").Append(b.State);if(b.Printed&gt;0)_sb.Append(" #").Append(b.Printed);if(b.Held)_sb.Append(" (held)");if(b.State=="BUILD")_sb.Append("  ").Append(b.Rem&gt;=0?b.Rem+" left":"no projection");if(b.State=="FINISH"){long tot=b.HasBox?(long)(b.BMax.X-b.BMin.X+1)*(b.BMax.Y-b.BMin.Y+1)*(b.BMax.Z-b.BMin.Z+1):0;_sb.Append("  ").Append(b.HasBox?"scan "+(tot&gt;0?100*b.ScanIdx/tot:0)+"%":"name check").Append(b.HavePass?", "+b.LBad+" unfinished":"").Append(", ").Append((int)(_now-b.FinishT)).Append(" s");}if(b.Msg!="")_sb.Append("\n   ").Append(b.Msg);
-}catch(Exception ex){_sb.Append("(display error ").Append(ex.GetType().FullName).Append(')');Err(ex,b);}_sb.Append('\n');}if(_bays.Count==0)_sb.Append("No bays: name a projector, welders and\na merge block with [Bay 1]\n");_sb.Append(ErrText());int ins=0,max=0;try{ins=Runtime.CurrentInstructionCount;max=Runtime.MaxInstructionCount;}catch(Exception){}_sb.Append("Ins: ").Append(ins).Append(" / ").Append(max).Append("  peak ").Append(_peakIns).Append('\n');_screen=_sb.ToString();if(_lcd!=null){try{_lcd.WriteText(_screen);}catch(Exception){}}}
+}b.RackLaunch=RackMode;b.Armed=false;b.LaunchWritten=false;b.FusedT=0;b.Msg="";b.State="ARM";b.T=_now;b.Nudged=false;}bool StillAttached(Bay b){if(b.DPb==null&amp;&amp;b.DMerge==null)return false;try{var g=b.Merge.CubeGrid;if(g==null)return false;return(b.DPb==null||b.DPb.CubeGrid==g)&amp;&amp;(b.DMerge==null||b.DMerge.CubeGrid==g);}catch(Exception ex){Err(ex,b);return false;}}bool Arm(Bay b){FindDrone(b);if(b.DPb==null){b.Ai.Clear();GridTerminalSystem.GetBlocksOfType(_tmp,x=&gt;x!=null&amp;&amp;x.CustomName.StartsWith(b.Prefix)&amp;&amp; !x.CustomName.Contains("[Bay")&amp;&amp;x.CubeGrid==b.Merge.CubeGrid&amp;&amp;(x.BlockDefinition.TypeIdString.Contains("FlightMovement")||x.BlockDefinition.TypeIdString.Contains("CombatBlock"))&amp;&amp;Nearest(x.GetPosition())==b);
+b.Ai.AddRange(_tmp);b.Msg=b.Ai.Count&gt;0?"":"ARM: drone PB not visible - relying on the JOIN broadcast";return b.Ai.Count&gt;0;}try{if(!b.LaunchWritten){b.LaunchWritten=true;_where="bay "+b.N+" ARM write drone Custom Data";var ini=new MyIni();MyIniParseResult r;if(ini.TryParse(b.DPb.CustomData??"",out r)){ini.Set("Launch","Auto",!RackMode);ini.Set("Launch","Burst Seconds",b.Burst&gt;=0?b.Burst:LaunchBurst);Vector3D da= -b.Away;ini.Set("Launch","Away X",da.X);ini.Set("Launch","Away Y",da.Y);ini.Set("Launch","Away Z",da.Z);ini.Set("Launch","Exit Direction",b.Exit==null?"":b.Exit.Trim());ini.Set("Launch","Armed",true);
+b.DPb.CustomData=ini.ToString();}else b.Msg="ARM: drone Custom Data unreadable - relying on the JOIN broadcast";}_where="bay "+b.N+" ARM run drone PB";b.DPb.Enabled=true;bool ok=b.DPb.TryRun("armed");if(!ok)b.Msg="ARM: drone PB did not run (TryRun false: not compiled or not working yet?) - relying on the JOIN broadcast";else b.Msg="";return ok;}catch(Exception ex){Err(ex,b);b.Msg="ARM failed ("+ex.GetType().FullName+") - relying on the JOIN broadcast";b.DPb=null;return false;}}void Separate(Bay b){_where="bay "+b.N+" Separate batteries";foreach(var x in b.DBats){try{if(x.ChargeMode!=ChargeMode.Auto)x.ChargeMode=ChargeMode.Auto;
+}catch(Exception ex){Err(ex,b);}}_where="bay "+b.N+" Separate merge blocks off";SetOn(b.Merge,false);SetOn(b.DMerge,false);foreach(var x in b.Ai){try{x.ApplyAction("OnOff_On");x.ApplyAction("ActivateBehavior_On");}catch(Exception ex){Err(ex,b);}}b.Ai.Clear();b.State="RELEASE";b.T=_now;b.Nudged=false;b.Printed++;}void Nudge(Bay b,double t){if(b.Away.LengthSquared()&lt;0.5)return;bool on=t&lt;NudgeSeconds;if(!on&amp;&amp; !b.Nudged)return;foreach(var th in _thr){try{if(th.CustomName.StartsWith(b.Prefix))continue;if(Vector3D.Dot(th.WorldMatrix.Backward,b.Away)&gt;0.85)th.ThrustOverridePercentage=on?(float)NudgePower:0f;
+}catch(Exception){}}b.Nudged=on;}void RelayTargets(){foreach(var t in _turrets){try{if(t.IsFunctional&amp;&amp;t.HasTarget)SendTarget(t.GetTargetedEntity());}catch(Exception){}}foreach(var c in _ctcs){try{if(c.IsFunctional&amp;&amp;c.HasTarget)SendTarget(c.GetTargetedEntity());}catch(Exception){}}}void SendTarget(MyDetectedEntityInfo e){if(e.IsEmpty()||e.Relationship!=MyRelationsBetweenPlayerAndBlock.Enemies)return;var msg=new MyTuple&lt;long,Vector3D,Vector3D,double,long&gt;(e.EntityId,e.Position,new Vector3D(e.Velocity),e.BoundingBox.Size.Length()*0.5,Me.EntityId);foreach(var tag in _lSwarm.Keys)IGC.SendBroadcastMessage(tag+"_TGT",msg);
+}void Command(string a){var w=a.Split(' ');int n;switch(w[0]){case"start":Printing=true;break;case"stop":Printing=false;foreach(var b in _bays){try{Power(b,false);}catch(Exception ex){Err(ex,b);}}break;case"max":if(w.Length&gt;1&amp;&amp;int.TryParse(w[1],out n))MaxDrones=n;break;case"release":foreach(var b in _bays)if((b.State=="DOCKED"||b.State=="CHARGE")&amp;&amp;(w.Length&lt;2||(int.TryParse(w[1],out n)&amp;&amp;n==b.N)))Release(b);break;case"hold":if(w.Length&gt;1&amp;&amp;int.TryParse(w[1],out n))foreach(var b in _bays)if(b.N==n)SetHold(b,true);break;case"unhold":if(w.Length&gt;1&amp;&amp;int.TryParse(w[1],out n))foreach(var b in _bays)if(b.N==n){
+SetHold(b,false);if(b.State=="FAULT")b.State="IDLE";}break;case"relay":Relay=w.Length&lt;2||w[1]!="off";break;case"reload":LoadConfig();GetBlocks();_errs.Clear();_errTotal=0;foreach(var b in _bays)b.Printed=0;break;}}void Show(){int docked=0;foreach(var d0 in _bays)if(d0.State=="DOCKED")docked++;_sb.Clear();_sb.Append("HIVE MOTHER v").Append(VER).Append(Printing?"  PRINTING":"  STOPPED");if(_errs.Count&gt;0)_sb.Append("   !! ").Append(_errTotal).Append(" ERROR").Append(_errTotal==1?"":"S");_sb.Append('\n');if(RackMode)_sb.Append("Rack: ").Append(docked).Append(" docked, targets ").Append(_targets.Count).Append('\n');
+else _sb.Append("Drones alive: ").Append(AliveAll()).Append(" / ").Append(MaxDrones).Append("   building ").Append(PendingAll()).Append('\n');foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.Tag).Append(": ").Append(b.State);if(b.Printed&gt;0)_sb.Append(" #").Append(b.Printed);if(b.Held)_sb.Append(" (held)");if(b.State=="BUILD")_sb.Append("  ").Append(b.Rem&gt;=0?b.Rem+" left":"no projection");if(b.State=="FINISH"){long tot=b.HasBox?(long)(b.BMax.X-b.BMin.X+1)*(b.BMax.Y-b.BMin.Y+1)*(b.BMax.Z-b.BMin.Z+1):0;_sb.Append("  ").Append(b.HasBox?"scan "+(tot&gt;0?100*b.ScanIdx/tot:0)+"%":"name check").Append(b.HavePass?", "+b.LBad+" unfinished":"").Append(", ").Append((int)(_now-b.FinishT)).Append(" s");
+}if(b.Msg!="")_sb.Append("\n   ").Append(b.Msg);}catch(Exception ex){_sb.Append("(display error ").Append(ex.GetType().FullName).Append(')');Err(ex,b);}_sb.Append('\n');}if(_bays.Count==0)_sb.Append("No bays: name a projector, welders and\na merge block with [Bay 1]\n");_sb.Append(ErrText());int ins=0,max=0;try{ins=Runtime.CurrentInstructionCount;max=Runtime.MaxInstructionCount;}catch(Exception){}_sb.Append("Ins: ").Append(ins).Append(" / ").Append(max).Append("  peak ").Append(_peakIns).Append('\n');_screen=_sb.ToString();if(_lcd!=null){try{_lcd.WriteText(_screen);}catch(Exception){}}}
 </Program>
               <Storage />
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_TimerBlock">
               <SubtypeName>TimerBlockSmall</SubtypeName>
-              <EntityId>340136444059067829</EntityId>
-              <Min x="-2" y="3" z="-2" />
+              <EntityId>372427207548583220</EntityId>
+              <Min x="-2" y="3" z="-1" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -4541,7 +4458,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalGroup">
                       <Action>OnOff_Off</Action>
                       <GridEntityId>0</GridEntityId>
-                      <BlockEntityId>340136444059067829</BlockEntityId>
+                      <BlockEntityId>372427207548583220</BlockEntityId>
                       <GroupName>Bay 1 Welders</GroupName>
                     </Data>
                   </Slot>
@@ -4550,21 +4467,21 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>Start</Action>
-                      <BlockEntityId>293507280660885655</BlockEntityId>
+                      <BlockEntityId>386945687051645139</BlockEntityId>
                     </Data>
                   </Slot>
                 </Slots>
                 <SlotsGamepad />
               </Toolbar>
-              <Delay>170000</Delay>
+              <Delay>190000</Delay>
               <CurrentTime>0</CurrentTime>
               <IsCountingDown>false</IsCountingDown>
               <Silent>true</Silent>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_TimerBlock">
               <SubtypeName>TimerBlockSmall</SubtypeName>
-              <EntityId>293507280660885655</EntityId>
-              <Min x="-2" y="3" z="-1" />
+              <EntityId>386945687051645139</EntityId>
+              <Min x="-2" y="3" z="0" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -4593,7 +4510,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>Start</Action>
-                      <BlockEntityId>609231128213474922</BlockEntityId>
+                      <BlockEntityId>340136444059067829</BlockEntityId>
                     </Data>
                   </Slot>
                 </Slots>
@@ -4606,8 +4523,8 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_TimerBlock">
               <SubtypeName>TimerBlockSmall</SubtypeName>
-              <EntityId>609231128213474922</EntityId>
-              <Min x="-2" y="3" z="0" />
+              <EntityId>340136444059067829</EntityId>
+              <Min x="-2" y="3" z="1" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -4637,7 +4554,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalGroup">
                       <Action>OnOff_On</Action>
                       <GridEntityId>0</GridEntityId>
-                      <BlockEntityId>609231128213474922</BlockEntityId>
+                      <BlockEntityId>340136444059067829</BlockEntityId>
                       <GroupName>Bay 1 Welders</GroupName>
                     </Data>
                   </Slot>
@@ -4646,7 +4563,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>Start</Action>
-                      <BlockEntityId>340136444059067829</BlockEntityId>
+                      <BlockEntityId>372427207548583220</BlockEntityId>
                     </Data>
                   </Slot>
                 </Slots>
@@ -4659,7 +4576,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_TimerBlock">
               <SubtypeName>TimerBlockSmall</SubtypeName>
-              <EntityId>516962259881440543</EntityId>
+              <EntityId>293507280660885655</EntityId>
               <Min x="-2" y="3" z="2" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
               <Owner>144115188075855915</Owner>
@@ -4682,7 +4599,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalGroup">
                       <Action>OnOff_Off</Action>
                       <GridEntityId>0</GridEntityId>
-                      <BlockEntityId>516962259881440543</BlockEntityId>
+                      <BlockEntityId>293507280660885655</BlockEntityId>
                       <GroupName>Bay 2 Welders</GroupName>
                     </Data>
                   </Slot>
@@ -4691,21 +4608,21 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>Start</Action>
-                      <BlockEntityId>498125155458479833</BlockEntityId>
+                      <BlockEntityId>609231128213474922</BlockEntityId>
                     </Data>
                   </Slot>
                 </Slots>
                 <SlotsGamepad />
               </Toolbar>
-              <Delay>170000</Delay>
+              <Delay>190000</Delay>
               <CurrentTime>0</CurrentTime>
               <IsCountingDown>false</IsCountingDown>
               <Silent>true</Silent>
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_TimerBlock">
               <SubtypeName>TimerBlockSmall</SubtypeName>
-              <EntityId>498125155458479833</EntityId>
-              <Min x="-1" y="3" z="-2" />
+              <EntityId>609231128213474922</EntityId>
+              <Min x="-1" y="3" z="-1" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -4726,7 +4643,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>OnOff_Off</Action>
-                      <BlockEntityId>494452984725258919</BlockEntityId>
+                      <BlockEntityId>600977812724185959</BlockEntityId>
                     </Data>
                   </Slot>
                   <Slot>
@@ -4734,7 +4651,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>Start</Action>
-                      <BlockEntityId>141120461509656480</BlockEntityId>
+                      <BlockEntityId>516962259881440543</BlockEntityId>
                     </Data>
                   </Slot>
                 </Slots>
@@ -4747,8 +4664,8 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
             </MyObjectBuilder_CubeBlock>
             <MyObjectBuilder_CubeBlock xsi:type="MyObjectBuilder_TimerBlock">
               <SubtypeName>TimerBlockSmall</SubtypeName>
-              <EntityId>141120461509656480</EntityId>
-              <Min x="-1" y="3" z="-1" />
+              <EntityId>516962259881440543</EntityId>
+              <Min x="-1" y="3" z="0" />
               <ColorMaskHSV x="0" y="-0.8" z="-0.3" />
               <Owner>144115188075855915</Owner>
               <BuiltBy>144115188075855915</BuiltBy>
@@ -4769,7 +4686,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>OnOff_On</Action>
-                      <BlockEntityId>494452984725258919</BlockEntityId>
+                      <BlockEntityId>600977812724185959</BlockEntityId>
                     </Data>
                   </Slot>
                   <Slot>
@@ -4778,7 +4695,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalGroup">
                       <Action>OnOff_On</Action>
                       <GridEntityId>0</GridEntityId>
-                      <BlockEntityId>141120461509656480</BlockEntityId>
+                      <BlockEntityId>516962259881440543</BlockEntityId>
                       <GroupName>Bay 2 Welders</GroupName>
                     </Data>
                   </Slot>
@@ -4787,7 +4704,7 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
                     <Item />
                     <Data xsi:type="MyObjectBuilder_ToolbarItemTerminalBlock">
                       <Action>Start</Action>
-                      <BlockEntityId>516962259881440543</BlockEntityId>
+                      <BlockEntityId>293507280660885655</BlockEntityId>
                     </Data>
                   </Slot>
                 </Slots>
@@ -4804,44 +4721,39 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
               <Name>Bay 1 Welders</Name>
               <Blocks>
                 <Vector3I>
-                  <X>-4</X>
-                  <Y>8</Y>
-                  <Z>-1</Z>
-                </Vector3I>
-                <Vector3I>
-                  <X>-7</X>
-                  <Y>4</Y>
+                  <X>-5</X>
+                  <Y>6</Y>
                   <Z>1</Z>
                 </Vector3I>
                 <Vector3I>
-                  <X>-7</X>
-                  <Y>9</Y>
-                  <Z>3</Z>
-                </Vector3I>
-                <Vector3I>
                   <X>-5</X>
-                  <Y>9</Y>
-                  <Z>-1</Z>
+                  <Y>3</Y>
+                  <Z>-3</Z>
                 </Vector3I>
                 <Vector3I>
-                  <X>-6</X>
-                  <Y>4</Y>
-                  <Z>0</Z>
+                  <X>-8</X>
+                  <Y>3</Y>
+                  <Z>1</Z>
                 </Vector3I>
                 <Vector3I>
-                  <X>-4</X>
+                  <X>-8</X>
                   <Y>6</Y>
-                  <Z>3</Z>
+                  <Z>5</Z>
+                </Vector3I>
+                <Vector3I>
+                  <X>-8</X>
+                  <Y>8</Y>
+                  <Z>-2</Z>
                 </Vector3I>
                 <Vector3I>
                   <X>-4</X>
-                  <Y>4</Y>
-                  <Z>-1</Z>
+                  <Y>5</Y>
+                  <Z>4</Z>
                 </Vector3I>
                 <Vector3I>
-                  <X>-6</X>
-                  <Y>7</Y>
-                  <Z>5</Z>
+                  <X>-9</X>
+                  <Y>6</Y>
+                  <Z>1</Z>
                 </Vector3I>
               </Blocks>
             </MyObjectBuilder_BlockGroup>
@@ -4849,44 +4761,39 @@ foreach(var b in _bays){try{_sb.Append("Bay ").Append(b.N).Append(' ').Append(b.
               <Name>Bay 2 Welders</Name>
               <Blocks>
                 <Vector3I>
-                  <X>6</X>
-                  <Y>8</Y>
-                  <Z>-1</Z>
-                </Vector3I>
-                <Vector3I>
-                  <X>3</X>
-                  <Y>4</Y>
+                  <X>7</X>
+                  <Y>6</Y>
                   <Z>1</Z>
                 </Vector3I>
                 <Vector3I>
-                  <X>3</X>
-                  <Y>9</Y>
-                  <Z>3</Z>
-                </Vector3I>
-                <Vector3I>
-                  <X>5</X>
-                  <Y>9</Y>
-                  <Z>-1</Z>
+                  <X>7</X>
+                  <Y>3</Y>
+                  <Z>-3</Z>
                 </Vector3I>
                 <Vector3I>
                   <X>4</X>
-                  <Y>4</Y>
-                  <Z>0</Z>
+                  <Y>3</Y>
+                  <Z>1</Z>
                 </Vector3I>
                 <Vector3I>
-                  <X>6</X>
+                  <X>4</X>
                   <Y>6</Y>
-                  <Z>3</Z>
-                </Vector3I>
-                <Vector3I>
-                  <X>6</X>
-                  <Y>4</Y>
-                  <Z>-1</Z>
+                  <Z>5</Z>
                 </Vector3I>
                 <Vector3I>
                   <X>4</X>
-                  <Y>7</Y>
-                  <Z>5</Z>
+                  <Y>8</Y>
+                  <Z>-2</Z>
+                </Vector3I>
+                <Vector3I>
+                  <X>8</X>
+                  <Y>5</Y>
+                  <Z>4</Z>
+                </Vector3I>
+                <Vector3I>
+                  <X>3</X>
+                  <Y>6</Y>
+                  <Z>1</Z>
                 </Vector3I>
               </Blocks>
             </MyObjectBuilder_BlockGroup>

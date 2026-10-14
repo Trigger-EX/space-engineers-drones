@@ -435,3 +435,6 @@ Not in v1: the `TUBE_RAM` salvo spacing broadcast of section 4.2 (tubes on one t
 **Reading it honestly:** with this sim's assumed collision scale a lone tube is a poor weapon against an alert armed ship: it arrives in 4 to 5 s from the first shots and the guns win. Tubes pay off in numbers and against slow or unarmed targets. A direction needs 20 to 50 seeds on the scenarios that matter after the `ram` kind exists.
 
 **What the sim does not show:** deformation, penetration, asymmetric damage, the real collision-damage scale (an assumption [I]; nothing about ramming has run in the game, see Q6).
+
+## Printing (2026-10-14)
+`Tube Foundry` (Tube 2x2, 2x4, 3x3, 4x4, one bay each) and `Tube W Foundry` (the W tubes) print the small tubes with the merge-pair release the owner confirmed in the game (Sprue Test Merge, Hive Mother). The tubes have no merge block of their own, so `printers.py` gives each one a latch stalk (`printer_lib.with_latch`). TubeRamAI v1.1 is held (treated as docked) while its grid holds a `[Bay` block or the Hive Mother PB, so it never fires the printer's thrusters, and it hunts once the merge pair lets go. It sends `TUBE_SWARM` every second, so the printer counts live tubes (Max Alive / Max Drones 8) and reprints the ones that rammed. The large tubes (Tube L) are not printed: see the large-grid note in the changelog.

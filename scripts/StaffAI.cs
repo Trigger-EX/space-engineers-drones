@@ -20,8 +20,8 @@
 //     The words go out as a string on "<Ship Tag>.S2P" and the bay PBs answer "<Ship Tag>.P2S" (MyTuple<int bay, string state, long droneId, float charge>; bay 0 = the ack of a
 //     command). A pod docked by connectors is another construct (C3/C4, unverified), so each command is repeated until a bay acks it: ConnectedConstructs, then AntennaRelay,
 //     then a unicast to the pod PB when the grid terminal system lists it ([Hangar n] Pod=), 6 tries; the note says which and, if nobody answers, to use the Timer R(n) by hand.
-//     'release all' with several pods is cut into one 'release a-b' per pod, 20 s apart ("Pod Gap"). If [Hangar n] Group= names doors, release opens them first (waits "Door Open Wait"
-//     for Status Open) and closes them "Door Close After" s after the last bay left; 'doors open|close' does it by hand. 'recall' = 'wing rtb', after "Recall Satellite After" s
+//     'release all' with several pods is cut into one 'release a-b' per pod, 20 s apart ("Pod Gap"). If [Hangar n] Group= names doors, release opens them first and never releases into a closed door (re-opens after "Door Open Wait", "force" overrides;
+//     waits for Status Open) and closes them "Door Close After" s after the last bay left; 'doors open|close' does it by hand. 'recall' = 'wing rtb', after "Recall Satellite After" s
 //     'wing satellite', and the bays cancel their pending releases and switch the cradle merge blocks on (docking back is phase 2).
 //   * LAUNCH (M6): 'launch [n|a-b|all] [force]' = the Helm goes IDLE (overrides off, dampeners on: the ship comes to rest, which the bays' gates need - an AUTO Helm that hunts or sweeps
 //     for targets keeps the ship turning and accelerating, so a plain 'release' waits for ever), then 'release', and when those bays have left (or after 90 s) the Helm gets its old
@@ -875,10 +875,14 @@ void BayStep()
         foreach (var n in _lchSet) { BayRec r; if (left && _bay.TryGetValue(n, out r) && _t - r.Seen < 6 && r.St != "EMPTY" && r.St != "COOLDOWN" && r.St != "FAULT") left = false; }
         if (left || _t - _lchT > 90) { _lchOn = false; if (_depSat) { _depSat = false; _recallAt = _t + 4; } if (_lchBack != "" && _md == 0) Fwd(_lchBack); _rqNote = "launch over: Helm " + (_lchBack != "" && _md == 0 ? _lchBack : "unchanged"); }
     }
-    if (_pendRel != "" && (DoorsOpen() || _t - _pendT > DoorWait))
-    {
-        if (!DoorsOpen()) _rqNote = "doors still not open after " + DoorWait.ToString("0") + " s: releasing anyway";
+    if (_pendRel != "" && (DoorsOpen() || _pendRel.Contains("force")))
+    {   // a closed door is a blocked launch lane: never release into it ('release ... force' overrides)
         string r = _pendRel; _pendRel = ""; SendRelease(r);
+    }
+    else if (_pendRel != "" && _t - _pendT > DoorWait)
+    {
+        foreach (var d in _doors) if (d.Status != DoorStatus.Open) { d.Enabled = true; d.OpenDoor(); }
+        _rqNote = "release " + _pendRel + " HELD: hangar doors not open after " + (_t - _pendT).ToString("0") + " s (damaged/unpowered?) - open by hand or 'release " + _pendRel + " force'";
     }
     if (_doorsAuto && _pendRel == "")
     {

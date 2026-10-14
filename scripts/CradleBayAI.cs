@@ -13,7 +13,7 @@
 //   COOLDOWN  the split was seen; the host merge block is switched on again after "Cooldown" s (recovery by hand / phase 2); JOIN is repeated for "Join Seconds"
 //   FAULT     FUSED, a missing merge block, an exception; leaves after 60 s unless the bay is held ('hold n' / 'unhold n')
 //  BURN-LANE GATES (a release waits, with the reason on the screen, until all of them hold; 'force' skips them; "Wait Max" s later the request is dropped):
-//   drone charged (Charge Fraction 0.9), the lane in front of the drone box is clear (GetCubeBlock on 5 lines x Lane Cells along Away, host blocks only: it cannot see other
+//   drone charged (Charge Fraction 0.9), the lane in front of the drone box is clear (GetCubeBlock / CubeExists, armour is invisible to GetCubeBlock in the game, on 5 lines x Lane Cells along Away, host blocks only: it cannot see other
 //   ships or rocks), the ship turns slower than Max Turn (0.1 rad/s) and accelerates slower than Max Accel (1.0 m/s2) (the drone leaves with the host's velocity).
 //  WAVES: one drone is armed at a time and two merge-offs are at least "Wave Gap" (2 s) apart, bay order. A pod-to-pod gap (20 s) is the Staff's job (it sends 'release a-b delay').
 //
@@ -280,7 +280,8 @@ string Lane(Bay b)
         for (int k = 1; k <= LaneCells; k++)
         {
             var c = new int[3]; c[ax] = f + sg * k; c[u] = cu + ou[l]; c[v] = cv + ov[l];
-            if (g.GetCubeBlock(new Vector3I(c[0], c[1], c[2])) != null) { b.LaneWhy = c[0] + "," + c[1] + "," + c[2]; return b.LaneWhy; }
+            var q = new Vector3I(c[0], c[1], c[2]);
+            if (g.GetCubeBlock(q) != null || g.CubeExists(q)) { b.LaneWhy = c[0] + "," + c[1] + "," + c[2]; return b.LaneWhy; }
         }
     return "";
 }
