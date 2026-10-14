@@ -34,6 +34,26 @@
       "scripts": [
         "ShrikeAI"
       ]
+    },
+    "FRIENDLY AVOIDANCE": {
+      "file": "tools/fa_block.cs",
+      "scripts": [
+        "HornetDroneAI",
+        "GnatSwarmAI",
+        "LongbowSniperAI",
+        "LancerAI",
+        "HarrierAI",
+        "AegisAI",
+        "BasiliskAI"
+      ]
+    },
+    "FRIENDLY BEACON": {
+      "file": "tools/fb_block.cs",
+      "scripts": [
+        "WaspAI",
+        "MantisAI",
+        "ShrikeAI"
+      ]
     }
   }
 }

@@ -12,6 +12,7 @@
 //   printer-test [--model "Mobile Hive"] [--fault none|noproj|halfload|...] [--script-file F]   Hive Mother on the real printer blueprint with real-game-like faulty projectors (sim/src/Run/PrinterTest.cs)
 //   multipb-probe [--seeds 3] [--model "Warden Wing"]   several synthetic PBs + timers on one grid: IGC latency/throughput, TryRun, timer chains (sim/src/Run/MultiPbProbe.cs)
 //   follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] ...   FOLLOW mode vs a moving owner (sim/src/Run/FollowTest.cs)
+//   avoid-test [--model Hornet] [--count 3] [--bystander Hornet] [--beacon]   drones in HUNT with a parked friendly on their line: friendly avoidance (sim/src/Run/AvoidTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
 //   M0 (docs/design/control_arch.md): --pilot "0:sit;5:move 0 0 -1;20:leave" [--pilot-team 0] puts a ScriptedPilot into the cockpit of our ships (verbs: ScriptedPilot.cs),
 //         --pb-custom-data "Helm=<ini>|Staff=<ini>" (CustomData per PB tag), --enemy-scripted (enemies from --enemies run their own PB scripts: "Helm:hunt",
@@ -173,6 +174,8 @@ namespace SeSim.Run
                     return MultiPbProbe.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "follow-test":
                     return FollowTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
+                case "avoid-test":
+                    return AvoidTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "compile-scripts":
                     return CompileScripts(simDir, FindRepoRoot(null));
                 case "summarize":

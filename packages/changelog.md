@@ -1,3 +1,8 @@
+### v2.7 (unreleased): FRIENDLY AVOIDANCE
+Drones now keep clear of every grid that is not an enemy (`docs/friendly-avoidance.md`). Trigger: Hornets orbiting a target flew into a Ballista that was not on their tag, not a contact and never seen.
+- Shared blocks `FRIENDLY AVOIDANCE` (`tools/fa_block.cs`: IGC beacon `DRONE_SPACE`, sightings from `Valid()`, barrier + ramp + sidestep in `FaWant`) in Hornet, Gnat, Longbow, Lancer, Harrier, Aegis, Basilisk; `FRIENDLY BEACON` (`tools/fb_block.cs`) in Mantis, Wasp and the Shrike Helm (they have no room to steer: 100,000 / 80,900 characters).
+- Sim: `SimHost.exe avoid-test` (straight run through a parked friendly: 5.1 m before, 47 m after). Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): ROTOR + HINGE AI TURRETS on the four warships
 New `scripts/TurretAI.cs` (v1.0, 17,316 of 100,000 characters) and `tools/designs/turrets.py`. Design, numbers, formulas, unknowns: `docs/design/turrets.md`.
 - **The turret**: `LargeAdvancedStator` (azimuth) -> top grid with `LargeAdvancedRotor` + `LargeHinge` (elevation, +-90 degrees) -> small head grid with `SmallHingeHead`, four `SmallGatlingGun` and a camera: the chain
