@@ -8,15 +8,20 @@
 //
 //  HUNT   velocity control onto the predicted intercept, friendly avoidance on.
 //  TERM   last seconds: proportional navigation at full throttle, friendly avoidance off (a ram must not
-//         sidestep its target) but a friendly guard aborts the run when a friend is in the way.
-//  EXTEND after an impact or an abort: fly away to the run-up distance, then HUNT again.
+//         sidestep its target) but a friendly guard aborts the run when a friend is in the way. Entered only while closing faster
+//         than max(20, half its own speed); closing below -2 m/s for 0.5 s is a miss (MISSED n): disarm, EXTEND, come round.
+//  EXTEND after an impact, a miss or an abort: fly away to the run-up distance, keeping its outbound speed, then HUNT again.
+//         Goes IDLE as soon as Healthy() fails (half the rear bank or every gyro lost).
 //
-//  Targets: its own nose camera (and a sensor if fitted) and targets shared over antenna by other drones,
-//  carriers and the hive (any of the listed IGC tags). `lock` raycasts what the nose points at.
+//  Targets: its own nose camera (the side cameras when the nose camera is gone; a sensor if fitted) and targets shared over antenna by
+//  other drones, carriers and the hive (any of the listed IGC tags). `lock` raycasts what the nose points at. The current target is
+//  kept Target Memory (s) (20) by dead reckoning after the last fix; other contacts expire after 5 s.
 //  Warheads (the "W" tubes carry a layer of them under the nose armour): armed in TERM only, at the last moment (gap to the hull under
 //  Arm Warheads Within, default 20 m, or 0.3 s at the closing speed: gunfire sets armed warheads off) and never
 //  within Safe Distance From Launch of the release point; fired on impact (the velocity jump) or by the contact fuse (the nose camera's
-//  ray says the hull is less than one tick away). Disarmed on an abort or when the tube falls back out of the terminal phase.
+//  ray says the hull is less than one tick away). Disarmed on an abort, a miss or when the tube falls back out of the terminal phase.
+//  After the blast the tube is not done: the systems sit at the rear, so if the PB still runs (and Healthy()) it EXTENDs and comes
+//  back as a kinetic ram, on target memory, the AI blocks and the side cameras (the nose camera went with the nose).
 //
 //  SEARCH With no target and AI Offensive / AI Flight blocks tagged [AI] on board, `launch` hands the ship to the AI blocks (AI GATE block:
 //         switches AI Behavior on, time-shares with a script spin if the AI does nothing) and the nose cameras confirm what the AI points at
@@ -26,12 +31,12 @@
 //
 //  COMMANDS: launch (hunt) | abort | idle (stop) | rtb | lock | disarm | reload
 // =====================================================================
-const string VER = "1.0";
+const string VER = "1.1";
 
 string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE,TUBE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
 string Tag = "TUBE", BlockTag = "";
 double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 20, SafeDistance = 150, Gain = 2.5;
-double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300;
+double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300, TgtMemory = 20;
 int MaxRams = 0;
 double NoseSetback = 0; bool ContactFuse = true, AiSearch = true, StartHunt = true; double AiConfirmRange = 1300, AiConfirmLong = 2600, AiRepick = 20; double _launchTry = -99;
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false, ReAttack = true;
@@ -56,7 +61,7 @@ IMyBroadcastListener _lCmd;
 IMyTextSurface _lcd;
 IMyCubeGrid _myGrid;
 Vector3D _launchPos, _home, _prevVel, _prevErr; bool _armed, _haveHome;
-int _rams; double _modeT, _guardT, _slowT, _rangeNow, _closeNow, _tgoNow;
+int _rams, _misses; double _modeT, _guardT, _slowT, _missT, _boomT = -99, _rangeNow, _closeNow, _tgoNow;
 string _status = "";
 
 class Track { public long Id; public Vector3D Pos, Vel, Acc; public double Radius, Seen; }
@@ -379,6 +384,7 @@ void LoadConfig()
     NavGain = C(S, "Nav Gain", NavGain);
     ReAttack = C(S, "Re-Attack", ReAttack);
     MaxRams = (int)C(S, "Max Rams", (double)MaxRams);
+    TgtMemory = C(S, "Target Memory (s)", TgtMemory);
     RunUp = C(S, "Run Up Distance", RunUp);
     ImpactDv = C(S, "Impact Dv", ImpactDv);
     FriendlyClear = C(S, "Friendly Clearance", FriendlyClear);
@@ -468,7 +474,7 @@ void Tick(string arg, UpdateType src)
     if ((src & UpdateType.Update1) == 0) return;
     double dt = Runtime.TimeSinceLastRun.TotalSeconds; if (dt <= 0 || dt > 0.5) dt = 1 / 60.0;
     _now += dt; _tick++;
-    if (Me.CubeGrid != _myGrid || _tick % 600 == 0) GetBlocks();
+    if (Me.CubeGrid != _myGrid || _tick % 600 == 0 || (_now - _boomT < 2 && _tick % 15 == 0)) GetBlocks();   // after the blast: drop the lost blocks
     for (int li = 0; li < _lTgt.Count + FleetTgtL.Count; li++)
     {
         var l = li < _lTgt.Count ? _lTgt[li] : FleetTgtL[li - _lTgt.Count];
@@ -487,7 +493,8 @@ void Tick(string arg, UpdateType src)
     if (_tick % 10 == 0)
     {
         foreach (var s in _sensors) { if (!s.IsWorking) continue; _sensed.Clear(); s.DetectedEntities(_sensed); foreach (var e in _sensed) if (Valid(e)) Add(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() / 2, "SENSOR"); }
-        var drop = new List<long>(); foreach (var kv in _contacts) if (_now - kv.Value.Seen > 5) drop.Add(kv.Key);
+        // the current target is kept Target Memory (s) after its last fix (dead reckoning on its last velocity), the rest 5 s
+        var drop = new List<long>(); foreach (var kv in _contacts) if (_now - kv.Value.Seen > (kv.Value == _tgt ? Math.Max(TgtMemory, 5) : 5)) drop.Add(kv.Key);
         foreach (var id in drop) _contacts.Remove(id);
         if (_tgt != null && !_contacts.ContainsKey(_tgt.Id)) _tgt = null;
     }
@@ -577,11 +584,13 @@ void Hunt(double dt)
     double age = _now - _tgt.Seen;
     Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
     Vector3D tp = _tgt.Pos + _tgt.Vel * age, tv = _tgt.Vel;
+    bool noseCam = NoseCam();
     if (age > 0.2)
         foreach (var c in _cams)
         {
             double d0 = Vector3D.Distance(tp, c.GetPosition());
-            if (!c.IsWorking || !c.CanScan(d0 + 20) || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.9) continue;
+            if (!c.IsWorking || !c.CanScan(d0 + 20)) continue;
+            if (Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.9 && (noseCam || !c.CanScan(tp))) continue;   // a side camera only once the nose camera is gone
             var e = c.Raycast(tp + Vector3D.Normalize(tp - c.GetPosition()) * 3);
             if (!e.IsEmpty() && Valid(e)) { Add(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() / 2, "CAM"); if (e.EntityId != _tgt.Id) _tgt = _contacts[e.EntityId]; }
             break;
@@ -593,7 +602,7 @@ void Hunt(double dt)
 
     // impact: a sudden velocity change, or touching the target while the closing speed has turned
     bool hit = _tick > 5 && (myVel - _prevVel).Length() > ImpactDv && dist < _tgt.Radius + 30;
-    if (hit && _armed) { _rams++; Boom("impact at " + closing.ToString("0") + " m/s"); return; }   // warhead tube: the nose is in the hull, fire now
+    if (hit && _armed) { Boom("impact at " + closing.ToString("0") + " m/s"); return; }   // warhead tube: the nose is in the hull, fire now
     if (_armed && dist - _tgt.Radius > Math.Max(ArmRange, Math.Max(closing, 0) * 0.3) * 2 + 20) Disarm();   // fell back out of the terminal phase (overshoot, lost lock)
     if (hit) { _rams++; Disarm(); _status = "IMPACT " + _rams + " at " + closing.ToString("0") + " m/s";
         if (ReAttack && (MaxRams == 0 || _rams < MaxRams) && Healthy()) SetMode(Mode.EXTEND); else SetMode(Mode.HUNT); return; }
@@ -604,7 +613,8 @@ void Hunt(double dt)
     double mass = _rc.CalculateShipMass().PhysicalMass, amax = fmax > 0 ? fmax / mass : 1;
     if (_mode == Mode.HUNT)
     {
-        if (tgo < TermTime || dist < TermRange) { SetMode(Mode.TERM); _guardT = 0; }
+        // only while closing fast (Corsair report: a tube that entered TERM at a walk, or flying away, sat in it until the 20 s timer)
+        if ((tgo < TermTime || dist < TermRange) && closing > Math.Max(20, 0.5 * myVel.Length())) { SetMode(Mode.TERM); _guardT = 0; _missT = 0; }
         want = Vector3D.Normalize(pred - me) * MaxSpeed;
         bool launching = Vector3D.Distance(me, _launchPos) < SafeDistance;
         if (launching) want = Vector3D.Normalize(want) * Math.Min(MaxSpeed, 30);
@@ -673,9 +683,10 @@ void Hunt(double dt)
         }
         // cannot close: a target running at our speed
         if (closing < 5) { _slowT += dt; if (_slowT > 15) _status = "CANNOT CLOSE"; } else _slowT = 0;
-        if (_now - _modeT > 20 && closing < 0) { SetMode(Mode.HUNT); }   // overshot: re-plan
+        // missed: opening (closing below -2 m/s) for 0.5 s: disarm, fly out and come round
+        if (closing < -2) { _missT += dt; if (_missT > 0.5) { _misses++; Disarm(); _status = "MISSED " + _misses; SetMode(Mode.EXTEND); return; } } else _missT = 0;
     }
-    _status = (_mode == Mode.TERM ? "TERM " : "HUNT ") + dist.ToString("0") + " m  tgo " + tgo.ToString("0.0") + "s  rams " + _rams;
+    _status = (_mode == Mode.TERM ? "TERM " : "HUNT ") + dist.ToString("0") + " m  tgo " + tgo.ToString("0.0") + "s  rams " + _rams + Missed();
 }
 
 // ---- AI block search (same pattern as the Gnat: the AI blocks fly, the nose cameras confirm what they point at) ----
@@ -731,10 +742,10 @@ void Search(double dt)
     }
     // the AI points the nose at what it found: the first nose camera casts the long ray (a target held at 1.3-2.6 km), any other the short
     // frequent one; 1 ray in 2 straight down the boresight, the rest on a 0.15-2.5 deg spiral (Ballista Helm / Gnat pattern)
-    bool longCam = true;
+    bool longCam = true, noseCam = NoseCam();
     foreach (var c in _cams)
     {
-        if (!c.IsWorking || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.9) continue;
+        if (!c.IsWorking || (noseCam && Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.9)) continue;   // no nose camera: the side cameras sweep
         double len = longCam ? AiConfirmLong : AiConfirmRange;
         longCam = false;
         if (c.AvailableScanRange < len) continue;
@@ -747,24 +758,26 @@ void Search(double dt)
     _status = "SEARCH " + (_aiOn ? "AI flying" : "script spin") + "  contacts " + _contacts.Count;
 }
 
-// fly away from the target (sideways of the line) until the run-up distance is reached, then hunt again
+// fly away from the target (sideways of the line) until the run-up distance is reached, then hunt again; keeps the outbound speed it
+// has (after a miss or a pass it does not brake), goes IDLE once it can no longer fly a run (Healthy)
 void Extend(double dt)
 {
-    if (_tgt == null) { Release(); SetMode(Mode.WAIT); return; }
+    if (!Healthy()) { Release(); AiOff(); _status = "DAMAGED: idle  rams " + _rams + Missed(); SetMode(Mode.IDLE); return; }
+    if (_tgt == null) { Release(); SetMode(AiSearch && _ai.Count > 0 ? Mode.SEARCH : Mode.WAIT); return; }
     Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
-    Vector3D rel = me - _tgt.Pos; double dist = rel.Length();
+    Vector3D rel = me - (_tgt.Pos + _tgt.Vel * (_now - _tgt.Seen)); double dist = rel.Length();
     double fmax = 0; foreach (var t in _fwd) if (t.IsWorking) fmax += t.MaxEffectiveThrust;
     double mass = _rc.CalculateShipMass().PhysicalMass, amax = fmax > 0 ? fmax / mass : 1;
     double run = RunUp > 0 ? RunUp : MathHelper.Clamp(1.3 * MaxSpeed * MaxSpeed / (2 * amax), 200, 800);
     if (dist > run || _now - _modeT > 10) { SetMode(Mode.HUNT); return; }
     Vector3D away = dist > 1 ? rel / dist : -_rc.WorldMatrix.Forward;
     Vector3D side = Vector3D.Cross(away, _rc.WorldMatrix.Up); side = side.LengthSquared() > 0.01 ? Vector3D.Normalize(side) : _rc.WorldMatrix.Right;
-    Vector3D want = Vector3D.Normalize(away + side * 0.4) * MaxSpeed * 0.6;
+    Vector3D want = Vector3D.Normalize(away + side * 0.4) * MathHelper.Clamp(Vector3D.Dot(myVel, away), MaxSpeed * 0.6, MaxSpeed);
     want = FaWant(want, me);
     Vector3D need = (want - myVel) * Gain - g;
     Vector3D nose = need.LengthSquared() > 0.01 ? Vector3D.Normalize(need) : _rc.WorldMatrix.Forward;
     Burn(need, nose, fmax, mass, dt);
-    _status = "EXTEND " + dist.ToString("0") + " / " + run.ToString("0") + " m  rams " + _rams;
+    _status = "EXTEND " + dist.ToString("0") + " / " + run.ToString("0") + " m  rams " + _rams + Missed();
 }
 
 // fly home at 40 m/s, flip-and-burn stop inside 50 m, then idle
@@ -833,6 +846,9 @@ bool Healthy()
     return _rc != null && _fwd.Count > 0 && w * 2 >= _fwd.Count && gy > 0;
 }
 
+bool NoseCam() { foreach (var c in _cams) if (c.IsWorking && Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.9) return true; return false; }
+string Missed() { return _misses > 0 ? "  MISSED " + _misses : ""; }
+
 void Aim(Vector3D desired, double dt)
 {
     MatrixD m = _rc.WorldMatrix, inv = MatrixD.Transpose(m);
@@ -851,11 +867,15 @@ void Aim(Vector3D desired, double dt)
     }
 }
 
-// fire every warhead (arming any that is not armed yet) and stop
+// fire every warhead (arming any that is not armed yet); the systems sit at the rear, so while the PB still runs the tube comes round
+// for a kinetic ram (EXTEND checks Healthy() every tick and goes IDLE when it fails); the blocks are re-scanned for 2 s
 void Boom(string why)
 {
     foreach (var w in _heads) { if (!w.IsArmed) w.IsArmed = true; w.Detonate(); }
-    _status = "DETONATED: " + why; AiOff(); SetMode(Mode.IDLE);
+    _heads.Clear(); _armed = false; _rams++; _boomT = _now;
+    _status = "DETONATED: " + why; AiOff();
+    SetMode(ReAttack && (MaxRams == 0 || _rams < MaxRams) ? Mode.EXTEND : Mode.IDLE);
+    if (_mode == Mode.IDLE) Release();
 }
 void Disarm() { foreach (var w in _heads) w.IsArmed = false; _armed = false; }
 void Release()
@@ -869,7 +889,7 @@ void Show()
 {
     string tl = _tgt != null ? (_rangeNow.ToString("0") + " m  closing " + _closeNow.ToString("0") + " m/s  tgo " + _tgoNow.ToString("0.0") + " s") : "none";
     int w = 0; foreach (var t in _fwd) if (t.IsWorking) w++;
-    string s = "TUBE RAM v" + VER + "\nMode: " + _mode + (Docked() ? "  (docked)" : "") + "\nTarget : " + tl + "\nSpeed: " + (_rc != null ? _rc.GetShipVelocities().LinearVelocity.Length().ToString("0") : "-") + " m/s   Rams: " + _rams +
+    string s = "TUBE RAM v" + VER + "\nMode: " + _mode + (Docked() ? "  (docked)" : "") + "\nTarget : " + tl + "\nSpeed: " + (_rc != null ? _rc.GetShipVelocities().LinearVelocity.Length().ToString("0") : "-") + " m/s   Rams: " + _rams + Missed() +
                "\nThrusters: " + w + " / " + _fwd.Count + "\nContacts: " + _contacts.Count + (_heads.Count > 0 ? "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") : "") +
                "\n" + (_fc != "" ? "1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago\n" : "") + AiGateStatus() + _status + "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
     if (_lcd != null) _lcd.WriteText(s);
