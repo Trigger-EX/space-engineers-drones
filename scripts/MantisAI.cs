@@ -79,6 +79,7 @@ double DodgeSmall = 8, DodgeLarge = 3, DodgeChar = 4; // assumed evasive accel f
 double RangeMargin = 0.95;   // never plan shots beyond this fraction of weapon range
 double MinEngage = 250;      // closest the railgun will choose to fight
 double EngageCap = 650;      // never plan to sit further than this (keeps the gatling in range); 0 = railgun range
+double EngageCapHuge = 1350, HugeTargetRadius = 38;   // against huge grids (radius over 38 m, e.g. the Tech Hunter; the sim Pirate is under it) sit at railgun range instead (charge test 2026-10-14, docs/sim-pending-2026-10-14.md: a lone Mantis vs a 100 m/s Tech Hunter survived 0 % at 650 m, 94-95 % at 1,300-1,400 m, 2.5x the damage); 0 = use Engage Cap
 bool UseGatling = true;
 double GatSpeed = 800, GatRange = 760, GatTol = 1.0; // gatling bullet speed (data: 800 m/s, 800 m), fire range, window multiplier
 double ForcedRange = 0;      // >0 overrides automatic range
@@ -1015,6 +1016,7 @@ void LoadConfig()
     RangeMargin = Cfg(S, "Range Margin", RangeMargin);
     MinEngage = Cfg(S, "Min Engage Range", MinEngage);
     EngageCap = Cfg(S, "Engage Cap", EngageCap);
+    EngageCapHuge = Cfg(S, "Engage Cap vs Huge Grids", EngageCapHuge);
     UseGatling = Cfg(S, "Use Gatling", UseGatling);
     GatSpeed = Cfg(S, "Gatling Projectile Speed", GatSpeed);
     GatRange = Cfg(S, "Gatling Range", GatRange);
@@ -1432,8 +1434,9 @@ Vector3D Home()
 double EngageRange(Track t)
 {
     double cap = WeaponRange * RangeMargin;
-    if (EngageCap > 0) cap = Math.Min(cap, EngageCap);
     if (ForcedRange > 0) return Math.Min(ForcedRange, WeaponRange * RangeMargin);
+    if (EngageCapHuge > 0 && t.Radius > HugeTargetRadius) return Math.Min(cap, EngageCapHuge);
+    if (EngageCap > 0) cap = Math.Min(cap, EngageCap);
     double floor = t.Type == MyDetectedEntityType.SmallGrid ? DodgeSmall : t.Type == MyDetectedEntityType.LargeGrid ? DodgeLarge : DodgeChar;
     double a = Math.Max(floor, t.PeakAcc * 1.2);
     double miss = HitFraction * t.Radius;

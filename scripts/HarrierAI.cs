@@ -74,6 +74,7 @@ string Tag = "HARRIER";
 string CueTag = "DRONE_CUE"; // shared threat-cue channel (same tuple as <Tag>_TGT)
 double ProjSpeed = 800;      // m/s  gatling bullet (Weapons/Ammos data: 800 m/s, 800 m)
 double MaxFireRange = 700;   // gatling rounds vanish at 800 m; accuracy falls with flight time
+double StandoffHuge = 700, HugeTargetRadius = 38;   // against huge grids (bounding radius over 38 m, e.g. the Tech Hunter; the sim Pirate is under it) stay at the edge of the gun range (charge test 2026-10-14, docs/sim-pending-2026-10-14.md: lone drone vs a 100 m/s charge, 700 m lost 62-65 % of blocks instead of about 80 %, dealt 15-25 % more)
 double Standoff = 250;       // preferred engage distance
 double SmallStandoffFrac = 0.7; // standoff multiplier against small contacts (radius < 8 m)
 double MinRange = 40;        // never closer than this
@@ -999,6 +1000,7 @@ void LoadConfig()
     InheritVel = Cfg(S, "Projectiles Inherit Ship Velocity", InheritVel);
     MaxFireRange = Cfg(S, "Max Fire Range", MaxFireRange);
     Standoff = Cfg(S, "Standoff Range", Standoff);
+    StandoffHuge = Cfg(S, "Standoff Range vs Huge Grids", StandoffHuge);
     SmallStandoffFrac = Cfg(S, "Small Target Standoff Fraction", SmallStandoffFrac);
     SmallBonus = Cfg(S, "Target Priority Small Bonus", SmallBonus);
     LargePenalty = Cfg(S, "Target Priority Large Penalty", LargePenalty);
@@ -1415,7 +1417,7 @@ void PruneAndSelect()
     _tgt = best;
 }
 
-double StandoffFor(Track t) { return t.Radius < 8 ? Math.Max(MinRange * 1.5, Standoff * SmallStandoffFrac) : Standoff; }
+double StandoffFor(Track t) { return t.RawMax > HugeTargetRadius ? StandoffHuge : t.Radius < 8 ? Math.Max(MinRange * 1.5, Standoff * SmallStandoffFrac) : Standoff; }
 
 Vector3D Home()
 {

@@ -15,15 +15,15 @@ HELM = ("[Link]\\nBlock Prefix=[SH]\\n\\n[Shrike]\\nIGC Tag=BALLISTA\\nAI Block 
 
 # design -> (fleet/model name, how to set the value, lowest, highest usable, step, why the top is what it is)
 DESIGNS = [
-    ('Hornet',    'cd:Hornet:Standoff Range',                 200, 700, 100, 'gatling, script Max Fire Range 700'),
-    ('Harrier',   'cd:Harrier:Standoff Range',                200, 700, 100, 'gatling, Max Fire Range 700'),
-    ('Lancer',    'cd:Lancer:Standoff Range',                 200, 750, 100, 'autocannon, Max Fire Range 750'),
-    ('Wasp',      'cd:Wasp:Standoff Range',                   100, 420, 50,  'rockets, Max Fire Range 420'),
+    ('Hornet',    'cd:Hornet:Standoff Range vs Huge Grids',   200, 700, 100, 'gatling, script Max Fire Range 700 (the Tech Hunter is a huge grid: "Standoff Range vs Huge Grids", default 700 since 2026-10-14)'),
+    ('Harrier',   'cd:Harrier:Standoff Range vs Huge Grids',  200, 700, 100, 'gatling, Max Fire Range 700 (huge-grid key, default 700)'),
+    ('Lancer',    'cd:Lancer:Standoff Range vs Huge Grids',   200, 750, 100, 'autocannon, Max Fire Range 750 (huge-grid key, default 700)'),
+    ('Wasp',      'cd:Wasp:Standoff Range (unlimited rockets)', 150, 650, 50, 'rockets; the sim gives no rocket inventory, so the script runs its unlimited-rockets doctrine (Max Fire Range 650, standoff default 350); "Standoff Range" is only read with a known stock'),
     ('Aegis',     'cd:Aegis:Standoff Range vs Huge Grids',    200, 780, 100, 'gatling, Max Fire Range vs Huge Grids 780 (Tech Hunter is a huge grid)'),
     ('Basilisk',  'cd:Basilisk:Standoff Range vs Huge Grids', 200, 800, 100, 'rockets, Max Fire Range vs Huge Grids 800'),
     ('Longbow S', 'cd:Longbow:Forced Range (0: auto)',        400, 1400, 100, 'small railgun 1400 m'),
     ('Longbow L', 'cd:Longbow:Forced Range (0: auto)',        400, 2000, 100, 'large railgun 2000 m'),
-    ('Mantis',    'cd:Mantis:Forced Range (0: auto)',         300, 1400, 100, 'small railgun 1400 m (default Engage Cap 650 only limits the automatic range)'),
+    ('Mantis',    'cd:Mantis:Forced Range (0: auto)',         300, 1400, 100, 'small railgun 1400 m (Forced Range beats the automatic range; since 2026-10-14 the automatic range vs huge grids is Engage Cap vs Huge Grids 1350)'),
     ('Ballista',  'helm',                                     800, 1700, 100, '27 large railguns, Helm weapon range 0.85 x 2000 m'),
 ]
 
