@@ -123,13 +123,14 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
 def gnat(lite=False):
     name = "Gnat Lite" if lite else "Gnat"
     bp = gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite)
-    # one blank PB reserved for the Staff half (FLEET LINK + LAUNCH leave GnatSwarmAI, 87 k minified; docs/design/pb_headroom.md); in gnat(), not gnat_frame: the Stinger fallback shares the frame.
-    # Placed by hand on the tail (armour seat, then the PB): the generic spare search would pick a cell off the 2 x 2 hull.
+    # two PBs (docs/design/gnat_split.md): the frame's PB is the Flight half (GnatSwarmAI), the Staff half (FLEET LINK + LAUNCH, GnatStaffAI) sits on the tail.  No [Thrust] PB: point-and-burn.
+    # In gnat(), not gnat_frame: the Stinger fallback shares the frame.  Placed by hand on the tail (armour seat, then the PB): the generic spare search would pick a cell off the 2 x 2 hull.
     import pods
+    for b in bp.blocks:
+        if b['xtype'] == spares.PB_X: b['name'] = f"[Flight] {name} PB"
     zs = 3
     bp.armor(0, 0, 2, RED)
-    spares.check_name(f"[Spare] {name} PB 2")
-    pods.orient_attached(bp, spares.PB_X, "SmallProgrammableBlock", (0, 0, zs), name=f"[Spare] {name} PB 2", kind="ctrl", color=RED)
+    pods.orient_attached(bp, spares.PB_X, "SmallProgrammableBlock", (0, 0, zs), name=f"[Staff] {name} PB", kind="ctrl", color=RED, extra=pb_extra(script_text("GnatStaffAI.cs")))
     bp.validate()
     return bp
 

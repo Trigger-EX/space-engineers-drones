@@ -1,5 +1,5 @@
 // =====================================================================
-//  GNAT SWARM AI  v1.12 - minimal "point-and-burn" swarm drone
+//  GNAT SWARM AI  v1.14 - minimal "point-and-burn" swarm drone (FLIGHT half of a two-PB drone: FLEET LINK and LAUNCH run in the "[Staff] ..." PB, scripts/GnatStaffAI.cs; docs/design/gnat_split.md)
 //  Space Engineers (vanilla, small grid). Paste into a Programmable Block.
 // ---------------------------------------------------------------------
 //  The drone only has thrusters on its nose axis (one forward, one
@@ -49,7 +49,7 @@
 //   before impact; spare camera rays track the swarm and the tracks are shared with the hive. Own [Kamikaze Defence] Custom Data section.
 // =====================================================================
 
-const string VER = "1.13+launch";
+const string VER = "1.14-gnat-split";
 
 // ---------------- settings (Custom Data) ----------------
 string Tag = "GNAT";
@@ -93,7 +93,6 @@ double _now = 0; long _tick = 0;
 Vector3D _home; bool _homeSet = false, _ready = false;
 Vector3D _dynHome; double _dynHomeT = -99;
 Vector3D _hvP, _homeV; double _hvT = -99;   // carrier velocity from successive home fixes (FORM / RTB feed-forward)
-IMyBroadcastListener _lHomeR2; string _lHomeR2Key = null;   // "<fleet>_HOMER" (carrier radius from any link)
 
 IMyShipController _rc;
 List<IMyGyro> _gyros = new List<IMyGyro>();
@@ -174,98 +173,6 @@ string _err = "";
 double _aimErrDeg, _latSpd, _avgMs; int _peakIns = 0;   // PB limit is Runtime.MaxInstructionCount per run
 StringBuilder _sb = new StringBuilder();
 
-// >>> FLEET LINK v1.0 (shared block: identical in every drone script and carrier relay, see docs/hive-protocol.md) >>>
-// A common IGC channel for ALL drone types, used IN ADDITION to the per-type tags (HORNET_TGT, GNAT_CMD, ...), which are untouched.
-//   <ch>_TGT   MyTuple<long id, Vector3D pos, Vector3D vel, double radius, long sender>   same tuple as <TAG>_TGT; radius < 0 = finished
-//   <ch>_HOME  Vector3D (rally point)        <ch>_CMD  string (one command, e.g. "hunt", "rtb", "launch")
-// <ch> = Channel, plus "_" + Secret when a secret is set (IGC reaches every PB in antenna range, so use a secret in multiplayer).
-// Own [Fleet] section in Custom Data (defaults are written on first run, "reload" re-reads them):
-//   Channel=FLEET   Secret=   Listen Tags=   Extra Broadcast Tags=FLEET   Accept Commands=true   Allowed Commands=...   Accept Home=true
-// Script hooks (the only lines a script needs): FleetLoad(true) after LoadConfig(); FleetPump(Command, home setter) in ReadIGC();
-// drain every listener in FleetTgtL with the same handler as _lTgt (skip a message when !FleetOk(d)); FleetSend(tuple) next to each
-// IGC.SendBroadcastMessage(Tag + "_TGT", ...) (shares and radius -1 "finished" messages).
-List<IMyBroadcastListener> FleetTgtL = new List<IMyBroadcastListener>();   // target listeners (fleet channel + Listen Tags)
-IMyBroadcastListener _flCmd, _flHome;
-List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
-List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
-string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
-bool _flCmdOn = true, _flHomeOn = true;
-
-string FleetTag(string t, string ch)
-{
-    t = t.Trim();
-    if (t.Length == 0) return "";
-    if (t.ToUpperInvariant() == "FLEET") return ch == "" ? "" : ch + "_TGT";
-    return t.IndexOf('_') >= 0 ? t : t.ToUpperInvariant() + "_TGT";
-}
-
-void FleetLoad(bool listen)
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Fleet";
-    if (!ini.ContainsKey(S, "Channel")) ini.Set(S, "Channel", "FLEET");
-    if (!ini.ContainsKey(S, "Secret")) ini.Set(S, "Secret", "");
-    if (!ini.ContainsKey(S, "Listen Tags")) ini.Set(S, "Listen Tags", "");
-    if (!ini.ContainsKey(S, "Extra Broadcast Tags")) ini.Set(S, "Extra Broadcast Tags", "FLEET");
-    if (!ini.ContainsKey(S, "Accept Commands")) ini.Set(S, "Accept Commands", true);
-    if (!ini.ContainsKey(S, "Allowed Commands")) ini.Set(S, "Allowed Commands", _flAllowed);
-    if (!ini.ContainsKey(S, "Accept Home")) ini.Set(S, "Accept Home", true);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    string ch = ini.Get(S, "Channel").ToString("FLEET").Trim().ToUpperInvariant().Replace(" ", "");
-    string sec = ini.Get(S, "Secret").ToString("").Trim().Replace(" ", "");
-    if (ch != "" && sec != "") ch = ch + "_" + sec;
-    _flChan = ch;
-    _flCmdOn = ini.Get(S, "Accept Commands").ToBoolean(true);
-    _flHomeOn = ini.Get(S, "Accept Home").ToBoolean(true);
-    _flAllowed = ini.Get(S, "Allowed Commands").ToString(_flAllowed).ToLowerInvariant();
-    var tin = new List<string>(); var tout = new List<string>();
-    if (ch != "") tin.Add(ch + "_TGT");
-    foreach (var t in ini.Get(S, "Listen Tags").ToString("").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tin.Contains(x)) tin.Add(x); }
-    foreach (var t in ini.Get(S, "Extra Broadcast Tags").ToString("FLEET").Split(',')) { string x = FleetTag(t, ch); if (x != "" && !tout.Contains(x)) tout.Add(x); }
-    _flOut = tout;
-    string key = string.Join("|", tin.ToArray()) + "#" + ch + "#" + (listen ? "1" : "0");
-    if (key == _flKey) return;
-    _flKey = key;
-    foreach (var l in _flAll) IGC.DisableBroadcastListener(l);
-    _flAll.Clear(); FleetTgtL.Clear(); _flCmd = null; _flHome = null;
-    if (!listen) return;
-    foreach (var x in tin) { var l = IGC.RegisterBroadcastListener(x); _flAll.Add(l); FleetTgtL.Add(l); }
-    if (ch != "")
-    {
-        _flCmd = IGC.RegisterBroadcastListener(ch + "_CMD"); _flAll.Add(_flCmd);
-        _flHome = IGC.RegisterBroadcastListener(ch + "_HOME"); _flAll.Add(_flHome);
-    }
-}
-
-bool FleetV(Vector3D v) { return Math.Abs(v.X) < 1e9 && Math.Abs(v.Y) < 1e9 && Math.Abs(v.Z) < 1e9; }   // false for NaN and absurd values
-bool FleetOk(MyTuple<long, Vector3D, Vector3D, double, long> d)
-{
-    return d.Item1 != Me.CubeGrid.EntityId && FleetV(d.Item2) && FleetV(d.Item3) && d.Item4 < 1e5 && !double.IsNaN(d.Item4);
-}
-
-void FleetPump(Action<string> onCmd, Action<Vector3D> onHome)
-{
-    while (_flCmd != null && _flCmd.HasPendingMessage)
-    {
-        var m = _flCmd.AcceptMessage();
-        if (!_flCmdOn || !(m.Data is string)) continue;
-        string c = ((string)m.Data).Trim().ToLowerInvariant();
-        int sp = c.IndexOf(' '); string w = sp < 0 ? c : c.Substring(0, sp);
-        if (w.Length > 0 && ("," + _flAllowed + ",").Contains("," + w + ",")) onCmd(c);
-    }
-    while (_flHome != null && _flHome.HasPendingMessage)
-    {
-        var m = _flHome.AcceptMessage();
-        if (_flHomeOn && m.Data is Vector3D && FleetV((Vector3D)m.Data)) onHome((Vector3D)m.Data);
-    }
-}
-
-void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { foreach (var t in _flOut) IGC.SendBroadcastMessage(t, tup); }
-void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_HOME", p); }
-void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
-// <<< FLEET LINK <<<
 
 // >>> AI GATE v1.1 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
 // The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
@@ -698,268 +605,6 @@ string KzStatus()
 }
 // <<< KAMIKAZE DEFENCE <<<
 
-// >>> LAUNCH v1.1 (shared block: identical in every drone script, see docs/launch-protocol.md) >>>
-// Automatic take-off for drones that were printed on (merged to) a printer. A drone must leave and start working WITHOUT depending on one message:
-//   * it notices on its own that the merge pair opened (no connected merge block on its grid any more, or the grid changed) and then
-//   * burns away from the printer for "Burst Seconds" (gyros held at zero rate, thrusters pushed along the Away vector, dampeners off),
-//   * clears the merge/antenna/thruster/gyro/battery switches that welding may have left off, and
-//   * switches the script into its configured mode (the script's Start Mode, or [Launch] Mode when that is IDLE).
-// Other triggers that do the same: Custom Data [Launch] Armed=true while the PB is not docked (a PB recompiled after the release),
-// the argument "armed" (printer arms it while the drone is still on its grid), the argument "launch", a "<Tag>_JOIN" broadcast or a
-// FLEET "<ch>_CMD" string "join" (only for an IDLE, complete, undocked drone), and a docked -> undocked change seen by the PB itself.
-// Custom Data (own [Launch] section; defaults are written on the first run, "reload" re-reads them):
-//   Auto=true  Burst Seconds=4  Away X/Y/Z=0 (world vector away from the printer, zero = unknown)  Armed=false  Clear Distance=8
-//   Max Speed=25  Mode=GUARD
-// Script hooks (the only lines a script needs): LaunchLoad() after LoadConfig() and FleetLoad() (constructor and "reload"); in Command():
-//   case "armed": case "launch": case "disarm": LaunchCmd(word); break;   at the very top of Control(dt) (or the tick, before any thrust):
-//   if (LaunchStep(dt, <mode is IDLE>, StartMode, <home known>, <home point>, Command)) return;    LaunchStatus() in the display text.
-// The block needs the script's fields: Tag (IGC tag) and _flChan (FLEET LINK block); everything else is its own.
-const string LnSec = "Launch";
-int _lnS;                                   // 0 free, 1 docked and armed (waiting for the separation), 2 take-off burn, 3 launched
-bool _lnFused, _lnAuto = true, _lnArmed, _lnHold, _lnForce, _lnLocOk, _lnDock, _lnHomeOk, _lnPending;
-double _lnBurst = 4, _lnClear = 8, _lnSpeed = 25, _lnClock, _lnT, _lnJoinT = -999;
-string _lnModeCfg = "GUARD", _lnMsg = "", _lnJKey = "";
-Vector3D _lnAwayCfg, _lnAwayLoc, _lnDir, _lnP0, _lnHome;
-IMyCubeGrid _lnGrid;
-long _lnTick; int _lnFree, _lnWait;
-IMyBroadcastListener _lnJ1, _lnJ2;
-List<IMyShipMergeBlock> _lnMg = new List<IMyShipMergeBlock>();
-List<IMyThrust> _lnThr = new List<IMyThrust>();
-List<IMyGyro> _lnGy = new List<IMyGyro>();
-IMyShipController _lnCtl;
-
-void LaunchLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    if (!ini.ContainsKey(LnSec, "Auto")) ini.Set(LnSec, "Auto", true);
-    if (!ini.ContainsKey(LnSec, "Burst Seconds")) ini.Set(LnSec, "Burst Seconds", _lnBurst);
-    if (!ini.ContainsKey(LnSec, "Away X")) ini.Set(LnSec, "Away X", 0.0);
-    if (!ini.ContainsKey(LnSec, "Away Y")) ini.Set(LnSec, "Away Y", 0.0);
-    if (!ini.ContainsKey(LnSec, "Away Z")) ini.Set(LnSec, "Away Z", 0.0);
-    if (!ini.ContainsKey(LnSec, "Armed")) ini.Set(LnSec, "Armed", false);
-    if (!ini.ContainsKey(LnSec, "Clear Distance")) ini.Set(LnSec, "Clear Distance", _lnClear);
-    if (!ini.ContainsKey(LnSec, "Max Speed")) ini.Set(LnSec, "Max Speed", _lnSpeed);
-    if (!ini.ContainsKey(LnSec, "Mode")) ini.Set(LnSec, "Mode", _lnModeCfg);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    _lnAuto = ini.Get(LnSec, "Auto").ToBoolean(true);
-    _lnBurst = MathHelper.Clamp(ini.Get(LnSec, "Burst Seconds").ToDouble(4), 0.5, 20);
-    _lnClear = MathHelper.Clamp(ini.Get(LnSec, "Clear Distance").ToDouble(8), 1, 200);
-    _lnSpeed = MathHelper.Clamp(ini.Get(LnSec, "Max Speed").ToDouble(25), 3, 200);
-    _lnModeCfg = ini.Get(LnSec, "Mode").ToString("GUARD");
-    _lnAwayCfg = new Vector3D(ini.Get(LnSec, "Away X").ToDouble(0), ini.Get(LnSec, "Away Y").ToDouble(0), ini.Get(LnSec, "Away Z").ToDouble(0));
-    if (ini.Get(LnSec, "Armed").ToBoolean(false)) _lnArmed = true;
-    string fl = _flChan != "" ? _flChan + "_CMD" : "";
-    string key = Tag + "|" + fl;
-    if (key != _lnJKey)
-    {
-        _lnJKey = key;
-        if (_lnJ1 != null) IGC.DisableBroadcastListener(_lnJ1);
-        if (_lnJ2 != null) IGC.DisableBroadcastListener(_lnJ2);
-        _lnJ1 = IGC.RegisterBroadcastListener(Tag + "_JOIN");
-        _lnJ2 = fl != "" ? IGC.RegisterBroadcastListener(fl) : null;
-    }
-}
-
-void LnWrite(bool armed)
-{
-    var ini = new MyIni(); MyIniParseResult r;
-    if (!ini.TryParse(Me.CustomData, out r)) return;
-    ini.Set(LnSec, "Armed", armed);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-}
-
-void LaunchCmd(string w)
-{
-    switch (w)
-    {
-        case "armed": LaunchLoad(); _lnHold = false; _lnArmed = true; LnWrite(true); if (_lnS == 3) _lnS = 0; break;
-        case "launch": if (_lnS < 2) _lnForce = true; break;
-        case "disarm": _lnHold = true; _lnArmed = false; _lnForce = false; if (_lnS == 1) _lnS = 0; LnWrite(false); break;
-    }
-}
-
-void LnRead()
-{
-    if (_lnJ1 != null) while (_lnJ1.HasPendingMessage) { _lnJ1.AcceptMessage(); _lnJoinT = _lnClock; }
-    if (_lnJ2 != null)
-        while (_lnJ2.HasPendingMessage)
-        {
-            var m = _lnJ2.AcceptMessage();
-            if (m.Data is string && ((string)m.Data).Trim().ToLowerInvariant() == "join") _lnJoinT = _lnClock;
-        }
-}
-
-// is a merge pair of this grid locked? Also learns the direction away from the partner block (the block of the pair nearest to the PB is the drone's).
-bool LnDocked()
-{
-    var g = Me.CubeGrid;
-    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g && b.IsConnected);
-    if (_lnMg.Count == 0) return false;
-    if (_lnMg.Count >= 2)
-    {
-        Vector3D me = Me.GetPosition(); IMyShipMergeBlock d = null, p = null; double best = double.MaxValue;
-        foreach (var m in _lnMg) { double q = (m.GetPosition() - me).LengthSquared(); if (q < best) { best = q; d = m; } }
-        best = double.MaxValue;
-        foreach (var m in _lnMg) if (m != d) { double q = (m.GetPosition() - d.GetPosition()).LengthSquared(); if (q < best) { best = q; p = m; } }
-        Vector3D a = d.GetPosition() - p.GetPosition();
-        if (a.LengthSquared() > 1e-4) { a.Normalize(); _lnAwayLoc = Vector3D.TransformNormal(a, MatrixD.Transpose(Me.WorldMatrix)); _lnLocOk = true; }
-    }
-    return true;
-}
-
-// every terminal block of the grid works and there is a thruster and a controller: a half-built drone must not take off on a stray "join"
-bool LnComplete()
-{
-    var g = Me.CubeGrid; var l = new List<IMyTerminalBlock>(); bool thr = false, ctl = false;
-    GridTerminalSystem.GetBlocksOfType(l, b => b.CubeGrid == g);
-    foreach (var b in l) { if (!b.IsFunctional) return false; if (b is IMyThrust) thr = true; if (b is IMyShipController) ctl = true; }
-    return thr && ctl;
-}
-
-// welded blocks may come off: switch on what the flight needs, the merge block off (it must never re-latch)
-void LnPrep()
-{
-    var g = Me.CubeGrid;
-    _lnThr.Clear(); _lnGy.Clear(); _lnCtl = null;
-    GridTerminalSystem.GetBlocksOfType(_lnThr, b => b.CubeGrid == g);
-    GridTerminalSystem.GetBlocksOfType(_lnGy, b => b.CubeGrid == g);
-    foreach (var t in _lnThr) if (!t.Enabled) t.Enabled = true;
-    foreach (var y in _lnGy) if (!y.Enabled) y.Enabled = true;
-    var bats = new List<IMyBatteryBlock>(); GridTerminalSystem.GetBlocksOfType(bats, b => b.CubeGrid == g);
-    foreach (var b in bats) { if (!b.Enabled) b.Enabled = true; if (b.ChargeMode != ChargeMode.Auto) b.ChargeMode = ChargeMode.Auto; }
-    var ants = new List<IMyRadioAntenna>(); GridTerminalSystem.GetBlocksOfType(ants, b => b.CubeGrid == g);
-    foreach (var a in ants) { if (!a.Enabled) a.Enabled = true; if (!a.EnableBroadcasting) a.EnableBroadcasting = true; }
-    var guns = new List<IMyUserControllableGun>(); GridTerminalSystem.GetBlocksOfType(guns, b => b.CubeGrid == g);
-    foreach (var b in guns) if (!b.Enabled) b.Enabled = true;
-    var cams = new List<IMyCameraBlock>(); GridTerminalSystem.GetBlocksOfType(cams, b => b.CubeGrid == g);
-    foreach (var b in cams) if (!b.Enabled) b.Enabled = true;
-    var mgs = new List<IMyShipMergeBlock>(); GridTerminalSystem.GetBlocksOfType(mgs, b => b.CubeGrid == g);
-    foreach (var b in mgs) if (b.Enabled) b.Enabled = false;
-    var ctrls = new List<IMyShipController>(); GridTerminalSystem.GetBlocksOfType(ctrls, b => b.CubeGrid == g && b.CanControlShip);
-    foreach (var c in ctrls) if (c is IMyRemoteControl) { _lnCtl = c; break; }
-    if (_lnCtl == null && ctrls.Count > 0) _lnCtl = ctrls[0];
-}
-
-// the release is only complete when the grid has split (and this grid is no printer): while the printer's merge block is still on this grid the thrusters/gyros found here may be the printer's
-bool LnReady()
-{
-    var g = Me.CubeGrid;
-    // still fused to a printer (the Hive Mother PB or a [Bay block is on this grid): the thrusters and gyros found here are the printer's, never burn
-    var pr = new List<IMyTerminalBlock>(); GridTerminalSystem.GetBlocksOfType(pr, b => b.CubeGrid == g && b != Me && (b.CustomName.Contains("[Bay") || (b is IMyProgrammableBlock && b.CustomData.Contains("[Hive Mother]"))));
-    _lnFused = pr.Count > 0; if (_lnFused) return false;
-    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g);
-    if (_lnMg.Count < 2 || ++_lnWait > 9) return true;       // (gives up waiting after ~1.7 s)
-    _lnPending = true; return false;
-}
-
-void LnBegin()
-{
-    _lnWait = 0; _lnPending = false;
-    _lnForce = false; _lnS = 2; _lnT = 0; _lnJoinT = -999;
-    LnPrep();
-    Vector3D me = Me.GetPosition(), d = Vector3D.Zero; string src = "";
-    Vector3D lw = _lnLocOk ? Vector3D.TransformNormal(_lnAwayLoc, Me.WorldMatrix) : Vector3D.Zero;
-    if (_lnAwayCfg.LengthSquared() > 0.25 && !(_lnLocOk && Vector3D.Dot(Vector3D.Normalize(_lnAwayCfg), lw) < -0.2)) { d = _lnAwayCfg; src = "Custom Data"; }   // (a stored vector that points INTO the printer is ignored)
-    else if (_lnLocOk) { d = lw; src = "merge pair"; }
-    else if (LnOwnMerge(me, ref d)) src = "own merge block";
-    else if (_lnHomeOk && (me - _lnHome).LengthSquared() > 25) { d = me - _lnHome; src = "home point"; }
-    else { d = _lnCtl != null ? _lnCtl.WorldMatrix.Backward : Me.WorldMatrix.Backward; src = "own back"; }
-    _lnDir = Vector3D.Normalize(d); _lnP0 = me;
-    _lnMsg = "away from " + src;
-}
-
-// no printer information: the drone's own merge block sits on the side that faced the printer, so "from the merge block to the centre of mass" points away from it
-bool LnOwnMerge(Vector3D me, ref Vector3D d)
-{
-    var g = Me.CubeGrid;
-    GridTerminalSystem.GetBlocksOfType(_lnMg, b => b.CubeGrid == g);
-    if (_lnMg.Count == 0 || _lnCtl == null) return false;
-    IMyShipMergeBlock mb = _lnMg[0];
-    foreach (var m in _lnMg) if ((m.GetPosition() - me).LengthSquared() < (mb.GetPosition() - me).LengthSquared()) mb = m;
-    Vector3D v = _lnCtl.CenterOfMass - mb.GetPosition();
-    if (v.LengthSquared() < 0.09) return false;
-    d = v; return true;
-}
-
-// one tick of the take-off: true = the script must not fly this tick
-bool LnBurn(double dt, bool idle, string startMode, Action<string> cmd)
-{
-    _lnT += dt;
-    double moved = Vector3D.Dot(Me.GetPosition() - _lnP0, _lnDir);
-    double vAway = _lnCtl != null ? Vector3D.Dot(_lnCtl.GetShipVelocities().LinearVelocity, _lnDir) : 0;
-    if (_lnT >= _lnBurst || (_lnT >= 0.5 && moved >= _lnClear && vAway > 1))
-    {
-        foreach (var t in _lnThr) t.ThrustOverridePercentage = 0;
-        foreach (var y in _lnGy) { y.GyroOverride = false; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }
-        if (_lnCtl != null) _lnCtl.DampenersOverride = true;
-        _lnS = 3; _lnArmed = false; LnWrite(false);
-        string m = startMode.Trim().ToUpperInvariant();
-        if (m == "" || m == "IDLE") m = _lnModeCfg.Trim().ToUpperInvariant();
-        _lnMsg = "took off (" + _lnMsg + ", " + moved.ToString("0") + " m, " + _lnT.ToString("0.0") + " s), mode " + m;
-        if (idle && m != "" && m != "IDLE") { cmd("home"); cmd(m.ToLowerInvariant()); }
-        return false;
-    }
-    bool cut = vAway >= _lnSpeed;
-    double best = -2;
-    foreach (var t in _lnThr) if (t.IsFunctional) best = Math.Max(best, Vector3D.Dot(t.WorldMatrix.Backward, _lnDir));
-    if (best <= 0.3 && best > -0.2)
-    {   // no thruster pushes (nearly) along Away (e.g. a ship with only fore/aft thrusters and a sideways Away): burn along the best thruster axis, which is perpendicular to Away, never toward the printer
-        Vector3D alt = Vector3D.Zero; double ab = -2;
-        foreach (var t in _lnThr) if (t.IsFunctional) { double q = Vector3D.Dot(t.WorldMatrix.Backward, _lnDir); if (q > ab) { ab = q; alt = t.WorldMatrix.Backward; } }
-        if (alt.LengthSquared() > 0.5) { _lnDir = Vector3D.Normalize(alt); _lnP0 = Me.GetPosition(); best = 1; _lnMsg += ", thrust axis"; }
-    }
-    if (best < 0) best = 0;
-    foreach (var t in _lnThr)
-    {
-        double c = t.IsFunctional ? Vector3D.Dot(t.WorldMatrix.Backward, _lnDir) : 0;
-        t.ThrustOverridePercentage = (!cut && best > 0.3 && c > 0.15) ? (float)Math.Max(0.01, c / best) : 0f;
-    }
-    foreach (var y in _lnGy) { y.GyroOverride = true; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }   // hold the attitude: a zero rate command
-    if (_lnCtl != null) _lnCtl.DampenersOverride = false;
-    return true;
-}
-
-bool LaunchStep(double dt, bool idle, string startMode, bool homeOk, Vector3D home, Action<string> cmd)
-{
-    _lnTick++; _lnClock += dt;
-    _lnHomeOk = homeOk; _lnHome = home;
-    LnRead();
-    if (_lnS == 2) return LnBurn(dt, idle, startMode, cmd);
-    if (_lnS == 3) return false;
-    bool changed = Me.CubeGrid != _lnGrid;
-    bool join = _lnClock - _lnJoinT < 3;                     // the printer repeats "join" every 2 s
-    if (!(changed || (_lnForce && _lnTick % 10 == 0) || _lnTick % (_lnS == 1 || _lnPending ? 10 : 60) == 0 || (join && _lnTick % 10 == 0))) return false;   // (never more than 6 checks a second)
-    _lnGrid = Me.CubeGrid;
-    _lnDock = LnDocked(); _lnPending = false;
-    if (_lnS == 0)
-    {
-        if (_lnDock)
-        {
-            if (!_lnHold) { _lnS = 1; _lnFree = 0; if (!_lnArmed) { _lnArmed = true; LnWrite(true); } }
-            return false;
-        }
-        if (_lnHold && !_lnForce) return false;
-        bool go = _lnForce || (_lnAuto && (_lnArmed || (join && idle && LnComplete())));
-        if (go && LnReady()) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); }
-        return false;
-    }
-    if (_lnDock) { _lnFree = 0; return false; }              // state 1: still locked
-    if (++_lnFree < 2 && !changed) return false;             // (two checks in a row, so that one odd reading does not launch)
-    if (_lnAuto || _lnForce) { if (LnReady()) { LnBegin(); return LnBurn(dt, idle, startMode, cmd); } return false; }
-    _lnS = 0;                                                // Auto=false: wait for the "launch" command
-    return false;
-}
-
-string LaunchStatus()
-{
-    if (_lnS == 1) return "Launch: docked, waiting for the release\n";
-    if (_lnS == 2) return "Launch: take-off burn " + _lnT.ToString("0.0") + " s\n";
-    if (_lnS == 3) return _lnMsg != "" ? "Launch: " + _lnMsg + "\n" : "";
-    if (_lnFused) return "Launch: held, this grid holds a printer\n";
-    return _lnArmed ? "Launch: armed\n" : "";
-}
-// <<< LAUNCH <<<
 
 void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }   // a failing setup step must not kill the script for good: the rest still runs and the error is on the screen
 
@@ -1043,6 +688,66 @@ Vector3D FaWant(Vector3D want, Vector3D me)
 }
 // <<< FRIENDLY AVOIDANCE v1.0 <<<
 
+// >>> SPLIT LINK v1.0 (shared block: identical in every Flight half of a two-PB drone, synced by tools/split_sync.py, see docs/design/wasp_split.md) >>>
+// Flight side of the Flight/Staff link; the Staff PB (scripts/<Drone>StaffAI.cs) has the other end. Everything that is not on the hot path lives there:
+// FLEET LINK, FOLLOW / SATELLITE geometry, LAUNCH (take-off burn), the status screen. IGC key "WSPL" + this PB's EntityId, TransmissionDistance.CurrentConstruct.
+// Script hooks: LkInit() with the other listener setup; ReadIGC(); LkRead(); LkSend() in the tick; "if (!LkBurn && !AiStep()) Control(dt)"; "if (LkBurn) return;" first in Control();
+// LkWantOk/_lkWant/LkFar/LkBack/LkEngage/_lkOwner/_lkOwnerP in the FOLLOW code; ReadTgt(_lkTgt); LkAmmo() = the script's ammo count (0-254, 255 unknown).
+// Uses: _now, _tick, _mode, _firing, _aiOn, UnderFire, LockStale, _tgt, _aimErrDeg, _fireWinDeg, _batFrac, _gateWhy, _dynHome, _dynHomeT, MaxSpeed, ParseMode, Command.
+string _lkK = ""; IMyBroadcastListener _lkFol, _lkCmd, _lkTgt;
+Vector3D _lkWant, _lkOwnerP, _lkOwnerV; double _lkEng = 800, _lkLeash = 1200, _lkT = -99, _aBrake = 5; int _lkFl, _lkMd = -9; bool _lkOwner;
+bool LkAlive { get { return _now - _lkT < 1.0; } }                       // the Staff PB talks (a FOL at least every 0.5 s)
+bool LkBurn { get { return LkAlive && (_lkFl & 4) != 0; } }              // Staff flies the take-off burn: Flight lets go of the ship
+bool LkWantOk { get { return LkAlive && (_lkFl & 1) != 0; } }
+double LkEngage { get { return LkAlive ? _lkEng : 800; } }
+void LkInit()
+{
+    _lkK = "WSPL" + Me.EntityId;
+    _lkFol = IGC.RegisterBroadcastListener(_lkK + ".FOL"); _lkCmd = IGC.RegisterBroadcastListener(_lkK + ".S2F"); _lkTgt = IGC.RegisterBroadcastListener(_lkK + ".TGT");
+}
+bool LkFar(Vector3D me) { double l = LkAlive ? _lkLeash : 1200; return _lkOwner && Vector3D.DistanceSquared(me, _lkOwnerP) > l * l; }
+Vector3D LkBack(Vector3D me) { Vector3D d = _lkOwnerP - me; return _lkOwnerV + (d.LengthSquared() > 1 ? Vector3D.Normalize(d) * MaxSpeed : Vector3D.Zero); }
+void LkRead()
+{
+    while (_lkFol.HasPendingMessage)
+    {
+        var m = _lkFol.AcceptMessage();
+        if (!(m.Data is MyTuple<Vector3D, Vector3D, Vector3D, Vector3D, Vector3D, int>)) continue;
+        var d = (MyTuple<Vector3D, Vector3D, Vector3D, Vector3D, Vector3D, int>)m.Data;
+        _lkWant = d.Item1; _lkFl = d.Item6; _lkT = _now; _lkEng = Math.Max(50, d.Item5.X); _lkLeash = Math.Max(_lkEng, d.Item5.Y);
+        if ((_lkFl & 1) != 0) { _lkOwner = true; _lkOwnerP = d.Item2; _lkOwnerV = d.Item3; }
+        if ((_lkFl & 8) != 0) { _dynHome = d.Item4; _dynHomeT = _now; }
+    }
+    while (_lkCmd.HasPendingMessage)
+    {
+        var m = _lkCmd.AcceptMessage();
+        if (!(m.Data is string)) continue;
+        string v = ((string)m.Data).Trim().ToLowerInvariant();
+        if (ParseMode(v.Split(' ')[0], (Mode)(-1)) == _mode) continue;   // a mode verb that changes nothing (a PB argument reaches both PBs)
+        Command(v);
+    }
+}
+void LkSend()
+{
+    int md = (int)_mode;
+    if (md == _lkMd && _tick % 12 != 5) return;
+    _lkMd = md;
+    int f = md | (_firing ? 8 : 0) | (UnderFire ? 16 : 0) | (LockStale ? 32 : 0) | (_aiOn ? 64 : 0) | (LkAmmo() < 0 ? 255 : Math.Min(254, LkAmmo())) << 8;
+    var t = _tgt;
+    IGC.SendBroadcastMessage(_lkK + ".F2S", new MyTuple<int, long, Vector3D, Vector3D, float, string>(f, t != null ? t.Id : 0, t != null ? t.P(_now) : Vector3D.Zero,
+        new Vector3D(_aimErrDeg, _fireWinDeg, _aBrake), (float)_batFrac, LkGate()), TransmissionDistance.CurrentConstruct);
+}
+
+// FLEET LINK stubs: the fleet channel is the Staff PB's (WaspStaffAI.cs); target shares go to it on .FLT, fleet targets come back on .TGT
+bool FleetV(Vector3D v) { return Math.Abs(v.X) < 1e9 && Math.Abs(v.Y) < 1e9 && Math.Abs(v.Z) < 1e9; }
+bool FleetOk(MyTuple<long, Vector3D, Vector3D, double, long> d) { return FleetV(d.Item2) && FleetV(d.Item3) && d.Item4 < 1e5 && !double.IsNaN(d.Item4); }
+void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { if (LkAlive) IGC.SendBroadcastMessage(_lkK + ".FLT", tup, TransmissionDistance.CurrentConstruct); }
+// <<< SPLIT LINK <<<
+int LkAmmo() { return -1; }   // the Gnat has no ammo count: the Staff shows "?"
+string LkGate() { return ""; }
+double _fireWinDeg;       // firing window of the last aim (the SPLIT LINK sends it)
+IMyBroadcastListener _lkHmr;   // "<fleet channel>_HOMER" relayed by the Staff (the carrier radius), see ReadIGC
+
 public Program()
 {
     try
@@ -1052,7 +757,7 @@ public Program()
     catch (Exception ex) { CtorErr("config", ex); }
     try
     {
-        FleetLoad(true); LaunchLoad(); KzLoad(); AiGateLoad();
+        KzLoad(); AiGateLoad();
     }
     catch (Exception ex) { CtorErr("modules", ex); }
     try
@@ -1070,6 +775,7 @@ public Program()
     {
         _lTgt = IGC.RegisterBroadcastListener(Tag + "_TGT");
         _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
+        LkInit(); _lkHmr = IGC.RegisterBroadcastListener(_lkK + ".HMR");
         _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
         _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
         _lHit = IGC.RegisterBroadcastListener(Tag + "_HIT");
@@ -1096,7 +802,9 @@ Mode ParseMode(string s, Mode d)
 {
     switch (s.Trim().ToUpperInvariant())
     {
-        case "SATELLITE": case "SAT": case "ORBIT": SatOn = true; return Mode.FORM; case "IDLE": return Mode.IDLE; case "FORM": return Mode.FORM; case "ATTACK": return Mode.ATTACK; case "RTB": return Mode.RTB;
+        case "SATELLITE": case "SAT": case "ORBIT": if ((int)d == -1) return SatOn && !_ready ? Mode.FORM : (Mode)(-2); SatOn = true; return Mode.FORM;      // (d == -1: the Staff link asks whether the verb changes nothing)
+        case "FORM": case "GUARD": if ((int)d == -1) return !SatOn && !_ready ? Mode.FORM : (Mode)(-2); return Mode.FORM;
+        case "IDLE": return Mode.IDLE; case "ATTACK": case "HUNT": return Mode.ATTACK; case "RTB": return Mode.RTB;
         default: return d;
     }
 }
@@ -1119,10 +827,10 @@ bool Hot() { return Runtime.CurrentInstructionCount > Runtime.MaxInstructionCoun
 void Tick(string arg, UpdateType src)
 {
     if ((src & (UpdateType.Trigger | UpdateType.Terminal | UpdateType.Script | UpdateType.Mod)) != 0 && !string.IsNullOrWhiteSpace(arg))
-        Command(arg);
+        { Command(arg); if (_lkK != "") IGC.SendBroadcastMessage(_lkK + ".CMD", arg, TransmissionDistance.CurrentConstruct); }   // (the Staff PB handles launch / armed / disarm / reload)
     if ((src & UpdateType.Update1) == 0) return;
     double dt = Runtime.TimeSinceLastRun.TotalSeconds;
-    if (dt <= 0 || dt > 0.5) dt = 1.0 / 60.0;
+    if (dt <= 0 || dt > 0.5) { if (dt > 0.5 && _tick > 3) { _aiOn = !_aiOn; _firing = false; } dt = 1.0 / 60.0; }   // run gap (PB was off / halted): the Staff watchdog may have switched the AI blocks off, so force the next pass to send the AI and gun state again
     _now += dt; _tick++;
     _avgMs = _avgMs * 0.98 + Runtime.LastRunTimeMs * 0.02;
 
@@ -1131,7 +839,7 @@ void Tick(string arg, UpdateType src)
     if (_rc == null || !_rc.IsFunctional || !_rc.IsSameConstructAs(Me)) { _err = "No working Remote Control"; if (!_rcOut || _tick % 60 == 0) { _rcOut = true; GetBlocks(); Display(); Release(); } return; }   // (not on this construct = a severed piece: same as no controller; look for another one at 1 Hz)
     _rcOut = false;
 
-    ReadIGC();
+    ReadIGC(); LkRead();
     if (!Hot()) StepSlimScan();
     if ((_tick & 1) == 1) CheckDamage();   // every 2nd tick: the drone turns fast, the hit direction must be read in its attitude of the moment
     if (_tick % 6 == 0) { Broadcast(); PollDesignators(); }
@@ -1145,8 +853,8 @@ void Tick(string arg, UpdateType src)
     if (raid) { if (!Hot()) RaidScan(); }
     else if (_tgt == null && !_aiOn && AutoScan && _mode != Mode.IDLE && _mode != Mode.RTB && !Hot()) AutoScanStep();
     if (_tgt != null && _tgt.Src != "IGC" && _now - _tgt.Seen < 1.0 && _tick % 30 == 0 && !Hot()) ShareTarget();
-    if (LaunchStep(dt, _mode == Mode.IDLE, StartMode, _dynHomeT > 0, _dynHome, Command)) { }   // automatic take-off after the release from a printer (LAUNCH block); Command('guard') = join the hive
-    else if (!AiStep()) Control(dt);
+    if (!LkBurn && !AiStep()) Control(dt);      // (LkBurn: the Staff PB flies the take-off burn, LAUNCH block)
+    LkSend();
     _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % 30 == 0) Display();
 }
@@ -1174,8 +882,7 @@ void Command(string a)
         case "focus": SplitFocus = false; break;
         case "ready": SatOn = false; SetMode(Mode.FORM); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _ready = true; } break;   // READY: hold this spot (the carrier link's HOME is ignored), scan all round, fight when something comes, come back
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
-        case "reload": LoadConfig(); FleetLoad(true); LaunchLoad(); KzLoad(); AiGateLoad(); GetBlocks(); break;
-        case "armed": case "launch": case "disarm": LaunchCmd(w[0]); break;
+        case "reload": LoadConfig(); KzLoad(); AiGateLoad(); GetBlocks(); break;
     }
 }
 void SetMode(Mode m) { _mode = m; _ready = false; _run = Run.SETUP; if (m == Mode.IDLE) Release(); }
@@ -1280,7 +987,7 @@ void GetBlocks()
         {
             double d = Vector3D.Dot(t.WorldMatrix.Backward, nose); // thrust pushes opposite its exhaust
             if (d > 0.9) _fwdThr.Add(t); else if (d < -0.9) _revThr.Add(t);
-            else t.ThrustOverridePercentage = 0;          // off-axis thrusters are left alone
+            else if (!LkBurn) t.ThrustOverridePercentage = 0;          // off-axis thrusters are left alone (not under the Staff's take-off burn)
         }
     }
     if (_fwdThr.Count == 0 && _revThr.Count == 0) _err = "No thrusters on the nose axis";
@@ -1346,9 +1053,9 @@ void ReadIGC()
         if ((d.Item5 & 4) != 0 && _tgt != null && _tgt.Id == d.Item4 && _tgt.Src != "IGC" && _now - _tgt.Seen < 0.4 && _now - _lastStaleShare > 0.3)
         { _lastStaleShare = _now; ShareTarget(); }
     }
-    for (int li = -1; li < _lFeed.Count + FleetTgtL.Count; li++)
+    for (int li = -1; li <= _lFeed.Count; li++)
     {
-        var lt = li < 0 ? _lTgt : li < _lFeed.Count ? _lFeed[li] : FleetTgtL[li - _lFeed.Count];
+        var lt = li < 0 ? _lTgt : li < _lFeed.Count ? _lFeed[li] : _lkTgt;
         while (lt.HasPendingMessage)
         {
             var m = lt.AcceptMessage();
@@ -1371,14 +1078,8 @@ void ReadIGC()
     }
     while (_lCmd.HasPendingMessage) { var m = _lCmd.AcceptMessage(); if (m.Data is string) Command((string)m.Data); }
     while (_lHome.HasPendingMessage) { var m = _lHome.AcceptMessage(); if (m.Data is Vector3D) { _dynHome = (Vector3D)m.Data; _dynHomeT = _now; } }
-    FleetPump(Command, p => { _dynHome = p; _dynHomeT = _now; });
     while (_lHomeR.HasPendingMessage) { var m = _lHomeR.AcceptMessage(); if (m.Data is double) { _homeR = (double)m.Data; _homeRT = _now; } }
-    if (_lHomeR2Key != _flChan)
-    {
-        if (_lHomeR2 != null) IGC.DisableBroadcastListener(_lHomeR2);
-        _lHomeR2 = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_HOMER") : null; _lHomeR2Key = _flChan;
-    }
-    while (_lHomeR2 != null && _lHomeR2.HasPendingMessage) { var m = _lHomeR2.AcceptMessage(); if (m.Data is double) { _homeR = (double)m.Data; _homeRT = _now; } }
+    while (_lkHmr.HasPendingMessage) { var m = _lkHmr.AcceptMessage(); if (m.Data is double) { _homeR = (double)m.Data; _homeRT = _now; } }
     if (_dynHomeT > _hvT)
     {   // a new home fix: the carrier's velocity from the last one (a jump over 150 m/s is another carrier or a respawn, not speed)
         double hd = _dynHomeT - _hvT;
@@ -1649,7 +1350,7 @@ void Control(double dt)
     double mass = _rc.CalculateShipMass().PhysicalMass;
     double aMax = Math.Max(1, Math.Max(AxisThrust(_fwdThr), AxisThrust(_revThr)) * _powerScale / mass);
     Vector3D sep = Separation(me);
-    bool fire = false; _aimErrDeg = 0; _latSpd = 0;
+    bool fire = false; _aimErrDeg = 0; _fireWinDeg = 0; _latSpd = 0;
 
     if (_tgt == null && _raidActive && RaidDir().LengthSquared() > 0.5)
     {   // fan run along the bearing of the incoming fire (see HIT BEARING + RAID)
@@ -1736,6 +1437,7 @@ void Control(double dt)
         Aim(nose, los, dt);
         Axial(Vector3D.Dot(accel, _ref.WorldMatrix.Forward) * mass);
         _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(_ref.WorldMatrix.Forward, aimDir), -1, 1)) * 57.2958;
+        _fireWinDeg = win;
         fire = inRange && _aimErrDeg < win && _now - _tgt.Seen < FireStaleMax && LineClear(gunPos, aimDir, dist);
     }
     else
@@ -1907,7 +1609,7 @@ void Display()
     _sb.Append("Ins  : ").Append(Runtime.CurrentInstructionCount).Append(" / ").Append(Runtime.MaxInstructionCount).Append("  peak ").Append(_peakIns).Append('\n');
     if (_sensors.Count > 0 && _sensorSetupMissing > 0) _sb.Append("! Sensor: set ranges to max + Detect Enemy\n");
     _sb.Append(HiveStatus()); _sb.Append(KzStatus());
-    _sb.Append(LaunchStatus());
+    _sb.Append("Staff : ").Append(LkAlive ? "ok" : "none").Append('\n');
     if (_tgt == null && _raidActive) _sb.Append("RAID bearing ").Append(_axisSpread.ToString("0")).Append(" deg spread, pass ").Append(_raidPass + 1).Append('\n');
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner\n");
     if (_err != "") _sb.Append("! ").Append(_err).Append('\n');

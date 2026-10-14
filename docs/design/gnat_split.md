@@ -1,6 +1,6 @@
 # Gnat Split: GnatSwarmAI.cs over two Programmable Blocks (Flight + Staff)
 
-Status: **plan only, nothing implemented** (2026-10-14). Pattern: `docs/design/wasp_split.md` (Wasp Split) and the Hornet/Lancer/Harrier/Aegis/Mantis/Longbow splits
+Status: **implemented** (2026-10-14): `GnatSwarmAI.cs` 1.14-gnat-split is the Flight half (76,374 minified), new `GnatStaffAI.cs` the Staff half (22,386); `split_flight.py` / `make_staff.py` have a Gnat path; the Staff PB sits on the tail where the reserved spare was (the 2 x 2 hull rework c94b316 moved it to (0,0,3)). Not done from this plan: the C# `selftest gsplit` (the checks were run by hand instead). Sim, same seeds before / after: `1v1/Gnat-vs-Hornet` 10 seeds bit-identical (0 wins / 5 losses / 5 timeouts), `swarm/6xGnat-vs-Hornet` 5 seeds same outcomes (3 wins / 2 timeouts), `dock_launch_test.sh Gnat` all 10 cases pass, `printer-test --fault none` OK (the `ARM: drone PB not visible` line is the stand-in printer, the same as before), `killpb Staff` leaves the Flight fighting unchanged, `killpb Flight` gives `FLIGHT PB DOWN`, Staff `satellite` then `form` / `hunt` then `guard` switch the Flight's ring on and off. Not run in the game. Release zips not rebuilt. Pattern: `docs/design/wasp_split.md` (Wasp Split) and the Hornet/Lancer/Harrier/Aegis/Mantis/Longbow splits
 (51f75cd, a27fd45). Rules: CLAUDE.md "Script size". Release zips are not rebuilt by this work.
 
 ## 0. Numbers (measured with `tools/minify_cs.py` on HEAD c77eb80)

@@ -1,3 +1,6 @@
+### v2.7 (unreleased): Gnat split over two PBs
+- `GnatSwarmAI.cs` (87.2k) is now the Flight half (76.4k: everything that aims, steers and fires, the hive channel, its full status screen); new `GnatStaffAI.cs` (22.4k: fleet link, take-off burn after a printer release, watchdog, fleet carrier radius `.HMR` and the fleet home once per fix) sits on the tail (`[Staff] Gnat PB`). No `[Thrust]` PB (point-and-burn). `docs/design/gnat_split.md`. Sim: combat bit-identical (1v1 vs Hornet, 10 seeds), dock-launch and printer tests pass. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): Basilisk split over two PBs
 - `BasiliskAI.cs` (95.5k) is now the Flight half (82.1k: tracking, lead, rockets, aim, KZ, avoidance, AI gate, thrust link); new `BasiliskStaffAI.cs` (23k: fleet link, FOLLOW/SATELLITE, status screen, watchdog; no LAUNCH, the ship has no merge block) sits in the `[Staff] Basilisk PB` cell; the `[Thrust]` PB comes from build_all. Basilisk and Basilisk Seeker. `docs/design/basilisk_split.md`. Sim: combat bit-identical to the single-PB ship (1v1 vs Hornet, 10 seeds); follow-test and kill-PB runs as before. Release zips NOT rebuilt.
 
