@@ -45,10 +45,13 @@ class TubeTests(unittest.TestCase):
             W, H = SECTION[n]
             latch = [b for b in bp.blocks if b['kind'] == 'merge']
             self.assertEqual(len(latch), 1)
-            thr = [b for b in bp.blocks if b['kind'] == 'thr']
+            allthr = [b for b in bp.blocks if b['kind'] == 'thr']
+            thr = [b for b in allthr if b['fwd'] == 'Backward']          # the main bank: one per section cell, exhaust aft
             self.assertEqual(len(thr), W * H, n)
-            for b in thr:
-                self.assertEqual(b['sub'], 'SmallBlockSmallThrust'); self.assertEqual(b['fwd'], 'Backward')
+            for b in allthr: self.assertEqual(b['sub'], 'SmallBlockSmallThrust')
+            side = {d: [b for b in allthr if b['fwd'] == d] for d in ('Up', 'Down', 'Left', 'Right')}
+            for d, l in side.items(): self.assertGreaterEqual(len(l), 1, f'{n}: no side thruster exhausting {d}')
+            self.assertEqual(len(allthr), len(thr) + sum(len(l) for l in side.values()), f'{n}: a thruster that is neither main nor side (no reverse thrust)')
             occ = bp.occupancy()
             for (x, y, z), b in occ.items():
                 if y < 0: continue                      # the docking latch below the tail
@@ -60,10 +63,13 @@ class TubeTests(unittest.TestCase):
                         self.assertTrue(b['sub'] == tube.HEAVY or b['kind'] == 'cam', f'{n}: nose cell {(x, y, z)} is {b["name"]}')
             self.assertTrue(any(b['kind'] == 'cam' and b['fwd'] == 'Forward' for b in bp.blocks), n)
             acc, m = C.twr(bp)
-            self.assertGreaterEqual(acc['Forward'], 15, n)
-            for d in ('Backward', 'Up', 'Down', 'Left', 'Right'): self.assertEqual(acc[d], 0, n)
+            self.assertGreaterEqual(acc['Forward'], 13, n)            # the 2x2 is the slowest (13.8 m/s2 with its side thrusters and the extra batteries they need)
+            self.assertEqual(acc['Backward'], 0, n)                        # no reverse thrust
+            for d in ('Up', 'Down', 'Left', 'Right'): self.assertGreater(acc[d], 1.5, n)   # recessed side thrusters
             st = C.stats_db()
             need = sum(st[b['key']]['stats']['max_power_mw'] for b in thr)
+            grp = sorted((sum(st[b['key']]['stats']['max_power_mw'] for b in l) for l in side.values()), reverse=True)
+            need += grp[0] + grp[1]          # full forward burn while pushing sideways on both cross axes (never two opposite sides)
             bats = sum(st[b['key']]['stats']['max_output_mw'] for b in bp.blocks if b['kind'] == 'bat')
             self.assertGreaterEqual(bats, 1.05 * need, n)
 

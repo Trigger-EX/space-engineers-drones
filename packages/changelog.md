@@ -3,6 +3,7 @@
 - **New models** `Tube 2x2`, `Tube 2x4`, `Tube 3x3`, `Tube 4x4` (`tools/designs/tube.py`, small grid, 3.2 to 12.4 t, 18 to 20 m/s2 forward): armoured box with a solid heavy-armour nose, one ion thruster per rear cell, merge latch, no weapon. Plan and results: `docs/design/tube_drones.md`.
 - **New script** `scripts/TubeRamAI.cs` v1.0 (22 k minified, one PB; FLEET LINK + FRIENDLY AVOIDANCE blocks). Rams at full speed with proportional navigation, aborts a run when a friend is in the way, backs off and re-rams.
 - The tubes carry AI Offensive + AI Flight blocks (`[AI]`); `TubeRamAI` has a SEARCH mode (AI GATE block + camera confirm rays, as the Gnat) so a launched tube finds a target alone.
+- Recessed side thrusters on every tube (push up / down / left / right, nozzles flush with the hull, no reverse): `TubeRamAI` corrects its path with them instead of turning its flank to the target; the nose stays on the target in the terminal phase. Tubes are 0.5 m longer and 0.7 to 1.4 t heavier.
 - Sim: `CollisionFineProbe` (mixed grid sizes: the finer grid is the probe; small ships no longer slip through a large ship), a `TubeRamAI` ship counts as combat-capable, ad-hoc `ram/` scenarios are cued like `kamikaze`. Zips not rebuilt. Nothing about tube ramming is verified in the game.
 =======
 ### v2.7 (unreleased): Gnat split over two PBs

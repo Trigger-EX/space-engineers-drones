@@ -318,16 +318,27 @@ Do **not** add the tubes to `golden_hashes.json` until the owner has pasted them
 
 Built with the plan's defaults for the open questions (closed box, 2x4 = 4 wide x 2 tall, no warhead, small grid only, no rack). **Q4 was answered by the owner afterwards: the tubes carry AI Offensive + AI Flight blocks so they find targets alone** (see "AI blocks" below); the owner can still change any of them.
 
-**Blueprints** (`python3 -I tools/designs/tube.py`, all PASS, forward acceleration only):
+**Blueprints** (`python3 -I tools/designs/tube.py`, all PASS; no reverse thrust):
 
-| Model | Blocks | Mass | Forward accel | Size (m) |
+| Model | Blocks | Mass | Accel forward / each side | Size (m) |
 |---|--:|--:|--:|---|
-| Tube 2x2 | 29 | 3,440 kg | 16.7 m/s2 | 1.0 x 2.0 x 4.0 |
-| Tube 2x4 | 48 | 6,105 kg | 18.9 m/s2 | 2.0 x 2.0 x 4.5 |
-| Tube 3x3 | 56 | 6,642 kg | 19.5 m/s2 | 1.5 x 2.5 x 4.5 |
-| Tube 4x4 | 128 | 12,715 kg | 18.1 m/s2 | 2.0 x 3.0 x 5.0 |
+| Tube 2x2 | 33 | 4,177 kg | 13.8 / 3.4 m/s2 | 1.0 x 2.0 x 5.0 |
+| Tube 2x4 | 56 | 7,073 kg | 16.3 / 4.1 m/s2 | 2.0 x 2.0 x 5.5 |
+| Tube 3x3 | 70 | 7,326 kg | 17.7 / 2.0 m/s2 | 1.5 x 2.5 x 5.5 |
+| Tube 4x4 | 152 | 14,129 kg | 16.3 / 2.0 m/s2 | 2.0 x 3.0 x 6.0 |
 
 `build_all.py --no-zip --only "Tube 2x2" ...` : 4 PASS, 0 FAIL. Tests: `tools/tests/test_tube.py` (4 tests, OK). `blocks_sync.py --check` green.
+
+**Side thrusters (owner request: "they have to turn their sides to a target to turn with only one thrust direction"):** every tube has two
+extra layers in front of the service layer holding recessed side thrusters: small ion thrusters lying inside the hull with the nozzle flush
+with the outer face, pushing up, down, left and right; never reverse (it still brakes by flipping). One per direction on the 2x2 and 3x3,
+two per direction on the 2x4 and 4x4. Power covers the full main bank plus the two cross axes at once: the 2x2 got 2 more small batteries
+(7, 1.4 MW), the 4x4 one small battery next to its 4 MW one. Cost: each tube is 0.5 m longer and 0.7 to 1.4 t heavier; forward
+acceleration drops 2 to 3 m/s2 (2x2 now 13.8 m/s2, 100 m/s in about 7 s). `TubeRamAI` sorts the thrusters by push direction (`_side`):
+`Burn()` gives the sideways part of the wanted push to the side thrusters while the nose turns; in TERM the proportional-navigation
+correction goes to the side thrusters first (`SideScale`), and only what they cannot push tilts the nose, so the nose stays on the target.
+Sim, 1 seed each (same scenarios as before, not enough for a direction): 6 Tube 2x2 vs a Basilisk 3 contacts / 11.2 kHP (before 1 / 3.7 kHP),
+4 Tube 3x3 2 / 3.7 kHP (before 3 / 12.3 kHP), 4 Tube 4x4 1 / 2.6 kHP (before 1 / 7.6 kHP), 2 Tube 2x4 beat a Gnat; no script exceptions.
 
 **AI blocks (owner request after the first build):** every tube has an `AI Offensive [AI]` and an `AI Flight [AI]` block in place of two light-armour cells (about +270 kg). `TubeRamAI` gets a SEARCH mode: on `launch` with no target it hands the ship to the AI blocks (shared AI GATE block: switches AI Behavior on, time-shares with a script spin if the AI does nothing), the nose cameras confirm what the AI points at with boresight / spiral rays (Gnat pattern), and the first valid contact or IGC cue takes the ship back for HUNT. It returns to SEARCH when it loses its target. Sim (1 seed, start distance 800 to 1200 m because the sim's AI search radius is 2,500 m): the AI blocks switch on and find a Basilisk, HUNT starts; at the default 3,000 m spawn distance an AI-only ship never sees the enemy in the sim (same for the Hornet). The AI blocks' real in-game behaviour is still unverified (HANDOFF section 3).
 

@@ -40,6 +40,7 @@ IMyShipController _rc;
 List<IMyGyro> _gyros = new List<IMyGyro>();
 List<IMyThrust> _fwd = new List<IMyThrust>();
 List<IMyThrust> _thr = new List<IMyThrust>();
+List<IMyThrust>[] _side = { new List<IMyThrust>(), new List<IMyThrust>(), new List<IMyThrust>(), new List<IMyThrust>() };   // recessed side thrusters by push direction: ship Right, Left, Up, Down
 List<IMyWarhead> _heads = new List<IMyWarhead>();
 List<IMyCameraBlock> _cams = new List<IMyCameraBlock>();
 List<IMySensorBlock> _sensors = new List<IMySensorBlock>();
@@ -400,7 +401,17 @@ void GetBlocks()
     foreach (var c in _cams) c.EnableRaycast = true;
     FindAi();
     _fwd.Clear();
-    if (_rc != null) foreach (var t in _thr) if (Vector3D.Dot(t.WorldMatrix.Backward, _rc.WorldMatrix.Forward) > 0.9) _fwd.Add(t);
+    foreach (var l in _side) l.Clear();
+    if (_rc != null) foreach (var t in _thr)
+    {
+        Vector3D p = t.WorldMatrix.Backward;   // a thruster pushes along its Backward
+        MatrixD m = _rc.WorldMatrix;
+        if (Vector3D.Dot(p, m.Forward) > 0.9) _fwd.Add(t);
+        else if (Vector3D.Dot(p, m.Right) > 0.9) _side[0].Add(t);
+        else if (Vector3D.Dot(p, m.Left) > 0.9) _side[1].Add(t);
+        else if (Vector3D.Dot(p, m.Up) > 0.9) _side[2].Add(t);
+        else if (Vector3D.Dot(p, m.Down) > 0.9) _side[3].Add(t);
+    }
     _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.8f;
 }
 
@@ -600,16 +611,21 @@ void Hunt(double dt)
         Vector3D losRate = Vector3D.Cross(rel, tv - myVel) / Math.Max(dist * dist, 1);
         Vector3D aLat = Vector3D.Cross(losRate, los) * (NavGain * Math.Max(closing, 20));
         aLat -= g - Vector3D.Dot(g, vHat) * vHat;
-        double lm = Math.Min(aLat.Length(), amax * 0.95);
-        if (aLat.Length() > lm && lm > 0) aLat = Vector3D.Normalize(aLat) * lm;
+        // the side thrusters take what they can of aLat (the nose stays on the target); only the rest tilts the nose
+        Vector3D sf = _rc.WorldMatrix.Forward, side = aLat - Vector3D.Dot(aLat, sf) * sf;
+        side *= SideScale(side, mass);
+        Vector3D aTilt = aLat - side;
+        double lm = Math.Min(aTilt.Length(), amax * 0.95);
+        if (aTilt.Length() > lm && lm > 0) aTilt = Vector3D.Normalize(aTilt) * lm;
         double along = Math.Sqrt(Math.Max(amax * amax - lm * lm, 0));
         Vector3D dir = myVel.Length() > 5 ? Vector3D.Normalize(myVel) : los;
         if (myVel.Length() < MaxSpeed * 0.9) dir = Vector3D.Normalize(dir + los);   // below the cap: lean along the line of sight
-        nose = Vector3D.Normalize(dir * along + aLat);
+        nose = Vector3D.Normalize(dir * along + aTilt);
         Aim(nose, dt);
         double al = Vector3D.Dot(nose, _rc.WorldMatrix.Forward);
         float pct = al > 0.9 && myVel.Length() < MaxSpeed * 1.02 ? 1f : 0.001f;
         foreach (var t in _fwd) t.ThrustOverridePercentage = pct;
+        Lateral(side, mass);   // the line-of-sight correction goes to the side thrusters first, so the nose can stay on the target
         _rc.DampenersOverride = false;
         // warheads (only when the player fitted some): arm in the terminal phase, never near home
         bool clear = Vector3D.Distance(me, _launchPos) > SafeDistance;
@@ -722,10 +738,39 @@ void Rtb(double dt)
     _status = "RTB " + dist.ToString("0") + " m";
 }
 
-// point-and-burn: nose along the needed push; burn only the aligned part
+// the recessed side thrusters push the sideways part of an acceleration `acc` (m/s2) without turning the flank to the target
+void Lateral(Vector3D acc, double mass)
+{
+    MatrixD m = _rc.WorldMatrix;
+    Vector3D[] dir = { m.Right, m.Left, m.Up, m.Down };
+    for (int k = 0; k < 4; k++)
+    {
+        double cap = 0; foreach (var t in _side[k]) if (t.IsWorking) cap += t.MaxEffectiveThrust / mass;
+        double a = Math.Max(0, Vector3D.Dot(acc, dir[k]));
+        float pct = cap > 0 ? (float)MathHelper.Clamp(a / cap, 0, 1) : 0;
+        foreach (var t in _side[k]) t.ThrustOverridePercentage = Math.Max(pct, 0.001f);
+    }
+}
+
+// the share (0..1) of the sideways acceleration `acc` the working side thrusters can push
+double SideScale(Vector3D acc, double mass)
+{
+    MatrixD m = _rc.WorldMatrix; double s = 1;
+    double[] c = { Vector3D.Dot(acc, m.Right), Vector3D.Dot(acc, m.Up) };
+    for (int k = 0; k < 2; k++)
+    {
+        if (Math.Abs(c[k]) < 1e-3) continue;
+        double cap = 0; foreach (var t in _side[k * 2 + (c[k] > 0 ? 0 : 1)]) if (t.IsWorking) cap += t.MaxEffectiveThrust / mass;
+        s = Math.Min(s, cap / Math.Abs(c[k]));
+    }
+    return s;
+}
+
+// point-and-burn: nose along the needed push; burn only the aligned part (the side thrusters take the rest of the push)
 void Burn(Vector3D need, Vector3D nose, double fmax, double mass, double dt)
 {
     if (need.LengthSquared() > 0.01) Aim(nose, dt);
+    Lateral(need, mass);
     double along = Vector3D.Dot(need, _rc.WorldMatrix.Forward), mag = need.Length();
     double gate = mag > 0 ? MathHelper.Clamp((along / mag - 0.8) / 0.2, 0, 1) : 0;
     float pct = fmax > 0 ? (float)MathHelper.Clamp(along * mass / fmax * gate, 0, 1) : 0;
