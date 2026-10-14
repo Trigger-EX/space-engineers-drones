@@ -4,6 +4,7 @@
 - **New script** `scripts/TubeRamAI.cs` v1.0 (22 k minified, one PB; FLEET LINK + FRIENDLY AVOIDANCE blocks). Rams at full speed with proportional navigation, aborts a run when a friend is in the way, backs off and re-rams.
 - The tubes carry AI Offensive + AI Flight blocks (`[AI]`); `TubeRamAI` has a SEARCH mode (AI GATE block + camera confirm rays, as the Gnat) so a launched tube finds a target alone.
 - Recessed side thrusters on every tube (push up / down / left / right, nozzles flush with the hull, no reverse): `TubeRamAI` corrects its path with them instead of turning its flank to the target; the nose stays on the target in the terminal phase. Tubes are 0.5 m longer and 0.7 to 1.4 t heavier.
+- **Warhead tubes** `Tube 2x2 W` / `2x4 W` / `3x3 W` / `4x4 W`: a full layer of small warheads right under the front heavy-armour layer (same size and mass); `TubeRamAI` arms them at the last moment (20 m from the hull or 0.3 s out) and fires them on impact or by the nose camera's contact fuse; one-shot. Sim: 2 to 7 times the damage of the plain tubes against a Basilisk.
 - Sim: `CollisionFineProbe` (mixed grid sizes: the finer grid is the probe; small ships no longer slip through a large ship), a `TubeRamAI` ship counts as combat-capable, ad-hoc `ram/` scenarios are cued like `kamikaze`. Zips not rebuilt. Nothing about tube ramming is verified in the game.
 =======
 ### v2.7 (unreleased): Gnat split over two PBs

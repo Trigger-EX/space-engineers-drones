@@ -10,6 +10,7 @@ import tube                                                          # noqa: E40
 
 SECTION = {"Tube 2x2": (2, 2), "Tube 2x4": (4, 2), "Tube 3x3": (3, 3), "Tube 4x4": (4, 4)}
 CAP = {"Tube 2x2": 2, "Tube 2x4": 3, "Tube 3x3": 3, "Tube 4x4": 4}
+for _b in list(SECTION): SECTION[_b + " W"] = SECTION[_b]; CAP[_b + " W"] = CAP[_b]     # the warhead variants
 
 class TubeTests(unittest.TestCase):
     def setUp(self):
@@ -60,6 +61,7 @@ class TubeTests(unittest.TestCase):
                 for y in range(H):
                     for x in range(W):
                         b = occ[(x, y, z)]
+                        if n.endswith(' W') and z == 1: self.assertEqual(b['sub'], 'SmallWarhead', f'{n}: {(x, y, z)}'); continue
                         self.assertTrue(b['sub'] == tube.HEAVY or b['kind'] == 'cam', f'{n}: nose cell {(x, y, z)} is {b["name"]}')
             self.assertTrue(any(b['kind'] == 'cam' and b['fwd'] == 'Forward' for b in bp.blocks), n)
             acc, m = C.twr(bp)
@@ -72,6 +74,20 @@ class TubeTests(unittest.TestCase):
             need += grp[0] + grp[1]          # full forward burn while pushing sideways on both cross axes (never two opposite sides)
             bats = sum(st[b['key']]['stats']['max_output_mw'] for b in bp.blocks if b['kind'] == 'bat')
             self.assertGreaterEqual(bats, 1.05 * need, n)
+
+    def test_warhead_variants(self):
+        for n, bp in self.bps.items():
+            heads = [b for b in bp.blocks if b['sub'] == 'SmallWarhead']
+            pb = [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_MyProgrammableBlock'][0]
+            if not n.endswith(' W'):
+                self.assertEqual(heads, [], n); self.assertNotIn('Max Rams=1', pb.get('custom_data', ''), n); continue
+            W, H = SECTION[n]
+            self.assertEqual(len(heads), W * H, n)                                   # one full layer...
+            self.assertTrue(all(bp.cells(b)[0][2] == 1 for b in heads), n)       # ...right under the front heavy-armour layer
+            self.assertIn('Max Rams=1', pb.get('custom_data', ''), n)                # one-shot
+            base = self.bps[n[:-2]]
+            self.assertEqual(len(bp.blocks), len(base.blocks), n)                     # same size, a layer swapped
+            self.assertAlmostEqual(C.total_mass(bp), C.total_mass(base), delta=0.05 * C.total_mass(base))
 
     def test_docking_and_script_budget(self):
         for n, bp in self.bps.items():

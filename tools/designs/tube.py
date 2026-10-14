@@ -19,12 +19,12 @@ HEAVY = "SmallHeavyBlockArmorBlock"
 CAP_COL = (0.07, 0.55, 0.10)        # nose cap accent
 HULL_COL = (0.58, -0.78, -0.25)
 
-def tube_frame(name, W, H, cap, body, spec):
+def tube_frame(name, W, H, cap, body, spec, warheads=False):
     """W x H section, `cap` heavy nose layers, `body` layers before the thruster bank (z 0..body-1).  spec = dict with keys
     rc, pb, gyros, ai (AI Offensive cell, AI Flight cell), battery ('s' = one small battery per entry in bats, or 'L' = one 3x2x3 battery at bat_min), nose (cells), left, right, ant (cell, fwd), latch x."""
     bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     script = script_text("TubeRamAI.cs")
-    custom = f"[Tube]\nIGC Tag=TUBE\nBlock Tag={name}\n"
+    custom = f"[Tube]\nIGC Tag=TUBE\nBlock Tag={name}\n" + ("Max Rams=1\n" if warheads else "")
     # maneuver block: two extra layers (z = ins, ins+1) of recessed side thrusters (up, down, left, right; never reverse) go in front of
     # the service layer, so the cells the spec lists at z >= ins shift back by 2 and the body is 2 layers longer
     ins = spec["ins"]; body += 2
@@ -38,10 +38,18 @@ def tube_frame(name, W, H, cap, body, spec):
     a_, af, au = spec["ant"]; spec["ant"] = (sh(a_), af, au)
     # nose cap: heavy armour, cameras flush in the front layer
     nose = set(spec["nose"])
+    # W variants: the second nose layer (z = 1) is a full layer of small warheads right under the front heavy-armour layer (same mass, same
+    # length); the heavy layers behind it keep the ram mass. Sim A/B, 10 seeds, 4 tubes vs a Basilisk: this layer vs the last cap layer gave
+    # no clear difference (3x3 W 17.2 vs 21.5 kHP, 4x4 W 19.6 vs 15.4 kHP); kept here, closest to the target's hull
+    nw = 0
     for z in range(cap):
         for y in range(H):
             for x in range(W):
                 if z == 0 and (x, y) in nose: continue
+                if warheads and z == 1:
+                    nw += 1
+                    bp.add("MyObjectBuilder_Warhead", "SmallWarhead", (x, y, z), "Forward", "Up", f"{name} Warhead {nw}", (0.98, 0.65, 0.05), kind="warhead")
+                    continue
                 bp.armor(x, y, z, CAP_COL if z == 0 else HULL_COL, sub=HEAVY)
     for i, (x, y) in enumerate(spec["nose"]):
         C.cam(bp, (x, y, 0), "Forward", "Up", f"{name} Camera Nose" + ("" if len(spec["nose"]) == 1 else f" {i+1}"), 3)
@@ -114,10 +122,12 @@ def _variant(name):
     raise KeyError(name)
 
 def build(name):
-    v = _variant(name)
-    return tube_frame(name, v["W"], v["H"], v["cap"], v["body"], v["spec"])
+    w = name.endswith(" W")                         # "Tube 3x3 W": the warhead variant of "Tube 3x3"
+    v = _variant(name[:-2] if w else name)
+    return tube_frame(name, v["W"], v["H"], v["cap"], v["body"], v["spec"], warheads=w)
 
-MODELS = {n: (lambda lite=False, n=n: build(n)) for n in ("Tube 2x2", "Tube 2x4", "Tube 3x3", "Tube 4x4")}
+BASE = ("Tube 2x2", "Tube 2x4", "Tube 3x3", "Tube 4x4")
+MODELS = {n: (lambda lite=False, n=n: build(n)) for n in BASE + tuple(b + " W" for b in BASE)}
 NO_LITE = set(MODELS)
 REQUIRED_AXES = {m: ("Forward", "Up", "Down", "Left", "Right") for m in MODELS}   # no reverse thrust: it brakes by flipping
 DOCS = {
@@ -126,8 +136,13 @@ DOCS = {
     'Tube 3x3': 'Kinetic ram drone, 1.5 x 1.5 m section, 5.5 m long, about 7.3 t, about 18 m/s2 forward and 2 m/s2 sideways: heavy-armour nose, 4 MW battery, 9 main ion thrusters, 4 recessed side thrusters (no reverse). AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
     'Tube 4x4': 'Kinetic ram drone, 2 x 2 m section, 6 m long, about 14.1 t, about 16 m/s2 forward and 2 m/s2 sideways: four-layer heavy-armour nose, 4 MW battery + 1 small, 16 main ion thrusters, 8 recessed side thrusters (2 per side, no reverse), two gyros. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
 }
+_WN = {'Tube 2x2 W': 4, 'Tube 2x4 W': 8, 'Tube 3x3 W': 9, 'Tube 4x4 W': 16}
+for _m, _n in _WN.items():
+    DOCS[_m] = (f'{_m[:-2]} with its second nose layer replaced by {_n} small warheads, right under the front heavy armour (same size and mass): it rams once and fires them on impact '
+                '(velocity jump or the nose camera\'s contact fuse), armed only at the last moment (20 m from the hull or 0.3 s out, because gunfire sets armed warheads off) and never near its launch point.')
 _NOTE = ('Main thrust forward, recessed side thrusters up/down/left/right, no reverse: it brakes by flipping. Finds targets with its AI Offensive / AI Flight blocks (AI Behavior must be on; the in-game behaviour of the AI blocks is unverified) or takes them from the fleet / hive / carrier channels or a player\'s `lock`. Ram damage is not verified in the game.')
 MODEL_NOTES = {m: _NOTE for m in MODELS}
+for _m in _WN: MODEL_NOTES[_m] = _NOTE + ' One-shot (Max Rams=1). The warheads are armed only by the script; keep the tube off friendly ships while it is in its final run.'
 SCRIPTS = ['TubeRamAI.cs']
 
 if __name__ == "__main__":

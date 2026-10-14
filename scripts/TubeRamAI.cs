@@ -13,7 +13,10 @@
 //
 //  Targets: its own nose camera (and a sensor if fitted) and targets shared over antenna by other drones,
 //  carriers and the hive (any of the listed IGC tags). `lock` raycasts what the nose points at.
-//  Warheads are optional: if any block with the Block Tag is a warhead it is armed in TERM only.
+//  Warheads (the "W" tubes carry a layer of them under the nose armour): armed in TERM only, at the last moment (gap to the hull under
+//  Arm Warheads Within, default 20 m, or 0.3 s at the closing speed: gunfire sets armed warheads off) and never
+//  within Safe Distance From Launch of the release point; fired on impact (the velocity jump) or by the contact fuse (the nose camera's
+//  ray says the hull is less than one tick away). Disarmed on an abort or when the tube falls back out of the terminal phase.
 //
 //  SEARCH With no target and AI Offensive / AI Flight blocks tagged [AI] on board, `launch` hands the ship to the AI blocks (AI GATE block:
 //         switches AI Behavior on, time-shares with a script spin if the AI does nothing) and the nose cameras confirm what the AI points at
@@ -25,10 +28,10 @@ const string VER = "1.0";
 
 string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE,TUBE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
 string Tag = "TUBE", BlockTag = "";
-double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 200, SafeDistance = 150, Gain = 2.5;
+double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 20, SafeDistance = 150, Gain = 2.5;
 double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300;
 int MaxRams = 0;
-bool AiSearch = true; double AiConfirmRange = 1300, AiConfirmLong = 2600;
+bool ContactFuse = true, AiSearch = true; double AiConfirmRange = 1300, AiConfirmLong = 2600;
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false, ReAttack = true;
 double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
 
@@ -357,6 +360,7 @@ void LoadConfig()
     AiConfirmLong = C(S, "AI Confirm Long Raycast Range", AiConfirmLong);
     LaunchRange = C(S, "Max Target Distance", LaunchRange);
     ArmRange = C(S, "Arm Warheads Within", ArmRange);
+    ContactFuse = C(S, "Warhead Contact Fuse", ContactFuse);
     SafeDistance = C(S, "Safe Distance From Launch", SafeDistance);
     MaxSpeed = C(S, "Max Speed", MaxSpeed);
     TermTime = C(S, "Terminal Time", TermTime);
@@ -570,6 +574,8 @@ void Hunt(double dt)
 
     // impact: a sudden velocity change, or touching the target while the closing speed has turned
     bool hit = _tick > 5 && (myVel - _prevVel).Length() > ImpactDv && dist < _tgt.Radius + 30;
+    if (hit && _armed) { _rams++; Boom("impact at " + closing.ToString("0") + " m/s"); return; }   // warhead tube: the nose is in the hull, fire now
+    if (_armed && dist - _tgt.Radius > Math.Max(ArmRange, Math.Max(closing, 0) * 0.3) * 2 + 20) Disarm();   // fell back out of the terminal phase (overshoot, lost lock)
     if (hit) { _rams++; Disarm(); _status = "IMPACT " + _rams + " at " + closing.ToString("0") + " m/s";
         if (ReAttack && (MaxRams == 0 || _rams < MaxRams) && Healthy()) SetMode(Mode.EXTEND); else SetMode(Mode.HUNT); return; }
 
@@ -631,7 +637,20 @@ void Hunt(double dt)
         bool clear = Vector3D.Distance(me, _launchPos) > SafeDistance;
         if (_heads.Count > 0)
         {
-            if (!_armed && clear && dist < ArmRange) { foreach (var w in _heads) w.IsArmed = true; _armed = true; }
+            // arm at the last moment (gap to the hull under Arm Warheads Within or 0.3 s at the closing speed): an armed warhead goes off when
+            // gunfire hits it, so arming 200 m out let the target's rockets blow the tube up short of the hull (sim, Basilisk vs Tube 4x4 W)
+            if (!_armed && clear && dist - _tgt.Radius < Math.Max(ArmRange, Math.Max(closing, 0) * 0.3)) { foreach (var w in _heads) w.IsArmed = true; _armed = true; }
+            // contact fuse: the nose camera sits flush in the front face, so its ray measures the gap to the hull ahead; fire when the
+            // nose touches during the next tick (the impact check above only sees the hit a tick later, by the velocity jump)
+            if (_armed && ContactFuse && dist < 100)
+                foreach (var c in _cams)
+                {
+                    if (!c.IsWorking || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.97 || !c.CanScan(45)) continue;
+                    var he = c.Raycast(45);
+                    if (!he.IsEmpty() && he.HitPosition.HasValue && Valid(he) && Vector3D.Distance(he.HitPosition.Value, c.GetPosition()) < Math.Max(1.5, Math.Max(closing, 20) * dt * 1.5))
+                    { Boom("contact at " + closing.ToString("0") + " m/s"); return; }
+                    break;
+                }
         }
         // cannot close: a target running at our speed
         if (closing < 5) { _slowT += dt; if (_slowT > 15) _status = "CANNOT CLOSE"; } else _slowT = 0;
@@ -804,6 +823,12 @@ void Aim(Vector3D desired, double dt)
     }
 }
 
+// fire every warhead (arming any that is not armed yet) and stop
+void Boom(string why)
+{
+    foreach (var w in _heads) { if (!w.IsArmed) w.IsArmed = true; w.Detonate(); }
+    _status = "DETONATED: " + why; AiOff(); SetMode(Mode.IDLE);
+}
 void Disarm() { foreach (var w in _heads) w.IsArmed = false; _armed = false; }
 void Release()
 {
