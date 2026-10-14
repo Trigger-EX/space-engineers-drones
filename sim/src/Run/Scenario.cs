@@ -162,6 +162,7 @@ namespace SeSim.Run
                     while (ci < cmds.Count && cmds[ci].Tick <= w.Tick)
                     {
                         var c = cmds[ci++];
+                        if (c.Arg.StartsWith("!")) { if (c.Ship.Main != null) SimEvents.Run(c.Ship.Main, c.Arg); continue; }   // harness event, not a PB argument
                         if (c.Tag == null) { for (int k = 0; k < c.Ship.Pbs.Count; k++) host.RunArgument(c.Ship.Pbs[k].Pb, c.Arg, UpdateType.Terminal); }
                         else { var tp = c.Ship.PbsByTag(c.Tag); for (int k = 0; k < tp.Count; k++) host.RunArgument(tp[k].Pb, c.Arg, UpdateType.Terminal); }   // "Tag:arg" (M0)
                     }

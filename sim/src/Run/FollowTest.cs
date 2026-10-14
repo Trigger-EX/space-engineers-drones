@@ -146,6 +146,13 @@ namespace SeSim.Run
                         }
                         if (bi.Api is SimSensor) d.Sensors.Add((SimSensor)bi.Api);
                     }
+            string flightCd = Arg(args, "--flight-custom-data", null);   // text appended to the Custom Data of every PB whose name starts with [Flight] / [Helm] ("\n" = newline), e.g. "[Thrust Vectoring]\nEnabled=false"
+            if (flightCd != null)
+                foreach (var d in drones) foreach (var b in d.Bodies) foreach (var bi in b.Blocks)
+                {
+                    var fp = bi.Api as SimProgrammableBlock;
+                    if (fp != null && ((fp.CustomName ?? "").StartsWith("[Flight]", StringComparison.OrdinalIgnoreCase) || (fp.CustomName ?? "").StartsWith("[Helm]", StringComparison.OrdinalIgnoreCase))) fp.CustomData = (fp.CustomData ?? "") + "\n" + flightCd.Replace("\\n", "\n");
+                }
             foreach (var d in drones) if (d.Pb == null || d.Pb.Runner == null) { Console.Error.WriteLine("test setup failed: no scripted PB in " + model); return 2; }
             Drone enemy = null;
             Drone ship = null; SimProgrammableBlock shipHelm = null, shipStaff = null;
@@ -167,6 +174,7 @@ namespace SeSim.Run
                 string tagU = model.Split(' ')[0].ToUpperInvariant();
                 shipStaff.CustomData = shipStaff.CustomData.Replace("Types=HORNET", "Types=" + tagU);
             }
+            var events = SimEvents.Parse(Arg(args, "--events", null));   // "30:!kill-thrust F;..."
             StreamWriter tw = null;
             if (tracePath != null) { tw = new StreamWriter(tracePath, false, new UTF8Encoding(false)); tw.WriteLine("t,owner_x,owner_y,owner_z,owner_speed,drone,dist,speed,mode"); }
             long ticks = (long)(secs * SimSettings.TicksPerSecond);
@@ -181,6 +189,7 @@ namespace SeSim.Run
                 if (shipOwner && t == 0) host.RunArgument(shipStaff, "reload", UpdateType.Terminal);
                 if (shipOwner && t == 90) host.RunArgument(shipHelm, "idle", UpdateType.Terminal);   // the Helm starts in HUNT: 'idle' after its first runs, then it holds heading and place
                 if (t == 60) foreach (var d in drones) host.RunArgument(d.Pb, cmd, UpdateType.Terminal);
+                foreach (var ev in events) if ((long)Math.Round(ev.Key * SimSettings.TicksPerSecond) == t) foreach (var d in drones) Console.WriteLine("t=" + now.ToString("0.0") + " " + SimEvents.Run(d.Main, ev.Value));
                 Vector3D op, ov; Owner(path, now, spd, out op, out ov);
                 if (shipOwner)
                 {

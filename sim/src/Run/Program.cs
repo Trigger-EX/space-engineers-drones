@@ -61,7 +61,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "face-away", "endless", "allow-mismatch" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "face-away", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "face-away", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data", "events", "event-team" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -266,6 +266,12 @@ namespace SeSim.Run
                             sp.Commands.Add(new KeyValuePair<double, string>(t, c));
                         }
                     }
+            }
+            if (o.Has("events"))
+            {   // harness events ('!kill-thrust F'): appended to the commands of every scripted drone of --event-team (default 0)
+                var evs = SimEvents.Parse(o.Get("events", ""));
+                int et = int.Parse(o.Get("event-team", "0"), Inv);
+                foreach (var sc in scs) foreach (var sp in sc.Ships) if (sp.Team == et && sp.Commands.Count > 0) foreach (var ev in evs) sp.Commands.Add(ev);
             }
             if (o.Has("custom-data"))
             {

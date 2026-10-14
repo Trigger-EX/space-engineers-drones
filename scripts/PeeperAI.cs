@@ -56,6 +56,27 @@ string _log = "", _err = "";
 bool _docked;
 int _tick;
 
+// >>> THRUST VECTOR LINK v1.0 (shared block: identical in every thrust-driving drone script, synced by tools/thrust_sync.py, see docs/thrust-vectoring.md) >>>
+// The flight side of THRUST VECTORING. The work (loss detection, choosing the thruster group to line up) is done by the small [Thrust] PB (scripts/ThrustVectorAI.cs);
+// this block only tells it what the ship wants and takes its answer: while a thrust group is lost the PB sends a replacement attitude and Aim flies it for 0.5 s at a time.
+// Intact ships (or no [Thrust] PB) never get an answer, so nothing changes.
+// Script hooks: TvAim(ref desiredFwd, ref desiredUp, ref ffWorld); as the first line of Aim(); _tvN = forceWorld; in ApplyThrust(); _tvD = distance to the target (m); in the aiming section
+// (target held). Uses _now, _aimRef, _powerScale (Peeper: add "double _powerScale = 1;"), IGC.
+IMyBroadcastListener _tvL; Vector3D _tvN, _tvF, _tvU; double _tvS = -9, _tvT = -9, _tvD = -1; int _tvX;
+void TvAim(ref Vector3D f, ref Vector3D u, ref Vector3D ff)
+{
+    if (_tvL == null) _tvL = IGC.RegisterBroadcastListener("TVEC.O" + IGC.Me);
+    while (_tvL.HasPendingMessage) { var m = _tvL.AcceptMessage(); if (m.Data is MyTuple<Vector3D, Vector3D, int>) { var d = (MyTuple<Vector3D, Vector3D, int>)m.Data; _tvF = d.Item1; _tvU = d.Item2; _tvX = d.Item3; _tvT = _now; } }
+    if (_now - _tvS >= ((_tvX & 63) != 0 ? 0.05 : 1))
+    {
+        _tvS = _now; var r = _aimRef.WorldMatrix;
+        IGC.SendBroadcastMessage("TVEC.I", new MyTuple<Vector3D, Vector3D, Vector3D, Vector3D, Vector3D, int>(_tvN, f, u, r.Forward, r.Up, (int)Math.Min(100, _powerScale * 100) | (int)Math.Min(4194303, _tvD < 0 ? 4194303 : _tvD / 10) << 7), TransmissionDistance.CurrentConstruct);
+    }
+    _tvD = -1;
+    if (_now - _tvT < 0.5 && _tvF.LengthSquared() > 0.5) { f = _tvF; u = _tvU; ff = Vector3D.Zero; }
+}
+// <<< THRUST VECTOR LINK <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
@@ -202,7 +223,7 @@ void Step()
             Vector3D e = want - pos;
             double sp = Math.Min(MaxSpeed, Math.Sqrt(2 * 6 * Math.Max(0, e.Length() - 2)) + 0.3);   // brake in time (about 6 m/s2)
             wantV = _tVel + (e.LengthSquared() > 0.01 ? Vector3D.Normalize(e) * sp : Vector3D.Zero);
-            face = tp - pos;
+            face = tp - pos; _tvD = face.Length();
             Sample(tp);
         }
         else wantV = Vector3D.Zero;
@@ -220,8 +241,10 @@ void Fly(Vector3D wantV, Vector3D vel, double dt)
     ApplyThrust((a - grav) * mass);
 }
 
+double _powerScale = 1; IMyTerminalBlock _aimRef { get { return _rc; } }   // (THRUST VECTOR LINK block: the probe has no power throttle and its camera block is the controller)
 void ApplyThrust(Vector3D f)
 {
+    _tvN = f;
     _rc.DampenersOverride = false;
     MatrixD m = _rc.WorldMatrix;
     double[] comp = { Vector3D.Dot(f, m.Forward), -Vector3D.Dot(f, m.Forward), -Vector3D.Dot(f, m.Right), Vector3D.Dot(f, m.Right), Vector3D.Dot(f, m.Up), -Vector3D.Dot(f, m.Up) };
@@ -237,6 +260,7 @@ void ApplyThrust(Vector3D f)
 Vector3D _prevErr;
 void Aim(Vector3D fwd)
 {
+    Vector3D tvU = Vector3D.Zero, tvF = Vector3D.Zero; TvAim(ref fwd, ref tvU, ref tvF);
     MatrixD refM = _rc.WorldMatrix;
     Vector3D d = Vector3D.Normalize(Vector3D.TransformNormal(fwd, MatrixD.Transpose(refM)));
     double ang = Math.Acos(MathHelper.Clamp(Vector3D.Dot(Vector3D.Forward, d), -1, 1));
