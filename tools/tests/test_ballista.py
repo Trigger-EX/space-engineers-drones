@@ -79,16 +79,31 @@ class ShipTests(unittest.TestCase):
         foundry_full = n['pcu_foundry'] + 400          # the Full foundry is ~270 PCU above the Lite one (sensor-free shell, same welders)
         probe = pcu(P.peeper(False)) + len(P.peeper(False).blocks)      # a live probe + its projection (1 PCU per projected block)
         self.assertLess(ship + foundry_full + probe, PCU_LIMIT)
-        self.assertLess(ship, 5600)        # 4,349 + 4 PD gatling turrets + the thrust PB
+        self.assertLess(ship, 5600)        # 4,349 + 4 PD gatling turrets + the thrust PB + 2 reactors, 2 tanks, 7 thrusters, 2 gyros, minus 7 batteries and the 4 small generators
 
     def test_agility(self):
         acc = B.numbers(lite_docked())['accel_loaded_m_s2']
         for d in ('Up', 'Down', 'Left', 'Right'):
             self.assertGreaterEqual(acc[d], 15.0, d)
-        self.assertGreaterEqual(acc['Forward'], 30.0)
-        self.assertGreaterEqual(acc['Backward'], 30.0)
+        self.assertGreaterEqual(acc['Forward'], 31.2)             # the figure before the extra reactors (mass +21 %) and the extra thrusters
+        self.assertGreaterEqual(acc['Backward'], 31.2)
+        for d in ('Up', 'Down', 'Left', 'Right'):
+            self.assertGreaterEqual(acc[d], 15.6, d)
         n = B.numbers(lite_docked())
         self.assertGreater(min(n['turn_rad_s2_pitch_yaw_roll']), 3.0)
+
+    def test_power_recharges_all_27_rails_without_a_bottleneck(self):
+        pw = B.numbers(lite_docked())['power']
+        need = 27 * 38                                            # RechargeDraw of a LargeRailgun, MW (defs_stats / sim settings)
+        self.assertGreaterEqual(pw['generation_MW'] + pw['battery_MW'], need * 1.03)      # peak: reactors + batteries cover every gun at its full draw, with a margin for the other loads
+        self.assertGreaterEqual(pw['generation_MW'], need * 0.85)                         # sustained: the reactors alone carry the Helm's ~66 s salvo cadence (~922 MW average)
+        self.assertLessEqual(pw['rearm_s_supply_bound'], pw['rearm_s_per_gun'])           # power is no longer what limits the re-arm: the capacitor's own 59 s is
+
+    def test_no_block_in_an_exhaust_or_muzzle_lane(self):
+        bp = full_no_foundry()
+        occ = bp.occupancy()
+        bad = [(c, why, occ[c]['name']) for c, why in bp.reserve.items() if c in occ and not why.startswith('camera')]
+        self.assertEqual(bad, [])
 
     def test_every_thruster_touches_a_tank(self):
         bp = full_no_foundry()

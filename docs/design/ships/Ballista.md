@@ -13,15 +13,15 @@ remembers where every targetable block is, power first because it is railguns.
 | | Ballista (Full) |
 |---|---|
 | railguns | 27 `LargeRailgun`, fixed forward, 9 wide x 3 high, 6 slugs each pre-loaded, capacitors full; salvo = 27 x 50,000 slug pool = 1.35 M [data] |
-| frame | 52.5 x 30 x 32.5 m, 157 blocks, only the breech wall (54 light-armour cubes) and a mast are armour |
-| thrust | 16 `LargeBlockLargeHydrogenThrust` on four 15 ML tanks (each thruster touches its tank: no conveyor net). Forward / back 28.8 MN, other four axes 14.4 MN |
-| mass | 902.8 t blocks, 913.2 t loaded; with foundry and one probe 931 t |
-| acceleration (loaded) | 31.5 m/s2 fore and aft, 15.8 m/s2 up / down / left / right [calc] |
-| turning | 12 `LargeBlockGyro` = 403 MN m; 5.1 / 3.1 / 4.7 rad/s2 pitch / yaw / roll [calc, point-mass inertia], i.e. the 180 deg/s cap in about 1 s |
-| power | 1 large reactor + 4 small = 360 MW, 21 large batteries = 252 MW / 63 MWh. A full re-arm of 27 guns (0.5 MWh each at 38 MW) takes about 100 s supply-bound, 59 s is the per-gun floor |
-| PCU | ship 4,349; foundry about 2,860; one live probe 916 (+62 projected). **About 7,200 idle, 8,200 with a probe alive** [calc, sum of block PCU] |
+| frame | 52.5 x 45 x 37.5 m, 171 blocks, only the breech wall (54 light-armour cubes) and a mast are armour |
+| thrust | 23 `LargeBlockLargeHydrogenThrust` on six tanks (each thruster touches its tank: no conveyor net). Forward 36 MN, back 43.2 MN, other four axes 21.6 MN (section 9) |
+| mass | 1,104.6 t blocks, 1,118.6 t loaded; with foundry and one probe 1,137 t |
+| acceleration (loaded) | 32.2 m/s2 forward, 38.6 back, 19.3 up / down / left / right [calc] |
+| turning | 14 `LargeBlockGyro` = 470 MN m; 4.0 / 3.2 / 3.5 rad/s2 pitch / yaw / roll [calc, point-mass inertia] (was 12 gyros, 5.0 / 3.1 / 4.6 before section 9) |
+| power | 3 large reactors = 900 MW, 14 large batteries = 168 MW / 42 MWh: **1,068 MW against the 1,026 MW the 27 rails draw to recharge together** (27 x 38 MW). A full re-arm is gun-bound (59 s per gun), no longer supply-bound (57 s) [calc]. Section 9 |
+| PCU | ship 5,435; foundry about 2,860; one live probe 916 (+62 projected). **About 8,300 idle, 9,300 with a probe alive** [calc, sum of block PCU]; the test (`test_ballista.py`) adds 400 for the Full foundry and passes at 9,962 of 10,000 |
 
-PCU is not what limits the design: it is mass, power and the volume of the gun block. 10,000 PCU could hold about 60 railguns, but they would weigh 870 t on their own and re-arm for ten minutes.
+Before section 9, PCU was not what limited the design (mass, power and the volume of the gun block were); with the extra reactors it is close (about 40 PCU of the 10,000 left, which is why the gyros stopped at 14). 10,000 PCU could hold about 60 railguns, but they would weigh 870 t on their own and re-arm for ten minutes.
 `COLS` / `ROWS` in `ballista.py` scale the battery (the tests pin 27).
 
 ## 2. Shape
@@ -147,3 +147,16 @@ Ballista's two rear connectors the way the Cradle Pod docks in the Warden's hang
 5. Kill the probe: a replacement is printed after 15 s. Remove the target: the foundry stops.
 
 Commands: Spotter `reset | dump | bay on|off | feed on|off | reload`; Peeper `scout | park | reload`; Helm unchanged.
+
+## 9. Power for a full recharge, and the thrust that pays for it (2026-10-14)
+
+Question: can the Ballista charge all 27 railguns at once? Before: **no**. Each `LargeRailgun` recharges at 38 MW (RechargeDraw, 0.5 MWh capacitor, 0.8 efficiency, so 59 s per gun) [data]: 27 x 38 = **1,026 MW** against 1 large reactor + 4 small (360 MW) + 21 batteries (252 MW) = 612 MW, 60 % of the demand. A re-arm took about 99 s instead of 59 s; with the batteries empty about 175 s. Hydrogen thrusters burn hydrogen, not electricity, and the 12 gyros draw 0.01 MW each, so the rails were the only real load; thrust (power group 80) and gyros (70) are served before the recharge (90), so it is the recharge that starves.
+
+Changes (`ballista.py` `_aux`, `_core`, `_sensing`):
+* **Power**: two more large reactors (300 MW each, 300 uranium each) on the top deck, at x -4..-2 and 2..4, z 4..6, seated on the top rails' top patch (z 4.7..7.8). The four small generators go (25 PCU for 15 MW each; a large reactor is 25 PCU for 300 MW and lighter per MW). Reactors 900 MW + 14 batteries 168 MW = 1,068 MW, 104 % of the 1,026 MW peak plus the small loads. Sustained: the Helm's salvo cycle is about 66 s (Reload x 1.1 + 0.5), 16.9 MWh per cycle = 922 MW average; the reactors alone give 98 % of that and the batteries cover the 22 MW gap (about 1.5 MWh a cycle of 42 MWh).
+* **Mass paid for**: +147.6 t of reactors (+0.6 t uranium), +65 t of tanks and thrusters, +2 gyros, less 7 batteries (-27 t) and 4 small generators (-19 t): 913 t to 1,119 t loaded.
+* **Thrust** (hydrogen thrusters need a tank in contact, so they come with two new tanks): top tank `Hydrogen Tank Aux Top` at (-4, 6, 1) in front of the port reactor: one upward-exhaust thruster (pushes down) and a brake. Belly tank `Hydrogen Tank Aux Belly` at (-1, -3, 4) under the rails: down (pushes up), left, right, brake and main. Net: forward 4 to 5 thrusters, back 4 to 6, each lateral / vertical direction 2 to 3. The old belly mast, camera lane and antenna were in the main thruster's exhaust lane; the belly camera and the antenna now hang from the outer batteries at z = 11 on armour columns (x +3 and -3).
+* **Turning**: the reactors raise the moment of inertia by 47 % / 14 % / 49 % (pitch / yaw / roll). Gyros are 50 PCU and 13 t each, and the 10,000 PCU brief leaves 38 PCU, so only two were added (14): yaw 3.1 to 3.2 rad/s2, pitch 5.0 to 4.0, roll 4.6 to 3.5. That is the one mobility figure that went down; acceleration went up everywhere (forward 31.2 to 32.2, back 31.2 to 38.6, lateral / vertical 15.6 to 19.3). A gyro seats only by its bottom face, so extra ones can only sit on the breech wall's back face (x +-4, y 0..3, z 9 are the spare cells).
+* **Checks** (`test_ballista.py`): peak supply >= 1.03 x 1,026 MW, reactors alone >= 85 % of it, supply-bound re-arm no longer than the per-gun 59 s, acceleration not below the old 31.2 / 15.6, no block inside an exhaust or muzzle lane, PCU under the limit. The full build (`build_all.py --no-zip --only Ballista`) validates the grid in one piece.
+
+[unverified] in the game: the reactors' seat on the rails (the tool checks the mount patches, the game decides), the thrusters' torque (the new thrusters sit 4 to 5 cells above and below the centre of mass, the old ones are symmetric about it; the gyros have 470 MN m against about 160 MN m for all new thrusters at full fire, so they should hold), and that the game really feeds the recharge in the order assumed (script-fix-notes 1151). No sim run: the sim has no Mono in this session and its power model already treats the rails as above.

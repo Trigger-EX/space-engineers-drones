@@ -12,7 +12,8 @@ Frame (cells of 2.5 m; x Right, y Up, z Backward, the bow points to -z; mirror p
   * rails   : x -4..4, y 0..5 (three rows of 2), z 0..7, muzzles at z = 0, breech wall (armour) at z = 8
   * pods    : four 3x3x3 hydrogen tanks on the flanks (x +-5..7, y 0..2 and 3..5, z 5..7); every free tank face carries a large hydrogen thruster
               (exhaust out / up / down / forward / aft), so each tank feeds its thrusters by contact and no conveyor network is needed
-  * core    : behind the wall (x -3..3, y 0..5, z 9..11): large reactor, batteries, small generators, gyros, the Helm PB and the Remote Control
+  * core    : behind the wall (x -3..3, y 0..5, z 9..11): large reactor, batteries, gyros, the Helm PB and the Remote Control
+  * aux     : two more large reactors on the top deck and two extra hydrogen tanks (top, belly) with thrusters, for the 27-rail recharge (docs/design/ships/Ballista.md section 9)
   * mast    : armour pylon on top of the wall carrying the cameras
 """
 import sys, os
@@ -36,7 +37,9 @@ PD_RAILS = set()      # {(x, r) for x in (-1, 0, 1) for r in (0, 2)} would tag s
 PD_TURRETS = (((-4, 6, 7), 'Up', 'Top P'), ((2, 6, 7), 'Up', 'Top S'), ((-4, -3, 7), 'Down', 'Belly P'), ((2, -3, 7), 'Down', 'Belly S'))
 COLS = tuple(range(-4, 5))        # 9 columns of railguns
 ROWS = 3                          # 3 rows (2 cells each) -> 27 guns
-N_GYRO = 12
+N_GYRO = 14
+# battery cells (x, z) of the y = 3 deck left empty to pay for the added reactors' mass: none of them carries a block above it
+BAT_DROP = {(-2, 9), (-1, 9), (-1, 10), (1, 10), (-1, 11), (-2, 11), (2, 11)}       # 14 of 21 kept (168 MW, 42 MWh)
 
 HELM_DATA = """
 [Link]
@@ -140,6 +143,26 @@ def _pods(S):
                 b = S.fixed('thr_' + role, 'MyObjectBuilder_Thrust', 'LargeBlockLargeHydrogenThrust', mn, ex, up, nm(f'Thruster {label}'), GUND, kind='thr')
                 bp.keep_clear(b, 3, 'exhaust')
 
+def _aux(S):
+    """power and thrust added for the 27-gun recharge (docs/design/ships/Ballista.md section 9): two more large reactors on the top deck (300 MW each: the railguns
+    ask 27 x 38 = 1,026 MW to recharge together and the first reactor set gave 360 MW), and two extra hydrogen tanks with thrusters, which give back the acceleration the
+    reactors' 148 t take away.  Top deck (y 6..8, over the rails; the rails' top patch is the seat): reactors at x -4..-2 and 2..4, z 4..6; a tank in front of the
+    port reactor (z 1..3) carries an upward-exhaust thruster (pushes down) and a brake.  Belly (y -3..-1, under the rails): one tank at x -1..1, z 4..6 carries
+    all five of its free faces (down, left, right, brake, main), which add one push in each of the six directions together with the top tank."""
+    bp = S.bp
+    for n, x in enumerate((-4, 2), 2):
+        S.add('reactor', 'MyObjectBuilder_Reactor', 'LargeBlockLargeGenerator', (x, 6, 4), 'Forward', 'Up', nm(f'Reactor Large {n}'), toward='Down', kind='reactor',
+              items=[Item.ingot('Uranium', 300)])
+    S.add('tank', 'MyObjectBuilder_OxygenTank', 'LargeHydrogenTank', (-4, 6, 1), 'Forward', 'Up', nm('Hydrogen Tank Aux Top'), toward='Backward', kind='tank', state={'filled': 'full'})
+    S.add('tank', 'MyObjectBuilder_OxygenTank', 'LargeHydrogenTank', (-1, -3, 4), 'Forward', 'Up', nm('Hydrogen Tank Aux Belly'), toward='Up', kind='tank', state={'filled': 'full'})
+    for role, mn, ex, up, label in (
+            ('vert', (-4, 9, 1), 'Up', 'Forward', 'Aux Top Vertical'), ('brake', (-4, 6, -2), 'Forward', 'Up', 'Aux Top Brake'),
+            ('vert', (-1, -6, 4), 'Down', 'Forward', 'Aux Belly Vertical'), ('out', (-4, -3, 4), 'Left', 'Up', 'Aux Belly Lateral P'),
+            ('out', (2, -3, 4), 'Right', 'Up', 'Aux Belly Lateral S'), ('brake', (-1, -3, 1), 'Forward', 'Up', 'Aux Belly Brake'),
+            ('main', (-1, -3, 7), 'Backward', 'Up', 'Aux Belly Main')):
+        b = S.fixed('thr_' + role, 'MyObjectBuilder_Thrust', 'LargeBlockLargeHydrogenThrust', mn, ex, up, nm(f'Thruster {label}'), GUND, kind='thr')
+        bp.keep_clear(b, 3, 'exhaust')
+
 def _core(S, full):
     """behind the breech wall: reactor, batteries, generators, gyros, controllers"""
     bp = S.bp
@@ -149,12 +172,10 @@ def _core(S, full):
     for z in (9, 10, 11):
         for x in range(-3, 4):
             n += 1
+            if (x, z) in BAT_DROP: continue
             S.add('bat', 'MyObjectBuilder_BatteryBlock', 'LargeBlockBatteryBlock', (x, 3, z), 'Forward', 'Up', nm(f'Battery {n:02d}'), extra=bat_extra(3), kind='bat')
-    for i, (x, z) in enumerate(((-1, 9), (1, 9), (-1, 10), (1, 10))):
-        S.add('reactor', 'MyObjectBuilder_Reactor', 'LargeBlockSmallGenerator', (x, 4, z), 'Forward', 'Up', nm(f'Generator {i + 1}'), toward='Down', kind='reactor',
-              items=[Item.ingot('Uranium', 100)])
     gy = [(x, y, 9) for x in (-3, -2, 2, 3) for y in (0, 1, 2)]
-    gy += [(x, y, 10) for x in (-3, -2, 2, 3) for y in (0, 1, 2)]
+    gy += [(x, y, 9) for y in (0, 1, 2, 3) for x in (-4, 4)]           # a gyro seats only by its bottom face: the extra ones sit on the breech wall's back face beside the core
     for i, c in enumerate(gy[:N_GYRO]):
         S.add('gyro', 'MyObjectBuilder_Gyro', 'LargeBlockGyro', c, 'Forward', 'Up', nm(f'Gyroscope {i + 1}'), kind='gyro')
     # controllers on the battery deck
@@ -181,9 +202,11 @@ def _sensing(S, full):
              ('Starboard', (1, 9, 8), 'Right', 'Up'), ('Top', (0, 10, 8), 'Up', 'Backward')]
     for tag, mn, look, up in specs:
         S.put('cam', C.cam(bp, mn, look, up, nm(f'Camera {tag}'), 3))
-    S.armor(0, -1, 8, role='mast')
-    S.put('cam', C.cam(bp, (0, -2, 8), 'Down', 'Forward', nm('Camera Belly'), 3))
-    S.add('ant', 'MyObjectBuilder_RadioAntenna', 'LargeBlockCompactRadioAntenna', (1, -3, 8), 'Forward', 'Down', nm('Antenna'), extra=ant_extra(10000), kind='ant')   # (belly: the top-side turrets took the space)
+    # belly: the aux tank's main thruster took (0, -1..-2, 8), the old camera / antenna lane; they hang from the outer batteries at z = 11 on armour columns, clear of its exhaust (x -1..1)
+    for y in (2, 1, 0): S.armor(3, y, 11, role='mast')
+    S.put('cam', C.cam(bp, (3, -1, 11), 'Down', 'Forward', nm('Camera Belly'), 3))
+    for y in (2, 1, 0): S.armor(-3, y, 11, role='mast')
+    S.add('ant', 'MyObjectBuilder_RadioAntenna', 'LargeBlockCompactRadioAntenna', (-3, -3, 11), 'Forward', 'Down', nm('Antenna'), extra=ant_extra(10000), kind='ant')
     if full:
         S.add('sensor', 'MyObjectBuilder_SensorBlock', 'LargeBlockSensor', (-1, 7, 8), 'Up', 'Forward', nm('Sensor'), color=GUND, kind='sensor')
 
@@ -306,6 +329,7 @@ def ballista(lite=False, with_foundry=True):
     S = Ship(bp)
     _rails(S)
     _pods(S)
+    _aux(S)
     _core(S, full)
     _sensing(S, full)
     _defence(S, full)
@@ -328,9 +352,9 @@ def ballista(lite=False, with_foundry=True):
     return C.finalize(bp)
 
 MODELS = {'Ballista': ballista}
-DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 3 battery behind a thin frame of 16 large hydrogen thrusters (32 m/s2 fore and aft, 16 m/s2 on the other axes, 12 gyros), 1.35 M of slug damage per salvo at 2,000 m. '
+DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 3 battery behind a thin frame of 23 large hydrogen thrusters (32 m/s2 forward, 39 back, 19 on the other axes, 14 gyros), 1.35 M of slug damage per salvo at 2,000 m. '
         'The Helm keeps the stand-off and turns the ship onto the target. A small probe foundry docked on its rear connectors prints a Peeper probe when a big target is engaged; the probe circles the target and its turret finds the '
-        'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 7,200 PCU with the foundry, 8,200 with a live probe. Nothing has run in the game.'}
+        'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 8,300 PCU with the foundry, 9,300 with a live probe. Three large reactors (900 MW) and 14 batteries cover the 1,026 MW the 27 rails draw to recharge together. Nothing has run in the game.'}
 MODEL_NOTES = {'Ballista': 'Needs a world PCU limit of 10,000 or more. The foundry connectors are written locked (the Spotter presses Connect if they ever come up unlocked). Lite has no sensor / AI blocks and prints Lite probes (no turret, so they find nothing): use Full.'}
 SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
 
