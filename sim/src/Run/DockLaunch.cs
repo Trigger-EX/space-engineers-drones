@@ -150,7 +150,7 @@ namespace SeSim.Run
             foreach (var b in bodies)
                 foreach (var bi in b.Blocks)
                 {
-                    if (bi.Api is SimProgrammableBlock) pb = (SimProgrammableBlock)bi.Api;
+                    if (bi.Api is SimProgrammableBlock) { var cand = (SimProgrammableBlock)bi.Api; if (pb == null || PbRank(cand) > PbRank(pb)) pb = cand; }   // the [Staff] PB of a split drone (launch, 'armed', the Mode line), else the Flight / only PB, never the [Thrust] one
                     if (bi.Merge != null) { if (bi.Src.EntityId == dummyId) printerMerge = bi; else droneMerge = bi; }
                 }
             if (pb == null || printerMerge == null || droneMerge == null) { Console.Error.WriteLine("test setup failed: pb/merge blocks not found"); return 2; }
@@ -217,6 +217,8 @@ namespace SeSim.Run
             Console.WriteLine(ok ? "LAUNCH OK" + optimistic : "LAUNCH FAILED (drone did not leave and start working)" + optimistic);
             return ok ? 0 : 1;
         }
+
+        static int PbRank(SimProgrammableBlock p) { string n = p.CustomNameValue ?? ""; return n.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase) ? 3 : n.StartsWith("[Thrust]", StringComparison.OrdinalIgnoreCase) ? 0 : 1; }
 
         static int printerBlockCount(Body b, long dummyId)
         {

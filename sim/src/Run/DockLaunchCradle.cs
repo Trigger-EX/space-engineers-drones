@@ -61,6 +61,7 @@ namespace SeSim.Run
                     var pb = bi.Api as SimProgrammableBlock; if (pb == null || pb.Runner == null) continue;
                     string n = pb.CustomNameValue ?? "";
                     if (n.StartsWith("[Pod]") || n.StartsWith("[Bay]")) rig.Bay = pb;
+                    else if (n.StartsWith("[Staff]") && n.Contains("Hornet")) rig.Drones.Add(pb);      // a clamped Hornet is Flight + Staff + Thrust PBs: its Staff PB has the Mode line and takes the launch
                     else if (n.StartsWith("[Staff]")) rig.Staff = pb;
                     else if (n.StartsWith("[Helm]")) rig.Helm = pb;
                     else if (n.StartsWith("Hornet")) rig.Drones.Add(pb);

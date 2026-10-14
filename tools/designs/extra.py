@@ -100,7 +100,7 @@ def harrier(lite=False):
     _all_around(bp, name)
     _merge_stalk(bp, name)
     _ai_sensor(bp, name, not lite, not lite)
-    return finalize(bp)
+    return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Harrier printed by a Forge carries its Staff PB
 
 # ---------------------------------------------------------------------------------------------
 def aegis(lite=False):

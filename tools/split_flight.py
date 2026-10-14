@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""One-off generator: turn a single-PB drone script (AegisAI, MantisAI, LongbowSniperAI) into the FLIGHT half of a two-PB drone, the way WaspFlightAI is the flight
+"""One-off generator: turn a single-PB drone script (AegisAI, MantisAI, LongbowSniperAI, HornetDroneAI, HarrierAI, LancerAI) into the FLIGHT half of a two-PB drone, the way WaspFlightAI is the flight
 half of the Wasp: the FLEET LINK, FOLLOW and LAUNCH blocks and the status screen go to the Staff PB (tools/make_staff.py), the SPLIT LINK block (tools/lk_block.cs)
 takes their place. Edits the script in place (git has the original) and asserts every edit hit. Usage: python3 -I tools/split_flight.py AegisAI
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-AMMO = {"AegisAI": "(int)(_ammoFrac * 100)", "MantisAI": "(int)(_ammoFrac * 100)", "LongbowSniperAI": "(int)(_ammoFrac * 100)"}
+AMMO = {"HornetDroneAI": "(int)(_ammoFrac * 100)", "HarrierAI": "(int)(_ammoFrac * 100)", "LancerAI": "(int)(_ammoFrac * 100)", "AegisAI": "(int)(_ammoFrac * 100)", "MantisAI": "(int)(_ammoFrac * 100)", "LongbowSniperAI": "(int)(_ammoFrac * 100)"}
 
 def main(name):
     p = os.path.join(ROOT, "scripts", name + ".cs")
@@ -24,7 +24,10 @@ def main(name):
     lk = open(os.path.join(ROOT, "tools", "lk_block.cs"), encoding="utf-8").read()
     m = re.search(r"^public Program\(\)", s, re.M)
     s = s[:m.start()] + lk + f"int LkAmmo() {{ return {AMMO[name]}; }}   // ammo for the Staff screen (0-254)\nstring LkGate() {{ return \"\"; }}\n\n" + s[m.start():]
-    rep(r"FleetLoad\(true\); LaunchLoad\(\); ", "", 2, True)
+    nl = len(re.findall(r"\n *LaunchLoad\(\);(?=\n)", s))      # (Hornet / Harrier call LaunchLoad() on a line of its own in the constructor)
+    if nl: rep(r"\n *LaunchLoad\(\);(?=\n)", "", nl, True)
+    rep(r'(?m)^( *(?:case "reload": LoadConfig\(\); )?)FleetLoad\(true\); ', r"\1", 2, True)   # (code lines only: the hook comments name FleetLoad(true) too)
+    rep(r"LaunchLoad\(\); ", "", 2 - nl, True)
     rep(r" FollowLoad\(\);", "", 2, True)
     rep(r"FoSat = true; ", "", 1, True)
     rep("ReadIGC(); FollowStep(); ReadSwarm();", "ReadIGC(); LkRead(); ReadSwarm();")

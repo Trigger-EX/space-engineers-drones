@@ -49,7 +49,7 @@ namespace SeSim.Run
         sealed class Rig
         {
             public World W; public ScriptHost Host; public Body Ship; public SimProgrammableBlock Helm, Staff;
-            public List<SimProgrammableBlock> Drones = new List<SimProgrammableBlock>(); public List<Body> DroneBodies = new List<Body>();
+            public List<SimProgrammableBlock> Drones = new List<SimProgrammableBlock>(), Flights = new List<SimProgrammableBlock>(), AllPbs = new List<SimProgrammableBlock>(); public List<Body> DroneBodies = new List<Body>();
             public Body Enemy; public string Bp; public DefDb Defs; public string BpDir;
             public object Prog(SimProgrammableBlock p) { return p.Runner.Program; }
         }
@@ -87,9 +87,14 @@ namespace SeSim.Run
                 var pb = bi.Api as SimProgrammableBlock; if (pb == null || pb.Runner == null) continue;
                 if (pb.CustomNameValue.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase)) rig.Staff = pb; else if (pb.CustomNameValue.StartsWith("[Helm]", StringComparison.OrdinalIgnoreCase)) rig.Helm = pb;
             }
-            foreach (var g in dr) { rig.DroneBodies.Add(g[0]); foreach (var b in g) foreach (var bi in b.Blocks) { var pb = bi.Api as SimProgrammableBlock; if (pb != null && pb.Runner != null) { rig.Drones.Add(pb); break; } } }
+            foreach (var g in dr)
+            {   // a Hornet is [Flight] + [Staff] + [Thrust] PBs: Drones = its Staff PB (Mode line, commands), Flights = the Flight PB (the [Hornet] Custom Data), AllPbs = all of them (reload)
+                rig.DroneBodies.Add(g[0]); SimProgrammableBlock staff = null, flight = null;
+                foreach (var b in g) foreach (var bi in b.Blocks) { var pb = bi.Api as SimProgrammableBlock; if (pb == null || pb.Runner == null) continue; rig.AllPbs.Add(pb); string pn = pb.CustomNameValue ?? ""; if (pn.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase)) staff = pb; else if (pn.StartsWith("[Flight]", StringComparison.OrdinalIgnoreCase) || (flight == null && !pn.StartsWith("[Thrust]", StringComparison.OrdinalIgnoreCase))) flight = pb; }
+                rig.Drones.Add(staff ?? flight); rig.Flights.Add(flight);
+            }
             if (blind)
-                foreach (var d in rig.Drones)
+                foreach (var d in rig.Flights)
                 {
                     string cd = d.CustomData ?? "";
                     foreach (string k in new[] { "Auto Camera Scan", "All-around Close Scan", "AI Block Search Assist" }) cd = Regex.Replace(cd, "(" + Regex.Escape(k) + @"\s*=\s*)\w+", "${1}false");
@@ -99,7 +104,7 @@ namespace SeSim.Run
             rig.Helm.CustomData = Regex.Replace(rig.Helm.CustomData ?? "", @"(Share Targets Over IGC\s*=\s*)\w+", "${1}false");
             rig.Host.RunArgument(rig.Helm, "reload", UpdateType.Terminal);
             rig.Host.RunArgument(rig.Staff, "reload", UpdateType.Terminal);
-            foreach (var d in rig.Drones) rig.Host.RunArgument(d, "reload", UpdateType.Terminal);
+            foreach (var d in rig.AllPbs) rig.Host.RunArgument(d, "reload", UpdateType.Terminal);
             return rig;
         }
 

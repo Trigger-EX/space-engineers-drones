@@ -74,8 +74,9 @@ def hornet_frame(name, weapon_sub, weapon_type, script, custom_data=None, ai=Tru
 
 def hornet(lite=False):
     name = "Hornet Lite" if lite else "Hornet"
-    return hornet_frame(name, "", "MyObjectBuilder_SmallGatlingGun", script_text("HornetDroneAI.cs"),
-                        ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE)
+    bp = hornet_frame(name, "", "MyObjectBuilder_SmallGatlingGun", script_text("HornetDroneAI.cs"),
+                      ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE)
+    return C.add_support_pbs(bp)      # [Flight] + [Staff] (+ [Thrust]) PBs here, so the Hornets clamped into the Wing ships / cradle pods (attached as sub-grids, which build_all does not visit) carry the Staff PB too
 
 # ---------------------------------------------------------------------------------------------
 def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):

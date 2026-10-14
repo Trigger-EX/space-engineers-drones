@@ -88,8 +88,8 @@ def wasp(lite=False):
 
 def lancer(lite=False):
     name = "Lancer Lite" if lite else "Lancer"
-    return frame(name, "MyObjectBuilder_SmallGatlingGun", "SmallBlockAutocannon", "Autocannon", 5, script_text("LancerAI.cs"), _custom("Lancer", "LANCER"),
-                 ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE)
+    return C.add_support_pbs(frame(name, "MyObjectBuilder_SmallGatlingGun", "SmallBlockAutocannon", "Autocannon", 5, script_text("LancerAI.cs"), _custom("Lancer", "LANCER"),
+                 ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Lancer printed by a Foundry carries its Staff PB
 
 MODELS = {"Wasp": wasp, "Lancer": lancer}
 

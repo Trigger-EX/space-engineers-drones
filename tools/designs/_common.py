@@ -451,7 +451,8 @@ def chamfer_room(S, res, env, box, name='room', max_blocks=None):
 
 
 # ---- support PBs (appended for THRUST VECTORING and the Flight/Staff split; docs/thrust-vectoring.md) ----
-SUPPORT_STAFF = {'AEGIS': 'AegisStaffAI.cs', 'MANTIS': 'MantisStaffAI.cs', 'LONGBOW': 'LongbowStaffAI.cs', 'WASP': 'WaspStaffAI.cs'}
+SUPPORT_STAFF = {'AEGIS': 'AegisStaffAI.cs', 'MANTIS': 'MantisStaffAI.cs', 'LONGBOW': 'LongbowStaffAI.cs', 'WASP': 'WaspStaffAI.cs',
+                 'HORNET': 'HornetStaffAI.cs', 'HARRIER': 'HarrierStaffAI.cs', 'LANCER': 'LancerStaffAI.cs'}
 _SMALL_PB, _LARGE_PB = 'SmallProgrammableBlock', 'LargeProgrammableBlock'
 NO_SUPPORT_PBS = ('Twin PB Test', 'Hornet Pilot Test')   # sim probe ships with a pinned PB count (SelfTestM0): no support PBs
 

@@ -188,7 +188,7 @@ namespace SeSim.Run
                 var pb = bi.Api as SimProgrammableBlock; if (pb == null || pb.Runner == null) continue;
                 string n = pb.CustomNameValue ?? "";
                 if (n.StartsWith("[Pod]")) { bay2 = pb; pb.CustomData = bi.Src.StoredCustomData.Replace("First Bay=1", "First Bay=3"); rig.Host.Recompile(pb); }
-                else if (n.StartsWith("Hornet")) drones2.Add(pb);
+                else if (n.StartsWith("Hornet") || (n.StartsWith("[Staff]") && n.Contains("Hornet"))) drones2.Add(pb);      // (a clamped Hornet = [Flight] + [Staff] + [Thrust] PBs: the Staff one has the Mode line)
             }
             Steps(rig, 0.4); Cmd(rig, rig.Helm, "idle"); Steps(rig, 4); double cmdAt = rig.W.Time;
             var table = Fld<IDictionary>(rig.Staff, "_bay");

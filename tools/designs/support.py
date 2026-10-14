@@ -98,7 +98,7 @@ def watcher_frame(name, sensor, tag="HORNET", ai=False):
     return finalize(bp)
 
 def watcher(lite=False):
-    return watcher_frame("Watcher Lite" if lite else "Watcher", sensor=not lite, ai=not lite)
+    return C.add_support_pbs(watcher_frame("Watcher Lite" if lite else "Watcher", sensor=not lite, ai=not lite))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Watcher printed by a Pad carries its Staff PB
 
 # ---------------------------------------------------------------------------------------------
 def midge_frame(name):
