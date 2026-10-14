@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.7  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.8  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -62,6 +62,9 @@
 //  v2.7 SCRIPTLESS DRONES (Midge): with no drone PB, ARM collects the drone's AI Flight / AI Offensive / AI Defensive blocks and Separate
 //  switches their AI behaviour on in the tick the merge blocks go off (after the split the printer can no longer reach them).
 //
+//  v2.8 "component stock empty" only after the [Stock] cargo has held parts this session (creative worlds never fill it: the stall was
+//  really out-of-reach blocks, now reported as such).
+//
 //  COMMANDS: start | stop | max <n> | release [bay] | hold <bay> | unhold <bay> |
 //            reload | relay on|off
 //  CONFIG: Custom Data ([Hive Mother] and [Bay N] sections, created on first run).
@@ -69,7 +72,7 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.7";
+const string VER = "2.8";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
@@ -776,19 +779,22 @@ void Stall(Bay b)
     }
 }
 
+// "starved" only once the stock has held parts this session: a creative world never fills it, and its welders need no parts
+// (v2.8: an always-empty creative stock made every out-of-reach stall read "stock empty" and paused the timeouts for ever)
+bool _stockSeen;
 bool StockEmpty()
 {
-    if (_stock.Count == 0) return false;      // creative world / no stock tracking
+    if (_stock.Count == 0) return false;      // no stock tracking
     foreach (var s in _stock)
     {
         try
         {
             var inv = s.GetInventory(0);
-            if (inv != null && inv.CurrentVolume.RawValue > 2000) return false;     // more than 0.002 m3 of items
+            if (inv != null && inv.CurrentVolume.RawValue > 2000) { _stockSeen = true; return false; }     // more than 0.002 m3 of items
         }
         catch (Exception) { return false; }       // unreadable stock: do not claim it is empty (that would pause the timeouts)
     }
-    return true;
+    return _stockSeen;
 }
 
 // Welders are only switched OFF outside BUILD/FINISH. In those two states "off" requests are ignored,

@@ -218,21 +218,27 @@ def solve_bay_auto(drone, margin_m=None, avoid_axes=(), prefer=None, force=False
                 des = _cover(ctx)
             except AssertionError as ex:
                 last = last or ex; continue
-            rk = (des.stats['missA'], des.stats['unmet_weight'], len(des.welders), sc)
+            rk = (calib_miss(des), des.stats['missA'], des.stats['unmet_weight'], len(des.welders), sc)
             if front not in best or rk < best[front][0]: best[front] = (rk, des)
         # a nose lane is worth more than the best-effort (deeper than tip) coverage: when the settings WITH the lane reach every tier-A pair, the
         # layouts without it are not even tried
-        if front and front in best and best[front][0][0] == 0: break
-    # the lane wins unless it costs more than FRONT_MISS_TOL tier-A pairs (the pessimistic 1.0 m sphere hypotheses) compared with the layout without it
-    if True in best and (False not in best or best[True][0][0] <= best[False][0][0] + FRONT_MISS_TOL): pick = best[True]
+        if front and front in best and best[front][0][:2] == (0, 0): break
+    # the lane wins unless it misses a CALIBRATED pair the layout without it reaches, or costs more than FRONT_MISS_TOL other tier-A pairs
+    if True in best and (False not in best or (best[True][0][0] <= best[False][0][0] and best[True][0][1] <= best[False][0][1] + FRONT_MISS_TOL)): pick = best[True]
     elif False in best: pick = best[False]
     else: pick = None
     best = pick
     if best is None: raise last
+    miss = {h: sorted(best[1].unmet.get(h, ())) for h in CALIB_HYPS if best[1].unmet.get(h)}
+    assert not miss, f'{drone.name}: no bay layout reaches every block under the hypotheses the game matched ({miss}): redesign the bay or the drone'
     _AUTO[key] = best[1]
     return best[1]
 
 TRY_SETTINGS = 3
+# CALIBRATED in the game (owner, Aegis Shipyard 2026-10-14): exactly the 3 blocks these two hypotheses miss stayed unplaced, so the real
+# work sphere is no larger than 'tip r1.0' / 'tip-1 r1.3'. Every bay must reach every block under both (hard: the printer fails to build).
+CALIB_HYPS = ('tip r1.0', 'tip-1 r1.3')
+def calib_miss(des): return sum(len(des.unmet.get(h, ())) for h in CALIB_HYPS)
 FRONT_MISS_TOL = 2        # tier-A (block, hypothesis) pairs the nose lane may cost before the solver gives it up
 REPAIR_ITERS = 30
 
@@ -1141,7 +1147,49 @@ class Printer:
 
 
 # =============================================================================================
-# docking latch for drones that have none (Longbow S, Mantis): a stalk with a small merge block
+# flush latch (owner rule, CLAUDE.md "Outline rule"): no block may stand outside a drone's outline, so a drone without a merge block gets one
+# set INTO its hull: an outer plain armour cell becomes the merge block, clamp face outward, nothing on the drone beyond that layer
+# =============================================================================================
+def with_flush_latch(drone, prefer=("Down", "Up", "Left", "Right", "Backward", "Forward")):
+    """copy of `drone` with one outer armour block replaced by a flush SmallShipSmallMergeBlock (merge_small(..., flush=True), as the Gnat).
+    The cell is plain armour on the drone's outermost layer along the clamp direction (else an empty cell of that layer inside the drone's
+    bounding box, next to the hull), its outward neighbour free and outside every clear zone, and the drone must stay one connected piece.  Raises AssertionError (ask the owner) when no hull cell can take it."""
+    if any(b['kind'] == 'merge' for b in drone.blocks): return drone
+    occ0 = drone.occupancy()
+    cells = [c for b in drone.blocks for c in drone.cells(b)]
+    cen = tuple(sum(c[k] for c in cells) / len(cells) for k in range(3))
+    for dn in prefer:
+        d = DIR[dn]
+        L = max(sum(c[k] * d[k] for k in range(3)) for c in cells)
+        cands = []
+        for b in drone.blocks:
+            if b['xtype'] != 'MyObjectBuilder_CubeBlock' or len(drone.cells(b)) != 1 or 'Armor' not in b['sub']: continue
+            c = drone.cells(b)[0]
+            if sum(c[k] * d[k] for k in range(3)) != L: continue
+            q = add3(c, d)
+            if q in occ0 or q in drone.reserve: continue
+            lat = sum(abs(c[k] - cen[k]) * (1 - abs(d[k])) for k in range(3))     # nearest the middle of that face first
+            cands.append((0, lat, tuple(c), b))
+        # second choice: an EMPTY cell of that outermost layer inside the drone's bounding box (the outline does not grow), next to the hull
+        lo = [min(c[k] for c in cells) for k in range(3)]; hi = [max(c[k] for c in cells) for k in range(3)]
+        for c in itertools.product(*[range(lo[k], hi[k] + 1) for k in range(3)]):
+            if sum(c[k] * d[k] for k in range(3)) != L or c in occ0 or c in drone.reserve or add3(c, d) in drone.reserve: continue
+            if not any(add3(c, e) in occ0 for e in DIR.values()): continue
+            cands.append((1, sum(abs(c[k] - cen[k]) * (1 - abs(d[k])) for k in range(3)), tuple(c), None))
+        for _, lat, c, b in sorted(cands, key=lambda t: (t[0], t[1], t[2])):
+            t = copy.deepcopy(drone)
+            if b is not None: t.blocks = [x for x in t.blocks if not (tuple(x['min']) == c and x['xtype'] == 'MyObjectBuilder_CubeBlock')]
+            C.merge_small(t, c, dn, f'{t.name} Merge', flush=True)
+            try:
+                t.validate()
+                C.check_docking(t, [x for x in t.blocks if x['kind'] == 'merge'][0])
+            except AssertionError:
+                continue
+            return finalize(t)
+    raise AssertionError(f'{drone.name}: no outer armour cell can take a flush merge block (outline rule: ask the owner)')
+
+# =============================================================================================
+# docking latch for drones that have none (Longbow S, Mantis): a stalk with a small merge block (RETIRED by the outline rule: kept for reference, not used)
 # =============================================================================================
 def with_latch(drone, prefer=("Down", "Up", "Backward", "Left", "Right", "Forward")):
     """copy of `drone` with a docking stalk added (armour + SmallShipSmallMergeBlock, clamp face away from the hull).  The stalk starts at
