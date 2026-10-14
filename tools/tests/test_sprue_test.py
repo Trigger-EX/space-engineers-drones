@@ -70,9 +70,10 @@ class SprueTest(unittest.TestCase):
         gcells, cen = S.grinder_centres(self.cl)
         self.assertEqual(self.cl.layout, 'close')
         xs = sorted({c[0] for c in gcells}); self.assertEqual((xs[0], xs[-1]), (-7, -2))        # long axis x, tip face one block short of the neck (x = 0)
-        for h, p in cen[:2]:                                                                      # tip and tip-1, r 1.3 m: N2..N6 are cut, N1 / N7 never
-            cut = {c for c in S.NECK if R.cell_dist(p, c) <= R.radius_cells(h) and R.radius_cells(h) > 2.5}
-            if R.radius_cells(h) > 2.5: self.assertEqual(sorted(c[2] for c in cut), [-2, -1, 0, 1, 2])
+        self.assertEqual(S.LAYOUTS['close']['tier'], 3); self.assertEqual(S.LAYOUTS['side']['tier'], len(R.FAMILY))   # side: every hypothesis, close: tip r1.3, tip r1.0, tip-1 r1.3
+        for h, p in cen[:3]:                                                                      # these three all cut N2..N6 (z 2..-2), never N1 / N7
+            cut = {c for c in S.NECK if R.cell_dist(p, c) <= R.radius_cells(h)}
+            self.assertEqual(sorted(c[2] for c in cut), [-2, -1, 0, 1, 2], h.name)
         self.assertIn('Grinder Forward=Right', self.cl.build_xml())
         self.assertIn('Grinder Forward=Up', self.xml)
 
