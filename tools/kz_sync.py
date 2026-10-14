@@ -8,7 +8,7 @@ and docs/kamikaze-defence.md.
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI",
+SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI",
            "BasiliskAI", "ShrikeAI"]
 BEGIN, END = "// >>> KAMIKAZE DEFENCE", "// <<< KAMIKAZE DEFENCE <<<"
 

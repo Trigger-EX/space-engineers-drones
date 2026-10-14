@@ -67,7 +67,7 @@ BAT_S = bat_extra(0.05)             # SmallBlockSmallBatteryBlock
 def ant_extra(r):
     return f"<BroadcastRadius>{r}</BroadcastRadius><ShowShipName>true</ShowShipName><EnableBroadcasting>true</EnableBroadcasting>"
 
-SCRIPT_LIMITS = {"ShrikeAI.cs": 80900}      # ship Helm scripts: <= 80,900 minified characters (control_arch s1.2 budget 80,000, hard cap 85,000; +600 for the Spotter feed, +300 for the DRONE_SPACE beacon), the other scripts only the PB limit
+SCRIPT_LIMITS = {"ShrikeAI.cs": 81600}      # ship Helm scripts: <= 81,600 minified characters (control_arch s1.2 budget 80,000, hard cap 85,000; +600 for the Spotter feed, +300 for the DRONE_SPACE beacon, +700 for the railgun salvo), the other scripts only the PB limit
 
 def script_text(filename):
     """read scripts/<filename> at call time, minified (comments/whitespace only): a Programmable Block takes at most 100,000

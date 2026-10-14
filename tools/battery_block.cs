@@ -11,6 +11,8 @@
 // STANDOFF (BatStand, every 30 ticks, only on a ship with a non-ballistic battery and Standoff By Weapons=true): the range on a 100 m grid that maximises the sum of the scores minus
 //   Threat Weight x total dps x threat(r), threat = 2.5 inside 450 m, 1.0 inside 1,000 m, 0.2 beyond (the enemy is assumed to carry gatlings / rockets of 800 m): a rail or artillery ship
 //   kites at 1,000 m, a rocket + gatling ship closes to ~500 m.
+// SALVO ([Battery] Salvo OFF/ON/AUTO, default OFF; AUTO = single-shot batteries of 6 or more guns): instead of one gun per slot every working gun of the battery gets ShootOnce in the same tick; one second later the guns whose
+//   magazine shrank are counted: 70 % or more = the whole battery recharges together (next salvo after Reload x 1.1 + 0.5 s), fewer = the rest are still charging (ask again in 4 s), none = ask again in 2 s.
 // TURRET-ONLY MODE (Turret Only AUTO = the ship has turrets, ON, OFF): a track that every working battery would hit with P < 0.15 is left to the turrets: the fixed batteries refuse it
 //   (BatOk) and target selection puts it behind every track a battery can hit (BatHope, debounced 2 s). The Track class carries the field "public double Hl = -99;".
 // TURN-RATE CALIBRATION (BatTurn, Auto Max Turn AUTO = large grids, ON, OFF): while the first slews saturate the gyros, the peak angular acceleration a is measured; then
@@ -20,11 +22,11 @@
 //   (BatFire(false, ..) in IDLE, Release and ManFly); "+ BatHope(t)" in the target score of PruneAndSelect; BatTurn(w) in Aim(); BatSave() / BatLoad(..) for Storage; BatStatus() in Display.
 class Bat
 {
-    public string Cls = "-"; public double Speed = 800, Range = 700, MinR, Cool, Rel, Dps, Dsp, Next, Rdy, Pend = -1, Am, Sc; public bool On, Saw, Want; public int I; public IMyUserControllableGun Gn;
+    public string Cls = "-"; public double Speed = 800, Range = 700, MinR, Cool, Rel, Dps, Dsp, Next, Rdy, Pend = -1, Am, Sc; public bool On, Saw, Want, Sv; public int I; public IMyUserControllableGun Gn; public long[] Ar;
     public List<IMyUserControllableGun> G = new List<IMyUserControllableGun>();
 }
 Bat[] _bat = { new Bat(), new Bat(), new Bat(), new Bat() };
-bool _rkt; int _prim, _batFix; double _primT = -99, _bs0, _br0; bool BatSo = true; string BatTur = "AUTO", BatCal = "AUTO";
+bool _rkt; int _prim, _batFix; double _primT = -99, _bs0, _br0; bool BatSo = true; string BatTur = "AUTO", BatCal = "AUTO", BatSal = "OFF";
 List<IMyUserControllableGun> PrimGuns() { return _bat[_prim].G; }
 
 void BatCfg()
@@ -35,6 +37,7 @@ void BatCfg()
     BatSo = Cfg(S, "Standoff By Weapons", BatSo);
     BatTur = Cfg(S, "Turret Only (AUTO/ON/OFF)", BatTur).Trim().ToUpperInvariant();
     BatCal = Cfg(S, "Auto Max Turn (AUTO/ON/OFF)", BatCal).Trim().ToUpperInvariant();
+    BatSal = Cfg(S, "Salvo (AUTO/ON/OFF)", BatSal).Trim().ToUpperInvariant();
 }
 
 void BatSp(Bat b, string c, double sp, double rg, double mr, double cool, double rel, double dps, double dsp)
@@ -65,7 +68,7 @@ void BatSort()
         if (k < 0) k = BatBall(s) ? 0 : s.Contains("Calibre") ? 3 : s.Contains("Railgun") ? 2 : 1;
         _bat[k].G.Add(g);
     }
-    foreach (var b in _bat) BatSpec(b);
+    foreach (var b in _bat) { BatSpec(b); b.Sv = b.Rel > 0 && (BatSal == "ON" || (BatSal == "AUTO" && b.G.Count >= 6)); }
     BatSet(_batFix > 0 && _bat[_batFix - 1].G.Count > 0 ? _batFix - 1 : _bat[_prim].G.Count > 0 ? _prim : BatFirst());
 }
 int BatFirst() { for (int i = 0; i < 4; i++) if (BatN(_bat[i]) > 0) return i; return 0; }
@@ -181,7 +184,13 @@ void BatShoot(Bat b, bool on)
     {
         if (!on || _now < b.Next || (b.Rel > 0 && (b.Pend >= 0 || _now < b.Rdy))) return;
         b.Next = _now + b.Cool;
-        if (b.Rel > 0)
+        if (b.Sv)
+        {
+            if (b.Ar == null || b.Ar.Length != b.G.Count) b.Ar = new long[b.G.Count];
+            for (int k = 0; k < b.G.Count; k++) { var q = b.G[k]; if (q.IsFunctional) { b.Ar[k] = BatAm(q); q.ShootOnce(); } else b.Ar[k] = -1; }
+            b.Pend = _now; b.Saw = false; b.Gn = null;
+        }
+        else if (b.Rel > 0)
         {
             var g = BatGun(b);
             if (g == null) return;
@@ -194,6 +203,15 @@ void BatShoot(Bat b, bool on)
 // single-shot guns: an ammo drop or a busy-then-idle gun confirms the shot and starts the reload; nothing within 3 s = still charging, ask again in 2 s
 void BatCheck(Bat b)
 {
+    if (b.Sv)
+    {   // SALVO: every working gun was asked at once; after 1 s count the ones whose magazine shrank. Most of them fired: the whole battery recharges together; few did: the rest are still charging, ask again in 4 s
+        if (_now - b.Pend < 1) return;
+        int n = 0, f = 0;
+        for (int k = 0; k < b.G.Count && k < b.Ar.Length; k++) if (b.Ar[k] >= 0) { n++; if (BatAm(b.G[k]) < b.Ar[k]) f++; }
+        b.Pend = -1;
+        b.Rdy = _now + (f == 0 ? 2 : f * 10 >= n * 7 ? b.Rel * 1.1 + 0.5 : 4);
+        return;
+    }
     var g = b.Gn;
     if (g == null || g.Closed) { b.Pend = -1; return; }
     if (g.IsShooting) b.Saw = true;

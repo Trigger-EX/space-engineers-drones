@@ -139,7 +139,11 @@ namespace SeSim.Run
                 foreach (var b in d.Bodies)
                     foreach (var bi in b.Blocks)
                     {
-                        if (bi.Api is SimProgrammableBlock && d.Pb == null) d.Pb = (SimProgrammableBlock)bi.Api;
+                        if (bi.Api is SimProgrammableBlock)
+                        {   // a drone with two PBs (Wasp Split: [Flight] + [Staff]): the Staff PB is the one that has the FOLLOW screen, the [Follow] Custom Data and takes the commands (it forwards them to Flight)
+                            var pbx = (SimProgrammableBlock)bi.Api;
+                            if (d.Pb == null || ((pbx.CustomName ?? "").StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase) && !(d.Pb.CustomName ?? "").StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase))) d.Pb = pbx;
+                        }
                         if (bi.Api is SimSensor) d.Sensors.Add((SimSensor)bi.Api);
                     }
             foreach (var d in drones) if (d.Pb == null || d.Pb.Runner == null) { Console.Error.WriteLine("test setup failed: no scripted PB in " + model); return 2; }

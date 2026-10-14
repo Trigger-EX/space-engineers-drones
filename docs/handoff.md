@@ -12,7 +12,7 @@ Keep the Space Engineers drone/warship project consistent: scripts, generator, s
 ## Current state
 Release zips are NOT rebuilt for the turrets (CLAUDE.md: only when asked; `python3 -I tools/build_all.py` takes about 12 minutes). `selftest m6` and `ship/Warden-vs-Pirate` pass with the turrets; the sim has no rotor model, so the turret heads are inert there and no combat result exists.
 
-- Ballista (post-v2.7, zips not rebuilt): large-grid railgun drone (27 rails, ~7,200 PCU with its docked Probe Foundry), Peeper probe, `SpotterAI.cs` (vitals memory, feed to the Helm, foundry control), ShrikeAI `<Tag>_AIM` hook (Helm budget now 80,600 chars). `docs/design/ships/Ballista.md`, `tools/tests/test_ballista.py`. Not run in game or sim; the printed-probe separation risk (audit printers-01) applies.
+- Ballista (post-v2.7, zips not rebuilt): large-grid railgun drone (27 rails, ~7,200 PCU with its docked Probe Foundry), Peeper probe, `SpotterAI.cs` (vitals memory, feed to the Helm, foundry control), ShrikeAI `<Tag>_AIM` hook (Helm budget now 81,600 chars). Game-test fixes (salvo, AI assist, AI-behavior gate): `Ballista.md` 3a; run-off at paste NOT reproduced in the sim. `docs/design/ships/Ballista.md`, `tools/tests/test_ballista.py`. Not run in game or sim; the printed-probe separation risk (audit printers-01) applies.
 
 ## Open questions
 In-game: `packages/tests.md` 38-42 (paste/attach of the rotor turrets, motion, Helm ignores them, masks/friendly fire, ammo), `packages/unknowns.md` K-T1..K-T12, plus the earlier list (merge clamp face T1, cockpit toolbar Run argument K3, IGC across docked pods, ammo/hydrogen feed).
