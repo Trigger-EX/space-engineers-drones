@@ -1,3 +1,6 @@
+### v2.7 (unreleased): Ballista wing collisions
+- Three Ballistas pasted together flew into each other. The Shrike Helm now has the full `FRIENDLY AVOIDANCE` steering (was beacon only) and the AI Flight blocks yield to it (`FaYield`); sim `wing-test`: hull collisions 3 of 16 runs -> 0, closest approach 24 m -> 92 m. Helm 83.8 k minified, 85.0 k with the thrust-vector link (limit 86,000). `docs/friendly-avoidance.md`. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): SATELLITE 400 m, READY mode, rocks
 - **Satellite Distance default 400 m** (was 100) in every FOLLOW-block script, the Gnat and WaspStaff: a wider surveillance net and time to react to the ship moving. Custom Data keys already written in a PB keep their value.
 - **`ready` mode** in all drones (Hornet, Wasp, Lancer, Harrier, Aegis, Mantis, Basilisk, Longbow, Gnat, Wasp Split Flight): hold this spot, scan all round, fight only when something comes, then return. `docs/friendly-avoidance.md`.

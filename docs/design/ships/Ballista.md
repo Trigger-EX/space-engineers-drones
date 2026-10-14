@@ -49,6 +49,8 @@ Owner's report: the Ballista did not notice enemies until they were well inside 
   (independent of the block's On/Off), the AI Flight block flies the ship away from the first tick. The Helm now leaves the AI blocks alone unless the assist is on (`if (AiAssist) AiGateFind(_ai)`; `ai on|off` re-runs it). With the assist on again the
   AI blocks do fly the ship while it searches; if the Ballista still leaves its paste point, the next suspects are an inbound `FLEET_HOME` (set `[Fleet] Accept Home=false` in the Helm's Custom Data) and the sensor/AI blocks' own default settings.
 
+* **Wing collisions** (2026-10-14): three Ballistas pasted together flew into one spot and collided. The Helm now steers round every other grid with the `FRIENDLY AVOIDANCE` block, hull radii included, and the AI Flight blocks yield to it: `docs/friendly-avoidance.md`, sim `wing-test`.
+
 ### 3b. Blind at 900 m, stationary Tech Hunter (game screenshot: `TGT none`, `AI: own search`, Ins 356/50000)
 
 * Not the instruction budget (356 of 50,000). The AI block had not yet shown that it flies the ship, so the AI gate time-shared: 6 s AI, 8 s own camera search.
@@ -95,7 +97,7 @@ Ballista's two rear connectors the way the Cradle Pod docks in the Warden's hang
 2. **A turret without ammunition may not acquire or aim**, and the targeting groups may not pick subsystems of an enemy grid from outside. `SeekerProbe.cs` answers this in 5 minutes (put it on any ship with a turret).
 3. Components: creative mode needs none; in survival the foundry's welders need the probe's components (about 1 t of steel plate, 4.6 t of parts) fed by hand.
 4. Not run anywhere: the sim has no probe, foundry or Spotter models. Compile-checked only (`tools/compile_check.sh`, stand-in API).
-5. Helm size: the hook raised ShrikeAI to 80,547 characters (the salvo took it to ~81,200 of a budget now 81,600) (design budget 80,000, hard cap 85,000, the Programmable Block takes 100,000).
+5. Helm size: the hook raised ShrikeAI to 80,547 characters, the salvo to ~81,200, the friendly-avoidance steering to ~83,800, with the thrust-vector link 84,958 (build limit now 86,000; the Programmable Block takes 100,000).
 6. The foundry's 12 welders cost 150 PCU each (1,800 of its ~2,800); fewer welders would save PCU but the bay's reach guarantees (`reach.py`) assume them.
 7. Lite Ballista prints Lite probes: they cannot identify anything. Use Full.
 

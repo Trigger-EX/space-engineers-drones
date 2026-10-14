@@ -16,8 +16,8 @@ if it was installed before the release zips are rebuilt.
 
 | Block | File | In | Does |
 |---|---|---|---|
-| `FRIENDLY AVOIDANCE` | `tools/fa_block.cs` | Hornet, Gnat, Longbow S/L, Lancer, Harrier, Aegis, Basilisk | beacon + sightings + steering (`FaWant`) |
-| `FRIENDLY BEACON` | `tools/fb_block.cs` | Mantis, Wasp, Shrike Helm | beacon only (`FaBeacon`) |
+| `FRIENDLY AVOIDANCE` | `tools/fa_block.cs` | Hornet, Gnat, Longbow S/L, Lancer, Harrier, Aegis, Basilisk, Wasp Flight, **Shrike Helm** (2026-10-14) | beacon + sightings + steering (`FaWant`) |
+| `FRIENDLY BEACON` | `tools/fb_block.cs` | Mantis, Wasp, Shrike Helm | beacon only (`FaBeacon`); the Helm keeps it besides the full block: 10 Hz, and also while parked / IDLE / ASSIST / flown by hand, when `FaWant` does not run |
 
 * **Beacon**: every script with either block broadcasts `MyTuple<long id, Vector3D centre, Vector3D velocity, float radius>` (the grid's
   `WorldVolume`) on the IGC channel `DRONE_SPACE` (4 Hz from the avoidance block, 10 Hz from `BroadcastStatus` for the beacon block). Needs no
@@ -36,8 +36,7 @@ if it was installed before the release zips are rebuilt.
   (IGC cannot tell friend from foe: an enemy running the same beacon must not be dodged).
 * **No Custom Data keys**: several scripts are within 1-4 k of the 100,000-character limit; the constants are in the block.
 
-**Not covered.** `MantisAI` (99,720) and `WaspAI` (99,197) have no room for the steering, so they are seen but do not dodge. The Shrike Helm only
-beacons (budget raised 80,600 -> 80,900 for the 270 characters). `StingerAI` (warhead drones), `PeeperAI`, `SpotterAI` are untouched. A
+**Not covered.** `MantisAI` (99,720) and `WaspAI` (99,197) have no room for the steering, so they are seen but do not dodge. `StingerAI` (warhead drones), `PeeperAI`, `SpotterAI` are untouched. A
 friendly that neither beacons nor is ever seen by a camera or sensor (no antenna, outside every scan) is still invisible; fitting a sensor
 to the drones would close that.
 
@@ -53,3 +52,16 @@ within noise (collisions 0 and 0).
 `Guard Radius` of that spot (full combat movement, friendly avoidance included), and returns to the spot afterwards. Any other mode command ends it.
 The status line shows `Mode   : READY`; the Storage field keeps it over a recompile. Gnat: FORM round the spot. The Shrike Helm keeps its own `react`.
 The two-PB Wasp Split has it in the Flight PB only (the Staff screen shows GUARD).
+
+## Wingmates of one ship class: three Ballistas (2026-10-14)
+**Report.** Three default Ballistas pasted together all flew to the same spot and collided. **Cause.** The Helm (`ShrikeAI.cs`) had only the beacon: its wingmate
+`Separation()` (hive mates on the same IGC tag) is sized for drones, 70 m range and 25 m/s push, against a 52 x 30 x 32 m hull (bounding sphere 29.5 m); three
+Helms given the same target all steer for the same standoff point, so they arrive together and the push is far too weak. While the AI Flight blocks fly (no target,
+assist on) nothing at all dodged, and every AI block picks the same enemy.
+**Repro** (sim, real script + the blueprint's Custom Data; the sim does not model the AI blocks' flight, so only the script path is covered):
+`mono out/sim/SimHost.exe wing-test --count 3 --spacing 120 --axis x --enemy Hornet --enemy-dist 2400 --cue --cmd hunt --seed N` (`sim/src/Run/WingTest.cs`: closest approach of
+every pair, hull-on-hull collision events; a trailing Probe Foundry is counted apart, it is a sim artefact of the docked body). Before: 3 of 16 runs (spacing 70 / 120 m, both axes, seeds 1-4)
+hull-on-hull collisions (first at 12-35 s, up to 120 k collision damage), 7 more under 45 m. After: 0 of 16, closest approach 92 m or more.
+**Fix.** The Helm carries the full `FRIENDLY AVOIDANCE` block now (steering after `KzWant`, sightings in `Valid()`), so the radius of both hulls counts (sphere = radius + radius + 15 m: about 74 m
+between two Ballistas) and the push is 50 m/s, not 25. Plus `FaYield()`: while the AI blocks fly and a friendly grid is in the ramp zone or on the straight line of the ship's velocity, the AI is switched off for 3 s and
+`Control()` flies with the avoidance (unverified in the game). Helm size 81.2 k -> 83.8 k minified with this change (84,958 with the thrust-vector link merged in); the build limit is now 86,000 (CLAUDE.md: size is not a gate; past that move a module into the Staff PB).

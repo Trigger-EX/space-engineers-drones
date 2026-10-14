@@ -45,7 +45,8 @@
         "HarrierAI",
         "AegisAI",
         "BasiliskAI",
-        "WaspFlightAI"
+        "WaspFlightAI",
+        "ShrikeAI"
       ]
     },
     "FRIENDLY BEACON": {
