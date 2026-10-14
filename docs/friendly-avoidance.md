@@ -5,6 +5,13 @@ The Hornets never saw it and flew into it. Nothing in the drone scripts knew abo
 mates on the same IGC tag, `Valid()` throws away everything that is not a target, and the cameras never lock a friend. It was not the first
 drone-on-drone crash (other wings, carriers, other tags have the same hole).
 
+**Second cause (2026-10-14, Corsair spawned next to Hornets in GUARD).** The carrier link's `FLEET_HOME` is the carrier's *centre*; a drone in
+GUARD (or with no target) flies to `Home()` and hovers there, so it rammed the hull. The movement code now holds on a sphere of
+`FollowRadius() + 40` m round that centre, on the drone's own side (Hornet, Wasp, Lancer, Harrier, Aegis, Basilisk, Longbow, Mantis; Gnat's
+FORM ring already sits on a sphere; RTB still flies to the centre to dock). With the carrier's beacon, the avoidance sphere is the real hull.
+`avoid-test --mode transit --bx 0 --hx 0`: the drones stop 65 m from the centre. The in-game build the screenshot came from predates both fixes
+if it was installed before the release zips are rebuilt.
+
 **What.** Two shared blocks (`tools/blocks.json`, synced by `tools/blocks_sync.py`):
 
 | Block | File | In | Does |

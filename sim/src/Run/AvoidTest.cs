@@ -2,7 +2,7 @@
 // FRIENDLY ship (team 0, no script, so nothing beacons for it) sits on the line between them. Without the avoidance block the drones fly
 // through it; with it they sidestep or brake. --beacon injects the DRONE_SPACE beacon the friendly's script would send (else the drones can
 // only see it with their cameras / sensors).
-//   mono SimHost.exe avoid-test [--model Hornet] [--count 3] [--bystander Hornet] [--bx 30] [--mode hunt|transit] [--beacon] [--seconds 90] [--seed 1] [--repo DIR]
+//   mono SimHost.exe avoid-test [--model Hornet] [--count 3] [--bystander Hornet] [--bx 30] [--mode hunt|transit] [--hx 400] [--beacon] [--seconds 90] [--seed 1] [--repo DIR]
 // Reported: closest approach of each drone to the bystander's centre, ticks inside the two hulls' bounding spheres, whether the enemy was
 // engaged (min distance to it). FAIL = any drone within 10 m of the two bounding spheres (or a script death).
 using System;
@@ -58,7 +58,7 @@ namespace SeSim.Run
                 if (t == 60) foreach (var p in pbs) host.RunArgument(p, transit ? "guard" : "hunt", UpdateType.Terminal);
                 if (beacon && t % 15 == 0)
                     w.Igc.InjectBroadcast("DRONE_SPACE", new MyTuple<long, Vector3D, Vector3D, float>(987654321L, fb.WorldBoundCenter, Vector3D.Zero, (float)fb.BoundRadius));
-                if (transit && t >= 60 && t % 15 == 0) w.Igc.InjectBroadcast("HORNET_HOME", new Vector3D(400, 0, 0));
+                if (transit && t >= 60 && t % 15 == 0) w.Igc.InjectBroadcast("HORNET_HOME", new Vector3D(Dbl(args, "--hx", 400), 0, 0));   // --hx = --bx: the carrier link's HOME is the ship's centre
                 if (!transit && t >= 60 && t % 15 == 0 && eb.Alive)   // the enemy is cued over IGC (a parked ship 700 m away is beyond what the HUNT sweep finds quickly)
                     w.Igc.InjectBroadcast("HORNET_TGT", new MyTuple<long, Vector3D, Vector3D, double, long>(eb.EntityId, eb.WorldBoundCenter, Vector3D.Zero, eb.BoundRadius, 0));
                 w.Step();

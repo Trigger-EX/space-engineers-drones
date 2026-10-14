@@ -2096,6 +2096,7 @@ void Control(double dt)
     double aBrake = MinAccel(mass, grav) * 0.55;
     Vector3D want;
     Vector3D home = Home();
+    if (_mode != Mode.RTB && _now - _dynHomeT < 5 && home == _dynHome) { Vector3D o = me - home; home += Vector3D.Normalize(o.LengthSquared() > 1 ? o : _rc.WorldMatrix.Up) * (FollowRadius() + 40); }   // the carrier link's HOME is the ship's centre: hold on a sphere round it, on my side, never inside the hull
     if (_mode == Mode.RTB || _tgt == null)
     {
         Vector3D d = Station(home) - me; double dist = d.Length();
