@@ -1,4 +1,4 @@
-// SprueProbe v2 - in-game test of printer option A (sprue neck + ship grinder), blueprint "Sprue Test" (docs/design/sprue_test.md).
+// SprueProbe v4 - in-game test of printer release: option A (sprue neck + ship grinder, "Sprue Test") and the merge-pair release ("Sprue Test Merge"), docs/design/sprue_test.md.
 // ONE script, two roles, chosen by the Custom Data line Role=printer | payload. Both PBs of the blueprint carry it.
 // PRINTER commands (type into the PB's Argument box, press Run):
 //   weld    welders ON, grinder OFF: print the payload; ends by itself when every payload cell is welded to 100 %
@@ -6,9 +6,11 @@
 //   charge  printer battery Discharge + payload battery Recharge for Charge Seconds, then both Auto
 //   cut     welders OFF, grinder ON until the payload splits off or Cut Seconds pass; stops at once if a printer guard cell is ground
 //           (refused while the grinder sits in the wrong place: fix it, or "cut force")
+//   release (Sprue Test Merge) the PAYLOAD's merge block OFF, as the 10X Missle Platform's missiles do it; waits Release Seconds for the split
+//           "release printer" switches the PRINTER's merge block off instead (the HiveMother bay timers' way); weld switches both back ON
 //   hand    welders and grinder OFF, payload told to HOLD: grind neck cell N2 (2nd red cell from the yellow stub) by hand
 //   push    TryRun("push") on the payload PB through the reference cached before the split
-//   auto    weld, charge, cut, wait until the payload is Clear Metres away, weld again ... Cycles times (completes only if the grinder cuts)
+//   auto    weld, charge, cut (release on Sprue Test Merge), wait until the payload is Clear Metres away, weld again ... Cycles times (completes only if the grinder cuts)
 //   stop    welders and grinder OFF, batteries Auto      snap  log a snapshot line      reset  clear the log
 // PAYLOAD commands: push (thrust Push Percent for Push Seconds; refused while on the printer grid), hold, auto
 // Readout: screen 0 of the PB and the terminal info (Echo, every run); every event line also goes to Custom Data below [Log].
@@ -238,6 +240,7 @@ void StartWeld()
     _split = false; _seen = false; _stall = false; _projMsg = false; _stuck = false; _pp = null; _pb = null; _pLast = null; _hb0 = -1; _bat0 = -1;
     _allT = -1; _tw = _t; _tPl = -1; _tBu = -1; _tSp = -1; _q1 = "?"; _lastQ = -1; _lastProg = _t;
     var p = Blk(S("Projector", "Sprue Projector")) as IMyProjector; if (p != null) p.Enabled = true;
+    if (MergeMode()) { var pm = Merge(true); if (pm != null) pm.Enabled = true; }
     Tools(true, false); Go("WELD");
     string ps = "MISSING"; try { if (p != null) ps = (p.IsProjecting ? "on" : "OFF") + " tot " + p.TotalBlocks + " rem " + p.RemainingBlocks; } catch (Exception) { ps = "unreadable"; }
     Log("WELD start, cycle " + _cyc + ": proj " + ps);
@@ -249,6 +252,27 @@ string Guards()
     foreach (var c in _guard) { var s = Me.CubeGrid.GetCubeBlock(c + _d); n++; if (s == null) { if (!Ex(c + _d)) mn = 0f; } else mn = Math.Min(mn, Pct(s)); }
     return GuardFull() + "/" + n + " full, min " + F(mn * 100, 0) + "%";
 }
+bool MergeMode() { return S("Release", "") == "merge"; }
+IMyFunctionalBlock Merge(bool printer) { return Blk(S(printer ? "Printer Merge" : "Payload Merge", printer ? "Sprue Printer Merge" : "Sprue Payload Merge")); }
+string MergeTxt(IMyFunctionalBlock m)
+{
+    if (m == null) return "none";
+    try { var mb = m as IMyShipMergeBlock; return (m.Enabled ? "ON" : "off") + (mb != null && mb.IsConnected ? " conn" : "") + (Same(m) ? "" : " other grid"); } catch (Exception) { return "lost"; }
+}
+void StartRelease(string a)
+{
+    bool pr = a == "release printer" || a == "release printer force";
+    if (!MergeMode()) { _auto = false; Log("release refused: this rig has no merge pair (Sprue Test Merge only)"); return; }
+    if (_split) { _auto = false; Log("release refused: the payload is already split"); return; }
+    if (_st == "WELD" && _tBu < 0 && !a.EndsWith("force")) { _auto = false; Log("release refused: still welding, wait for BUILT (or: " + a + " force)"); return; }
+    var m = Merge(pr);
+    if (m == null) { _auto = false; Log("release refused: " + (pr ? "printer" : "payload") + " merge block not found by name"); return; }
+    Tools(false, false); Bats(ChargeMode.Auto); SetPush("auto");
+    string before = "printer " + MergeTxt(Merge(true)) + ", payload " + MergeTxt(Merge(false));
+    m.Enabled = false; _tCut = _t; _rel = pr ? "printer" : "payload"; Go("REL");
+    Log("RELEASE: " + _rel + " merge block OFF (before: " + before + "), neck " + Map(_neck) + ", payload bat " + PayBat());
+}
+string _rel = "";
 void StartCut(bool force)
 {
     var gr = Grinder();
@@ -305,12 +329,13 @@ void Watch()
         _split = true; _tSp = _t;
         string nmap = Map(_neck), g = Guards();
         try { _dist0 = _pp == null ? 0 : Vector3D.Distance(_pp.GetPosition(), Me.GetPosition()); } catch (Exception) { _dist0 = 0; }
-        if (_st != "CUT") SetPush("hold");
+        if (_st != "CUT" && _st != "REL") SetPush("hold");
         string pg = "?"; try { if (_pp != null) pg = Id(_pp.CubeGrid.EntityId); } catch (Exception) { }
-        Log("SPLIT c" + _cyc + " in state " + _st + (_st == "CUT" ? " " + F(_t - _tCut, 1) + "s after cut start" : "") +
+        Log("SPLIT c" + _cyc + " in state " + _st + (_st == "CUT" || _st == "REL" ? " " + F(_t - _tCut, 1) + "s after cut start" : "") +
             ": printer kept its grid " + Q(Me.CubeGrid.EntityId == _g0) + ", neck left on printer " + nmap + ", payload PB grid " + pg +
             ", payload bat " + PayBat() + ", push " + _pushMode + ", guards " + g);
         if (_st == "CUT") _r["Q2"] = "Q2 cut SPLIT +" + F(_t - _tCut, 0) + "s: grinds OWN grid";
+        else if (_st == "REL") _r["Q2"] = "Q2 " + _rel + " merge OFF: SPLIT +" + F(_t - _tCut, 0) + "s";
         else _r["Q2h"] = "Q2 hand cut: SPLIT";
         _r["Q2c"] = "Q2c guards " + g;
     }
@@ -326,6 +351,7 @@ void Printer(string a, double dt)
         else { if (_split) _cyc++; StartWeld(); }
     }
     else if (a == "cut" || a == "cut force") StartCut(a == "cut force");
+    else if (a.StartsWith("release")) StartRelease(a);
     else if (a == "charge" || a == "charge force") { if (_st == "WELD" && _tBu < 0 && a != "charge force") Log("charge refused: still welding, wait for BUILT (or: charge force)"); else StartCharge(); }
     else if (a == "hand") { Tools(false, false); Bats(ChargeMode.Auto); SetPush("hold"); Go("HAND"); _auto = false; Log("HAND: payload on HOLD. Grind ONLY neck cell N2 (the 2nd red cell from the yellow stub) with your hand grinder; leave N1"); }
     else if (a == "push") { if (_pp == null) Log("no payload PB known"); else { bool ok = false; try { ok = _pp.TryRun("push"); } catch (Exception) { } if (ok) { _pushMode = "pushed"; _stuck = false; if (_st == "FREE") _ts = 0; } Log("TryRun(push) on the payload PB: " + (ok ? "true" : "false") + (ok ? "" : " -> run push on Sprue Payload PB from its own terminal")); } }
@@ -338,7 +364,7 @@ void Printer(string a, double dt)
     else if (a == "stop") { _auto = false; Tools(false, false); Bats(ChargeMode.Auto); Go("IDLE"); }
     else if (a == "snap") Snap();
     else if (a == "reset") { _log.Clear(); _r.Clear(); Write(); }
-    else if (a.Length > 0) Log("unknown command '" + a + "'; valid: weld charge cut hand push auto stop snap reset");
+    else if (a.Length > 0) Log("unknown command '" + a + "'; valid: weld charge cut release hand push auto stop snap reset");
     Watch();
     if (_runs % 6 == 0) CopyPay();
     var gr = Grinder();
@@ -386,7 +412,7 @@ void Printer(string a, double dt)
         {
             _stall = true; string why;
             string bad = ""; int k = 0; foreach (var w in Welders()) { k++; if (w.Enabled && !w.IsWorking) bad += " " + k; }
-            if (have == 0 && bld == 0 && rem == tot) why = "nothing buildable: ghost not attached? Projector Offset must read 0,1,2 and the ghost neck touch the yellow stub";
+            if (have == 0 && bld == 0 && rem == tot) why = "nothing buildable: ghost not attached? Projector Offset must read as pasted and the ghost neck touch the yellow stub";
             else if (bad.Length > 0) why = "welder" + bad + " ON but not working: power/owner";
             else if (have == 0) { why = "welders on, NO payload block on my grid. If you SEE welded grey payload blocks: Q1 NOT FUSED? (check Info tab grid list and the payload PB screen), do NOT hand-weld. If nothing is welded: Survival (needs components) or a safe zone"; _q1 = "? nothing on my grid"; }
             else if (neckPres == 0 && rem == 0 && clO >= _clus.Count - 1) why = "the neck cells cannot be read (armour is invisible to this API): not a reach problem; the BLIND fallback ends the weld, or check the neck by eye";
@@ -398,7 +424,7 @@ void Printer(string a, double dt)
     {
         Bats(ChargeMode.Auto);
         Log("CHARGED: payload battery " + PayBat() + " MWh");
-        Go("IDLE"); if (_auto) StartCut(false);
+        Go("IDLE"); if (_auto) { if (MergeMode()) StartRelease("release"); else StartCut(false); }
     }
     else if (_st == "CUT" || _st == "CUT2")
     {
@@ -436,6 +462,17 @@ void Printer(string a, double dt)
                 Log("CUT2 end: " + gw + (valid ? "" : " (INVALID, D4)") + "; payload neck before/now " + _n0 + " / " + now + " (N1 N2 '.' = left with the hand cut)" + note + ". Next: push");
                 _r["Q2h"] = "Q2 hand SPLIT, CUT2 " + _n0 + ">" + now + (valid ? "" : " INVALID"); Go("FREE");
             }
+        }
+    }
+    else if (_st == "REL")
+    {
+        if (_split) { Log("RELEASE OK: the welded payload split off " + F(_t - _tCut, 1) + "s after its " + _rel + " merge block went OFF: no grinder needed"); Go("FREE"); }
+        else if (_ts >= N("Release Seconds", 20))
+        {
+            SetPush("hold"); _auto = false;
+            Log("NO SPLIT " + F(_ts, 0) + "s after the " + _rel + " merge block went OFF: payload PB " + (_pp == null ? "unknown" : (Same(_pp) ? "still on my grid" : "other grid")) +
+                ", merges printer " + MergeTxt(Merge(true)) + " payload " + MergeTxt(Merge(false)) + ". Next: release printer (the other merge block), then snap");
+            _r["Q2"] = "Q2 " + _rel + " merge OFF: NO SPLIT"; Go("IDLE");
         }
     }
     else if (_st == "HAND" && _split) Go("FREE");
@@ -538,7 +575,8 @@ void Show()
         Ln("proj " + pj);
         var w = new StringBuilder("weld"); foreach (var x in ws) w.Append(x.Enabled ? (x.IsWorking ? " ON" : " on!") : " off");
         Ln(w + "  grind " + (gr == null ? "NONE" : (gr.Enabled ? "ON" : "off") + (gr.IsWorking ? " wrk" : "")));
-        string gp = GPos(gr); Ln("grinder" + (gp.Length == 0 ? " pos OK" : gp));
+        if (MergeMode()) Ln("merge printer " + MergeTxt(Merge(true)) + " pay " + MergeTxt(Merge(false)));
+        else { string gp = GPos(gr); Ln("grinder" + (gp.Length == 0 ? " pos OK" : gp)); }
         Ln("mine: neck " + Map(_neck) + " clus " + Map(_clus));
         string pp = "-"; try { if (_pp != null) pp = (Same(_pp) ? "SAME grid" : "other " + Id(_pp.CubeGrid.EntityId)) + " own " + Own(_pp.OwnerId); } catch (Exception) { _pp = null; pp = "ref lost"; }
         Ln("pay PB " + pp);

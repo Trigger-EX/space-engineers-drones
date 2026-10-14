@@ -29,7 +29,8 @@ import reach as R
 NAME = 'Sprue Test'
 NAME_NG = 'Sprue Test No Grinder'
 NAME_CL = 'Sprue Test Close'
-NO_LITE = (NAME, NAME_NG, NAME_CL)
+NAME_MG = 'Sprue Test Merge'
+NO_LITE = (NAME, NAME_NG, NAME_CL, NAME_MG)
 SCRIPT = 'SprueProbe.cs'
 DOCS = {
     NAME: 'TEST SHIP (option-A printer test, not packaged): a small printer projects a 7-cell armour neck plus a dummy drone (battery, PB, ion '
@@ -38,6 +39,9 @@ DOCS = {
           'Ship Grinder XML is a GUESS (fallback: Sprue Test No Grinder).',
     NAME_CL: 'TEST SHIP (option-A printer test, not packaged): Sprue Test with the Small Ship Grinder pointing its TIP straight at the middle of the neck, one block of air in between '
              '(Sprue Test lays the grinder beside the neck, which only reaches if the game\'s working sphere is centred at the tip and about 1 m wide). Same script, same payload.',
+    NAME_MG: 'TEST SHIP (printer release test, not packaged): Sprue Test without a grinder: the yellow stub and the first neck cell are a pair of small merge blocks '
+             '(the 10X Missle Platform method: the missile is held only by a merge pair and switches its OWN merge block off to leave). SprueProbe "release" '
+             'switches the payload\'s merge block off and reports whether the welded payload splits off the printer.',
     NAME_NG: 'TEST SHIP: Sprue Test without the Ship Grinder block (its XML is a guess): paste this if Sprue Test fails to paste, then place a '
              'Small Ship Grinder by hand on the yellow seat (the PB screen says "pos OK" when it sits right).',
 }
@@ -57,6 +61,8 @@ LAYOUTS = {
                   stalk=[(-1, -5, z) for z in range(1, 6)] + [(-1, y, 5) for y in range(-4, 1)]),
     'close': dict(min=(-7, -1, -1), fwd='Right', up='Up', tier=3, collateral=('Sprue Welder 1', 'Sprue Welder 3'),
                   stalk=[(-8, -1, z) for z in range(1, 6)] + [(-8, 0, 5)] + [(x, 0, 5) for x in range(-7, 0)]),
+    # 'merge' = Sprue Test Merge: no grinder; the stub is the printer's merge block (clamp -z) and N1 the payload's (clamp +z), as in the 10X Missle Platform
+    'merge': dict(tier=0, collateral=(), stalk=[]),
 }
 GRINDER = LAYOUTS['side']['min']; G_STALK = LAYOUTS['side']['stalk']
 YELLOW, NECK_RED, WELD_GREEN, PROJ_COL = (0.13, 0.9, 0.9), C.RED, (0.33, 0.7, 0.4), (0.6, 0.3, 0.1)
@@ -78,9 +84,11 @@ def payload_head():
     assert PAY_PB == (0, -1, -4)
     return PAYLOAD_HEAD % (cells_txt(NECK), cells_txt([HUB, PAY_BAT, PAY_PB, PAY_THR]))
 
-def payload_bp():
+def payload_bp(merge=False):
     pay = Blueprint('Sprue Payload', 'Small', seed=C.seed_for('Sprue Payload'), legacy_shapes=True)
-    for c in NECK: pay.armor(*c, color=NECK_RED)
+    for i, c in enumerate(NECK):
+        if merge and i == 0: C.merge_small(pay, c, 'Backward', 'Sprue Payload Merge')     # N1 = the payload's merge block, clamp face +z onto the printer's
+        else: pay.armor(*c, color=NECK_RED)
     pay.armor(*HUB)
     pay.add('MyObjectBuilder_BatteryBlock', 'SmallBlockSmallBatteryBlock', PAY_BAT, name='Sprue Payload Battery', extra=C.BAT_S, kind='bat',
             state={'stored_power': 0.04})                 # 0.04 written: welded 0.04 = kept, 0.05 = full, 0.015 = 30 % default, 0 = empty
@@ -93,6 +101,7 @@ def payload_bp():
 
 def grinder_centres(bp):
     L = LAYOUTS[getattr(bp, 'layout', 'side')]
+    if 'min' not in L: return [], []                                    # 'merge': no grinder
     gb = dict(min=L['min'], fwd=L['fwd'], up=L['up'], size=(3, 3, 6))
     cs = bp.cells(gb)
     return cs, [(h, R.tip_point_from_cells(cs, DIR[L['fwd']], h.backoff)) for h in R.FAMILY]
@@ -100,10 +109,13 @@ def grinder_centres(bp):
 def sprue_test(lite=False, grinder=True, layout='side'):
     register_shapes()
     L = LAYOUTS[layout]
-    name = NAME_CL if layout == 'close' else (NAME if grinder else NAME_NG)
-    pay = payload_bp()
+    merge = layout == 'merge'
+    if merge: grinder = False
+    name = NAME_CL if layout == 'close' else NAME_MG if merge else (NAME if grinder else NAME_NG)
+    pay = payload_bp(merge)
     bp = Blueprint(name, 'Small', seed=C.seed_for(name), legacy_shapes=True)
-    bp.armor(*STUB, color=YELLOW)
+    if merge: C.merge_small(bp, STUB, 'Forward', 'Sprue Printer Merge', color=YELLOW)
+    else: bp.armor(*STUB, color=YELLOW)
     bp.armor(*CORE)
     for c in BEAM: bp.armor(*c)
     sett, off = PL.projector_settings(pay, (0, 0, 0), PROJ, seed_text='sprue')
@@ -118,13 +130,14 @@ def sprue_test(lite=False, grinder=True, layout='side'):
         bp.add('MyObjectBuilder_ShipGrinder', 'SmallShipGrinder', L['min'], L['fwd'], L['up'], 'Sprue Grinder', WELD_GREEN, kind='grinder', enabled=False)
         bp.notes.append('UNSEEN XML: SmallShipGrinder written as the legacy small-welder form with the grinder xsi:type (fallback: Sprue Test No Grinder)')
     gcells, cen = grinder_centres(bp)
-    guard = sorted({c for b in bp.blocks if b['sub'] != 'SmallShipGrinder' for c in bp.cells(b) if min(R.cell_dist(p, c) for _, p in cen) < GUARD_CELLS})
-    gmax = tuple(max(c[k] for c in gcells) for k in range(3))
-    pb['custom_data'] = ('[Sprue]\nRole=printer\nMe Cell=%s\nNeck=%s\nCluster=%s\nGuard=%s\nGrinder Min=%s\nGrinder Max=%s\nGrinder Forward=%s\n'
+    guard = sorted({c for b in bp.blocks if b['sub'] != 'SmallShipGrinder' for c in bp.cells(b) if cen and min(R.cell_dist(p, c) for _, p in cen) < GUARD_CELLS})
+    gl = '' if merge else 'Grinder Min=%s\nGrinder Max=%s\nGrinder Forward=%s\n' % (
+        cells_txt([L['min']]), cells_txt([tuple(max(c[k] for c in gcells) for k in range(3))]), L['fwd'])
+    rl = 'Release=merge\nPrinter Merge=Sprue Printer Merge\nPayload Merge=Sprue Payload Merge\nRelease Seconds=20\n' if merge else ''
+    pb['custom_data'] = ('[Sprue]\nRole=printer\nMe Cell=%s\nNeck=%s\nCluster=%s\nGuard=%s\n%s%s'
                          'Projector=Sprue Projector\nBattery=Sprue Battery\nPayload PB=Sprue Payload PB\nPayload Battery=Sprue Payload Battery\n'
                          'Cycles=2\nCharge Seconds=30\nCut Seconds=60\nClear Metres=6\nBlueprint Owner=%d\n'
-                         % (cells_txt([PB]), cells_txt(NECK), cells_txt([HUB, PAY_BAT, PAY_PB, PAY_THR]), cells_txt(guard), cells_txt([L['min']]), cells_txt([gmax]), L['fwd'],
-                            sebp.DEFAULT_OWNER))
+                         % (cells_txt([PB]), cells_txt(NECK), cells_txt([HUB, PAY_BAT, PAY_PB, PAY_THR]), cells_txt(guard), gl, rl, sebp.DEFAULT_OWNER))
     bp.validate()
     bp.payload, bp.projection_offset, bp.guard_cells = pay, off, guard
     verify(bp)                                   # raises AssertionError: build_all lists the model as FAILED
@@ -137,6 +150,21 @@ def fused_view(bp):
     f.blocks += [copy.deepcopy(b) for b in bp.payload.blocks]
     f.reserve.update(bp.payload.reserve)
     return f, n
+
+def verify_merge(f, n):
+    """Sprue Test Merge: the merge pair is the ONLY printer-payload contact, the clamp faces oppose, and taking the merge link out of the
+    neighbour graph (what a released merge pair does if its clamp face is not a structural link, docs/audit/printers.md printers-08)
+    leaves exactly two pieces: the whole printer and the whole payload"""
+    pm, dm = f.blocks[:n], f.blocks[n:]
+    a = [b for b in pm if b['kind'] == 'merge']; b = [x for x in dm if x['kind'] == 'merge']
+    assert len(a) == 1 and len(b) == 1, 'one merge block on each side'
+    a, b = a[0], b[0]
+    assert (C.merge_clamp_dir(f, a), C.merge_clamp_dir(f, b)) == ('Forward', 'Backward'), 'clamp faces must point at each other'
+    adj = f.attachment(f.occupancy())
+    adj[id(a)].discard(id(b)); adj[id(b)].discard(id(a))
+    comps = [{id(x) for x in c} for c in f.components(adj)]
+    assert len(comps) == 2 and {id(x) for x in pm} in comps and {id(x) for x in dm} in comps, f'merge release leaves {len(comps)} pieces'
+    return True
 
 def verify(bp):
     """the checks build_all cannot do (it never reloads the nested ProjectedGrids): one piece when fused, ONLY the stub-root mount link,
@@ -161,6 +189,7 @@ def verify(bp):
         r = R.radius_cells(h)
         for b in bp.payload.blocks:
             assert any(R.reaches(R.welder_tip(bp, w, h.backoff)[0], bp.payload.cells(b), r) for w in welders), f'{h.name}: no welder reaches {b["name"] or b["min"]}'
+    if getattr(bp, 'layout', 'side') == 'merge': return verify_merge(f, n)
     _, cen = grinder_centres(bp)
     rmax = max(R.radius_cells(h) for h, _ in cen)
     L = LAYOUTS[getattr(bp, 'layout', 'side')]
@@ -198,7 +227,8 @@ def verify(bp):
         check_split(cut_away(cut), f'hand cut N2 + CUT2 {h.name}')
     return True
 
-MODELS = {NAME: sprue_test, NAME_NG: lambda lite=False: sprue_test(lite, grinder=False), NAME_CL: lambda lite=False: sprue_test(lite, layout='close')}
+MODELS = {NAME: sprue_test, NAME_NG: lambda lite=False: sprue_test(lite, grinder=False), NAME_CL: lambda lite=False: sprue_test(lite, layout='close'),
+          NAME_MG: lambda lite=False: sprue_test(lite, layout='merge')}
 
 if __name__ == '__main__':
     bad = 0
