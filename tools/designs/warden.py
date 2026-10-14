@@ -352,7 +352,8 @@ def _hangar(S, full):
     S.conns = conns
     doors = []
     for i, z in enumerate(range(HANGAR_Z[0], HANGAR_Z[1] + 1)):
-        b = S.fixed('door', 'MyObjectBuilder_AirtightHangarDoor', '', (-1, 0, z), 'Forward', 'Right', nm(f'Hangar Door {i + 1}'), GUND, kind='door')
+        # panel face = the block's Forward (Tech Hunter sample): Down = outward, so the 8 panels close the belly opening; Up (3 cells) spans x -1..1, the chain runs along z
+        b = S.fixed('door', 'MyObjectBuilder_AirtightHangarDoor', '', (-1, 0, z), 'Down', 'Right', nm(f'Hangar Door {i + 1}'), GUND, kind='door')
         doors.append(b)
     S.doors = doors
 
