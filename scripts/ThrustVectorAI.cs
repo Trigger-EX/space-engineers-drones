@@ -17,7 +17,7 @@
 //  Custom Data  [Thrust Vectoring]: Enabled, Lost Fraction, Aim Weight, Hold Time (s), Hysteresis, Min Force (m/s2), Fight Range (m: inside it the guns keep priority). "reload" re-reads, "reset" forgets the rated thrust.
 // =====================================================================
 const string VER = "1.0";
-bool TvOn = true; double TvLostFrac = 0.5, TvAimW = 1.0, TvHold = 1.0, TvHyst = 0.1, TvMinNeed = 0.3, TvFightRange = 1200;
+bool TvOn = true; double TvLostFrac = 0.5, TvAimW = 2.5, TvHold = 1.0, TvHyst = 0.1, TvMinNeed = 0.3, TvFightRange = 1200;
 
 IMyShipController _rc;
 List<IMyThrust> _thr = new List<IMyThrust>();

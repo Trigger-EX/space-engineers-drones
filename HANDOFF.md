@@ -368,3 +368,12 @@ The game can't be run here. Build an engine:
 - **v1.6**: hull-point aim modes.
 - **v1.7**: AI-block search hand-off (user places `[AI]` blocks).
 - **v1.8** (uncompiled): printer join / re-scan on grid change, Hornet scout mode.
+
+## Thrust vectoring and the Flight/Staff drones (this session; docs/thrust-vectoring.md)
+- Every drone/ship whose flight script has the THRUST VECTOR LINK block (Hornet, Lancer, Harrier, Basilisk, Longbow, Mantis, Aegis, Wasp, Shrike Helm, Peeper) gets a small `[Thrust] ... PB` (`scripts/ThrustVectorAI.cs`) from `C.add_support_pbs()` in `tools/build_all.py`. When a thrust direction is lost it tells the flight PB which surviving group to line up with the force needed. Not run in the game; the sim shows no win-rate gain (table in the doc), so it is unproven.
+- Aegis, Mantis, Longbow S/L and the Wasp are now two PBs: `[Flight]` (AegisAI.cs / MantisAI.cs / LongbowSniperAI.cs / WaspFlightAI.cs, SPLIT LINK block `tools/lk_block.cs`, `tools/split_sync.py`) + `[Staff]` (`<Drone>StaffAI.cs`, generated from WaspStaffAI by `tools/make_staff.py`). They were at the 100k cap; the flight halves are about 78-80k.
+- Fixed in the split scripts: a zero dt at start-up flipped `_aiOn` and left the AI blocks off for ~14 s (also in the existing Wasp Split).
+- Extra PBs cost ~140 kg each: Aegis-vs-Hornet 300 seeds 191 -> 160 wins. Probe ships `Twin PB Test` / `Hornet Pilot Test` are exempt (pinned PB counts).
+- Sim: `--events "T:!kill-thrust F[ N];..."` (run/one/follow-test), `follow-test --flight-custom-data`. Selftests: M4 and M5 fail with or without this work (M4 verified on the old tree; M5 not verified), M6 launch-all failures also on the old tree.
+- Release zips are NOT rebuilt.
+

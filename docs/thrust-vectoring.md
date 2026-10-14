@@ -23,7 +23,7 @@ Intact ships fly exactly as before.
    (thrusters of a printer or carrier never count). A group is LOST when it works at less than `Lost Fraction` (0.5) of that. Shot-off thrusters and thrusters on a
    broken-off piece (`Closed`, not the same construct) make it rescan (1 Hz check).
 3. With a group lost and a force over `Min Force` (0.3 m/s2) asked for, it scores "plain attitude" against "line group k up with the force" for each surviving k:
-   thrust shortfall (against what the strongest group alone could give) + `Aim Weight` x aim error (full weight inside `Fight Range` = 1200 m of a target, 0.2 outside,
+   thrust shortfall (against what the strongest group alone could give) + `Aim Weight` (2.5) x aim error (full weight inside `Fight Range` = 1200 m of a target, 0.2 outside,
    0 when falling in gravity) + a small turn cost. Group k's push direction makes a fixed angle with the gun forward, so the new forward is the point of that cone round
    the force nearest to the wanted forward; the roll follows from the same two directions. The choice is held `Hold Time` (1 s) with `Hysteresis` (0.1).
 4. The answer (`TVEC.O<flight PB address>`: forward, up, lost mask, chosen group) is flown by `Aim()` for 0.5 s at a time; feed-forward is zeroed. No answer (intact
@@ -31,6 +31,20 @@ Intact ships fly exactly as before.
 
 Status: the Thrust PB screen (`THRUST LOST F  vectoring R  short 17%`). Custom Data `[Thrust Vectoring]`: `Enabled`, `Lost Fraction`, `Aim Weight`, `Hold Time (s)`,
 `Hysteresis`, `Min Force (m/s2)`, `Fight Range (m)`; `reload` re-reads, `reset` forgets the rated thrust.
+
+## Sim results (what was measured, and what was not)
+
+Sim, seeds stated. The `!kill-thrust` events remove the thrusters at 10 s of a Hornet-vs-Hornet duel (the crippled Hornet is team 0; wins / losses / timeouts of that Hornet):
+
+| crippled by | vectoring off | Aim Weight 0.3 | 1.0 | 2.5 | 6 |
+|---|---|---|---|---|---|
+| F lost, 100 seeds | 18 / 43 / 39 | 8 / 67 / 25 | 13 / 62 / 25 | 15 / 54 / 31 | 22 / 50 / 28 |
+| F+R lost, 100 seeds | 10 / 21 / 69 | | 3 / 37 / 60 | 3 / 32 / 65 | 5 / 30 / 65 |
+
+So the sim shows NO win-rate gain from vectoring: a crippled Hornet with it engages more often (fewer timeouts) and loses more of those fights; a heavier aim weight moves it back toward
+"off". The default is Aim Weight 2.5. In `follow-test` (park / cruise / weave, F, B, R, F+B, F+R killed, 1-2 seeds each) the drone reaches and holds its slot with vectoring on AND off:
+the scripts already fly with a free attitude when nothing pins the nose (no target), so the lost axis only matters while the guns hold the nose on a target; the sim has not shown a case
+where vectoring wins. Untested: gravity (the follow test has no planet), the real game. Treat the feature as unproven, switchable (`Enabled=false` in the Thrust PB, or just remove the PB).
 
 ## Notes
 
