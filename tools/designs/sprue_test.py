@@ -49,11 +49,13 @@ BEAM = [(x, 0, 5) for x in range(1, 7)]
 WELDERS = ((1, -1, 2), (2, -1, -1), (1, -1, -4))        # Forward=Left (tip -x), Up=Up; Welder 2 keeps ONE cell of air (its tip would sit in the grinder sphere)
 # grinder layouts: 'side' = Sprue Test (long axis y, tip +y, flush BESIDE N3..N5), 'close' = Sprue Test Close (long axis x, tip +x, one block of air in front of N4).
 # seat = the armour cube under a corner of the grinder's back ring (its Back mount is a thin frame), stalk = armour from the seat to the core,
-# tier = how many of reach.FAMILY (tip, tip-1, tip-2, mid) must cut the neck, collateral = printer blocks the sphere may touch (guarded at run time).
+# tier = how many of the FIRST entries of reach.FAMILY must cut the neck; FAMILY is [tip, tip-1, tip-2, mid] x [r 1.3 m, r 1.0 m] = 8 entries, so 8 = every hypothesis,
+# 3 = tip r1.3, tip r1.0, tip-1 r1.3 (tip-1 r1.0 is left out on purpose for 'close': it reaches N4 only, an exact tie at 2.0 cells, and after a hand cut of N2 it would orphan N3).
+# collateral = printer blocks the sphere may touch (guarded at run time). The tool tip direction is 'fwd'.
 LAYOUTS = {
-    'side':  dict(min=(-3, -4, -1), fwd='Up', up='Forward', tip='Up', tier=4, collateral=(),
+    'side':  dict(min=(-3, -4, -1), fwd='Up', up='Forward', tier=8, collateral=(),
                   stalk=[(-1, -5, z) for z in range(1, 6)] + [(-1, y, 5) for y in range(-4, 1)]),
-    'close': dict(min=(-7, -1, -1), fwd='Right', up='Up', tip='Right', tier=2, collateral=('Sprue Welder 1', 'Sprue Welder 3'),
+    'close': dict(min=(-7, -1, -1), fwd='Right', up='Up', tier=3, collateral=('Sprue Welder 1', 'Sprue Welder 3'),
                   stalk=[(-8, -1, z) for z in range(1, 6)] + [(-8, 0, 5)] + [(x, 0, 5) for x in range(-7, 0)]),
 }
 GRINDER = LAYOUTS['side']['min']; G_STALK = LAYOUTS['side']['stalk']
@@ -93,7 +95,7 @@ def grinder_centres(bp):
     L = LAYOUTS[getattr(bp, 'layout', 'side')]
     gb = dict(min=L['min'], fwd=L['fwd'], up=L['up'], size=(3, 3, 6))
     cs = bp.cells(gb)
-    return cs, [(h, R.tip_point_from_cells(cs, DIR[L['tip']], h.backoff)) for h in R.FAMILY]
+    return cs, [(h, R.tip_point_from_cells(cs, DIR[L['fwd']], h.backoff)) for h in R.FAMILY]
 
 def sprue_test(lite=False, grinder=True, layout='side'):
     register_shapes()
@@ -121,7 +123,7 @@ def sprue_test(lite=False, grinder=True, layout='side'):
     pb['custom_data'] = ('[Sprue]\nRole=printer\nMe Cell=%s\nNeck=%s\nCluster=%s\nGuard=%s\nGrinder Min=%s\nGrinder Max=%s\nGrinder Forward=%s\n'
                          'Projector=Sprue Projector\nBattery=Sprue Battery\nPayload PB=Sprue Payload PB\nPayload Battery=Sprue Payload Battery\n'
                          'Cycles=2\nCharge Seconds=30\nCut Seconds=60\nClear Metres=6\nBlueprint Owner=%d\n'
-                         % (cells_txt([PB]), cells_txt(NECK), cells_txt([HUB, PAY_BAT, PAY_PB, PAY_THR]), cells_txt(guard), cells_txt([L['min']]), cells_txt([gmax]), L['tip'],
+                         % (cells_txt([PB]), cells_txt(NECK), cells_txt([HUB, PAY_BAT, PAY_PB, PAY_THR]), cells_txt(guard), cells_txt([L['min']]), cells_txt([gmax]), L['fwd'],
                             sebp.DEFAULT_OWNER))
     bp.validate()
     bp.payload, bp.projection_offset, bp.guard_cells = pay, off, guard
