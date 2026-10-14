@@ -16,6 +16,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import *            # noqa: F401,F403  (helpers + constants)
 import _common as C
+import spares
 import hulls as H
 from hulls import Volume, Zone, Zones
 import turrets as TU
@@ -483,7 +484,13 @@ def shrike(lite=False):
     return finalize(bp)
 
 
-MODELS = {NAME: shrike}
+def shrike_shipped(lite=False):
+    """the blueprint that ships: one blank PB reserved for a Staff half (FLEET LINK receive + AI GATE leave ShrikeAI, 86 k minified; docs/design/pb_headroom.md).  shrike() stays as it was for the tests and the warship modules."""
+    bp = shrike(lite)
+    spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=NAME + (' Lite' if lite else ''))
+    return bp
+
+MODELS = {NAME: shrike_shipped}
 DOCS = {NAME: ('Delta-wing fighter (small grid, 17 m): one pilot in a fighter cockpit, one Programmable Block "[Helm] Shrike" (ShrikeAI.cs), Remote Control, '
                'two autocannons + two gatlings (battery [B1]) and an assault cannon ([B2]) fixed forward, eight large hydrogen thrusters on three full tanks '
                '(16 m/s2 forward and back, 8 m/s2 up / down / sideways), six gyros, two charged batteries, two uranium reactors, six cameras, antenna, '

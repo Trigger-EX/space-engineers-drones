@@ -18,6 +18,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import *            # noqa: F401,F403  (helpers + constants)
 import _common as C
+import spares
 
 # ---------------------------------------------------------------------------------------------
 def hornet_frame(name, weapon_sub, weapon_type, script, custom_data=None, ai=True, sensor=True, title=None, merge=True):
@@ -118,7 +119,10 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True):
 
 def gnat(lite=False):
     name = "Gnat Lite" if lite else "Gnat"
-    return gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite)
+    bp = gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite)
+    # one blank PB reserved for the Staff half (FLEET LINK + LAUNCH leave GnatSwarmAI, 87 k minified; docs/design/pb_headroom.md); in gnat(), not gnat_frame: the Stinger fallback shares the frame
+    spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=name)
+    return bp
 
 # ---------------------------------------------------------------------------------------------
 def longbow_frame(grid, script, lite=False, seeker=False):
@@ -189,7 +193,7 @@ def longbow_frame(grid, script, lite=False, seeker=False):
         bp.add("MyObjectBuilder_FlightMovementBlock", sub("SmallFlightMovement", "LargeFlightMovement"), (1, -3, -1) if L else (1, -3, -2), name=f"{tag} AI Flight [AI]", kind="ai")
     return finalize(bp)
 
-def longbow_s(lite=False): return longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite)
+def longbow_s(lite=False): return C.add_support_pbs(longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Longbow S printed by a Foundry carries its Staff PB
 def longbow_l(lite=False): return longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite)
 
 def longbow_l_seeker(lite=False):

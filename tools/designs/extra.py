@@ -29,6 +29,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import *            # noqa: F401,F403  (helpers + constants)
 import _common as C
+import spares
 
 HULL = (0.58, -0.78, -0.25); ACC = (0.07, 0.55, 0.10)
 
@@ -128,7 +129,7 @@ def aegis(lite=False):
             bp.add("MyObjectBuilder_Decoy", "SmallDecoy", (x, 2, -3), "Forward", "Up", f"{name} Decoy {s}", HULL, kind="decoy")
     _merge_stalk(bp, name)
     _ai_sensor(bp, name, not lite, not lite)
-    return finalize(bp)
+    return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so an Aegis printed by a Shipyard carries its support PBs
 
 # ---------------------------------------------------------------------------------------------
 def mantis(lite=False):
@@ -173,7 +174,7 @@ def mantis(lite=False):
         bp.add("MyObjectBuilder_SensorBlock", "SmallBlockSensor", (-1, -3, -3), "Down", "Forward", f"{name} Sensor", kind="sensor")
         bp.add("MyObjectBuilder_OffensiveCombatBlock", "SmallOffensiveCombat", (1, -3, -3), name=f"{name} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", "SmallFlightMovement", (1, -3, -2), name=f"{name} AI Flight [AI]", kind="ai")
-    return finalize(bp)
+    return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Mantis printed by a Foundry carries its support PBs
 
 # ---------------------------------------------------------------------------------------------
 def basilisk(lite=False, seeker=False):
@@ -229,6 +230,8 @@ def basilisk(lite=False, seeker=False):
         bp.add("MyObjectBuilder_SensorBlock", "LargeBlockSensor", (0, -1, 0), "Down", "Forward", f"{name} Sensor", kind="sensor")
         bp.add("MyObjectBuilder_OffensiveCombatBlock", "LargeOffensiveCombat", (0, -1, 1), name=f"{name} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", "LargeFlightMovement", (0, -1, 2), name=f"{name} AI Flight [AI]", kind="ai")
+    # one blank PB reserved for the Staff half (FLEET LINK + FOLLOW + display leave BasiliskAI, 95 k minified; docs/design/pb_headroom.md)
+    spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=name)
     return finalize(bp)
 
 def basilisk_seeker(lite=False):

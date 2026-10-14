@@ -58,7 +58,7 @@ def peeper(lite=False):
     # docking latch
     bp.armor(0, -1, 3, RED); bp.armor(0, -2, 3, RED)
     merge_small(bp, (0, -3, 3), "Down", f"{name} Merge")
-    return finalize(bp)
+    return C.add_support_pbs(finalize(bp))      # [Thrust] PB here too, so a Peeper printed by the Probe Foundry carries it
 
 MODELS = {"Peeper": peeper}
 DOCS = {'Peeper': 'Tiny unarmed vitals probe (3.5 x 5 x 5.5 m, 4.6 t): one small turret used as a target designator, 12 ion thrusters, merge latch. Printed by the Ballista\'s probe foundry; circles the Ballista\'s target, cycles the turret through the '

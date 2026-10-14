@@ -1,3 +1,7 @@
+### v2.7 (unreleased): extra PBs where a ship needs one
+- Printed copies of Wasp, Aegis, Mantis and Longbow S now carry their `[Flight]` + `[Staff]` + `[Thrust]` PBs, and the Peeper its `[Thrust]` PB (the model function adds them; a printer projects that grid and build_all only touched the top-level blueprint).
+- Gnat, Basilisk, Basilisk Seeker and Shrike carry one blank `[Spare]` PB reserved for the Staff half still to be split off their over-budget script (Ballista has had one since the first step). Plan, sizes and the CradleBay/HiveMother `FindDrone` bug: `docs/design/pb_headroom.md`. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): SPRUE TEST (option-A printer test rig)
 Why: the printer audit (`docs/audit/printers.md` printers-01) says a welded drone is fused to the printer grid, and option A cuts it loose by grinding an armour neck. This rig tests that in one creative-world session. Design, procedure and decision tree: `docs/design/sprue_test.md`; owner copy: `test_designs/Sprue Test/`.
 - **New test ships** `Sprue Test` and `Sprue Test No Grinder` (`tools/designs/sprue_test.py`, kind `test`: built by `build_all.py --only ...`, never packaged): a 25-block printer (3 welders, a Small Ship Grinder, projector, battery, PB) that prints a 7-cell armour neck plus a dummy drone (battery, PB, one ion thruster). 733 PCU (633 without the grinder).
