@@ -146,12 +146,17 @@ void Decide(Vector3D need, Vector3D wantFwd, Vector3D wantUp, Vector3D gf, Vecto
     Vector3D[] e = { rm.Forward, rm.Backward, rm.Left, rm.Right, rm.Up, rm.Down };
     double psi = Math.Acos(MathHelper.Clamp(Vector3D.Dot(nd, a), -1, 1));
     double[] cost = new double[7], sh = new double[7]; Vector3D[] fws = new Vector3D[7];
+    // The force asked for can exceed anything one group gives (the flight PB asks for up to 50 m/s2): compare options on the force they can DELIVER along the needed
+    // direction, against what the strongest group alone could deliver (Fe = min(F, strongest group)).
+    double top = 0; for (int k = 0; k < 6; k++) top = Math.Max(top, _cap[k] * ps);
+    double Fe = Math.Min(F, top);
+    if (Fe <= 0) { _opt = -1; return; }
     // option 6: the plain aim - the force is split over the groups in the attitude the plain aim reaches
     Vector3D ax = Vector3D.Cross(gf, a); double an = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gf, a), -1, 1));
     Vector3D ndb = ax.LengthSquared() > 1e-12 ? Rot(nd, Vector3D.Normalize(ax), -an) : nd;
-    double s2 = 0;
-    for (int k = 0; k < 6; k++) { double dd = Math.Max(0, F * Vector3D.Dot(ndb, e[k])) - _cap[k] * ps; if (dd > 0) s2 += dd * dd; }
-    sh[6] = Math.Sqrt(s2) / F; fws[6] = a;
+    double got = 0;
+    for (int k = 0; k < 6; k++) { double n = Vector3D.Dot(ndb, e[k]); if (n > 0) got += Math.Min(_cap[k] * ps, F * n) * n; }
+    sh[6] = Math.Max(0, Fe - got) / Fe; fws[6] = a;
     double W = TvAimW * (fight ? 1.0 : 0.2);
     if (grav.LengthSquared() > 1 && Vector3D.Dot(nd, -Vector3D.Normalize(grav)) > 0.3 && sh[6] > 0.2) W = 0;   // in gravity do not fall to keep the guns on
     cost[6] = sh[6] + 0.1 * an / Math.PI;
@@ -162,7 +167,7 @@ void Decide(Vector3D need, Vector3D wantFwd, Vector3D wantUp, Vector3D gf, Vecto
         double th = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gf, e[k]), -1, 1));
         Vector3D p = Across(a, nd); if (p.LengthSquared() < 0.5) p = Across(gf, nd);
         Vector3D fw = p.LengthSquared() > 0.5 ? Vector3D.Normalize(nd * Math.Cos(th) + p * Math.Sin(th)) : nd;
-        fws[k] = fw; sh[k] = Math.Max(0, F - cap) / F;
+        fws[k] = fw; sh[k] = Math.Max(0, Fe - cap) / Fe;
         cost[k] = sh[k] + W * Math.Abs(psi - th) / Math.PI + 0.1 * Math.Acos(MathHelper.Clamp(Vector3D.Dot(gf, fw), -1, 1)) / Math.PI;
     }
     int best = 6; double bc = cost[6] - (_opt == 6 || _opt < 0 ? TvHyst : 0);

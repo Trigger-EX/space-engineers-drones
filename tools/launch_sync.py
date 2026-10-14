@@ -10,7 +10,7 @@ Copy of the mechanism of tools/fleet_sync.py (same CRLF handling).
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "WaspStaffAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI", "StingerAI"]
+SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "WaspAI", "WaspStaffAI", "LancerAI", "HarrierAI", "BasiliskAI", "StingerAI", "AegisStaffAI", "MantisStaffAI", "LongbowStaffAI"]
 REQUIRED = ["HornetDroneAI", "HarrierAI"]
 EXCLUDE = ["BasiliskAI"]        # no merge block on this ship and no room: the block is deliberately NOT carried (never added, never required)
 BEGIN, END = "// >>> LAUNCH", "// <<< LAUNCH <<<"

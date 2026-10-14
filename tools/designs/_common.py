@@ -448,3 +448,76 @@ def chamfer_room(S, res, env, box, name='room', max_blocks=None):
         placed += 1
     H.check_mount_faces(bp, set(S.occ), None, blocks=chams)     # full mount faces on walls, slanted faces on free air
     return placed
+
+
+# ---- support PBs (appended for THRUST VECTORING and the Flight/Staff split; docs/thrust-vectoring.md) ----
+SUPPORT_STAFF = {'AEGIS': 'AegisStaffAI.cs', 'MANTIS': 'MantisStaffAI.cs', 'LONGBOW': 'LongbowStaffAI.cs', 'WASP': 'WaspStaffAI.cs'}
+_SMALL_PB, _LARGE_PB = 'SmallProgrammableBlock', 'LargeProgrammableBlock'
+
+def _orientations():
+    out = []
+    for f in AXIS_DIRS:
+        for u in AXIS_DIRS:
+            if sum(a * b for a, b in zip(DIR[f], DIR[u])) == 0: out.append((f, u))
+    return out
+
+def free_pb_spot(bp, sub, near, name='[Support] PB'):
+    """a free cell + orientation where a Programmable Block `sub` attaches to the hull, cell next to as many blocks as possible (inside the hull is safest) and near `near`
+    (a cell); never in a reserved cell (exhaust, muzzle, camera view). Returns (cell, fwd, up) or None."""
+    from itertools import product
+    occ = bp.occupancy()
+    cells = [c for c in occ]
+    lo = [min(c[i] for c in cells) - 1 for i in range(3)]; hi = [max(c[i] for c in cells) + 1 for i in range(3)]
+    steps = [DIR[d] for d in ('Forward', 'Backward', 'Left', 'Right', 'Up', 'Down')]
+    cand = []
+    for cell in product(*[range(lo[i], hi[i] + 1) for i in range(3)]):
+        if cell in occ or cell in bp.reserve: continue
+        nb = sum(1 for s in steps if (cell[0] + s[0], cell[1] + s[1], cell[2] + s[2]) in occ)
+        if nb == 0: continue
+        d = sum(abs(cell[i] - near[i]) for i in range(3))
+        cand.append((-min(nb, 4), d, cell))
+    cand.sort()
+    index = {}
+    for b in bp.blocks:
+        for r in bp.mount_rects(b): index.setdefault((r[0], r[1], r[2]), []).append((b, r))
+    for _, _, cell in cand[:400]:
+        for fwd, up in _orientations():
+            b = bp.add('MyObjectBuilder_MyProgrammableBlock', sub, cell, fwd, up, name, kind='ctrl')
+            try:
+                ok = any(any(nb is not b and lo_[0] <= hi2[0] and lo2[0] <= hi_[0] and lo_[1] <= hi2[1] and lo2[1] <= hi_[1]
+                             for (nb, (a2, pc2, ns2, lo2, hi2, ex2, pr2)) in index.get((axis, pc, -ns), ()))
+                         for (axis, pc, ns, lo_, hi_, ex, pr) in bp.mount_rects(b))
+            finally:
+                bp.blocks.remove(b)
+            if ok: return cell, fwd, up
+    return None
+
+def add_support_pbs(bp):
+    """Every drone / ship whose flight script carries the THRUST VECTOR LINK gets a small `[Thrust] ... PB` (scripts/ThrustVectorAI.cs); a Flight half of a split drone
+    (SPLIT LINK) is renamed `[Flight] ...` and gets its `[Staff] ...` PB (scripts/<Drone>StaffAI.cs). Idempotent: a design that already carries them is left alone."""
+    import re
+    from xml.sax.saxutils import unescape
+    pbs = [b for b in bp.blocks if b['sub'] in (_SMALL_PB, _LARGE_PB) and '<Program>' in (b.get('extra') or '')]
+    prog = {id(b): unescape(b['extra']) for b in pbs}
+    names = [(b['name'] or '') for b in pbs]
+    sub = _LARGE_PB if bp.grid == 'Large' else _SMALL_PB
+    def base(b):
+        n = b['name'] or 'PB'
+        n = re.sub(r'^(\[[^\]]*\])+\s*', '', n)
+        return n[:-3] if n.endswith(' PB') else n
+    for b in list(pbs):
+        p = prog[id(b)]
+        if 'LkInit(' in p and not os.environ.get('NO_STAFF') and not any(n.startswith('[Staff]') for n in names):
+            m = re.search(r'string Tag\s*=\s*"([A-Z]+)"', p)
+            assert m and m.group(1) in SUPPORT_STAFF, f'{bp.name}: no Staff script known for the Flight half ({m and m.group(1)})'
+            if not (b['name'] or '').startswith('[Flight]'): b['name'] = f'[Flight] {base(b)} PB'
+            spot = free_pb_spot(bp, sub, b['min'])
+            assert spot, f'{bp.name}: no free cell for the Staff PB'
+            bp.add('MyObjectBuilder_MyProgrammableBlock', sub, spot[0], spot[1], spot[2], f'[Staff] {base(b)} PB', extra=pb_extra(script_text(SUPPORT_STAFF[m.group(1)])), kind='ctrl')
+            names.append('[Staff]')
+    if any('TvAim(' in p for p in prog.values()) and not any(n.startswith('[Thrust]') for n in names):
+        b0 = [b for b in pbs if 'TvAim(' in prog[id(b)]][0]
+        spot = free_pb_spot(bp, sub, b0['min'])
+        assert spot, f'{bp.name}: no free cell for the Thrust PB'
+        bp.add('MyObjectBuilder_MyProgrammableBlock', sub, spot[0], spot[1], spot[2], f'[Thrust] {base(b0)} PB', extra=pb_extra(script_text('ThrustVectorAI.cs')), kind='ctrl')
+    return bp

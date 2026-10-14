@@ -7,7 +7,7 @@ Hooks that call the block (TvAim, _tvN, _tvFight) are NOT touched; see the block
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["HornetDroneAI", "LongbowSniperAI", "WaspAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI", "ShrikeAI", "PeeperAI"]
+SCRIPTS = ["HornetDroneAI", "LongbowSniperAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI", "ShrikeAI", "PeeperAI"]
 BEGIN, END = "// >>> THRUST VECTOR LINK", "// <<< THRUST VECTOR LINK <<<"
 
 def unlisted():

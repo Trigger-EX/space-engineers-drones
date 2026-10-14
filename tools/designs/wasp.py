@@ -83,7 +83,7 @@ def frame(name, wtype, wsub, wlabel, wlen, script, custom_data, ai=True, sensor=
 
 def wasp(lite=False):
     name = "Wasp Lite" if lite else "Wasp"
-    return frame(name, "MyObjectBuilder_SmallMissileLauncher", "", "Launcher", 4, script_text("WaspAI.cs"), _custom("Wasp", "WASP"),
+    return frame(name, "MyObjectBuilder_SmallMissileLauncher", "", "Launcher", 4, script_text("WaspFlightAI.cs"), _custom("Wasp", "WASP"),
                  ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE)
 
 def lancer(lite=False):

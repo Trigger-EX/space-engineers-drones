@@ -7,7 +7,7 @@ Hooks that call the block (FollowLoad / FollowStep / FollowSensed / Home / Follo
 """
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["HornetDroneAI", "LongbowSniperAI", "WaspAI", "WaspStaffAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI"]
+SCRIPTS = ["HornetDroneAI", "WaspAI", "WaspStaffAI", "LancerAI", "HarrierAI", "BasiliskAI", "AegisStaffAI", "MantisStaffAI", "LongbowStaffAI"]
 BEGIN, END = "// >>> FOLLOW", "// <<< FOLLOW <<<"
 
 def unlisted():
