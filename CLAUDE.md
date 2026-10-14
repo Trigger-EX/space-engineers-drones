@@ -18,6 +18,11 @@ Space Engineers combat drones, printer ships, in-game C# scripts and a simulatio
 - Add a PB for every extra module you need; budget each PB at about 80k minified (hard cap 100k).
 - **When a script needs more room than its PB has (a size cap such as `SCRIPT_LIMITS` in `tools/designs/_common.py` blocks a build, or a feature does not fit): add a PB, do not raise the cap and do not cut the feature.** Have an **Opus** subagent plan it first (the modop `planner`, or a general subagent with `model: opus`, high effort). The plan must say: which module moves out and why it is off the hot path, where the new PB sits on the grid, which IGC channels and message tuples link it to the existing PBs (who sends, who listens, update rate, `TransmissionDistance.CurrentConstruct`), how it syncs (start-up handshake, re-bind when the other PB is rebuilt, state resent after a run gap), and that exactly one PB writes each thruster/gyro override. Save the plan to `docs/design/<name>.md` (pattern: `docs/design/wasp_split.md`), then implement, add the sync checks (see Wasp Split) and tell the user the zips are not rebuilt.
 
+## Retrofit list: general improvements go to every blueprint
+- Whenever a drone or ship gets an improvement that is not specific to its role (detection, fire control, flight safety, wing behaviour, diagnostics, robustness), add it to **Pending** in `docs/retrofit.md` in the same commit (what, origin commit/script, which models could use it). Role-specific changes go under **Role-specific** with one line of why.
+- When the owner asks for the retrofit (usually at the end of the day), apply every Pending row to every blueprint it fits, test it (compile check, `blocks_sync --check`, a few sim seeds), and move it to **Applied**. Prefer shared blocks (`tools/blocks.json`) so one edit reaches every script.
+- This instruction is durable: it applies to every future chat in this repo.
+
 ## Release zips: only when asked
 - Do not build or rebuild the release zips (`tools/build_all.py` / `tools/build_lite.py` without `--no-zip`, `releases/*.zip`) on your own, and do not commit rebuilt zips. Build them only when the user asks for it.
 - When a task needs blueprints for the simulator, use `python3 -I tools/build_all.py --no-zip --only "<Model>" ...` (fast); a full run takes about 12 minutes.

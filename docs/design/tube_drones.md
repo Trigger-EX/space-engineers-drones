@@ -340,6 +340,32 @@ correction goes to the side thrusters first (`SideScale`), and only what they ca
 Sim, 1 seed each (same scenarios as before, not enough for a direction): 6 Tube 2x2 vs a Basilisk 3 contacts / 11.2 kHP (before 1 / 3.7 kHP),
 4 Tube 3x3 2 / 3.7 kHP (before 3 / 12.3 kHP), 4 Tube 4x4 1 / 2.6 kHP (before 1 / 7.6 kHP), 2 Tube 2x4 beat a Gnat; no script exceptions.
 
+**Detection, the Ballista way (owner report: "tube is not detecting enemies"), and Start Mode HUNT:** the Ballista finds enemies with its
+AI Offensive block, not its cameras (`docs/design/ships/Ballista.md` 2: the cameras cover too little sky), and its Helm makes that block
+usable. `TubeRamAI` now does the same:
+* sets `UpdateTargetInterval` on its AI Offensive blocks to `AI Search Interval (s)=5` (default 30 s: the old 6 s AI windows often held no
+  search at all);
+* the blueprint presets `[AI Gate] AI Window (s)=20`, `Script Search Window (s)=5` (the Ballista's values; the old 6 / 8 s gave the script's
+  spin more time than the AI);
+* the first nose camera always casts the long 2,600 m confirm ray (before, a single nose camera cast only 1,300 m rays, so a target the AI
+  held farther out was never confirmed);
+* re-asserts the AI blocks' On state while they should fly, and re-picks (power-cycles the AI for one tick) after `AI Re-pick After (s)=20`
+  when an enemy was seen in the last minute;
+* screen line `1st contact <m> v <speed> <source>` (AI / CAM / SENSOR / LOCK / IGC), as on the Helm;
+* `Start Mode (WAIT/HUNT)=HUNT` (owner request): once off its rack, or pasted free, it hunts by itself (tries every 2 s); `WAIT` keeps the
+  old behaviour (`launch`, or a target in range when released).
+
+Sim, 5 seeds each, enemy at 1.5 to 2.2 km, no target cue (`1v1`). Before: given an explicit `hunt`. After: no start command at all.
+
+| Scenario | first target before | after | rams before | after |
+|---|---|---|--:|--:|
+| Tube 3x3 vs Basilisk | 26 to 80 s | 1.3 to 2.7 s | 0 | 5 |
+| Tube 2x2 vs Hornet | 21 to 43 s | 2.7 to 5.3 s | 0 | 7 |
+
+The sim's AI Offensive is a stand-in (it finds anything inside 2,500 m when it searches). Unverified in the game: whether the AI Offensive
+block of an UNARMED grid locks a target and points the nose at it at all (the Ballista's has guns), and the AI Behavior switch (AI GATE
+screen line `AI Behavior switch not found: turn AI Behavior on by hand` if the script cannot find it).
+
 **Warhead variants `Tube 2x2 W`, `Tube 2x4 W`, `Tube 3x3 W`, `Tube 4x4 W` (owner request: warheads under the armour, fired on impact):**
 the same tubes with the second nose layer (z = 1) replaced by a full layer of `SmallWarhead` blocks (4 / 8 / 9 / 16) right under the
 front heavy-armour layer: same size, mass within 1 % (a warhead is 106 kg, heavy armour 112 kg). One-shot: Custom Data `Max Rams=1`.

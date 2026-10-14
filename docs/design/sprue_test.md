@@ -127,3 +127,23 @@ Geometry (`LAYOUTS['close']` in `sprue_test.py`, checked by `verify()` and unit 
 Use: paste `Sprue Test Close` instead of `Sprue Test`; the procedure and the decision tree are the same. A split here with `cut` (D1) or a CUT2 where the middle cells vanish (E1a) now also proves the geometry; a CUT2 that still leaves the neck alone with this layout would mean the sphere is much smaller than 0.5 m ahead of the tip or sits behind it (E1b).
 
 Release zips are not rebuilt.
+
+## 11. Sprue Test Merge: the 10X Missle Platform method (merge-pair release, no grinder)
+
+Source: the owner's blueprint `10X Missle Platform` (uploaded 2026-10-14, a game-written file, not kept in the repo: `ref/` is gitignored; the owner says its missiles are printed and launched again and again without any grinding). What it does:
+* A static large grid carries 11 `LargeAdvancedStator`s. Each one holds a `SmallAdvancedRotorSmall` head; the head is only a large-to-small adapter (nothing turns). Ten heads are launch tubes, the eleventh carries the 10 tube timers.
+* Each tube head (small grid) holds 2 `SmallProjector`s, a `SmallShipSmallMergeBlock` (clamp face local Up pointing at the missile) and a `ConnectorSmall`. 20 `LargeShipWelder`s on the large grid weld the projection.
+* The projection (`Small Missle Hydro Mk2`, 95 blocks) starts with the missile's merge block, which sits against the tube's merge block, clamp face to clamp face. The only other contact is connector front to connector front (a connector has no mount point on its front face). So the welded missile joins the tube head's grid (printers-01 holds) and is held ONLY by the merge pair.
+* Release is done by the missile itself: an event controller (threshold 0.99, apparently the hydrogen tank fill) runs `Timer Block 4 Disconnect`: the MISSILE's connector OFF, the MISSILE's merge block OFF, boost thruster ON, tank stockpile OFF, start `Timer Block Launch` (1 s), which starts `Timer Block 2 Away` (2 s): warheads safety ON, AI Flight + AI Offensive ON. The tube's merge block never turns off, so the next print needs no reset; the projector keeps its projection (`KeepProjection` true).
+* So the game separates a welded projection at a merge pair once a merge block of the pair is switched off. That matches printers-08 (the merge clamp face is not a structural link) and contradicts the printers-01 conclusion "merge off cannot release them", which was inferred from source and never tested. It also confirms `MERGE_CLAMP_FACE_SMALL = "Up"` (test T1) from a game-written file.
+
+Our printers already use this layout (printer merge + drone merge, clamp to clamp, projector on the printer grid; `printer_lib`, `C.check_docking`). The difference: HiveMother's bay timers switch the PRINTER's merge block off and back on, the 10X switches the DRONE's.
+
+`Sprue Test Merge` checks it on the Sprue rig before any printer is changed: no grinder; the yellow stub (0,0,4) is `Sprue Printer Merge` (clamp -z) and N1 (0,0,3) is `Sprue Payload Merge` (clamp +z), the first block of the projection (as in the missile). `verify_merge()` checks that the merge pair is the only contact and that removing its link leaves exactly the printer and the payload. Projector offset 0,1,3. SprueProbe v4: `release` switches the payload's merge block off (10X way), `release printer` the printer's (HiveMother way); it waits `Release Seconds` (20) for the split and reports `RELEASE OK` or `NO SPLIT`; `weld` switches the printer merge back on; `auto` runs weld, charge, release, wait for the payload to leave, weld again.
+
+Outcomes: RELEASE OK -> drop the sprue/grinder line (option A and A'), keep merge-pair printers, and switch HiveMother's release to the drone's own merge (or keep the printer's if `release printer` also works). NO SPLIT for both -> something in the 10X differs (the rotor-head grid? the connector pair?): build the next rig as an exact one-tube copy.
+
+Release zips are not rebuilt.
+
+### 11.1 Result (owner's game, 2026-10-14): RELEASE OK
+`weld` BUILT in 46 s (Q1 FUSED, neck 7/7), `release` (payload merge block OFF): SPLIT 0 s later, printer kept its grid, the payload PB saw a new grid; it pushed itself away (PAYLOAD LEFT, 6 m in 27 s); cycle 2 `weld` placed the next payload. `charge` was refused before BUILT (by design) and not needed (the welded battery came charged). Conclusion: merge-pair release works for projector-welded drones; option A (sprue + grinder) and A' (grinder on a rotor head) are dropped. Next step: Hive Mother v2.4 on real Gnats (`test_designs/Printer Test/`).

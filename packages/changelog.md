@@ -2,12 +2,24 @@
 - **Tube** (all 8 variants): the merge latch that hung under the tail is gone; every block now sits inside the W x H section. The tubes can no longer be printed or racked (nothing did that yet).
 - **Gnat**: the merge block is set flush into the belly (it replaces the armour cube under the antenna) instead of hanging below it, so the Gnat stays inside its 2 x 2 section. The Hive printers still print it (`check_docking` has a flush mode; the bays are re-solved). Not tested in the game.
 
+### v2.7 (unreleased): retrofit of the day's general improvements (docs/retrofit.md)
+- **AI GATE v1.2** (all 12 scripts with AI-block search): the AI Offensive block's search interval is set to 5 s (`[AI Gate] AI Search Interval (s)`, 0 = leave alone; the block's own default is 30 s, longer than the AI window). Was Ballista Helm only (its `[Shrike]` key moved to `[AI Gate]`).
+- **AI Behavior only with the assist on** (Hornet, Watcher, Gnat, Longbow S/L, Wasp, Lancer, Harrier, Aegis, Mantis, Basilisk): with `AI Block Search Assist=false` the AI blocks are left as they came; `ai on|off` re-runs the block search. Was Ballista Helm only.
+- **Loose fire beyond standoff** (Hornet, Watcher, Lancer, Harrier, Aegis, Basilisk, Wasp, Mantis gatling): beyond standoff + 100 m the fire window is the whole silhouette, not the 3 m hull point (`Loose Fire Beyond Standoff`, default true).
+- **Idle wing spreads out** (Hornet, Watcher, Lancer, Harrier, Aegis, Basilisk, Wasp, Longbow S/L, Mantis): an idle drone's home point moves away from close mates instead of pulling it back to its paste spot.
+- **`Wingmate Fire Clearance (m)`** key (Hornet, Watcher, Lancer, Harrier, Aegis; default 14 as before).
+- **`1st contact <m> v <speed> <source> <s> ago`** line on every Flight PB screen (and the Gnat's).
+- **Mantis**: full FRIENDLY AVOIDANCE steering (was the beacon block, whose hook the Flight split had dropped: the Mantis neither dodged nor beaconed). Mantis Flight 81.7 k minified.
+- **Warden, Leviathan, Corsair Helm**: `Kamikaze Rail Hold Range (m)=250` (turrets answer an incoming kamikaze, the rails keep the tracking for the ship that launched it).
+- Sim (10 seeds, 27 drone-vs-Pirate scenarios, old vs new scripts): 92 vs 95 wins of 270, no script exceptions; Helm selftests hsplit / M2 / M3 / M6 pass. Golden hashes updated. Nothing verified in the game. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): Tube ram drones
 - **New models** `Tube 2x2`, `Tube 2x4`, `Tube 3x3`, `Tube 4x4` (`tools/designs/tube.py`, small grid, 3.2 to 12.4 t, 18 to 20 m/s2 forward): armoured box with a solid heavy-armour nose, one ion thruster per rear cell, merge latch, no weapon. Plan and results: `docs/design/tube_drones.md`.
 - **New script** `scripts/TubeRamAI.cs` v1.0 (22 k minified, one PB; FLEET LINK + FRIENDLY AVOIDANCE blocks). Rams at full speed with proportional navigation, aborts a run when a friend is in the way, backs off and re-rams.
 - The tubes carry AI Offensive + AI Flight blocks (`[AI]`); `TubeRamAI` has a SEARCH mode (AI GATE block + camera confirm rays, as the Gnat) so a launched tube finds a target alone.
 - Recessed side thrusters on every tube (push up / down / left / right, nozzles flush with the hull, no reverse): `TubeRamAI` corrects its path with them instead of turning its flank to the target; the nose stays on the target in the terminal phase. Tubes are 0.5 m longer and 0.7 to 1.4 t heavier.
 - **Warhead tubes** `Tube 2x2 W` / `2x4 W` / `3x3 W` / `4x4 W`: a full layer of small warheads right under the front heavy-armour layer (same size and mass); `TubeRamAI` arms them at the last moment (20 m from the hull or 0.3 s out) and fires them on impact or by the nose camera's contact fuse; one-shot. Sim: 2 to 7 times the damage of the plain tubes against a Basilisk.
+- Tube detection as on the Ballista: AI Offensive rescans every 5 s (default 30), 20 s AI windows, long 2.6 km confirm ray from the nose camera, AI re-pick, `1st contact` screen line; `Start Mode (WAIT/HUNT)=HUNT` by default. Sim: first target 1 to 5 s instead of 21 to 80 s.
 - Sim: `CollisionFineProbe` (mixed grid sizes: the finer grid is the probe; small ships no longer slip through a large ship), a `TubeRamAI` ship counts as combat-capable, ad-hoc `ram/` scenarios are cued like `kamikaze`. Zips not rebuilt. Nothing about tube ramming is verified in the game.
 
 ### v2.7 (unreleased): Gnat split over two PBs
@@ -33,7 +45,10 @@ Why: the printer audit (`docs/audit/printers.md` printers-01) says a welded dron
 - **Third game run (2026-10-14): a ship grinder does not grind its own grid** (60 s of grinder time on the fused neck, nothing; after a hand cut made the neck another grid, it ground it): option A as written is dead, the grinder must sit on a rotor head (A').
 - **`Sprue Test Close`** (third test ship, owner copy in `test_designs/Sprue Test/Blueprints/`): the grinder points its tip straight at the middle of the neck, one block of air in front, for the case that the first layout (grinder beside the neck) is out of the game's real working sphere. Same script (the position hint now names the expected tip direction); the sphere may touch the tips of Welder 1 and 3, guarded.
 - The new script and blueprints change the simulator's provenance key (`sim/src/Run/Program.cs`): finish or restart interrupted `pc/` plan runs before using `--resume`.
-- Tests: `tools/tests/test_sprue_test.py` (12). No simulation was run (the simulator models neither fused grids nor grinders). Release zips NOT rebuilt.
+- **10X Missle Platform analysis + `Sprue Test Merge`:** the owner's missile platform prints missiles whose first block is a merge block clamped to the tube's merge block and releases each one by switching the missile's own merge block off, with no grinder. New test ship `Sprue Test Merge` (no grinder, merge pair in place of stub and N1) and SprueProbe v4 `release` / `release printer` test that on our rig (docs/design/sprue_test.md section 11).
+- **Merge-pair release CONFIRMED in the game** (Sprue Test Merge: split 0 s after the payload's merge block went off, payload left, cycle 2 re-welded). The grinder line (option A / A') is dropped.
+- **HiveMotherAI v2.4**: the FINISH scan counts armour cells that only `CubeExists` sees (the game's `GetCubeBlock` returns null for plain armour, so the scan never completed) and keeps welding `Armour Settle Seconds` (30) after the first complete pass. Sim printer regression (Mobile Hive, 320 s, no faults): PRINTER OK, 28 drones. Owner test copy: `test_designs/Printer Test/` (Hive Mother, 2 Gnat bays).
+- Tests: `tools/tests/test_sprue_test.py` (13). No simulation was run (the simulator models neither fused grids nor grinders). Release zips NOT rebuilt.
 
 ### v2.7 (unreleased): Ballista wing collisions
 - Three Ballistas pasted together flew into each other. The Shrike Helm now has the full `FRIENDLY AVOIDANCE` steering (was beacon only) and the AI Flight blocks yield to it (`FaYield`); sim `wing-test`: hull collisions 3 of 16 runs -> 0, closest approach 24 m -> 92 m. Helm 83.8 k minified, 85.0 k with the thrust-vector link (limit 86,000). `docs/friendly-avoidance.md`. Release zips NOT rebuilt.

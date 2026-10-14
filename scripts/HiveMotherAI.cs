@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.3  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.4  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -45,6 +45,11 @@
 //  _SWARM broadcasts. Broadcasts the printer as each tag's home point (_HOME).
 //  Optional carrier relay: forwards the turrets' targets to every tag (_TGT).
 //
+//  v2.4 ARMOUR: in the game GetCubeBlock returns null for plain armour (Sprue Test 2026-10-14), so the FINISH scan never saw the drone's
+//  armour and timed out. Cells that CubeExists sees but GetCubeBlock does not are counted as present; their integrity cannot be read, so a
+//  complete pass then keeps the welders on for "Armour Settle Seconds" (30) before CHARGE. Merge-pair release CONFIRMED in the game
+//  (Sprue Test Merge, 2026-10-14): the welded drone splits off at once when its merge block goes off.
+//
 //  COMMANDS: start | stop | max <n> | release [bay] | hold <bay> | unhold <bay> |
 //            reload | relay on|off
 //  CONFIG: Custom Data ([Hive Mother] and [Bay N] sections, created on first run).
@@ -52,7 +57,7 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.3";
+const string VER = "2.4";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
@@ -60,7 +65,7 @@ bool RackMode = false;
 string LaunchTag = "STINGER";
 double ChargeSeconds = 25, CooldownSeconds = 6, StallSeconds = 45, BuildTimeout = 600, FaultSeconds = 60;
 double NudgeSeconds = 1.5, NudgePower = 0.25, GapSeconds = 1.0, RecompileWait = 3, MatchRadius = 12;
-double FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
+double ArmourSettle = 30, FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
 string FleetCh = "FLEET";
 const int ScanBudget = 150;
 int ParallelBuilds = 2;
@@ -82,7 +87,7 @@ class Bay
     // finish check
     public bool HasBox, SkipFinish, Starved, PassOk, HavePass; public Vector3I BMin, BMax; public int Cells, Tol; public string BoxRaw = "NONE", CfgWarn = "";
     public HashSet<long> Ignore = new HashSet<long>(), Seen = new HashSet<long>();
-    public long ScanIdx; public int PBlocks, PCells, PBad, LBlocks, LCells, LBad; public float PInteg, LInteg;
+    public long ScanIdx; public int PBlocks, PCells, PBad, LBlocks, LCells, LBad, PBlind, LBlind; public double OkSince = -1; public float PInteg, LInteg;
     public List<string> PBadL = new List<string>(); public string LBadText = ""; public double FinishT, Burst = -1;
     // welder kick (one welder at a time)
     public IMyShipWelder KickW; public double KickT; public int KickIdx;
@@ -216,6 +221,7 @@ void LoadConfig()
     GapSeconds = C(S, "Release Gap Seconds", GapSeconds);
     MatchRadius = C(S, "Drone Match Radius m", MatchRadius);
     FinishTimeout = C(S, "Finish Timeout Seconds", FinishTimeout);
+    ArmourSettle = C(S, "Armour Settle Seconds", ArmourSettle);
     FinishFallback = C(S, "Finish Fallback Seconds (used only without Drone Box keys)", FinishFallback);
     ArmSeconds = C(S, "Arm Max Seconds", ArmSeconds);
     JoinSeconds = Math.Max(30, C(S, "Join Seconds", JoinSeconds));
@@ -578,12 +584,12 @@ void Fault(Bay b, string why)
 void EnterFinish(Bay b)
 {
     b.State = "FINISH"; b.T = _now; b.FinishT = _now; b.LastProgress = _now; b.Msg = ""; b.Recompiled = false; b.Starved = false;
-    ResetScan(b); b.HavePass = false; b.LBad = 0; b.LBlocks = 0; b.LCells = 0; b.LInteg = -1; b.LBadText = "";
+    ResetScan(b); b.HavePass = false; b.LBad = 0; b.LBlocks = 0; b.LCells = 0; b.LBlind = 0; b.LInteg = -1; b.LBadText = ""; b.OkSince = -1;
 }
 
 void ResetScan(Bay b)
 {
-    b.ScanIdx = 0; b.Seen.Clear(); b.PBlocks = b.PCells = b.PBad = 0; b.PInteg = 0; b.PBadL.Clear(); b.PassOk = false;
+    b.ScanIdx = 0; b.Seen.Clear(); b.PBlocks = b.PCells = b.PBad = b.PBlind = 0; b.PInteg = 0; b.PBadL.Clear(); b.PassOk = false;
 }
 
 // FINISH: the projector only counts PLACED blocks. A placed block is a skeleton until the welders have put every component in.
@@ -625,8 +631,12 @@ bool ScanBox(Bay b, int rem)
         if (b.Ignore.Contains(Key(x, y, z))) continue;
         try
         {
-            var s = g.GetCubeBlock(new Vector3I(x, y, z));        // null for an empty cell
-            if (s == null) continue;
+            var s = g.GetCubeBlock(new Vector3I(x, y, z));        // null for an empty cell, AND for plain armour (seen in the game, Sprue Test 2026-10-14)
+            if (s == null)
+            {   // armour: CubeExists still sees it, its integrity cannot be read; counted as present, the pass then waits Armour Settle Seconds with the welders on
+                if (g.CubeExists(new Vector3I(x, y, z)) && b.Seen.Add(Key(x, y, z))) { b.PCells++; b.PBlocks++; b.PBlind++; }
+                continue;
+            }
             var fb = s.FatBlock;                                  // null for armour: only terminal/functional blocks have one
             if (fb != null && fb == b.Merge) continue;
             Vector3I sp = s.Position;
@@ -663,8 +673,14 @@ bool ScanBox(Bay b, int rem)
     // pass finished
     bool prog = !b.HavePass || b.PBad < b.LBad || b.PInteg > b.LInteg + 0.5f || b.PBlocks > b.LBlocks;
     if (prog) b.LastProgress = _now;
-    b.LBad = b.PBad; b.LBlocks = b.PBlocks; b.LCells = b.PCells; b.LInteg = b.PInteg; b.HavePass = true;
+    b.LBad = b.PBad; b.LBlocks = b.PBlocks; b.LCells = b.PCells; b.LBlind = b.PBlind; b.LInteg = b.PInteg; b.HavePass = true;
     bool ok = b.PassOk && b.PBad == 0 && b.PBlocks >= b.Cells - b.Tol;
+    if (!ok) b.OkSince = -1;
+    else if (b.PBlind > 0)
+    {   // armour integrity is unreadable: keep welding for Armour Settle Seconds after the first complete pass
+        if (b.OkSince < 0) b.OkSince = _now;
+        if (_now - b.OkSince < ArmourSettle) { ok = false; b.LBadText = "all blocks present (" + b.PBlind + " armour cells unreadable): welding on for " + (int)(ArmourSettle - (_now - b.OkSince)) + " s more"; ResetScan(b); return false; }
+    }
     if (b.PBad > 0) b.LBadText = b.PBad + " unfinished: " + string.Join("; ", b.PBadL.ToArray());
     else if (b.PBlocks < b.Cells - b.Tol) b.LBadText = "only " + b.PBlocks + " of " + b.Cells + " drone blocks present";
     else b.LBadText = "";

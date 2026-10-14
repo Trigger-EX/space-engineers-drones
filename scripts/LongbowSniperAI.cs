@@ -217,7 +217,7 @@ double _batFrac = 1; int _sabots = 0; bool _hadAmmo = false;
 StringBuilder _sb = new StringBuilder();
 
 
-// >>> AI GATE v1.1 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
+// >>> AI GATE v1.2 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
 // The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
 // default, so switching them on (Enabled) may do nothing at all. In-game report 2026-10-13: Full drones in GUARD stood still and
 // HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
@@ -231,11 +231,15 @@ StringBuilder _sb = new StringBuilder();
 // v1.1 (opt-in, audit F-03/SL-11, default OFF = the behaviour of v1.0): "Use Typed AI Block API=true" sets IMyFlightMovementBlock.SpeedLimit
 // ("AI Flight Speed Limit (m/s)") on the AI Flight blocks and counts a block as switched on when IsAutoPilotEnabled reads true instead of
 // when the "Behavior" terminal property was found. Rests on the ModAPI documentation only (not tested in the game; unit of SpeedLimit unconfirmed).
+// v1.2 (2026-10-14, from the Ballista Helm, unverified in the game): "AI Search Interval (s)" (default 5, 0 = leave the block alone) is written
+// to IMyOffensiveCombatBlock.UpdateTargetInterval: the block rescans only every 30 s by default [wiki], longer than the AI Window, so a
+// window often saw no search at all. Scripts with an AI Block Search Assist switch call AiGateFind only while it is on (with it off the
+// AI blocks stay as they came, "AI Behavior" off: switched on, the AI Flight block may fly the ship away on its own) and re-run FindAi on `ai on|off`.
 // Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
 // Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
 // "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
 bool AiGateOn = true, AiBehaviorSwitch = true, AiTyped = false;
-double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
+double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60; int AiSearchEvery = 5;
 bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
 int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
 List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
@@ -252,6 +256,7 @@ void AiGateLoad()
     if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
     if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
     if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
+    if (!ini.ContainsKey(S, "AI Search Interval (s)")) ini.Set(S, "AI Search Interval (s)", AiSearchEvery);
     string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
     AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
     AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
@@ -260,10 +265,12 @@ void AiGateLoad()
     AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
     ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
     AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
+    AiSearchEvery = Math.Max(0, ini.Get(S, "AI Search Interval (s)").ToInt32(AiSearchEvery));
 }
 
 void AiGateFind(List<IMyFunctionalBlock> ai)
 {
+    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
     if (!AiBehaviorSwitch || ai.Count == 0) return;
     int n = 0;
     foreach (var b in ai)
@@ -937,7 +944,7 @@ void Command(string a)
         case "next": if (_tgt != null) IgnoreTarget(_tgt, 60, true); break;
         case "split": SplitFocus = true; break;
         case "aialert": _alertT = _now; break;
-        case "ai": if (w.Length > 1) AiAssist = w[1] == "on"; break;
+        case "ai": if (w.Length > 1) { AiAssist = w[1] == "on"; FindAi(); } break;
         case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;
         case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;
         case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;
@@ -1137,10 +1144,16 @@ bool Friendly(MyDetectedEntityInfo e)
     return r == MyRelationsBetweenPlayerAndBlock.Owner || r == MyRelationsBetweenPlayerAndBlock.FactionShare || r == MyRelationsBetweenPlayerAndBlock.Friends;
 }
 
+double _fcT = -99; string _fc = "";   // last new contact: distance, speed, source (CAM / AI / IGC / ...) and when (from the Ballista Helm)
 Track AddContact(MyDetectedEntityInfo e, string src)
 {
     Track t;
-    if (!_contacts.TryGetValue(e.EntityId, out t)) { t = new Track { Id = e.EntityId }; _contacts[e.EntityId] = t; }
+    if (!_contacts.TryGetValue(e.EntityId, out t))
+    {
+        t = new Track { Id = e.EntityId };
+        _contacts[e.EntityId] = t;
+        if (_rc != null) { _fcT = _now; _fc = Vector3D.Distance(e.Position, _rc.GetPosition()).ToString("0") + " m v " + new Vector3D(e.Velocity).Length().ToString("0") + " " + src; }   // first sight of a grid, for the status screen
+    }
     t.Type = e.Type;
     t.Ori(e.Orientation, _now - t.Seen);
     t.Set(e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() * 0.5, _now, src);
@@ -1569,7 +1582,9 @@ void Control(double dt)
     {
         Vector3D d = home - me; double dist = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, dist * 0.5), Math.Sqrt(2 * aBrake * dist));
-        want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade() + Separation(me);
+        Vector3D sep = Separation(me);
+        if (_mode != Mode.RTB && _tgt == null && sep.LengthSquared() > 1 && Home() == _home) _home += sep * dt;   // idle: the wing spreads out (the home point moves away from the mates, or it pulls the drone back to its paste spot; from the Ballista Helm)
+        want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade() + sep;
         if (_mode == Mode.FOLLOW && LkWantOk) want = _lkWant + ((_lkFl & 2) != 0 ? Vector3D.Zero : Separation(me)) + Evade();   // own slot by the owner, matching its velocity
         if (_mode == Mode.RTB && dist < 25 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
     }
@@ -1847,7 +1862,7 @@ void Display()
 {
     string aim = "";
     if (_tgt != null) aim = "\nAim: " + AimLabel(_tgt) + " (" + _tgt.Hull.Count + " hull pts)" + AimInfo();
-    string s = "FLIGHT " + VER + "  " + _mode + "  tgt " + (_tgt != null ? _tgt.Src : "-") + "  staff " + (LkAlive ? "ok" : "none") + aim + (_err != ""? "\n! " + _err : "") + (_crash != "" ? "\n! Script error: " + _crash : "");
+    string s = "FLIGHT " + VER + "  " + _mode + "  tgt " + (_tgt != null ? _tgt.Src : "-") + "  staff " + (LkAlive ? "ok" : "none") + aim + (_fc != "" ? "\n1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago" : "") + (_err != ""? "\n! " + _err : "") + (_crash != "" ? "\n! Script error: " + _crash : "");
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);
 }
@@ -2423,7 +2438,7 @@ void FindAi()
 {
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
     foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
-    AiGateFind(_ai);
+    if (AiAssist) AiGateFind(_ai);   // (AI Assist off: the AI blocks stay as they came, "AI Behavior" off)
 }
 // While the AI blocks have the controls they also pull the trigger at whatever is in front of the nose, wingmates included
 // (found in the sim: 13,000-50,000 damage slugs into the neighbour 70 m away during the first seconds). So: switch the guns
