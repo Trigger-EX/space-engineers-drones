@@ -91,6 +91,17 @@ class ShipTests(unittest.TestCase):
         self.assertEqual(sum(1 for n in names if n.startswith('[Spotter]')), 1)
         self.assertEqual(sum(1 for n in names if 'Foundry Connector' in n), 2)
 
+    def test_three_pbs_and_the_spare_is_empty_and_inert(self):
+        for lite in (False, True):
+            bp = B.ballista(lite, with_foundry=False)
+            pbs = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
+            self.assertEqual(len(pbs), 3)
+            spare = [b for b in pbs if 'Spare' in b['name']]
+            self.assertEqual(len(spare), 1)
+            self.assertFalse(spare[0]['extra'], 'the spare PB carries no program')
+            self.assertFalse(spare[0]['name'].lower().startswith('[staff]'), 'the Helm would switch its Staff link on')
+            self.assertNotIn('Hive Mother', spare[0]['name'])
+
 
 def sebp_dirs():
     import sebp

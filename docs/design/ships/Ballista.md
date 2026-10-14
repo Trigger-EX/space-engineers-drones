@@ -76,6 +76,9 @@ Caveats [sim, stand-in AI]: one notice distance only (a later notice shrinks the
 * **Spotter** `[Spotter][SH] Ballista Spotter` runs `SpotterAI.cs` (section 5).
 * No cockpit: a drone. Hand flying needs a seat added by hand (the Helm switches to MANUAL when somebody sits in a flight seat).
 
+### 3c. Spare PB (headroom)
+Three Programmable Blocks: Helm (`ShrikeAI.cs`), Spotter (`SpotterAI.cs`) and `[SH] Ballista Spare PB`, empty, at (1, 4, 11) on the battery deck beside the Spotter (mirror cell of nothing: the deck is the same distance from the breech wall as the other two, seated on a battery like them). Use it for a module that has to leave the Helm (it is 82,328 characters minified with the thrust-vector link): link it over IGC `TransmissionDistance.CurrentConstruct`, keep tracking/aim/fire in the Helm. Its name must not start with `[Staff]` and must not contain `Hive Mother PB`.
+
 ## 4. Peeper (the probe)
 
 3.5 x 5 x 5.5 m small-grid, 62 blocks, 4.6 t, 12 ion thrusters (6.3 m/s2 on every axis), 4 batteries, gyro, 3 cameras, antenna, **one `SmallGatlingTurret` with no ammunition** (a 5x5x5 block: the

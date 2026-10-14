@@ -151,6 +151,10 @@ def _core(S, full):
                    custom_data=f'[Ship]\nTag={TAG}\n' + HELM_DATA, extra=pb_extra(_script('ShrikeAI.cs')) if _script('ShrikeAI.cs') else '')
     S.spotter = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (0, 4, 11), 'Forward', 'Up', '[Spotter][SH] Ballista Spotter', toward='Down', kind='ctrl',
                       custom_data=f'[Ship]\nTag={TAG}\n', extra=pb_extra(_script('SpotterAI.cs')) if _script('SpotterAI.cs') else '')
+    # headroom: a third, empty PB (no program) beside the Spotter, so a module can move off the Helm over IGC later without a new blueprint.  Its name must not start
+    # with [Staff] (the Helm turns its Staff link on for that) nor contain the Hive Mother name (the Spotter would take it for the foundry).
+    S.spare = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (1, 4, 11), 'Forward', 'Up', nm('Spare PB'), toward='Down', kind='ctrl',
+                    custom_data=f'[Ship]\nTag={TAG}\n')
     # the two large connectors on the rear face of the battery deck: the probe foundry docks here
     S.conns = [S.add('conn', 'MyObjectBuilder_ShipConnector', 'Connector', (x, 3, 12), 'Backward', 'Up', nm(f'Foundry Connector {"AB"[i]}'), toward='Forward', kind='conn')
                for i, x in enumerate((0, 1))]
