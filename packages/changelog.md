@@ -1,18 +1,28 @@
-<<<<<<< HEAD
+### v2.7 (unreleased): retrofit of the day's general improvements (docs/retrofit.md)
+- **AI GATE v1.2** (all 12 scripts with AI-block search): the AI Offensive block's search interval is set to 5 s (`[AI Gate] AI Search Interval (s)`, 0 = leave alone; the block's own default is 30 s, longer than the AI window). Was Ballista Helm only (its `[Shrike]` key moved to `[AI Gate]`).
+- **AI Behavior only with the assist on** (Hornet, Watcher, Gnat, Longbow S/L, Wasp, Lancer, Harrier, Aegis, Mantis, Basilisk): with `AI Block Search Assist=false` the AI blocks are left as they came; `ai on|off` re-runs the block search. Was Ballista Helm only.
+- **Loose fire beyond standoff** (Hornet, Watcher, Lancer, Harrier, Aegis, Basilisk, Wasp, Mantis gatling): beyond standoff + 100 m the fire window is the whole silhouette, not the 3 m hull point (`Loose Fire Beyond Standoff`, default true).
+- **Idle wing spreads out** (Hornet, Watcher, Lancer, Harrier, Aegis, Basilisk, Wasp, Longbow S/L, Mantis): an idle drone's home point moves away from close mates instead of pulling it back to its paste spot.
+- **`Wingmate Fire Clearance (m)`** key (Hornet, Watcher, Lancer, Harrier, Aegis; default 14 as before).
+- **`1st contact <m> v <speed> <source> <s> ago`** line on every Flight PB screen (and the Gnat's).
+- **Mantis**: full FRIENDLY AVOIDANCE steering (was the beacon block, whose hook the Flight split had dropped: the Mantis neither dodged nor beaconed). Mantis Flight 81.7 k minified.
+- **Warden, Leviathan, Corsair Helm**: `Kamikaze Rail Hold Range (m)=250` (turrets answer an incoming kamikaze, the rails keep the tracking for the ship that launched it).
+- Sim (10 seeds, 27 drone-vs-Pirate scenarios, old vs new scripts): 92 vs 95 wins of 270, no script exceptions; Helm selftests hsplit / M2 / M3 / M6 pass. Golden hashes updated. Nothing verified in the game. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): Tube ram drones
 - **New models** `Tube 2x2`, `Tube 2x4`, `Tube 3x3`, `Tube 4x4` (`tools/designs/tube.py`, small grid, 3.2 to 12.4 t, 18 to 20 m/s2 forward): armoured box with a solid heavy-armour nose, one ion thruster per rear cell, merge latch, no weapon. Plan and results: `docs/design/tube_drones.md`.
 - **New script** `scripts/TubeRamAI.cs` v1.0 (22 k minified, one PB; FLEET LINK + FRIENDLY AVOIDANCE blocks). Rams at full speed with proportional navigation, aborts a run when a friend is in the way, backs off and re-rams.
 - The tubes carry AI Offensive + AI Flight blocks (`[AI]`); `TubeRamAI` has a SEARCH mode (AI GATE block + camera confirm rays, as the Gnat) so a launched tube finds a target alone.
 - Recessed side thrusters on every tube (push up / down / left / right, nozzles flush with the hull, no reverse): `TubeRamAI` corrects its path with them instead of turning its flank to the target; the nose stays on the target in the terminal phase. Tubes are 0.5 m longer and 0.7 to 1.4 t heavier.
 - **Warhead tubes** `Tube 2x2 W` / `2x4 W` / `3x3 W` / `4x4 W`: a full layer of small warheads right under the front heavy-armour layer (same size and mass); `TubeRamAI` arms them at the last moment (20 m from the hull or 0.3 s out) and fires them on impact or by the nose camera's contact fuse; one-shot. Sim: 2 to 7 times the damage of the plain tubes against a Basilisk.
+- Tube detection as on the Ballista: AI Offensive rescans every 5 s (default 30), 20 s AI windows, long 2.6 km confirm ray from the nose camera, AI re-pick, `1st contact` screen line; `Start Mode (WAIT/HUNT)=HUNT` by default. Sim: first target 1 to 5 s instead of 21 to 80 s.
 - Sim: `CollisionFineProbe` (mixed grid sizes: the finer grid is the probe; small ships no longer slip through a large ship), a `TubeRamAI` ship counts as combat-capable, ad-hoc `ram/` scenarios are cued like `kamikaze`. Zips not rebuilt. Nothing about tube ramming is verified in the game.
-=======
+
 ### v2.7 (unreleased): Gnat split over two PBs
 - `GnatSwarmAI.cs` (87.2k) is now the Flight half (76.4k: everything that aims, steers and fires, the hive channel, its full status screen); new `GnatStaffAI.cs` (22.4k: fleet link, take-off burn after a printer release, watchdog, fleet carrier radius `.HMR` and the fleet home once per fix) sits on the tail (`[Staff] Gnat PB`). No `[Thrust]` PB (point-and-burn). `docs/design/gnat_split.md`. Sim: combat bit-identical (1v1 vs Hornet, 10 seeds), dock-launch and printer tests pass. Release zips NOT rebuilt.
 
 ### v2.7 (unreleased): Basilisk split over two PBs
 - `BasiliskAI.cs` (95.5k) is now the Flight half (82.1k: tracking, lead, rockets, aim, KZ, avoidance, AI gate, thrust link); new `BasiliskStaffAI.cs` (23k: fleet link, FOLLOW/SATELLITE, status screen, watchdog; no LAUNCH, the ship has no merge block) sits in the `[Staff] Basilisk PB` cell; the `[Thrust]` PB comes from build_all. Basilisk and Basilisk Seeker. `docs/design/basilisk_split.md`. Sim: combat bit-identical to the single-PB ship (1v1 vs Hornet, 10 seeds); follow-test and kill-PB runs as before. Release zips NOT rebuilt.
->>>>>>> origin/main
 
 ### v2.7 (unreleased): bays find a split drone's PB
 - `HiveMotherAI.FindDrone` and `CradleBayAI.Mine/FindDrone` now accept `[Staff] <Prefix> PB` and `[Flight] <Prefix> PB` (a split drone) next to the plain `<Prefix> PB`, arm the Staff PB first (it holds LAUNCH and the `[Launch]` keys), then Flight, and never `[Thrust]` or a `[Spare]` PB. Before, every split Hornet/Watcher/Harrier/Lancer/Wasp/Aegis/Mantis/Longbow fell back to the JOIN message only. Sim: dock-launch Hornet/Harrier and `--cradle` 3 seeds pass except `Cradle Test: spinning host (expect: waits)`, which fails the same way without this change. Release zips NOT rebuilt.
