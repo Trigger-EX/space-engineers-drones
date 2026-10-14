@@ -10,10 +10,18 @@ Shared script blocks (`tools/blocks.json`, `tools/*_sync.py`) are the cheapest w
 |---|---|---|
 | The first forward camera always casts the long AI-confirm ray, even when it is the only forward camera (before: `longCam = nFwd > 1`, so a drone with one nose camera cast only 1,300 m rays and never confirmed a target the AI held at 1.3 to 2.6 km). TubeRamAI, tube detection commit | Gnat (same `nFwd > 1` rule) and any other single-nose-camera AI-search script | Sim, Tube vs Basilisk/Hornet at 1.5 to 2.2 km, 5 seeds: first target 1 to 5 s instead of 21 to 80 s (together with the 5 s search interval and 20 s AI windows) |
 | Warheads armed at the last moment (gap to the hull under 20 m or 0.3 s at the closing speed), because gunfire sets armed warheads off: a Tube 4x4 W armed at 200 m was blown up 148 m short by the target's rockets (sim). TubeRamAI, warhead variants commit | StingerAI (`Arm Warheads Within=200`), Ram / Ram Tandem (`tools/designs/ram.py`, StingerAI placeholder) | The Stinger's camera hull-distance fuse already fires close in; only the arming point moves |
+| Target memory: the current target is kept `Target Memory (s)=20` after its last fix by dead reckoning, other contacts still expire after 5 s; side cameras refresh the lock (HUNT) and sweep (SEARCH) once no forward camera works. TubeRamAI v1.1, rear-systems commit | StingerAI (same 5 s drop), Gnat and the AI-search drones (any script that drops its target 5 s after the last ray) | Detection robustness; the Tube needs it after its nose (camera) is gone |
+| Miss detection for a terminal run: enter the terminal phase only while closing faster than max(20, 0.5 x own speed); closing below -2 m/s for 0.5 s = miss (disarm, extend, come round), no fixed overshoot timer; extend keeps its outbound speed. TubeRamAI v1.1 (owner's Corsair report) | StingerAI (kamikaze terminal run), Ram / Ram Tandem | Fire control of a ram or kamikaze run |
 
 ## Needs the owner's call
 
 (none)
+
+## Applied 2026-10-14 (SENTRY mode, owner request "sentry mode for all drones")
+
+| Improvement | Applied to | Not applied to (why) |
+|---|---|---|
+| `sentry` command / `Start Mode` SENTRY + `Sentry Range (m)=2500`: still on the spot until a target is within range, then hunt it with no leash, then back to the spot (Storage keeps it) | Hornet, Watcher, Lancer, Harrier, Aegis, Mantis, Basilisk, Wasp (Flight), Longbow S/L, Gnat, Shrike + every warship Helm, Tube rams (all), Stinger (wait and launch only); FLEET block default `Allowed Commands` | Midge (scriptless), Peeper / Spotter (unarmed scouts), `WaspAI.cs` (legacy single-PB, no blueprint, would pass 100k) |
 
 ## Applied 2026-10-14 (from the Ballista work of the day)
 
@@ -35,9 +43,11 @@ Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95
 | Improvement | Applied to | Notes |
 |---|---|---|
 | Harasser defence (Ballista Lookout) | Warden, Leviathan, Corsair: the LOOKOUT block now also lives in StaffAI.cs, switched on in their Staff PB Custom Data | sim: Warden -10 to -13 % damage, Corsair hit rate 91 -> 74 % (damage unchanged), Leviathan no measurable gain; docs/design/ballista_harasser_defence.md section 12 |
+| Railgun power (Ballista: power for a full rail recharge, thrust to pay for it) | Longbow S, Longbow L (+ Seeker), Mantis: reactors >= rail draw; reactors + batteries >= rail + larger thruster group per axis; acceleration and turn rates >= before | docs/design/railgun_power.md; Warden, Corsair, Leviathan already covered by their reactors |
 
 ## Role-specific (checked, not retrofitted)
-- TubeRamAI v1.1 (printed tubes only): hold while the grid holds a `[Bay` block or the Hive Mother PB, `TUBE_SWARM` heartbeat. Every other printable drone already has this through the shared launch block (`tools/launch_block.cs`).
+- Tube drones (2026-10-14): critical systems at the rear, side thrusters right behind the nose; W tubes come back for a kinetic second ram after the blast. Ram drones only: their nose is the weapon and takes the impact.
+- TubeRamAI v1.2 (printed tubes only): hold while the grid holds a `[Bay` block or the Hive Mother PB, `TUBE_SWARM` heartbeat. Every other printable drone already has this through the shared launch block (`tools/launch_block.cs`).
 - HiveMotherAI v2.4-v2.6 (printers only, v2.6: release 2 s after the last block, welders stay on, 1 s cooldown; printers.py: single-type cap = Max Drones): FINISH scan counts armour seen only by `CubeExists`, 5 s armour settle, no drone-PB recompile (threw NRE in the game), release on finish. Printer-controller logic, no drone uses it. (`CradleBayAI`'s lane check has the same armour blind spot: separate fix.)
 
 * **Tube ram drones** (large ones too: heavy armour panels round the body, `Nose Camera Setback (m)` for the contact fuse): `Start Mode (WAIT/HUNT)=HUNT` (owner request: a launched tube is a munition and hunts by itself; a gun drone's start mode stays the owner's per-model choice); `[AI Gate]` 20 s / 5 s windows (the AI Offensive block is its only detector, as on the Ballista); recessed side thrusters driven by the terminal guidance (ram geometry); warhead layer with impact / contact fuse (W variants).

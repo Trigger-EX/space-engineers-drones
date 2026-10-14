@@ -19,8 +19,10 @@ fi
 
 echo "Mono: $(mono --version | head -n 1)"
 echo "CPU : $(lscpu 2>/dev/null | grep -m1 'Model name' | sed 's/.*: *//')  (logical CPUs: $(nproc))"
-echo "--- quick self-check (5 s) ---"
-if ! mono out/sim/SimHost.exe selftest all > /tmp/se_selfcheck.txt 2>&1 || ! grep -q "SELFTEST OK" /tmp/se_selfcheck.txt; then
+echo "--- quick self-check (2 s) ---"
+# Only the engine checks (in-game API + weapons/damage): they test this machine's mono, not the designs. "selftest all" also holds
+# design checks (masses, wing timings) that lag behind the newest blueprints; it still runs as the "selfcheck" line of plans/default.plan.
+if ! { mono out/sim/SimHost.exe selftest api && mono out/sim/SimHost.exe selftest combat; } > /tmp/se_selfcheck.txt 2>&1 || [ "$(grep -c "SELFTEST OK" /tmp/se_selfcheck.txt)" != 2 ]; then
   echo "Self-check FAILED. Last lines:"; tail -n 15 /tmp/se_selfcheck.txt
   echo "Send me that output. (If it mentions a missing System.* assembly, run: sudo apt install mono-complete)"; exit 1
 fi

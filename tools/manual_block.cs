@@ -163,7 +163,7 @@ void ManFly(double dt)
     _asOv = ov;
 }
 
-string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl == 2 ? "FBW" : "HUD") : "") : (_occ ? "AUTO (pilot aboard) " : "AUTO ") + _mode; }
+string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl == 2 ? "FBW" : "HUD") : "") : (_occ ? "AUTO (pilot aboard) " : "AUTO ") + (_sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString()); }
 
 // compact cockpit page (<= 8 lines)
 string ManHud()

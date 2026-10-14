@@ -9,7 +9,9 @@
 //  Targets: its own nose camera, a sensor, and targets shared over antenna
 //  by Gnats / Hornets / Longbows / carriers (any of the listed IGC tags).
 //
-//  COMMANDS: launch | abort | disarm | reload
+//  COMMANDS: launch | sentry | abort | disarm | reload
+//    sentry  hold still (dampeners on) and launch at the first target that comes within Sentry Range (2,500 m = the AI Offensive
+//            block's search range) even with Auto Launch off; a lost target sends it back to waiting (no return flight: it is a munition)
 //    launch  only works once it's off the rack (its merge block released)
 // =====================================================================
 const string VER = "1.1";
@@ -17,6 +19,7 @@ const string VER = "1.1";
 string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
 string Tag = "STINGER";
 double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 200, SafeDistance = 120, Gain = 2.5;
+double SentryRange = 2500; bool _sentry = false;   // SENTRY: wake on a target this close
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false;
 double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
 
@@ -61,7 +64,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,ready,sentry,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -157,6 +160,7 @@ void LoadConfig()
     Tag = C(S, "Own Command Tag", Tag);
     AutoLaunch = C(S, "Auto Launch When Released", AutoLaunch);
     LaunchRange = C(S, "Max Target Distance", LaunchRange);
+    SentryRange = C(S, "Sentry Range (m)", SentryRange);
     ArmRange = C(S, "Arm Warheads Within", ArmRange);
     SafeDistance = C(S, "Never Arm Within This Of Launch Point", SafeDistance);
     MaxSpeed = C(S, "Max Speed", MaxSpeed);
@@ -245,7 +249,7 @@ void Tick(string arg, UpdateType src)
     if (_rc == null) { _status = "No remote control"; Show(); return; }
 
     bool docked = Docked();
-    if (_mode == Mode.WAIT && !docked && AutoLaunch && Nearest() != null) Launch();
+    if (_mode == Mode.WAIT && !docked && (AutoLaunch || _sentry) && Nearest() != null) Launch();
     if (_mode == Mode.HUNT) Hunt(dt);
     _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % 20 == 0) Show();
@@ -253,6 +257,8 @@ void Tick(string arg, UpdateType src)
 
 void Command(string a)
 {
+    if (a == "sentry") { _sentry = true; _mode = Mode.WAIT; Disarm(); Release(); _status = "Sentry: waiting"; return; }
+    if (a.StartsWith("launch") || a == "abort") _sentry = false;
     if (a.StartsWith("launch")) { if (!Docked()) Launch(); else _status = "Still docked"; }
     else if (a == "abort") { _mode = Mode.IDLE; Disarm(); Release(); }
     else if (a == "disarm") Disarm();
@@ -261,7 +267,7 @@ void Command(string a)
 
 Track Nearest()
 {
-    Track best = null; double bd = LaunchRange; Vector3D me = Me.GetPosition();
+    Track best = null; double bd = _sentry ? Math.Min(LaunchRange, SentryRange) : LaunchRange; Vector3D me = Me.GetPosition();
     foreach (var t in _contacts.Values) { double d = Vector3D.Distance(t.Pos, me); if (d < bd) { bd = d; best = t; } }
     return best;
 }
@@ -358,7 +364,7 @@ void Release()
 
 void Show()
 {
-    string s = "STINGER v" + VER + "\nMode: " + _mode + (Docked() ? "  (docked)" : "") + "\nContacts: " + _contacts.Count +
+    string s = "STINGER v" + VER + "\nMode: " + _mode + (_sentry ? "  SENTRY" : "") + (Docked() ? "  (docked)" : "") + "\nContacts: " + _contacts.Count +
                "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") + "\n" + _status +
                "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
     if (_lcd != null) _lcd.WriteText(s);

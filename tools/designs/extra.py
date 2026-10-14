@@ -12,7 +12,8 @@ ROLE GAPS (what the sim should test with them; see docs in each docstring):
             rockets, drones), shares cues on the shared "DRONE_CUE" channel.  Slower than a Hornet (more mass).
   Mantis    hybrid mid-range.  ONE small railgun + ONE gatling on the same spine; the engage range is capped near 650 m so the
             gatling is always in play, railgun alpha-strikes (1000 m/s, 8000 damage budget) every ~5 s while the gatling
-            sprays between shots.  Between Hornet (all DPS, short) and Longbow S (all alpha, long).
+            sprays between shots.  Between Hornet (all DPS, short) and Longbow S (all alpha, long).  8 small reactors + the battery keep the
+            railgun recharging on a full diagonal manoeuvre (27 ion thrusters, 2 gyros; docs/design/railgun_power.md).
   Basilisk  LARGE-grid armoured gunship (115 t).  Four LargeMissileLauncher (120 rpm each, 500 dmg, 4 m radius) behind a wall of six
             LargeHeavyBlockArmorBlock, 12 large ion thrusters (2 per axis, ~6 m/s^2), 3 large batteries.  Full variant adds a
             LargeGatlingTurret (autonomous point defence, also a designator) + Sensor + AI blocks.  Tests: a heavy brawler against
@@ -174,6 +175,9 @@ def mantis(lite=False):
         bp.add("MyObjectBuilder_SensorBlock", "SmallBlockSensor", (-1, -3, -3), "Down", "Forward", f"{name} Sensor", kind="sensor")
         bp.add("MyObjectBuilder_OffensiveCombatBlock", "SmallOffensiveCombat", (1, -3, -3), name=f"{name} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", "SmallFlightMovement", (1, -3, -2), name=f"{name} AI Flight [AI]", kind="ai")
+    # power for the railgun recharge (docs/design/railgun_power.md): the Longbow S pack + three more mains on the battery's back face (7 in all keep 8.7 m/s2 forward)
+    import core
+    core.small_rail_power(bp, name, mains=(((-1, -3, 2), "L3"), ((1, -3, 2), "R3"), ((0, -3, 2), "C")))
     return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Mantis printed by a Foundry carries its support PBs
 
 # ---------------------------------------------------------------------------------------------

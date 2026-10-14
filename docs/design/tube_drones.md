@@ -189,6 +189,8 @@ Block names: every block `"<Model> <Part>"` (`Tube 3x3 PB`, `Tube 3x3 Remote Con
 batteries pre-charged (`bat()` does both).
 
 ### 5.2 Cell tables (cell = (x, y), "heavy" = heavy armour, "light" = light armour, blank = light)
+**Superseded (2026-10-14):** the systems now sit at the rear and the side thrusters right behind the nose; the current layer maps are in section 9. The tables below are the first build.
+
 Masses are sums of `defs_stats.json` masses; acceleration = rear thrust / mass, forward only. Check them against `report_line` after building.
 
 **Tube 2x2** (W 2, H 2, 4 thrusters 57.6 kN; cap 2; body z 0..5, thrusters z 6..7; 4.0 m long; ~29 blocks, **~3.17 t, ~18 m/s2**, 5 small batteries = 1.0 MW)
@@ -352,7 +354,7 @@ antenna mount on their Bottom face only (they face it forward onto the block in 
   thrusters (as the small 2x2), 4 rear thrusters. 105 t, 13.1 m/s2 forward, 3.3 sideways, 27.5 m long.
 * **Armour panels**: `LargeArmorPanelHeavy` (330 kg, 1,650 HP, no DLC) on every free side cell of the body, kept off nozzle exhaust and
   camera views. Why: in the sim the small tubes lost their systems to side fire before they reached a Basilisk.
-* **W**: the second nose layer is large warheads (1 on the 1x1, 4 on the 2x2), same script logic (one-shot, last-moment arming).
+* **W**: the second nose layer is large warheads (1 on the 1x1, 4 on the 2x2), same script logic (last-moment arming; since v1.1 not one-shot: see section 9.2).
 * No merge latch (the racks and printers are small grid).
 
 Sim, 5 seeds each, 1v1 against a Basilisk at 1.5 to 2.2 km, no target cue and no start command (Start Mode HUNT):
@@ -396,7 +398,7 @@ screen line `AI Behavior switch not found: turn AI Behavior on by hand` if the s
 
 **Warhead variants `Tube 2x2 W`, `Tube 2x4 W`, `Tube 3x3 W`, `Tube 4x4 W` (owner request: warheads under the armour, fired on impact):**
 the same tubes with the second nose layer (z = 1) replaced by a full layer of `SmallWarhead` blocks (4 / 8 / 9 / 16) right under the
-front heavy-armour layer: same size, mass within 1 % (a warhead is 106 kg, heavy armour 112 kg). One-shot: Custom Data `Max Rams=1`.
+front heavy-armour layer: same size, mass within 1 % (a warhead is 106 kg, heavy armour 112 kg). One-shot at first (Custom Data `Max Rams=1`); since v1.1 a W tube that survives its blast re-rams (section 9.2).
 `TubeRamAI` (only when it finds warheads with its Block Tag):
 * arms them at the last moment in TERM: the gap to the target's hull under `Arm Warheads Within` (default now 20 m) or 0.3 s at the
   closing speed, never within `Safe Distance From Launch` of the release point. Arming earlier was a bug the sim showed: a Tube 4x4 W armed
@@ -436,5 +438,56 @@ Not in v1: the `TUBE_RAM` salvo spacing broadcast of section 4.2 (tubes on one t
 
 **What the sim does not show:** deformation, penetration, asymmetric damage, the real collision-damage scale (an assumption [I]; nothing about ramming has run in the game, see Q6).
 
+## 9. Rear systems, second pass, miss fix (TubeRamAI v1.1, 2026-10-14, owner request)
+
+### 9.1 Critical systems to the rear (`tools/designs/tube.py`)
+Every tube, small and large, plain and W: front to back **nose cap** (heavy armour, nose camera flush in the front layer, warhead layer at z = 1 on W),
+**the two side-thruster layers**, **light armour filler**, then **RC, PB, gyro(s), batteries, AI Offensive + AI Flight, antenna and the side cameras**
+in the layers just in front of the rear bank. Same section, same length, same block count, nothing outside the W x H section; every block validates
+(small gyros and large PB / gyro / compact antenna set with their only mount face, Bottom, forward onto the block ahead; the small PB with its Front).
+Layer maps (`z` from the nose; rows top to bottom; H heavy, W warhead, C camera, T thruster, l light, B battery, A AI block, N antenna, R RC, P PB, G gyro, p panel):
+
+| Model | z: layout |
+|---|---|
+| Tube 2x2 | 0-1 nose; 2-3 side thrusters; 4 BB/BB; 5 BB/CB; 6 NN/AA; 7 Rl/GP; 8-9 bank |
+| Tube 2x4 | 0-2 nose; 3-4 side thrusters; 5-7 battery 3x2x3 + column x=3 (l, antenna z 6-7); 8 CAAC/PRGl; 9-10 bank |
+| Tube 3x3 | 0-2 nose; 3-4 side thrusters; 5-7 battery (rows y 0-1), row y=2 light, AI blocks at z 7; 8 lNN/ClC/PRG; 9-10 bank |
+| Tube 4x4 | 0-3 nose; 4-5 side thrusters; 6-8 battery (x 0-2, y 0-1), light filler; 9 lNNl/GAll/CBAC/PRGl; 10-11 bank |
+| Tube L 2x2 | 0-1 nose; 2-3 side thrusters; 4-5 light; 6 battery x2, antenna (z 6-8); 7 PB, gyro, AI Offensive; 8 RC, AI Flight; 9-10 bank |
+| Tube L 1x1 | 0-1 nose (cameras above and below at z 1, heavy behind them and in the column at z 2); 3-6 side thrusters; 7-8 light; 9-11 antenna; 12-13 AI blocks; 14 battery, 15 gyro, 16 battery, 17 PB, 18 battery, 19 RC; 20 bulkhead; 21-22 bank |
+
+Masses and accelerations hardly move (Tube L 1x1: 110 t, 15.7 m/s2, a heavy block replaces the RC at z 2). `test_tube.py` checks the order
+(`check_rear_systems`: only nose blocks in front of the side thrusters, only armour between them and the systems, systems end at most one layer
+before the bank, nose camera at the front, side cameras with the systems).
+
+### 9.2 Second pass after the warhead ram (W tubes)
+`Max Rams=1` is gone from the W Custom Data. `Boom()` counts the ram, clears the warhead list and, while the PB still runs, goes to **EXTEND**
+(IDLE only if `Re-Attack=false` or a hand-set `Max Rams` is reached); for 2 s after the blast the blocks are re-scanned every 15 ticks so the lost
+ones drop out. EXTEND checks `Healthy()` (half the rear bank and a gyro) **every tick** and goes IDLE when it fails. The second run is kinetic: no
+warheads left, so nothing arms. With the nose gone it relies on target memory (9.3), the side cameras (they refresh the lock in HUNT and sweep in
+SEARCH once no forward camera works) and the AI blocks (EXTEND with no target goes to SEARCH).
+
+### 9.3 Miss fix (the owner's Corsair report)
+* TERM is entered only while closing faster than max(20, 0.5 x own speed).
+* In TERM, closing below -2 m/s for more than 0.5 s counts a miss: disarm, EXTEND (the 20 s overshoot timer is gone).
+* EXTEND keeps the outbound speed it has (between 0.6 x and 1 x Max Speed) instead of braking to 0.6 x Max Speed.
+* The current target is kept `Target Memory (s)=20` after its last fix, by dead reckoning (`Pos + Vel x age`, in HUNT and EXTEND); other contacts expire after 5 s.
+* `MISSED n` on the status line and the PB screen.
+
+### 9.4 Checks
+Compile check PASS, `test_tube.py` 10 tests OK, `blocks_sync --check` green, script 31,678 characters minified (one PB). Sim, ad-hoc `one --scenario "ram/<target>-vs-<N>x<tube>"`,
+4 seeds each (every tube's mode sequence traced with `--echo-ship`): 4x Tube 3x3 W and 2x Tube L 2x2 W against a Corsair and a Basilisk, plus 2x Tube L 1x1 W
+against both (see below).
+* **Miss then come-around:** in all four requested matchups. Example: a Tube L 2x2 W missed the Basilisk three times (MISSED 1, 2, 3) and came back
+  each time (TERM 67 s, 112 s, 143 s); a Tube 3x3 W missed the Corsair at 68.8 s, came round and fired its warheads at 89 s.
+* **Second ram after the blast:** never in the two requested W models, and it cannot happen in this sim: the sim's blast (linear falloff, no occlusion)
+  reaches 4.5 m for a small warhead and 22.4 m for a large one. The Tube 3x3 W is 5.5 m long, so its 9 warheads reach every block; the Tube L 2x2 W is 27.5 m,
+  its rear systems sit 12 to 18 m from 4 large warheads (the one that fired in the runs kept its grid but lost power, and its PB stopped). Only the 52 m
+  Tube L 1x1 W keeps its systems outside the blast: Corsair seed 1, armed at 43.0 s, detonated, EXTEND with no warheads, HUNT, TERM at 57 s, **kinetic ram 2
+  at 60 s**, then round again; the same pattern (ram 1, then ram 2) in 3 more of its runs. Whether a 2x2 or 3x3 survives in the game depends on the real
+  blast and occlusion (unverified).
+* No script exceptions.
+
+
 ## Printing (2026-10-14)
-`Tube Foundry` (Tube 2x2, 2x4, 3x3, 4x4, one bay each) and `Tube W Foundry` (the W tubes) print the small tubes with the merge-pair release the owner confirmed in the game (Sprue Test Merge, Hive Mother). The tubes have no merge block of their own, so `printers.py` gives each one a latch stalk (`printer_lib.with_latch`). TubeRamAI v1.1 is held (treated as docked) while its grid holds a `[Bay` block or the Hive Mother PB, so it never fires the printer's thrusters, and it hunts once the merge pair lets go. It sends `TUBE_SWARM` every second, so the printer counts live tubes (Max Alive / Max Drones 8) and reprints the ones that rammed. The large tubes (Tube L) are not printed: see the large-grid note in the changelog.
+`Tube Foundry` (Tube 2x2, 2x4, 3x3, 4x4, one bay each) and `Tube W Foundry` (the W tubes) print the small tubes with the merge-pair release the owner confirmed in the game (Sprue Test Merge, Hive Mother). The tubes have no merge block of their own, so `printers.py` gives each one a latch stalk (`printer_lib.with_latch`). TubeRamAI v1.2 is held (treated as docked) while its grid holds a `[Bay` block or the Hive Mother PB, so it never fires the printer's thrusters, and it hunts once the merge pair lets go. It sends `TUBE_SWARM` every second, so the printer counts live tubes (Max Alive / Max Drones 8) and reprints the ones that rammed. The large tubes (Tube L) are not printed: see the large-grid note in the changelog.

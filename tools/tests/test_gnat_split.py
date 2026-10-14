@@ -52,7 +52,7 @@ class GnatSplit(unittest.TestCase):
 
     def test_parse_mode_sentinel_does_not_set_satellite(self):
         f = src('GnatSwarmAI.cs')
-        self.assertIn('if ((int)d == -1) return SatOn && !_ready ? Mode.FORM : (Mode)(-2); SatOn = true;', f)
+        self.assertIn('if ((int)d == -1) return SatOn && !_ready && !_sentry ? Mode.FORM : (Mode)(-2); SatOn = true;', f)
         self.assertIn('case "ATTACK": case "HUNT":', f); self.assertIn('case "FORM": case "GUARD":', f)
 
     def test_staff_screen_keeps_the_lines_the_sim_reads(self):
