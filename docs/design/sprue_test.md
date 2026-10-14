@@ -56,18 +56,18 @@ Welder coverage: tier A (`FAMILY[:4]`) reaches all 11 payload blocks (N4 under t
 
 ## 5. SprueProbe.cs
 
-Update10, C# 6, ASCII, stubs API only (no `IMyShipGrinder` in the stubs: the grinder is found as `IMyFunctionalBlock` by name "Grinder" on its own grid). Every screen line is cut to 46 characters (Monospace 0.42); the same text is Echoed every run (K menu), and the full log is in Custom Data `[Log]` (printer: last 60 lines, with the payload's lines copied as `P:`).
+Update10, C# 6, ASCII (23.8k characters minified), stubs API only (no `IMyShipGrinder` in the stubs: the grinder is found as `IMyFunctionalBlock` by name "Grinder" on its own grid). Every screen line is cut to 46 characters (Monospace 0.42); the same text is Echoed every run (K menu), and the full log is in Custom Data `[Log]` (printer: last 60 lines, with the payload's lines copied as `P:`; read back after a Recompile or reload, the RESULTS block is not, the log lines keep the answers).
 
 Printer commands (terminal, select `Sprue PB`, type into Argument, Run):
 
 | argument | action |
 |---|---|
-| `weld` / `weld force` | batteries Auto, projector ON, welders ON, grinder OFF; cycle +1 after a split; refused while the cut payload is nearer than Clear Metres (unless `force`) |
+| `weld` / `weld force` | batteries Auto, projector ON, welders ON, grinder OFF; cycle +1 after a split; refused while the cut payload is still in the bay (nearer than Clear Metres, or its distance cannot be read) and refused after BUILT when nothing was cut (it would overwrite the Q1 and welded-battery answers); `force` overrides both |
 | `charge` | printer battery Discharge, payload battery Recharge for Charge Seconds (30), then both Auto |
-| `cut` / `cut force` | refused with no grinder or `pos WRONG` (unless `force`); welders OFF, grinder ON; state CUT (CUT2 if already split) |
+| `cut` / `cut force` | refused with no grinder, with `pos WRONG`, or while the neck is not fully welded (unless `force`; a refusal also ends `auto`); welders OFF, grinder ON; state CUT (CUT2 if already split). The `UNTOUCHED` verdict needs both the lowest and the summed neck integrity unchanged |
 | `hand` | tools OFF, payload HOLD: grind ONLY neck cell N2 with the hand grinder |
 | `push` | `TryRun("push")` on the cached payload PB, logs true/false (false: run `push` on the payload PB itself) |
-| `auto` | WELD -> CHARGE -> CUT -> FREE -> WELD ... for `Cycles` (2); completes only in the D1 world |
+| `auto` | WELD -> CHARGE -> CUT -> FREE -> WELD ... for `Cycles` (2); completes only in the D1 world; refused while a cut payload is in the bay; after BUILT it continues with charge |
 | `stop`, `snap`, `reset` | tools OFF and IDLE / SNAP line / clear log and results |
 
 States: IDLE, WELD (`PLACED`, then `BUILT in Ns ... -> Q1 FUSED`), CHARGE, CUT / CUT2, HAND, FREE (`PAYLOAD LEFT`). Verdicts of a CUT with no split: `UNTOUCHED (valid, D3)`, `INVALID (D4)`, `ground, not through (D5)`; `GUARD HIT (D2)` stops the grinder. The payload role logs `COMPILED boot N`, `SPLIT seen by the payload`, `PUSH`, `push end` and writes a `[Status]` line to its Custom Data every 10 runs. The printer screen ends with a RESULTS block (Q1 .. Q4 lines).

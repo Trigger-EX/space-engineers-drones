@@ -24,6 +24,7 @@ double _t, _ts, _tw, _tPl = -1, _tBu = -1, _tCut = -1, _tSp = -1, _lastQ = -1, _
 int _runs, _boots, _cyc = 1, _cycles = 2, _gok0, _hb0 = -1;
 string _st = "IDLE", _q1 = "?", _n0 = "", _pLast, _pushMode = "hold";
 float _nmin0 = 1;
+double _nsum0;
 long _g0;
 IMyProgrammableBlock _pp;
 IMyBatteryBlock _pb;
@@ -38,6 +39,10 @@ public Program()
     {
         int.TryParse(Storage, out _boots); _boots++;
         Cfg();
+        int li = Me.CustomData.IndexOf("[Log]");
+        if (li >= 0) foreach (var ol in Me.CustomData.Substring(li + 5).Split('\n')) if (ol.Trim().Length > 0) _log.Add(ol.Trim());
+        while (_log.Count > 59) _log.RemoveAt(0);
+        if (_pay) { var ppb = GridTerminalSystem.GetBlockWithName(S("Printer PB", "Sprue PB")); _onPr = ppb != null && Same(ppb); _seen = _onPr; }
         _g0 = Me.CubeGrid.EntityId;
         _lp = Me.GetPosition();
         _lcd = Me.GetSurface(0);
@@ -208,7 +213,8 @@ string Own(long o)
     if (o == 0) return "0 (Nobody)";
     return o.ToString() + (o.ToString() == S("Blueprint Owner", "") ? " (=BP)" : "");
 }
-void Go(string s) { _st = s; _ts = 0; }
+void Go(string s) { _st = s; _ts = 0; if (s == "FREE") _stuck = false; }
+bool PayInBay(double mv) { return _split && _pp != null && !_pp.Closed && mv < N("Clear Metres", 6); }
 void StartWeld()
 {
     Bats(ChargeMode.Auto);
@@ -228,21 +234,22 @@ string Guards()
 void StartCut(bool force)
 {
     var gr = Grinder();
-    if (gr == null) { Log("cut refused: no grinder on this grid (No Grinder fallback: place one first)"); return; }
+    if (gr == null) { _auto = false; Log("cut refused: no grinder on this grid (No Grinder fallback: place one first)"); return; }
     string pos = GPos(gr);
-    if (pos.Length > 0 && !force) { Log("cut refused: grinder" + pos + " (x+ = toward the welders, y+ = projector side, z+ = toward the printer). Fix it, or: cut force"); return; }
+    if (pos.Length > 0 && !force) { _auto = false; Log("cut refused: grinder" + pos + " (x+ = toward the welders, y+ = projector side, z+ = toward the printer). Fix it, or: cut force"); return; }
+    int f; string map; Cells(_neck, out f, out _nmin0, out map, out _nsum0);
+    if (!_split && f < _neck.Count && !force) { _auto = false; Log("cut refused: neck not fully welded (" + map + "): finish weld (BUILT) first, or: cut force"); return; }
     Bats(ChargeMode.Auto);
     if (_pb != null && _pb.CurrentStoredPower < 0.001f)
     {
         Log("payload battery EMPTY (" + F(_pb.CurrentStoredPower, 4) + " MWh): it will be dead after the split. Run charge longer first");
         if (_auto) { _auto = false; Go("IDLE"); return; }
     }
-    int f; float m; string map; double s; Cells(_neck, out f, out _nmin0, out map, out s);
     _n0 = _split ? Fld(PayStatus(), "neck") : map;
     SetPush(_split ? "hold" : "auto");
     _gok0 = GuardFull(); _gT = 0; _gW = 0; _gPosOk = pos.Length == 0;
     Tools(false, true); _tCut = _t; Go(_split ? "CUT2" : "CUT");
-    Log("CUT start: neck " + _n0 + " min " + F(_nmin0 * 100, 0) + "%, guards " + Guards() + ", grinder pos " + (_gPosOk ? "OK" : "WRONG (forced)") + ", payload bat " + PayBat() +
+    Log("CUT start: neck " + _n0 + (_split ? "" : " min " + F(_nmin0 * 100, 0) + "%") + ", guards " + Guards() + ", grinder pos " + (_gPosOk ? "OK" : "WRONG (forced)") + ", payload bat " + PayBat() +
         (_split ? " (payload already split: grinder on the OTHER grid's neck)" : ""));
 }
 void Snap()
@@ -293,14 +300,20 @@ void Printer(string a, double dt)
     if (a == "weld" || a == "weld force")
     {
         double mv = PayMoved();
-        if (_split && mv >= 0 && mv < N("Clear Metres", 6) && a != "weld force") Log("weld refused: the cut payload is still in the bay (moved " + F(mv, 1) + " m): push it away first, delete it, or: weld force");
+        if (PayInBay(mv) && a != "weld force") Log("weld refused: the cut payload is still in the bay (moved " + F(mv, 1) + " m): push it away first, delete it, or: weld force");
+        else if (!_split && _tBu >= 0 && a != "weld force") Log("weld refused: this payload is already BUILT (Q1/Q3 recorded); next: charge, cut or hand, or: weld force");
         else { if (_split) _cyc++; StartWeld(); }
     }
     else if (a == "cut" || a == "cut force") StartCut(a == "cut force");
     else if (a == "charge") StartCharge();
     else if (a == "hand") { Tools(false, false); Bats(ChargeMode.Auto); SetPush("hold"); Go("HAND"); _auto = false; Log("HAND: payload on HOLD. Grind ONLY neck cell N2 (the 2nd red cell from the yellow stub) with your hand grinder; leave N1"); }
-    else if (a == "push") { if (_pp == null) Log("no payload PB known"); else { bool ok = false; try { ok = _pp.TryRun("push"); } catch (Exception) { } Log("TryRun(push) on the payload PB: " + ok + (ok ? "" : " -> run push on Sprue Payload PB from its own terminal")); } }
-    else if (a == "auto") { _auto = true; _cyc = 1; StartWeld(); }
+    else if (a == "push") { if (_pp == null) Log("no payload PB known"); else { bool ok = false; try { ok = _pp.TryRun("push"); } catch (Exception) { } if (ok) { _pushMode = "pushed"; _stuck = false; if (_st == "FREE") _ts = 0; } Log("TryRun(push) on the payload PB: " + (ok ? "true" : "false") + (ok ? "" : " -> run push on Sprue Payload PB from its own terminal")); } }
+    else if (a == "auto")
+    {
+        if (PayInBay(PayMoved())) Log("auto refused: the cut payload is still in the bay: push it away or delete it first");
+        else if (!_split && _tBu >= 0) { _auto = true; _cyc = 1; Log("auto: payload already BUILT, continuing with charge"); StartCharge(); }
+        else { _auto = true; _cyc = 1; StartWeld(); }
+    }
     else if (a == "stop") { _auto = false; Tools(false, false); Bats(ChargeMode.Auto); Go("IDLE"); }
     else if (a == "snap") Snap();
     else if (a == "reset") { _log.Clear(); _r.Clear(); Write(); }
@@ -373,7 +386,7 @@ void Printer(string a, double dt)
             if (_st == "CUT")
             {
                 int f; float m; string mp; double s; Cells(_neck, out f, out m, out mp, out s);
-                bool untouched = m >= _nmin0 - 0.001f;
+                bool untouched = s >= _nsum0 - 0.001 && m >= _nmin0 - 0.001f;
                 string v = untouched ? (valid ? "UNTOUCHED (valid, D3): the grinder does not grind its own grid. Next: type hand, then grind N2 (2nd red cell from the yellow stub)"
                                                : "INVALID (D4): grinder not working or wrongly placed. Fix and repeat cut")
                                      : "ground, not through (D5): run cut again";

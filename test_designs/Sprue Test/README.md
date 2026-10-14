@@ -15,6 +15,7 @@ If something goes wrong:
   blank PB screen -> world In-game scripts + Experimental ON; K > PB > Edit: code there? Recompile; if empty paste Scripts/SprueProbe.cs.
   the t number on line 1 stops counting -> copy the red error text from the PB terminal, then Recompile.
   both pastes fail -> send %AppData%\SpaceEngineers\SpaceEngineers_*.log.
+  "cut refused: neck not fully welded" -> wait for BUILT (or type cut force); "weld refused: already BUILT" -> go on with charge / cut (weld force restarts and overwrites Q1).
   WELD STALL "nothing buildable" -> projector terminal Offset must read X 0, Y 1, Z 2.
   WELD STALL "NO payload block on my grid" -> Creative mode? safe zone? If you SEE welded grey blocks, that is a result (not fused): do NOT hand-weld, screenshot the Info tab grid list and the payload PB.
 Design and decision tree: docs/design/sprue_test.md. No simulation was run (the simulator models neither fused grids nor grinders). Zips not rebuilt.
