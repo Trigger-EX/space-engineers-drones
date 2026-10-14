@@ -613,7 +613,7 @@ string KzStatus()
 
 void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }   // a failing setup step must not kill the script for good: the rest still runs and the error is on the screen
 
-// >>> MANUAL v1.0 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat, Run menu; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
+// >>> MANUAL v1.1 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat, Run menu; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
 // MANUAL is a mode of the Helm script, not another script. While somebody sits in a flight seat (an IMyShipController that CanControlShip and is not the Remote Control)
 // the script gives the ship to him: every gyro and thruster override is released the tick the seat is taken, the dampener switch goes back to his state, the AI blocks
 // go off, target tracking, sensors and turrets keep running, and ManFly() replaces Control(). The seat must stay taken for "Seat Debounce" before MANUAL is committed
@@ -750,7 +750,7 @@ void ManFly(double dt)
         _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(rm.Forward, dir), -1, 1)) * 57.2958;
         _fireWinDeg = BatWin(dist);
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
-        if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
+        if (shoot && FriendCheck) { MatesInLineP(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
     if (have && !ManAutoFire && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
     if (ManAutoFire) { SetFire(shoot); BatFire(have, _rc.GetShipVelocities().LinearVelocity); }
@@ -802,9 +802,9 @@ void ManShow()
     if (_hud == null) return;
     try { _hud.WriteText(ManHud()); } catch (Exception) { _hud = null; }
 }
-// <<< MANUAL v1.0 <<<
+// <<< MANUAL v1.1 <<<
 
-// >>> BATTERY v1.0 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
+// >>> BATTERY v1.1 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
 // Fixed guns (never turrets) form up to four batteries by the tag in the block name: [B1] .. [B4]. An untagged gun joins by class: ballistic (gatling, autocannon) B1, rocket B2, railgun B3,
 // shell (artillery, assault cannon) B4. The class of a battery (BALL ROCK RAIL SHEL: speed, range, minimum range, shot interval, reload, dps, dispersion) comes from its first gun's
 // definition id (BatSpec); a battery of mixed guns is treated as its first gun's class.
@@ -977,7 +977,7 @@ bool BatAim(Bat b, Vector3D myVel)
     Vector3D fw = f.WorldMatrix.Forward;
     double dist = Vector3D.Distance(pt, gp), err = Math.Acos(MathHelper.Clamp(Vector3D.Dot(fw, dir), -1, 1)) * 57.2958;
     bool go = dist >= b.MinR && dist < b.Range && err < BatWin(dist) && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax && BatOk(b, dist);
-    if (go && FriendCheck) { MatesInLine(gp, fw, dist); if (_now < _holdFireUntil) go = false; }
+    if (go && FriendCheck) { MatesInLine(gp, fw, dist, b.Cls == "RAIL" ? 0.5 : 0, b.Speed, myVel); if (_now < _holdFireUntil) go = false; }   // v1.1: the mate is checked where it will be when the slug passes (railgun 0.5 s charge + flight time)
     return go;
 }
 
@@ -1101,7 +1101,7 @@ string BatStatus()
     for (int i = 0; i < 4; i++) if (_bat[i].G.Count > 0) s.Append(" B").Append(i + 1).Append(i == _prim ? "* " : " ").Append(_bat[i].Cls).Append('x').Append(BatN(_bat[i]));
     return s.Append(" so ").Append(Standoff.ToString("0")).Append(" w ").Append(MaxTurn.ToString("0.0")).Append(BatTO() ? " TO\n" : "\n").ToString();
 }
-// <<< BATTERY v1.0 <<<
+// <<< BATTERY v1.1 <<<
 
 // >>> HELMLINK v1.2 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
 // The Helm sends, with TransmissionDistance.CurrentConstruct (never leaves the ship, no secret needed), on "<Ship Tag>.<suffix>" (Ship Tag default SHIP, [Link] in Custom Data):
@@ -1959,7 +1959,7 @@ void Control(double dt)
             _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gunFwd, aimDir), -1, 1)) * 57.2958;
             _fireWinDeg = BatWin(dist);   // (aiming at a hull point needs a tighter window)
             shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax && BatOk(_bat[_prim], dist);
-            if (shoot && FriendCheck) { MatesInLine(gunPos, gunFwd, dist); if (_tick % 20 == 0) CheckLineOfFire(gunPos, gunFwd, dist); }
+            if (shoot && FriendCheck) { MatesInLineP(gunPos, gunFwd, dist); if (_tick % 20 == 0) CheckLineOfFire(gunPos, gunFwd, dist); }
             if (_now < _holdFireUntil) shoot = false;
         }
     }
@@ -2097,16 +2097,25 @@ Vector3D Separation(Vector3D me)
 // from the guns to the target (bullets fly 0.5-1 s, so the mate is extrapolated by its age only). Works with no camera
 // charge, unlike the camera ray in CheckLineOfFire, which can only look once per second and fails open.
 double MateClear = 14;   // hold fire while a hive mate is this close to the line of fire
-void MatesInLine(Vector3D gunPos, Vector3D gunFwd, double dist)
-{
+// the primary battery's guns (the main Control() and MANUAL fire paths): its trigger delay and round speed
+void MatesInLineP(Vector3D gunPos, Vector3D gunFwd, double dist) { var b = _bat[_prim]; MatesInLine(gunPos, gunFwd, dist, b.Cls == "RAIL" ? 0.5 : 0, b.Speed, _rc.GetShipVelocities().LinearVelocity); }
+void MatesInLine(Vector3D gunPos, Vector3D gunFwd, double dist, double delay = 0, double speed = 0, Vector3D myVel = default(Vector3D))
+{   // delay/speed (BATTERY v1.1): also checked where the mate will be when the round passes it (trigger delay + flight time), relative to our own motion;
+    // a 4-Ballista wing (sim, 320 fights) put a full salvo into a mate 150 m ahead that crossed the line at 46 m/s during the 0.5 s railgun charge
     foreach (var m in _mates.Values)
     {
         double age = _now - m.Seen;
         if (age > 1.0) continue;
-        Vector3D rel = m.Pos + m.Vel * age - gunPos;
-        double along = Vector3D.Dot(rel, gunFwd);
-        if (along < 5 || along > dist + 10) continue;
-        if ((rel - gunFwd * along).LengthSquared() < MateClear * MateClear) { _holdFireUntil = _now + 0.4; _err = "Holding fire: wingmate in line"; return; }
+        Vector3D rel = m.Pos + m.Vel * age - gunPos, rv = m.Vel - myVel;
+        double t = speed > 0 ? delay + Math.Max(0, Vector3D.Dot(rel, gunFwd)) / speed : 0;
+        for (int k = 0; k < 3; k++)
+        {
+            Vector3D r = rel + rv * (t * k * 0.5);
+            double along = Vector3D.Dot(r, gunFwd);
+            if (along < 5 || along > dist + 10) continue;
+            if ((r - gunFwd * along).LengthSquared() < MateClear * MateClear) { _holdFireUntil = _now + 0.4; _err = "Holding fire: wingmate in line"; return; }
+            if (t <= 0) break;
+        }
     }
 }
 
@@ -2386,9 +2395,9 @@ void ReadSwarm()
     }
 }
 void BroadcastStatus()
-{
+{   // position = the hull centre, not the remote control (on a 52 m Ballista the RC sits 13 m off centre, so the wingmate fire gate let a slug path clip a mate's far end)
     IGC.SendBroadcastMessage(Tag + "_SWARM", new MyTuple<long, Vector3D, Vector3D, long, int>(
-        Me.CubeGrid.EntityId, _rc.GetPosition(), _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, (UnderFire ? 1 : 0) | (OwnAlert ? 2 : 0) | (LockStale ? 4 : 0)));
+        Me.CubeGrid.EntityId, Me.CubeGrid.WorldVolume.Center, _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, (UnderFire ? 1 : 0) | (OwnAlert ? 2 : 0) | (LockStale ? 4 : 0)));
     FaBeacon();
 }
 void PruneMates() { _drop.Clear(); foreach (var kv in _mates) if (_now - kv.Value.Seen > 3) _drop.Add(kv.Key); foreach (var id in _drop) _mates.Remove(id); }

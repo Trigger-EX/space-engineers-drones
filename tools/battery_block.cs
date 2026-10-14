@@ -1,4 +1,4 @@
-// >>> BATTERY v1.0 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
+// >>> BATTERY v1.1 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
 // Fixed guns (never turrets) form up to four batteries by the tag in the block name: [B1] .. [B4]. An untagged gun joins by class: ballistic (gatling, autocannon) B1, rocket B2, railgun B3,
 // shell (artillery, assault cannon) B4. The class of a battery (BALL ROCK RAIL SHEL: speed, range, minimum range, shot interval, reload, dps, dispersion) comes from its first gun's
 // definition id (BatSpec); a battery of mixed guns is treated as its first gun's class.
@@ -171,7 +171,7 @@ bool BatAim(Bat b, Vector3D myVel)
     Vector3D fw = f.WorldMatrix.Forward;
     double dist = Vector3D.Distance(pt, gp), err = Math.Acos(MathHelper.Clamp(Vector3D.Dot(fw, dir), -1, 1)) * 57.2958;
     bool go = dist >= b.MinR && dist < b.Range && err < BatWin(dist) && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax && BatOk(b, dist);
-    if (go && FriendCheck) { MatesInLine(gp, fw, dist); if (_now < _holdFireUntil) go = false; }
+    if (go && FriendCheck) { MatesInLine(gp, fw, dist, b.Cls == "RAIL" ? 0.5 : 0, b.Speed, myVel); if (_now < _holdFireUntil) go = false; }   // v1.1: the mate is checked where it will be when the slug passes (railgun 0.5 s charge + flight time)
     return go;
 }
 
@@ -295,4 +295,4 @@ string BatStatus()
     for (int i = 0; i < 4; i++) if (_bat[i].G.Count > 0) s.Append(" B").Append(i + 1).Append(i == _prim ? "* " : " ").Append(_bat[i].Cls).Append('x').Append(BatN(_bat[i]));
     return s.Append(" so ").Append(Standoff.ToString("0")).Append(" w ").Append(MaxTurn.ToString("0.0")).Append(BatTO() ? " TO\n" : "\n").ToString();
 }
-// <<< BATTERY v1.0 <<<
+// <<< BATTERY v1.1 <<<
