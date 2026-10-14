@@ -9,7 +9,7 @@ sim numbers, and the open questions get the owner's answers.
 | Question | Decision | Why (short) |
 |---|---|---|
 | What is a "tube" | A long box of armour with a **solid heavy-armour nose cap**, the systems packed inside, and the **whole rear face one bank of ion thrusters** (exhaust aft). Not an open pipe. | An open pipe puts no mass at the contact point and in the sim a target's blocks can slip into the empty core without a contact (section 3.2). Open question Q1. |
-| Grid | **Small grid** | Every drone here is small grid (merge latch, racks, printers); small ion thrusters give 119 N/kg against 79 N/kg for large ones; a large-grid 4x4 would be a 100 t+ warship. Section 2. |
+| Grid | **Small grid** | Every drone here is small grid (racks, printers); small ion thrusters give 119 N/kg against 79 N/kg for large ones; a large-grid 4x4 would be a 100 t+ warship. Section 2. |
 | Cross-sections | 2x2 (1 x 1 m), 2x4 (2 m wide x 1 m tall), 3x3 (1.5 x 1.5 m), 4x4 (2 x 2 m); 4 to 5 m long | Owner's numbers; lengths set so every variant accelerates at about 18-20 m/s2 (100 m/s in about 5.5 s, 250-280 m). |
 | Kill mechanism | Kinetic only. **No warhead** in the four models. The script handles warheads if a player adds some (arms only in the terminal phase, far from home). | Owner asked for slamming; warheads would make the tubes a danger to their own rack/carrier and duplicate the Stinger. Open question Q3. |
 | After an impact | **Re-ram** while it can still fly: extend to a run-up distance, turn, slam again. | A heavy nose survives one hit in the sim (section 3.3); one-shot would waste it. `Max Rams` in Custom Data (0 = unlimited, 1 = one-shot). |
@@ -178,8 +178,8 @@ layer at z = 0**; 0.5 m cells.
 2. System layers: the per-variant table (RC, PB, gyros, batteries, antenna). Every cell inside the W x H section that the table leaves empty gets
    **light armour** (`bp.armor`, HULL colour): the tube is a closed box, all blocks attach, nothing floats.
 3. Service layer (last body layer): flush side cameras `Left`/`Right` (backs on the neighbouring inner cell), the antenna lying across the tube
-   (`ant(bp, cell, "Right", "Up", ..., 2500)`, 2 cells along x), light armour elsewhere; the **merge latch** under it on the centre line:
-   `bp.armor((cx, -1, zs), RED)`, `merge_small(bp, (cx, -2, zs), "Down", f"{name} Merge")` (Gnat pattern; the merge block is the lowest block).
+   (`ant(bp, cell, "Right", "Up", ..., 2500)`, 2 cells along x), light armour elsewhere.  **No merge latch** (owner, 2026-10-14: the W x H section is a hard requirement, nothing may stand
+   outside it; the latch that used to hang under this layer was removed).
 4. Thruster bank: one `thr(bp, (x, y, zt), "Backward", "Up", f"{name} Ion Main {i}")` for **every** cell of the section, zt = first layer behind the body
    (2 cells long; `thr` reserves 4 cells of exhaust behind each).
 5. `finalize(bp)`, return. No `add_support_pbs` effect (TubeRamAI has no `LkInit(`/`TvAim(`), no spare PB: exactly one PB.
@@ -201,7 +201,7 @@ Masses are sums of `defs_stats.json` masses; acceleration = rear thrust / mass, 
 | 4 | Camera Left (back on (1,0,4)) | light | light | Antenna (fwd Backward, z 4..5) |
 | 5 | light | light | light | (antenna) |
 | 6-7 | 4 x Ion Main | | | |
-Latch: light (0,-1,4), merge (0,-2,4) clamp Down. (The 2x2 is too narrow for a crosswise antenna; it lies along z in the corner column.)
+(The 2x2 is too narrow for a crosswise antenna; it lies along z in the corner column.)
 
 **Tube 2x4** ("2 tall x 4 wide": W 4, H 2, 8 thrusters 115.2 kN; cap 3; body z 0..6, thrusters z 7..8; 4.5 m; ~48 blocks, **~5.83 t, ~19.8 m/s2**, one 4 MW battery)
 | z | row y=0 (x 0..3) | row y=1 (x 0..3) |
@@ -211,7 +211,7 @@ Latch: light (0,-1,4), merge (0,-2,4) clamp Down. (The 2x2 is too narrow for a c
 | 3-5 | Battery (SmallBlockBatteryBlock 3x2x3 at min (0,0,3): x 0..2, y 0..1, z 3..5) + column x=3: z3 RC, z4 PB (front on RC), z5 light | x=3: z3 Gyroscope (bottom on RC), z4 light, z5 light |
 | 6 | Camera Left (0,0) back on (1,0); light (1,0), light (2,0); Camera Right (3,0) back on (2,0) | light (0,1); Antenna (1,1)-(2,1) fwd Right; light (3,1) |
 | 7-8 | 8 x Ion Main | |
-Latch: light (1,-1,6), merge (1,-2,6).
+
 
 **Tube 3x3** (W 3, H 3, 9 thrusters 129.6 kN; cap 3; body z 0..6, thrusters z 7..8; 4.5 m; ~56 blocks, **~6.37 t, ~20.3 m/s2**, one 4 MW battery)
 | z | rows y=0..1 | row y=2 (x 0..2) |
@@ -223,7 +223,7 @@ Latch: light (1,-1,6), merge (1,-2,6).
 | 5 | (battery) | light x3 |
 | 6 | y=0: light x3; y=1: Camera Left (0,1), light (1,1), Camera Right (2,1) (both backs on (1,1)) | light (0,2); Antenna (1,2)-(2,2) fwd Right |
 | 7-8 | 9 x Ion Main | |
-Latch: light (1,-1,6), merge (1,-2,6).
+
 
 **Tube 4x4** (W 4, H 4, 16 thrusters 230.4 kN; cap 4; body z 0..7, thrusters z 8..9; 5.0 m; ~128 blocks, **~12.4 t, ~18.5 m/s2**, one 4 MW battery for 3.2 MW of thrust, 2 gyros)
 | z | x 0..2, y 0..1 | column x=3, y 0..1 | rows y=2..3 (x 0..3) |
@@ -234,10 +234,10 @@ Latch: light (1,-1,6), merge (1,-2,6).
 | 5-6 | (battery) | light | light (antenna is in z7) |
 | 7 | light x4; Camera Left (0,1) back on (1,1); Camera Right (3,1) back on (2,1) | | light; Antenna (1,3)-(2,3) fwd Right (back on (0,3)) |
 | 8-9 | 16 x Ion Main | | |
-Latch: light (1,-1,7), merge (1,-2,7).
+
 
 The validator (`bp.validate()`) is the judge of every mount: if the antenna or a camera does not attach where the table puts it, move it within the same
-layer (another flush cell, or swap with a light cell) and keep the tests in 5.4 green. Do not add blocks outside the W x H section except the merge latch.
+layer (another flush cell, or swap with a light cell) and keep the tests in 5.4 green. Do not add any block outside the W x H section (no merge latch either).
 
 ### 5.3 Registration and packaging
 * `tools/designs/tube.py`: `MODELS = {"Tube 2x2": ..., "Tube 2x4": ..., "Tube 3x3": ..., "Tube 4x4": ...}` (callables take `lite` and ignore it),
@@ -251,14 +251,14 @@ layer (another flush cell, or swap with a light cell) and keep the tests in 5.4 
   asks for zips).
 * `tools/build_all.py`: the `models_md` intro sentence "Gnat-class ships thrust on F/B only by design" -> "... Gnat-class ships thrust on F/B, Tube drones
   on F only, by design". Nothing else (DOCS / MODEL_NOTES come from the module).
-* Printers / racks: **not** in this request. The merge latch makes a later "Tube Rack" (HiveMother rack mode) possible; open question Q7.
+* Printers / racks: **not** in this request. No merge latch (removed by the owner: nothing outside the section), so a rack or printer would need a latch inside the section; open question Q7.
 
 ### 5.4 Tests: `tools/tests/test_tube.py` (unittest, picked up by `tools/tests/run_all.py`)
 For each of the four models (Full only):
 1. builds, `bp.validate()` passes (mounts, one connected piece, no overlaps, reserve zones), `bp.dlc_used()` empty and no block with `dlc` in `defs_stats`.
 2. `bp.name == model`; every block name starts with the model name and is unique; exactly one PB, named `"<Model> PB"`, whose program is the minified
    `TubeRamAI.cs` and whose Custom Data has `Block Tag=<Model>`; `C.add_support_pbs(bp)` adds nothing.
-3. Envelope: every block except the merge latch lies inside x 0..W-1, y 0..H-1; length matches the table.
+3. Envelope: every block lies inside x 0..W-1, y 0..H-1; length matches the table.
 4. Nose: every cell of layers 0..cap-1 is heavy armour or a forward camera; at least one forward camera.
 5. Thrust: all thrusters are `SmallBlockSmallThrust` with `fwd == "Backward"`, one per section cell, in the last two layers; `C.twr` gives Forward
    >= 15 m/s2 and 0 on every other axis.
@@ -339,6 +339,34 @@ acceleration drops 2 to 3 m/s2 (2x2 now 13.8 m/s2, 100 m/s in about 7 s). `TubeR
 correction goes to the side thrusters first (`SideScale`), and only what they cannot push tilts the nose, so the nose stays on the target.
 Sim, 1 seed each (same scenarios as before, not enough for a direction): 6 Tube 2x2 vs a Basilisk 3 contacts / 11.2 kHP (before 1 / 3.7 kHP),
 4 Tube 3x3 2 / 3.7 kHP (before 3 / 12.3 kHP), 4 Tube 4x4 1 / 2.6 kHP (before 1 / 7.6 kHP), 2 Tube 2x4 beat a Gnat; no script exceptions.
+
+**Large-grid tubes `Tube L 1x1`, `Tube L 2x2` and their W versions (owner request: large grid, with and without warheads, 1x1 long and
+2x2, armour panels on the sides allowed):** `tube_large()` in `tools/designs/tube.py`. Large-grid facts that shaped them: the large ion
+thruster is 1 x 1 x 2 (4.4 t, 346 kN, 3.36 MW: 79 N/kg against 119 for the small one), the large gyro weighs 12.8 t, PB / gyro / compact
+antenna mount on their Bottom face only (they face it forward onto the block in front), the large warhead blasts 22 m (small: 4.5 m).
+* **Tube L 1x1**: a one-block column, 21 blocks long. Heavy nose (2 blocks), RC, PB, 3 batteries (36 MW), gyro, AI Offensive, AI Flight,
+  compact antenna; four side thrusters each half sunk in the column (a 1-wide column cannot recess a 2-long thruster), nozzles flush with
+  the panels; a cruciform rear bank of 5 (one thruster alone gave about 3 m/s2). Nose cameras above and below the nose, one block back:
+  `Nose Camera Setback (m)=2.5` in its Custom Data, which the contact fuse adds. 107 t, 16.1 m/s2 forward, 3.2 sideways, 57.5 m overall.
+* **Tube L 2x2**: flush nose camera, two heavy nose layers, PB / RC / 2 batteries, AI blocks, gyro, compact antenna, recessed side
+  thrusters (as the small 2x2), 4 rear thrusters. 105 t, 13.1 m/s2 forward, 3.3 sideways, 27.5 m long.
+* **Armour panels**: `LargeArmorPanelHeavy` (330 kg, 1,650 HP, no DLC) on every free side cell of the body, kept off nozzle exhaust and
+  camera views. Why: in the sim the small tubes lost their systems to side fire before they reached a Basilisk.
+* **W**: the second nose layer is large warheads (1 on the 1x1, 4 on the 2x2), same script logic (one-shot, last-moment arming).
+* No merge latch (the racks and printers are small grid).
+
+Sim, 5 seeds each, 1v1 against a Basilisk at 1.5 to 2.2 km, no target cue and no start command (Start Mode HUNT):
+
+| Model | first target | rams | warheads fired | Basilisk damage avg | Basilisk blocks lost | tube blocks left |
+|---|---|--:|--:|--:|--:|--:|
+| Tube L 1x1 | 9.3 s | 9 | - | 24 kHP | 3.6 of 54 | 93 of 98 (won 1 of 5) |
+| Tube L 1x1 W | 6.7 to 9.3 s | 5 | 5 | 240 kHP | 35 of 54 | 65 of 98 |
+| Tube L 2x2 | 1.3 to 4 s | 7 | - | 24 kHP | 3.6 of 54 | 80 of 86 |
+| Tube L 2x2 W | 2.7 to 5.3 s | 1 | 16 | 278 kHP | 43 of 54 | 20 of 86 |
+
+The large tubes survive the approach (the small ones were shot apart); kinetic rams alone barely hurt a Basilisk in the sim's assumed
+collision model, the W versions wreck it (they are lost with it). The sim is optimistic for large ships (`packages/unknowns.md`: large
+thrusters and batteries die too slowly there). Nothing verified in the game.
 
 **Detection, the Ballista way (owner report: "tube is not detecting enemies"), and Start Mode HUNT:** the Ballista finds enemies with its
 AI Offensive block, not its cameras (`docs/design/ships/Ballista.md` 2: the cameras cover too little sky), and its Helm makes that block

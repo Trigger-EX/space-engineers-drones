@@ -134,8 +134,9 @@ def orient_for_up(up_dir, prefer_fwd=("Forward", "Backward", "Left", "Right", "U
         if sum(a*b for a, b in zip(DIR[f], DIR[up_dir])) == 0: return f, up_dir
     raise AssertionError(up_dir)
 
-def merge_small(bp, mn, clamp_dir, name, color=RED):
-    """SmallShipSmallMergeBlock whose clamp face points along grid direction `clamp_dir`.
+def merge_small(bp, mn, clamp_dir, name, color=RED, flush=False):
+    """SmallShipSmallMergeBlock whose clamp face points along grid direction `clamp_dir`.  flush=True: the block is set into the hull
+    (see check_docking), for drones whose outline must not grow.
     Uses MERGE_CLAMP_FACE_SMALL: if that is "Up" the block's Up is clamp_dir; "Right" -> Right is clamp_dir, etc."""
     assert bp.grid == "Small"
     face = MERGE_CLAMP_FACE_SMALL
@@ -152,6 +153,7 @@ def merge_small(bp, mn, clamp_dir, name, color=RED):
     fwd, up = cands[0]
     b = bp.add("MyObjectBuilder_MergeBlock", "SmallShipSmallMergeBlock", mn, fwd, up, name, color, kind="merge")
     b['clamp_dir'] = clamp_dir
+    if flush: b['flush'] = True
     return b
 
 def merge_clamp_dir(bp, b):
@@ -166,6 +168,9 @@ def merge_clamp_dir(bp, b):
 def check_docking(bp, b):
     """The docking face must be the exterior: the merge block is the ONLY block reaching its outermost layer along the
     clamp axis (nothing else on the drone can touch a flat printer surface), and the clamp-side cell is free.
+    A FLUSH latch (merge_small(..., flush=True): the merge block set into the hull of a drone whose outline is a hard requirement,
+    Gnat) may share the outermost layer with other blocks, but nothing may stand beyond it; the printer meets it with a merge block on
+    a stalk, which only touches the drone through the clamp face.
     Returns the clamp direction; raises AssertionError otherwise."""
     d = merge_clamp_dir(bp, b); v = DIR[d]
     ax = [abs(c) for c in v].index(1); sg = v[ax]
@@ -176,7 +181,8 @@ def check_docking(bp, b):
     assert nxt not in occ, f'{bp.name}: clamp-side cell {nxt} of {b["name"]} is occupied by {occ[nxt]["name"]}'
     for c, o in occ.items():
         if o is b: continue
-        assert c[ax] * sg < reach, f'{bp.name}: {o["name"]} at {c} is level with/past the merge block along {d}; could touch a printer'
+        if b.get('flush'): assert c[ax] * sg <= reach, f'{bp.name}: {o["name"]} at {c} stands past the flush merge block along {d}; could touch a printer'
+        else: assert c[ax] * sg < reach, f'{bp.name}: {o["name"]} at {c} is level with/past the merge block along {d}; could touch a printer'
     for c in list(bp.reserve):                 # keep a printer's merge block cell free of drone exhaust/muzzle/camera zones
         assert c != nxt, f'{bp.name}: {bp.reserve[c]} crosses the docking cell'
     return d

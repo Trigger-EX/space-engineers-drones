@@ -44,7 +44,7 @@ class LinkTests(unittest.TestCase):
         self.assertIn('int fl = _lkFl | 256;', SPOT)                  # ... and answers with version 1
 
     def test_the_spotter_never_writes_the_ship(self):
-        lk = SPOT[SPOT.index('LOOKOUT: harasser defence'):SPOT.index('string GroupName')]
+        with open(os.path.join(TOOLS, 'lookout_block.cs'), encoding='utf-8') as f: lk = f.read()   # the shared LOOKOUT block (SpotterAI + StaffAI)
         for bad in ('ThrustOverride', 'GyroOverride', 'ApplyAction', 'DampenersOverride', '.Pitch =', '.Yaw =', '.Roll =', 'EnableRaycast', '.Enabled =', 'Shoot'):
             self.assertNotIn(bad, lk, 'one writer per override: only the Helm drives the ship')
         self.assertNotIn('TvAim(', SPOT)
@@ -109,6 +109,34 @@ class CornerMathTests(unittest.TestCase):
         self.assertIn('cu > 0.2 && dT < _lkStand - LkMargin', SPOT)        # not closing in on the large target below its stand-off
         self.assertIn('cu < -0.2 && dT > LkMaxFire', SPOT)                 # not opening out of the rails' range
 
+
+
+class BigShipTests(unittest.TestCase):
+    """2026-10-14: the LOOKOUT block also runs in the Staff PB of the Warden, Leviathan and Corsair (docs/design/ballista_harasser_defence.md section 12)."""
+    def test_staff_carries_the_block_off_by_default(self):
+        staff = src('StaffAI.cs')
+        self.assertIn('// >>> LOOKOUT v', staff)
+        self.assertIn('bool LkDefOn = false;', staff)                 # a Shrike's Staff must not dodge small craft: they are its targets
+        self.assertIn('bool LkDefOn = true;', SPOT)
+        self.assertIn('LkStep()', staff); self.assertIn('LkLoad();', staff); self.assertIn('LkStatus()', staff)
+
+    def test_one_lookout_per_ship(self):
+        with open(os.path.join(TOOLS, 'lookout_block.cs'), encoding='utf-8') as f: lk = f.read()
+        self.assertIn('_lkYield = sp.Count > 0 && !Me.CustomName.StartsWith("[Spotter]"', lk)   # a Staff copy stands down while a Spotter PB is on the ship
+        self.assertIn('"[Staff]"', HELM)                               # the Helm sends to a Staff PB too
+
+    def test_big_ships_enable_it_in_the_staff_custom_data(self):
+        import importlib, json
+        for mod, model in (('warden', 'Warden'), ('leviathan', 'Leviathan'), ('corsair', 'Corsair')):
+            bp = importlib.import_module(mod).MODELS[model](False)
+            staff = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock') and b['name'].startswith('[Staff]')]
+            self.assertEqual(len(staff), 1, model)
+            cd = staff[0].get('custom_data') or ''
+            self.assertIn('[Harasser Defence]', cd, model); self.assertIn('Enabled=true', cd, model)
+        import shrike
+        bp = shrike.MODELS[list(shrike.MODELS)[0]](False)
+        for b in bp.blocks:
+            if b['xtype'].endswith('MyProgrammableBlock'): self.assertNotIn('Harasser Defence', b.get('custom_data') or '')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
