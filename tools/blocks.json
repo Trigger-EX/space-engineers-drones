@@ -56,6 +56,12 @@
         "MantisAI",
         "ShrikeAI"
       ]
+    },
+    "HARASSER LINK": {
+      "file": "tools/hd_block.cs",
+      "scripts": [
+        "ShrikeAI"
+      ]
     }
   }
 }
