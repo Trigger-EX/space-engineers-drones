@@ -6,7 +6,7 @@ surviving thruster group points along the acceleration it needs, as the Gnat doe
 
 Rules that bind this work (CLAUDE.md): commit to `main` only; no release zips; small sim runs (seed counts stated below);
 hot path (tracking, lead, aim, control, firing) stays in ONE PB; budget about 80k minified per PB, so a PB that would pass it gets a
-module moved to another PB rather than the feature cut.
+module moved to another PB rather than the feature cut (multi-PB works in the real game; size never gates a feature).
 
 ## 1. Findings (current code)
 
@@ -93,18 +93,25 @@ when `none` is chosen). Single-PB scripts append it in `Display()`. Wasp Split: 
 `_tvFight = haveAim && dist < MaxFireRange;` (Longbow/Mantis: their own range) in the aiming section; delete the script's `ApplyThrust`;
 `MinAccel` body -> `TvMinAccel`; status line. Uses from the script: `_rc, _aimRef, _thrDir, _powerScale, _tick, _now, Me`.
 
-## 3. Rollout (staged)
+## 3. Rollout (size is NOT a gate)
 
-* Stage 1: WaspFlightAI (+ WaspStaffAI status). The only combat PB with a Flight/Staff cut today. Block target <= 3.5k minified; if
-  Flight then passes 80,000, move an off-hot-path module to Staff (candidates: printer join, `_CMD` text parsing, settings echo) in the
-  same change, over IGC as in docs/design/wasp_split.md.
-* Stage 2: Hornet. At 95.5k it is already past the 80k budget, so do "Hornet Split" first (copy of the Wasp Split pattern: FLEET LINK,
-  FOLLOW, LAUNCH, full display to a `[Staff]` PB; tracking/lead/aim/control/firing + this block in `[Flight]`), then add the block. Do not
-  push the single-PB Hornet to ~99k.
-* Stage 3: Lancer, Harrier, Basilisk, Aegis, Longbow S/L, Mantis (each via its own split), Shrike (its Staff PB exists: move a module
-  to free room), Peeper (11k, has room; needs a `_powerScale = 1` and its own `Aim(fwd)` hook). WaspAI single-PB stays as is.
-* `tools/thrust_sync.py` lists only the scripts already hooked (its insert-before-`public Program()` would otherwise clash with the
-  script's own `ApplyThrust`), so SCRIPTS grows per stage.
+Re-checked against CLAUDE.md and `docs/design/wasp_split.md` / `docs/audit/multi_pb_feasibility.md`: two PBs on one grid linked by IGC
+`CurrentConstruct` work in the real game (owner-tested), a ship may carry any number of PBs, and the 100k cap is per PB. So size never
+decides whether a script gets thrust vectoring; it only decides where the non-hot-path code lives. The earlier draft of this section treated
+size as an obstacle and staged the rollout around it; that was wrong.
+
+* Hot path stays whole: `TvCaps`, `ApplyThrust`, `TvAim` (it edits `Aim()`'s inputs) sit in the same PB as tracking / lead / aim / control /
+  firing. The block is ~3.5k minified, small next to any module that can move out.
+* Every thrust-driving script gets the block: WaspFlightAI, HornetDroneAI, LancerAI, HarrierAI, BasiliskAI, AegisAI, LongbowSniperAI, MantisAI,
+  WaspAI, ShrikeAI, PeeperAI (Gnat already point-and-burn). `thrust_sync.py` lists all of them from the start.
+* Where a script would pass ~80k minified (Hornet 95.5k, Lancer 97.0k, Harrier 96.6k, Basilisk 94.1k, Longbow 99.1k, Wasp 99.4k,
+  Aegis 99.8k, Mantis 99.9k; Shrike has its Staff PB), move an off-hot-path module to a second `[Staff]` PB over IGC in the same change,
+  copying the Wasp Split cut (FLEET LINK, FOLLOW, LAUNCH, full display, watchdog). Flight keeps the hot path, one writer per
+  thruster/gyro override. Nothing is dropped, shrunk or postponed.
+* Order is only about testing: WaspFlightAI first (already split, block fits at ~80k without moving anything, sim-proven), then Hornet
+  (the reference duel opponent; its Staff cut becomes the template the other single-PB scripts copy), then the rest. All of them are in scope for
+  this feature; none is "left for later because of size".
+* Splits need a blueprint with a second PB (`tools/designs/*_split.py` pattern); no zips are rebuilt.
 
 ## 4. Implementation steps (ordered, each small)
 
@@ -122,7 +129,7 @@ when `none` is chosen). Single-PB scripts append it in `Display()`. Wasp Split: 
 7. Size and compile: `tools/compile_check.sh`, `tools/minify_check.sh` (Flight <= 80,000). Over -> move a module to Staff (stage 1 note).
 8. Blueprint for the sim: `python3 -I tools/build_all.py --no-zip --only "Wasp Split"`. Runs of section 5.
 9. Docs: `docs/thrust-vectoring.md` (behaviour, config, hooks, results); line in HANDOFF.md. Say zips are not rebuilt. Commit to `main`.
-10. Stage 2 and 3 as separate tasks (Hornet Split first).
+10. Remaining scripts (Hornet first, with its Staff cut), each: hooks, Staff cut where over ~80k, compile/minify check, one regression seed run.
 
 ## 5. Verification (seed counts and why)
 
@@ -146,5 +153,5 @@ when `none` is chosen). Single-PB scripts append it in `Display()`. Wasp Split: 
 * Thrusters mounted off-axis (dot < 0.9) stay unused, as today; widening the grouping is out of scope.
 * Two writers: `TvAim` only edits Aim's inputs and `ApplyThrust` stays the single thruster writer; LAUNCH's take-off burn (`LaunchStep`,
   which returns before `TvCaps`) is untouched.
-* Split work (stage 2/3) is the large part of the rollout; this plan only makes the block ready for it.
+* The Staff cuts for the single-PB scripts are the bulk of the work; they are routine (copy of the Wasp Split pattern), not a reason to skip any script.
 * This session's checkout is on branch `code/keen-mccarthy-06pl20`; CLAUDE.md requires committing to `main`.
