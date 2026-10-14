@@ -182,6 +182,15 @@ gives the owner's premise: `--turret-ai-block-extends-range false` (the drones' 
 3. Regression: `1v1` Longbow L / Basilisk vs Hornet, 5 seeds each (small grids: BREACH and the relay stay off), no exceptions.
 4. Split sync: `killpb Staff` at 30 s (3 seeds): Flight keeps drilling its hole; `killpb Flight`: Staff stops sending `_WP`.
 
+### Smoke results (2026-10-14, new Tech Hunter 90k = 17,457 blocks, `--turret-ai-block-extends-range false`)
+
+* `Basilisk Seeker + 8x Longbow L`, 3 seeds, 300 s: 0 script exceptions on any ship, 0 errors.
+* `Basilisk Seeker + 2x Longbow L`, seed 0, Longbow screen: the Basilisk's seeker found a **power** hole, the Staff showed `Weakpt : power hole, 2 drone(s)`
+  and the Longbow aimed `hole 0 m (fleet 2)` at it from standoff; once the Basilisk died the hole expired (20 s) and the Longbow went back to its own
+  camera point (`hole 19 m (fleet 1)` later). So send, cluster, adopt and expiry all work in the sim.
+* No A/B (relay on vs off) run yet: needs `Use Fleet Weakpoints=false` / `Share Weakpoints=false` in the `[Longbow]` section via `--pb-custom-data`.
+* Full `build_all --no-zip`: 71 PASS, 2 FAIL (Longbow Foundry, Mantis Foundry: bay layout; Longbow Foundry fails the same way on the commit before this change).
+
 ## 8. Retrofit (docs/retrofit.md, Pending row in the implementing commit)
 
 | Improvement | Could go to | Note |
