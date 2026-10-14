@@ -1,0 +1,4 @@
+# hive weakpoint relay (docs/design/hive_weakpoint.md): snipers with a shared breach point; run with --turret-ai-block-extends-range false for the 800 m seeker limit
+8xLongbow L
+2xBasilisk Seeker+8xLongbow L
+Longbow L Seeker+7xLongbow L

@@ -84,6 +84,18 @@ every enemy their turrets track on `<ch>`, and the argument `fleet <cmd>` (for e
 | Carrier relays | `_TGT`, `_HOME`, `_HOMER`, `_CMD` (on `fleet ...`) | nothing |
 | HiveMotherAI (printer) | nothing (its `_JOIN` and rack `launch` stay on the per-type tags) | nothing |
 
+## 4b. Weakpoints (`<ch>_WP`, WEAKPOINT RELAY v1.0)
+
+One more fleet tag, `<ch>_WP`, carries the shared breach point (design and reasons: `docs/design/hive_weakpoint.md`). Payload
+`MyTuple<long target, Vector3D s, Vector3D d, Vector3D info, long senderGrid, int flags>`: `s` hull entry and `d` drill direction in the
+TARGET frame, `info` = (hole depth m, vital depth hint m or -1, age s). Flags: bits 0-2 kind (0 camera breach point, 1 PowerSystems,
+2 Weapons, 3 Propulsion, 4 other), 8 seeker found it, 16 block position from the game, 32 DONE, 64 STALL, 128 ADOPTED.
+A drone sends only its own confirmed findings (a seeker sample, or its hole after its own probe ray hit it) and never forwards a received
+one; holes within 4 m are one hole and the best wins (seeker kind by `Weakpoint Priority`, supporters, depth, lowest grid id). The Staff PB
+does all of this (shared block in the nine `*StaffAI.cs`) and hands the Flight PB the best hole on `.WPT`. Keys: `[Fleet] Weakpoint Priority=1,3,2`,
+`Weakpoint Expire (s)=20`; Flight script section `Use Fleet Weakpoints`, `Share Weakpoints`, `Weakpoint Cone (deg)`; command `wp on|off`.
+Not in `Allowed Commands`. A different `Secret` keeps the weakpoints of two fleets apart.
+
 ## 5. Security (read before playing multiplayer)
 
 IGC broadcasts reach **every programmable block within antenna range, whatever its faction**, and the game gives a receiving script no

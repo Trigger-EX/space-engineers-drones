@@ -23,6 +23,8 @@ gyros, thrusters, rockets) stays whole in Flight, and only slow data crosses: ow
 | `.CMD` | Flight -> Staff | `string` PB argument given to Flight, for the Staff's words | on event |
 | `.TGT` | Staff -> Flight | fleet target relay, the `<Tag>_TGT` tuple, coalesced per id, <= 10 / tick | on arrival |
 | `.FLT` | Flight -> Staff | the same tuple: target shares and "finished" for the fleet channel | on event |
+| `.WPF` | Flight -> Staff | `MyTuple<long,Vector3D,Vector3D,Vector3D,long,int>`: this drone's own weakpoint (SPLIT LINK v1.1, `docs/design/hive_weakpoint.md`) | every 1 s while it has one, events 0.5 s |
+| `.WPT` | Staff -> Flight | the same tuple: the best weakpoint of the wing for the Flight's target (flags bits 8-11 = supporters) | every 1 s |
 
 F2S flags: bits 0-2 mode, 3 firing, 4 under fire, 5 lock stale, 6 AI on, 8-15 rockets (255 unknown). FOL flags: 0 owner known, 1 on foot, 2 take-off burn, 3 dynHome fresh.
 The Staff finds the nearest `[Flight]` PB of its construct (every 600 ticks and on a grid change); merged printed copies share a construct, hence the EntityId in the key.

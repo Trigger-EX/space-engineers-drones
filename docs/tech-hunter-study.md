@@ -112,7 +112,7 @@ Confirmation on the final scripts: Longbow L 0.75 -> 1.16, Longbow S 0.01 -> 0.1
    on it in the open; keep them for small ships and drones, or send them in only after the Longbows have silenced a side.
 3. **Kill speed, not knowledge, is the limit now.** 10 Longbow L take about a fifth of the power in 10 minutes. Next candidates
    (not done): a STERN option (the 15 hydrogen engines and 6 jump drives at the stern are exposed), one shared breach point for
-   the whole fleet over IGC (so all slugs go down one hole), and a "silence one side" mode that kills the turrets facing the
+   the whole fleet over IGC (so all slugs go down one hole; BUILT, `docs/design/hive_weakpoint.md`), and a "silence one side" mode that kills the turrets facing the
    drones first, then breaches from that side.
 4. **Option 4 stays an in-game experiment** (Longbow L Seeker, Basilisk Seeker, SeekerProbe). If the probe shows the game hands a
    script the block position (`hitpos ... from centre`), the seeker can aim deeper than BREACH and is worth another sim round.

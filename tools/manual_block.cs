@@ -1,4 +1,4 @@
-// >>> MANUAL v1.0 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat, Run menu; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
+// >>> MANUAL v1.1 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat, Run menu; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
 // MANUAL is a mode of the Helm script, not another script. While somebody sits in a flight seat (an IMyShipController that CanControlShip and is not the Remote Control)
 // the script gives the ship to him: every gyro and thruster override is released the tick the seat is taken, the dampener switch goes back to his state, the AI blocks
 // go off, target tracking, sensors and turrets keep running, and ManFly() replaces Control(). The seat must stay taken for "Seat Debounce" before MANUAL is committed
@@ -135,7 +135,7 @@ void ManFly(double dt)
         _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(rm.Forward, dir), -1, 1)) * 57.2958;
         _fireWinDeg = BatWin(dist);
         shoot = dist < MaxFireRange && _aimErrDeg < _fireWinDeg && _now > _holdFireUntil && _now - _tgt.Seen < FireStaleMax;
-        if (shoot && FriendCheck) { MatesInLine(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
+        if (shoot && FriendCheck) { MatesInLineP(gp, rm.Forward, dist); if (_tick % 20 == 0) CheckLineOfFire(gp, rm.Forward, dist); if (_now < _holdFireUntil) shoot = false; }
     }
     if (have && !ManAutoFire && _tick % 10 == 3) BatPick();   // (the pip follows the primary battery even when the script does not fire)
     if (ManAutoFire) { SetFire(shoot); BatFire(have, _rc.GetShipVelocities().LinearVelocity); }
@@ -187,4 +187,4 @@ void ManShow()
     if (_hud == null) return;
     try { _hud.WriteText(ManHud()); } catch (Exception) { _hud = null; }
 }
-// <<< MANUAL v1.0 <<<
+// <<< MANUAL v1.1 <<<

@@ -14,13 +14,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import *            # noqa: F401,F403
 import _common as C
 import sebp_toolbar as TB
-from core import hornet_frame
+from core import hornet_frame, gnat
 
 MODELS = {}
-NO_LITE = ('Hornet Pilot Test', 'Twin PB Test')
+NO_LITE = ('Hornet Pilot Test', 'Twin PB Test', 'Gnat Side', 'Gnat Side NoRev')
 DOCS = {
     'Hornet Pilot Test': 'TEST SHIP (not for the game): Hornet frame with a cockpit instead of antenna, dive thrusters and PB. A Timer, an Event Controller (placeholder event id), a Button Panel, '
                          'a block group and a cockpit toolbar exercise the simulator\'s automation blocks. The simulator\'s scripted pilot sits in the seat.',
+    'Gnat Side': 'TEST SHIP (experiment): the Gnat plus one side ion thruster across the tail; GnatSwarmAI rolls it onto the sideways need (RUN drift trim, VectorFly).',
+    'Gnat Side NoRev': 'TEST SHIP (experiment): Gnat Side without the reverse thruster (a side thruster instead of the backward one).',
     'Twin PB Test': 'TEST SHIP (not for the game): Hornet with two Programmable Blocks, [Helm] (HornetDroneAI) and [Staff] (HornetMothership), and a Button Panel whose toolbar runs the Staff PB.',
 }
 
@@ -71,6 +73,8 @@ def twin_pb_test(lite=False):
 
 MODELS['Hornet Pilot Test'] = hornet_pilot_test
 MODELS['Twin PB Test'] = twin_pb_test
+MODELS['Gnat Side'] = lambda lite=False: gnat(name='Gnat Side', side='add')
+MODELS['Gnat Side NoRev'] = lambda lite=False: gnat(name='Gnat Side NoRev', side='norev')
 
 if __name__ == '__main__':
     for n, f in MODELS.items():

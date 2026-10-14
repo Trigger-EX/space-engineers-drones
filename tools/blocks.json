@@ -84,6 +84,20 @@
     "StingerAI",
     "WaspFlightAI"
    ]
+  },
+  "WEAKPOINT RELAY": {
+   "file": "tools/wp_block.cs",
+   "scripts": [
+    "AegisStaffAI",
+    "BasiliskStaffAI",
+    "GnatStaffAI",
+    "HarrierStaffAI",
+    "HornetStaffAI",
+    "LancerStaffAI",
+    "LongbowStaffAI",
+    "MantisStaffAI",
+    "WaspStaffAI"
+   ]
   }
  }
 }
