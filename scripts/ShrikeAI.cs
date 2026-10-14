@@ -1574,6 +1574,7 @@ bool Friendly(MyDetectedEntityInfo e)
     return r == MyRelationsBetweenPlayerAndBlock.Owner || r == MyRelationsBetweenPlayerAndBlock.FactionShare || r == MyRelationsBetweenPlayerAndBlock.Friends;
 }
 
+double _fcT = -99; string _fc = "";   // last new contact: distance, speed, source (CAM / AI / IGC / ...) and when
 Track AddContact(MyDetectedEntityInfo e, string src)
 {
     Track t;
@@ -1581,6 +1582,7 @@ Track AddContact(MyDetectedEntityInfo e, string src)
     {
         t = new Track { Id = e.EntityId };
         _contacts[e.EntityId] = t;
+        if (_rc != null) { _fcT = _now; _fc = Vector3D.Distance(e.Position, _rc.GetPosition()).ToString("0") + " m v " + new Vector3D(e.Velocity).Length().ToString("0") + " " + src; }   // first sight of a grid, for the status screen
     }
     t.Type = e.Type; t.Name = e.Name;
     double rad = e.BoundingBox.Size.Length() * 0.5;
@@ -2700,7 +2702,7 @@ void AiHeldIgnored(long id)
 string AiStatus()
 {
     if (_ai.Count == 0) return OwnAlert ? "AI alarm: searching\n" : "";
-    return AiGateStatus() + "AI: " + (_aiOn ? "searching" : _agT0 >= 0 ? "own search" : "standby") + " (" + _ai.Count + " blocks)" + (OwnAlert ? "  ALARM" : "") + "\n";
+    return (_fc != "" ? "1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago\n" : "") + AiGateStatus() + "AI: " + (_aiOn ? "searching" : _agT0 >= 0 ? "own search" : "standby") + " (" + _ai.Count + " blocks)" + (OwnAlert ? "  ALARM" : "") + "\n";
 }
 // The AI Flight block flies straight at what it found, and so do all the wingmates' AI blocks: three ships at one target meet in one spot. While a friendly grid is
 // in the ramp zone or on the straight line of my velocity (FaWant on a zero command pushes), the AI is switched off for 3 s and Control() flies with FaWant.
