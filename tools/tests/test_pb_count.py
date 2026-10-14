@@ -3,8 +3,7 @@
 
   * the drones that print from a Foundry/Shipyard/Pad carry their [Flight] + [Staff] + [Thrust] PBs in the model function itself (a printer projects the model
     function's grid, build_all only adds support PBs to the top-level blueprint): Wasp, Aegis, Mantis, Longbow S; the Peeper carries its [Thrust] PB;
-  * Gnat, Basilisk, Basilisk Seeker and Shrike carry ONE blank `[Spare]` PB reserved for the Staff half still to be split off their over-budget script;
-  * a spare has no program, a name no script looks up ([Helm] [Staff] [Flight] [Spotter] [Bay [Pod] [TU] [Thrust], 'Hive Mother'), and never grows the blueprint;
+  * Gnat carries `[Flight]` + `[Staff]` (docs/design/gnat_split.md), Shrike its `[Staff]` (docs/design/helm_split.md);
   * the cradle pod's PB count (warship pod subgrids) and the Midge (scriptless) are untouched."""
 import os, sys, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,17 +34,13 @@ class PbCount(unittest.TestCase):
         n = names(build('peeper', 'Peeper'))
         self.assertEqual(sum(x.startswith('[Thrust]') for x in n), 1, n)
 
-    def test_reserved_spares(self):
-        for mod, model in (('core', 'Gnat'), ('extra', 'Basilisk'), ('extra', 'Basilisk Seeker')):
-            for lite in (False,):      # Lite is retired (CLAUDE.md)
-                bp = build(mod, model, lite)
-                spare = [b for b in bp.blocks if b['xtype'] == spares.PB_X and 'Spare' in b['name']]
-                self.assertEqual(len(spare), 1, f'{model} {lite}: {names(bp)}')
-                b = spare[0]
-                self.assertFalse((b.get('extra') or '').strip(), 'a spare carries no program')
-                self.assertFalse(b['name'].lower().startswith(spares.RESERVED_START), b['name'])
-                self.assertNotIn('hive mother', b['name'].lower())
-                bp.validate()
+    def test_gnat_carries_flight_and_staff(self):      # (the blank PB reserved for it became [Staff] Gnat: docs/design/gnat_split.md)
+        bp = build('core', 'Gnat', False)
+        ps = [b for b in bp.blocks if b['xtype'] == spares.PB_X]
+        self.assertEqual(sorted(b['name'] for b in ps), ['[Flight] Gnat PB', '[Staff] Gnat PB'])
+        self.assertIn('LkInit(', [b for b in ps if b['name'].startswith('[Flight]')][0]['extra'])
+        self.assertIn('GNAT STAFF', [b for b in ps if b['name'].startswith('[Staff]')][0]['extra'])
+        bp.validate()
 
     def test_shrike_carries_the_staff_half_of_the_helm(self):      # (the blank PB reserved for it became [Staff] Shrike: docs/design/helm_split.md)
         bp = build('shrike', 'Shrike', False)
@@ -53,16 +48,6 @@ class PbCount(unittest.TestCase):
         self.assertEqual(len(st), 1, names(bp))
         self.assertTrue((st[0].get('extra') or '').strip(), 'the Staff carries StaffAI.cs')
         bp.validate()
-
-    def test_spares_do_not_grow_the_blueprint(self):
-        import core, spares as S
-        orig = S.add_spare_pbs
-        try:
-            S.add_spare_pbs = lambda bp, **kw: []
-            before = core.gnat(False).stats()['dims']
-        finally:
-            S.add_spare_pbs = orig
-        self.assertEqual(core.gnat(False).stats()['dims'], before)
 
     def test_untouched(self):
         import pods

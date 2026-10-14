@@ -94,7 +94,7 @@ def shrike_multi_test(lite=False):
 def shrike_basilisk_test(lite=False):
     """The Basilisk hull (large grid, 4 launchers, gatling turret on the roof) with ShrikeAI in a '[Helm]' PB instead of BasiliskAI; launchers tagged [B2]."""
     import extra as X
-    bp = X.basilisk(lite=False)
+    bp = X.basilisk(lite=False, staff=False)
     name = 'Shrike Basilisk Test'
     pb = [b for b in bp.blocks if (b['name'] or '').endswith(' PB')][0]
     pb['name'] = f'[Helm] {name} PB'

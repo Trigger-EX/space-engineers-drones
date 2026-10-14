@@ -49,7 +49,8 @@ namespace SeSim.Run
 
         sealed class Drone
         {
-            public List<Body> Bodies; public SimProgrammableBlock Pb; public List<SimSensor> Sensors = new List<SimSensor>();
+            public List<Body> Bodies; public SimProgrammableBlock Pb; public string AllCd = "";   // AllCd: the Custom Data of every PB (a split drone's Wingmate Separation Range is in its Flight PB, the Staff is `Pb`)
+            public List<SimSensor> Sensors = new List<SimSensor>();
             public List<double> Rad = new List<double>(); public double Ang0, AngPrev, AngSum; public bool AngInit; public double PlaneMax;
             public List<double> Dist = new List<double>(); public int InsideTicks; public double MinMateSettled = double.MaxValue, MinMate = double.MaxValue, MaxDist;
             public Body Main { get { return Pb.Inst.Body; } }
@@ -141,7 +142,7 @@ namespace SeSim.Run
                     {
                         if (bi.Api is SimProgrammableBlock)
                         {   // a drone with two PBs (Wasp Split: [Flight] + [Staff]): the Staff PB is the one that has the FOLLOW screen, the [Follow] Custom Data and takes the commands (it forwards them to Flight)
-                            var pbx = (SimProgrammableBlock)bi.Api;
+                            var pbx = (SimProgrammableBlock)bi.Api; d.AllCd += "\n" + (pbx.CustomData ?? "");
                             if (d.Pb == null || ((pbx.CustomName ?? "").StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase) && !(d.Pb.CustomName ?? "").StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase))) d.Pb = pbx;
                         }
                         if (bi.Api is SimSensor) d.Sensors.Add((SimSensor)bi.Api);
@@ -265,7 +266,7 @@ namespace SeSim.Run
             // slot distance the block aims for (FoDist 60, FoFootDist 20, radius + 30, ring spacing for n drones: see FollowSlot)
             slot = Math.Max(path == "foot" ? 20 : 60, (path == "foot" ? 1 : (sendR ? radius : 25)) + 30);
             double sep = 70;   // the drone's own "Wingmate Separation Range" (Custom Data), which sizes the ring for several drones
-            var sm = System.Text.RegularExpressions.Regex.Match(drones[0].Pb.CustomData ?? "", @"Wingmate Separation Range\s*=\s*([0-9.]+)");
+            var sm = System.Text.RegularExpressions.Regex.Match(drones[0].AllCd, @"Wingmate Separation Range\s*=\s*([0-9.]+)");
             if (sm.Success) double.TryParse(sm.Groups[1].Value, NumberStyles.Float, Inv, out sep);
             double leash = 1200;   // [Follow] Leash (2200 for the snipers)
             var lm = System.Text.RegularExpressions.Regex.Match(drones[0].Pb.CustomData ?? "", @"\nLeash\s*=\s*([0-9.]+)");

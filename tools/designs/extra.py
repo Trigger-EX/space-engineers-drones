@@ -177,7 +177,7 @@ def mantis(lite=False):
     return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Mantis printed by a Foundry carries its support PBs
 
 # ---------------------------------------------------------------------------------------------
-def basilisk(lite=False, seeker=False):
+def basilisk(lite=False, seeker=False, staff=True):
     """BASILISK: LARGE-grid armoured gunship (2.5 m cells).  x = Right, y = Up, z = Backward; nose at -z.
       front wall  z=-1   6x LargeHeavyBlockArmorBlock (3.3 t each)       nose cameras at (0,0..1,-2) between the launchers
       launchers   z=-3..-2  4x LargeMissileLauncher at (+-1, 0..1)        keep 2 cells (5 m) clear in front
@@ -200,7 +200,7 @@ def basilisk(lite=False, seeker=False):
     # core z=0
     bp.add("MyObjectBuilder_RemoteControl", "LargeBlockRemoteControl", (0, 0, 0), name=f"{name} Remote Control", kind="ctrl")
     bat(bp, (-1, 0, 0), f"{name} Battery 1"); bat(bp, (1, 0, 0), f"{name} Battery 2"); bat(bp, (1, 1, 0), f"{name} Battery 3")
-    _pb(bp, (-1, 1, 0), f"{name} PB", script_text("BasiliskAI.cs"),
+    _pb(bp, (-1, 1, 0), f"[Flight] {name} PB" if staff else f"{name} PB", script_text("BasiliskAI.cs"),
         _custom("Basilisk", "BASILISK", extra="Standoff Range=600\n"), large=True)
     bp.armor(0, 1, 0)
     # z=1, z=2
@@ -230,8 +230,10 @@ def basilisk(lite=False, seeker=False):
         bp.add("MyObjectBuilder_SensorBlock", "LargeBlockSensor", (0, -1, 0), "Down", "Forward", f"{name} Sensor", kind="sensor")
         bp.add("MyObjectBuilder_OffensiveCombatBlock", "LargeOffensiveCombat", (0, -1, 1), name=f"{name} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", "LargeFlightMovement", (0, -1, 2), name=f"{name} AI Flight [AI]", kind="ai")
-    # one blank PB reserved for the Staff half (FLEET LINK + FOLLOW + display leave BasiliskAI, 95 k minified; docs/design/pb_headroom.md)
-    spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=name)
+    # the Staff half (FLEET LINK + FOLLOW + the status screen leave BasiliskAI, 95 k minified; docs/design/basilisk_split.md) sits in the cell the spare PB found (most enclosed free cell);
+    # staff=False is the Shrike Basilisk Test (ShrikeAI in the main PB, no Staff next to it): today's ship with its blank spare.  [Thrust] is added by build_all.
+    if staff: spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, name='[Staff] {model} PB', model=name, reserved_ok=True, extra=pb_extra(script_text("BasiliskStaffAI.cs")))
+    else: spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=name)
     return finalize(bp)
 
 def basilisk_seeker(lite=False):

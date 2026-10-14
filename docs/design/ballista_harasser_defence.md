@@ -1,6 +1,15 @@
 # Ballista harasser-drone defence: Lookout PB + Helm hook (plan)
 
-Status: **plan only, nothing implemented.** Owner report (game): a Tech Hunter ~1.6 km away launched a small drone that harassed the Ballista and
+Status: **phase 1 implemented (2026-10-14), in a reduced form; nothing has run in the game.** Differences from this plan, after the owner's answers (the drone was AI-flown, small-grid autocannons, it chased the ship down and got close, the turrets never fired, no rails are to be redirected; custom turrets welcome):
+* **No separate Lookout PB and no `LookoutAI.cs`.** The module (`Lk*` functions, section "LOOKOUT" of `scripts/SpotterAI.cs`, `[Harasser Defence]` Custom Data in the Spotter PB) lives in the Spotter PB. Reason: PCU. The ship with the foundry and a live probe is about 9,860 of 10,000 after the two AI turrets, a new PB (+100) would not fit, and the Spotter has 60 k of free room. The Helm hook is the shared block `tools/hd_block.cs` (`HARASSER LINK`). The spare PB of section 5 is the Staff PB since the Helm split.
+* Phase 2 (PD rail pokes, nose request, `Harasser Window`) is **dropped** (owner: no rails redirected). The H2A tuple has no rail field and A2H no nose field; `HAR` is replaced by two ids in A2H.
+* **Added: kiting** (`Away Speed (m/s)=40`, `Away Within (m)=900`): while a harasser is inside that range the bias also opens the range, unless the stand-off band of the large target forbids it. The sim showed the jink alone loses to the old behaviour (section 10).
+* No camera refresh rays (section 2 source 4) and no hit-bearing "press" option: tracks come from the Helm's contacts (`.HTK`) and the vanilla turret's target; the dodge needs only a bearing.
+* The roll is not frozen before the salvo (the Helm's fire window and its `Salvo` timing are not visible to the Spotter).
+* **Custom turrets** (not in this plan): two `PD4L` rotor + hinge AI turrets, see `docs/design/ships/Ballista.md` 3f.
+Original text of the plan follows.
+
+Original owner report (game): a Tech Hunter ~1.6 km away launched a small drone that harassed the Ballista and
 eventually beat it. The Helm knows two small-threat behaviours: KAMIKAZE DEFENCE (a small contact on a collision course) and `Evade()`, which returns
 zero on large grids. A drone that stands off, circles and shoots matches neither.
 Labels: [data] repo game data (`defs_stats.json`, design figures), [code] read from the current source, [calc] worked out here, [sim] stand-in
@@ -337,3 +346,29 @@ Phase 2 (only after phase 1 is measured): the A2H nose request and window flag i
 4. Was the drone AI-flown (AI blocks) or hand-flown? Decoys (O3) only fool AI targeting.
 5. One drone or several? (The planner handles up to 3 bearings.)
 6. OK to use the spare PB for the Lookout (no empty spare left)? Phase 2: accept 3 rails out of the salvo for PD pokes?
+
+
+## 10. Results (phase 1, 2026-10-14; [sim] stand-in, nothing run in the game)
+
+Driver `tools/ballista_harasser_ab.py` (Ballista vs a held Tech Hunter at 1,600 m plus a Hornet, 180 s, **10 seeds per arm**, 40 runs; chosen because the arms differ by tens of percent and the stand-in is rough). The Spotter's Custom Data switches the arm.
+The Hornet is a stand-in: gatlings, leads with acceleration, keeps about 600-700 m. The vanilla turret model is first-order and the rotor turrets are inert in the sim (no rotor model), so nobody kills the Hornet here (0 of 40).
+
+| arm | what the Ballista does | Ballista damage taken | Hornet shots | Hornet hit rate |
+|---|---|---|---|---|
+| off | module disabled: the harasser becomes the Helm's target, it copies its velocity, flees to 900 m (the behaviour before this change) | 36,700 | 1,800 | 56 % |
+| jink | corner jink only (`Away Speed=0`) | 54,700 | 3,522 | 77 % |
+| kite | opens the range only (`Jink Speed=0`) | 38,600 | 4,696 | 20 % |
+| **on (default)** | corner jink + kite, the Tech Hunter stays the target | **31,400** | 1,143 | **35 %** |
+
+* The jink alone is worse than doing nothing against this stand-in: the Hornet leads with acceleration and the hull is 30-50 m across, so a 30 m/s velocity step changes little at 600 m, while keeping the Tech Hunter as the target stops the old flight away from the drone. Kiting does the work (the drone needs time to catch up and shoots less); the jink on top of it lowers the hit rate again.
+* The gain over the old behaviour is modest (-15 % damage, -37 % hit rate), and it is a gain only because the Tech Hunter stays the target. A first 6-seed, 90 s run (arms on / off / kite / jink: 14.5 k / 27.0 k / 31.2 k / 29.6 k damage) looked better; the 180 s, 10-seed run is the one to trust.
+* Regression: Ballista vs the Tech Hunter alone, 3 seeds, module on and off: identical (shots, hits, damage).
+* [unverified] everything that matters in the game: the real drone's weapon and speed, whether `_hitDir` is a good bearing, whether the rotor turrets and the one vanilla turret see and hit a drone that stays at 500-700 m (the turrets are what can kill it).
+
+## 11. In-game checks for the owner
+
+1. Paste. The Spotter PB screen shows `LOOKOUT link OK` within a few seconds (it needs the `[Helm]` PB on the same construct). If it says `waiting for the Helm` the Helm did not send `.H2A` (no `[Spotter]` PB seen), `link version?` means the scripts differ.
+2. Bring a hostile small drone inside 800 m: `Threat HARASSER <range> m` after the 3 s dwell and 5 s of staying inside 800 m (or at once on a hit from its direction); the Helm screen shows `!! HARASSER (evading)` and `TGT` stays on the large ship; the Ballista moves away from the drone along its thrust box corners and rolls so the drone is above or below.
+3. Damage from a direction with nothing tracked there: `FIRE FROM <bearing> deg (unseen)` and the same dodge.
+4. `lookout off` on the Spotter PB: the old behaviour (the drone becomes the Helm's target).
+5. Report: the drone's weapons, its range, whether `[TU]` turrets and the vanilla turret fired, which blocks went first, the Spotter `Ins` line.

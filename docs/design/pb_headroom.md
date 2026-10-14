@@ -8,14 +8,14 @@ Rule (CLAUDE.md "Script size"): the 100,000-char cap is per PB, budget ~80k mini
 | Ballista | blank `[SH] Spare PB` (3c in `ships/Ballista.md`): reserved for the Staff half of the Helm cut |
 | Wasp, Aegis, Mantis, Longbow S | `C.add_support_pbs()` in the model function: a printer projects that function's grid, build_all only adds `[Staff]`/`[Thrust]` to the top-level blueprint, so printed copies were Flight-only |
 | Peeper | same, `[Thrust]` PB for the printed probe |
-| Gnat, Basilisk, Basilisk Seeker, Shrike | one blank `[Spare] <Model> PB <n>` (`tools/designs/spares.py`: inside the existing hull, mount-seated, most enclosed free cell) reserved for the Staff half below. Gnat/Basilisk/Shrike wrappers sit in `gnat()`, `basilisk()`, `shrike_shipped()` (MODELS entry) so the Stinger fallback frame, `shrike_test` and the warship modules are unchanged |
+| Basilisk, Basilisk Seeker | split done (`docs/design/basilisk_split.md`): `[Flight]` BasiliskAI 82.1k + `[Staff]` BasiliskStaffAI 23k in the cell the spare found, `[Thrust]` from build_all |
+| Gnat | split done (`docs/design/gnat_split.md`): `[Flight]` GnatSwarmAI 76.4k + `[Staff]` GnatStaffAI 22.4k on the tail, no `[Thrust]` (point-and-burn) |
+| Shrike, Ballista | the Helm split (`docs/design/helm_split.md`): the reserved spares became `[Staff] Shrike` and `[Staff][SH] Ballista Staff` running StaffAI |
 
 No change needed: Midge (scriptless by design), Cradle Pod (CradleBayAI 17k), Watcher, Hornet/Lancer/Harrier (3 PBs), Longbow L / L Seeker (not printable, 3 from build_all), the 17 printers (HiveMotherAI 34k), Corsair/Warden/Leviathan (their `[Staff]` PB takes the Helm cut). Lite variants are retired.
 
-## Still to do (script work, each needs sim runs; the blank PB is waiting for it)
-* **Gnat**: GnatSwarmAI 87,228. New `GnatStaffAI.cs` (FLEET LINK 3.6k + LAUNCH 9.6k + display + SPLIT LINK, ~24-33k) on `[Staff] Gnat PB`; Flight ~76k. `tools/split_flight.py` asserts on FOLLOW hooks the Gnat lacks and has no Gnat AMMO entry; `make_staff.py` needs a no-FOLLOW option; `SUPPORT_STAFF['GNAT']`; Hive Mother `FindDrone` (below). No `[Thrust]` PB (point-and-burn).
-* **Basilisk (+Seeker)**: BasiliskAI 95,484. `make_staff.py BasiliskAI Basilisk BASILISK Basilisk` gives 32.8k Staff and an 83.1k Flight (FLEET LINK, FOLLOW, display leave; no LAUNCH block, so only ~12k moves). `split_flight.py`: Basilisk AMMO entry and optional LAUNCH edits; `SUPPORT_STAFF['BASILISK']`; take BasiliskAI out of fleet_sync/follow_sync/launch_sync. Do not call `add_support_pbs` inside `basilisk()` (`shrike_test` swaps ShrikeAI into it).
-* **ShrikeAI Helm**: done (docs/design/helm_split.md): FLEET LINK receive and damage sensing moved into StaffAI.cs (Helm 81.1k, gate 86,000 restored). Ballista: `[Staff][SH] Ballista Staff` (the spare); Shrike: `[Staff] Shrike`.
+## Still to do
+Nothing from this list: every over-budget script now has its Staff half (Gnat, Basilisk, Shrike Helm). The Flight halves sit at 76-82k; the next cuts if one grows are in the split docs.
 
-## Bug found on the way (not fixed here)
-Since 51f75cd the drone PBs are `[Flight]/[Staff]/[Thrust] <Drone> PB`. `CradleBayAI.Mine()` skips names starting with `[`, and `HiveMotherAI.FindDrone()` takes only names starting with the bay Prefix, so neither finds a split drone's PB: no `[Launch]` keys written, no `armed` run, JOIN fallback only. Both must accept `[Staff] `/`[Flight] ` + Prefix (arm the Staff PB, never `[Thrust]`). Spare names `[Spare] ...` stay invisible to both.
+## Bug found on the way: fixed in 4d8fccd
+Since 51f75cd the drone PBs are `[Flight]/[Staff]/[Thrust] <Drone> PB`; `CradleBayAI.Mine()` skipped names starting with `[` and `HiveMotherAI.FindDrone()` took only names starting with the bay Prefix, so neither found a split drone's PB (no `[Launch]` keys, no `armed`, JOIN fallback only). Both now accept `[Staff] <Prefix>` / `[Flight] <Prefix>` and arm the Staff first, never `[Thrust]`.
