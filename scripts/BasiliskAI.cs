@@ -97,7 +97,7 @@ double MaxLeadTime = 3.8;    // never fire at an intercept further than this man
 double MaxFireRangeHuge = 800, MaxLeadTimeHuge = 4.3;   // against huge grids (Pirate: slow, 260 blocks, turret range about 800 m): fire from the edge of the rocket range (sim, Pirate duels: standoff 600 m 24 % wins, 750 m with these 37-41 %)
 double Standoff = 180;       // preferred engage distance (1 s of flight; sim sweeps, 1v1 hybrid, 30 seeds x 12 opponents: 450 m 55.8 %, 300 m 57.8, 250 m 61.1, 180 m 62.8, 150 m 65.0; round 1: 600 m -> 300 m raised wins from 50 to 66 %)
 double StandoffLarge = 600;  // against large grids (Longbow L, turret ships) keep the old long standoff: their turrets punish 300 m
-double StandoffHuge = 750;   // against huge grids (Pirate, bounding radius 42 m) stay at the edge of the rocket range (sim: 450 m 29 %, 600 m 24, 650 m 29, 700 m 32, 750 m 41 % wins)
+double StandoffHuge = 750;   // (2026-10-14: 800 m tried, no difference vs a charging or a circling Tech Hunter; kept 750) against huge grids (Pirate, bounding radius 42 m) stay at the edge of the rocket range (sim: 450 m 29 %, 600 m 24, 650 m 29, 700 m 32, 750 m 41 % wins)
 double LargeTargetRadius = 25, HugeTargetRadius = 38;   // (bounding radius of the track, Track.RawMax)
 double MinRange = 150;       // never closer than this (a large ship cannot dodge)
 double SafeRange = 40;       // never launch at an intercept closer than this (blast radius 4 m)

@@ -33,10 +33,32 @@ The railgun designs live or die on staying past about 1,000 m, and only the Mant
 
 - Lock-on: in 2- and 4-ship wings every Ballista fired in every fight (0 of 1,920 never fired). A single Ballista at 2.2 km never fired in 13 of 320 fights (4 %).
 - Hit rate 95-98 % (hold), 80-91 % (pirate; falls with wing size).
-- **Friendly fire**: in the 4-wing all the damage the Ballistas take vs the holding Tech Hunter is friendly (715 per ship per fight; 227 vs the pirate-flown one; 0 in single ships). The 45 m `Wingmate Fire Clearance` does not fully stop it.
+- **Friendly fire**: rare but heavy. 5 of 1,280 Ballista-fights in the 4-wing put a salvo into a mate (2 of 640 vs the pirate-flown Tech Hunter; never in smaller wings); against the holding Tech Hunter all the damage the Ballistas took came from that (715 per ship on average). Fixed, see 5.
 - Damage: 4 Ballistas strip 10 % of the Tech Hunter's blocks in 120 s and 18 % in 300 s; it was disabled once in 320 fights. One Ballista is never hurt.
 
 ## 4. 1v1 matrix (29,120 fights, current scripts)
 
 No exceptions. Win % against other models: Aegis 64, Hornet 56, Harrier 54, Longbow S 54, Lancer 53, Mantis 51, Basilisk 49, Longbow L 45, Midge 24, Wasp 19, Gnat 15.
 24 % timeouts; the most common stuck flags are `noengage` (Basilisk, Wasp, Gnat, Lancer, Harrier, Aegis, about 1,000-1,500 fights each).
+
+## 5. Follow-up, applied the same day (owner: "good changes; go ahead")
+
+A/B in this repo's sim, pack mode (see the note below), Tech Hunter flown like the pirate (circles its target at 700 m), 1 and 3 drones, 30 seeds per fleet; old values set back through Custom Data. TH blocks lost / share of drones disabled:
+
+| Fleet | old | 620-670 m | 700 m (shipped) |
+|---|---|---|---|
+| 3 Hornet | 752 / 100 % | 989 / 89 % | 1,071 / 84 % |
+| 3 Harrier | 899 / 99 % | 1,178 / 83 % | 1,266 / 76 % |
+| 3 Lancer | 929 / 99 % | 1,181 / 63 % | 1,227 / 73 % |
+| 3 Aegis (720 -> 780) | 1,214 / 63 % | - | 902 / 53 % |
+| 3 Basilisk (750 -> 800) | 577 / 100 % | - | 602 / 98 % |
+| 3 Mantis (650 -> rail range) | 900 / 98 % | - | 84 / 0 % (but 3.5x the damage points: 13-15 rail hits in 300 s, all hits) |
+
+- **Hornet, Harrier, Lancer**: new key `Standoff Range vs Huge Grids` (default 700) in `[Hornet]` / `[Harrier]` / `[Lancer]`; huge = track bounding radius over 38 m (the Tech Hunter; the sim Pirate is under it, so Pirate fights are unchanged: 18 scenarios x 60 seeds identical).
+- **Mantis**: `Engage Cap vs Huge Grids` (default 1350, 0 = off): against huge grids it sits at rail range. Survives where it died, deals more damage, removes fewer blocks (rail damage is concentrated). Owner-approved; kept.
+- **Aegis, Basilisk**: 780 / 800 m tried and dropped (worse or no different vs the circling Tech Hunter); they keep 720 / 750.
+- **Wasp** (unlimited-rocket key, 20 seeds, charge): 150 m 78 % blocks lost ... 650 m 67 %, dmgout 17k -> 24k; same pattern as the gun drones. Not changed (only a re-run was asked); its key is `Standoff Range (unlimited rockets)`.
+- **Ballista friendly fire**: the wingmate fire gate checked the mate where it was at the trigger, using the mate's remote-control position. A full salvo went into a mate 150 m ahead that crossed the line during the 0.5 s railgun charge, and the RC sits 13 m off the hull centre. Now the mate is checked where it will be when the slug passes it, and the SWARM position is the hull centre (ShrikeAI, BATTERY v1.1, MANUAL v1.1). 4 Ballistas: 7 incidents in 480 fights -> 0, same shots, hits and damage.
+- `pc/plans/charge_standoff.plan` regenerated: Hornet/Harrier/Lancer sweep the huge-grid key, the Wasp sweeps its unlimited-rockets key. Delete old `results/charge-*` folders before re-running it (different settings, the resume check refuses to mix them).
+
+**Sim note (pack vs repo):** the SimPack has no `defs.json`, so its block connectivity falls back to face contact; in the repo the mount-point check runs and a fight against the 13,666-block Tech Hunter is about 80x slower (2 s vs 170 s), with the same outcome in the fight checked. The A/B above used pack mode, like the owner's run.

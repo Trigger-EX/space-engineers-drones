@@ -68,6 +68,7 @@ string Tag = "LANCER";
 double ProjSpeed = 800;      // m/s  autocannon shell (Ammos.sbc AutocannonShell)
 bool InheritVel = true;      // bullets/shells inherit the shooter's velocity
 double MaxFireRange = 750;   // shells vanish at 800 m
+double StandoffHuge = 700, HugeTargetRadius = 38;   // against huge grids (bounding radius over 38 m, e.g. the Tech Hunter; the sim Pirate is under it) stay at the edge of the gun range (charge test 2026-10-14, docs/sim-pending-2026-10-14.md: lone drone vs a 100 m/s charge, 700 m lost 62-65 % of blocks instead of about 80 %, dealt 15-25 % more)
 double Standoff = 420;       // preferred engage distance
 double MinRange = 100;       // never closer than this
 double BurstSeconds = 2.0, BurstPause = 0.4; // 150 rpm: ~5 shells per cannon per burst (sim sweep: 1.2/0.8 -> 2.0/0.4 raised damage dealt 3.9k -> 4.5k)
@@ -994,6 +995,7 @@ void LoadConfig()
     ConserveBelow = (int)Cfg(S, "Conserve Below Shells", (double)ConserveBelow);
     ConserveRange = Cfg(S, "Conserve Max Range", ConserveRange);
     Standoff = Cfg(S, "Standoff Range", Standoff);
+    StandoffHuge = Cfg(S, "Standoff Range vs Huge Grids", StandoffHuge);
     MinRange = Cfg(S, "Min Range", MinRange);
     GuardRadius = Cfg(S, "Guard Radius", GuardRadius);
     SentryRange = Cfg(S, "Sentry Range (m)", SentryRange);
@@ -1486,7 +1488,7 @@ void Control(double dt)
             Vector3D gunFwd = _aimRef.WorldMatrix.Forward;
             double dist = Vector3D.Distance(aimPoint, gunPos);
             _aimErrDeg = Math.Acos(MathHelper.Clamp(Vector3D.Dot(gunFwd, aimDir), -1, 1)) * 57.2958;
-            double aimR = AimActive(_tgt) && !(LooseFar && dist > Standoff + 100) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;   // aiming at a hull point needs a tighter window
+            double aimR = AimActive(_tgt) && !(LooseFar && dist > StandoffFor(_tgt) + 100) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6;   // aiming at a hull point needs a tighter window
             _fireWinDeg = Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol;
             shoot = FireGate(dist) && _now - _tgt.Seen < FireStaleMax;
             if (shoot && FriendCheck) { MatesInLine(gunPos, gunFwd, dist); if (_tick % 20 == 0) CheckLineOfFire(gunPos, gunFwd, dist); }
@@ -1543,7 +1545,7 @@ void Control(double dt)
         Vector3D tp = _tgt.P(_now), tv = _tgt.V(_now);
         Vector3D d = tp - me; double dist = d.Length();
         Vector3D dir = dist > 1 ? d / dist : _rc.WorldMatrix.Forward;
-        double e = dist - Standoff;
+        double e = dist - StandoffFor(_tgt);
         double vr = Math.Sign(e) * Math.Min(Math.Min(Math.Abs(e) * 0.6, MaxSpeed), Math.Sqrt(2 * aBrake * Math.Abs(e)));
         if (dist < MinRange) vr = -MaxSpeed * 0.6;
         Vector3D upRef = grav.LengthSquared() > 0.1 ? -Vector3D.Normalize(grav) : _rc.WorldMatrix.Up;
@@ -1644,6 +1646,7 @@ void FireBurst(bool gate)
 
 // Wingmates repel each other: all of them fly the same orbit at the same speed and would otherwise end up in contact.
 // Uses the positions the hive already broadcasts (_SWARM); costs a few vector operations per mate per tick.
+double StandoffFor(Track t) { return t.RawMax > HugeTargetRadius ? StandoffHuge : Standoff; }
 bool LooseFar = true;   // Loose Fire Beyond Standoff: while still closing (range > standoff + 100 m) the fire window is the whole silhouette, not the 3 m hull point (from the Ballista Helm, docs/retrofit.md)
 Vector3D Separation(Vector3D me)
 {

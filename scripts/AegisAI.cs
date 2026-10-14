@@ -83,7 +83,7 @@ double MaxFireRange = 700;   // gatling rounds vanish at 800 m
 double MaxFireRangeHuge = 780;   // against huge grids (the 260-block Pirate cannot be missed, and it takes time to kill): fire from further out
 double Standoff = 220;       // preferred engage distance when not escorting
 double StandoffLarge = 600;  // against large grids (Longbow L, Basilisk, turret ships) stay out of their turret range; sim: Pirate 0 -> 25 % wins
-double StandoffHuge = 720;   // against huge grids (Pirate, bounding radius 42 m; Longbow L is 33 m): sim, Pirate duels (3 sizes of Aegis group, 60 seeds): 300 m 63 %, 450 m 78, 600 m 76, 720 m (fire from 780) 85 %. Against the Longbow L (railgun, no turrets) 720 m cost 17 points
+double StandoffHuge = 720;   // (2026-10-14: 780 was better vs a charging Tech Hunter but worse vs one circling at 700 m, 3 Aegis 902 vs 1214 blocks; kept 720, docs/sim-pending-2026-10-14.md) against huge grids (Pirate, bounding radius 42 m; Longbow L is 33 m): sim, Pirate duels (3 sizes of Aegis group, 60 seeds): 300 m 63 %, 450 m 78, 600 m 76, 720 m (fire from 780) 85 %. Against the Longbow L (railgun, no turrets) 720 m cost 17 points
 double LargeTargetRadius = 25, HugeTargetRadius = 38;   // (bounding radius of the track, Track.RawMax)
 double MinRange = 50;        // never closer than this
 double GuardRadius = 900;    // GUARD only engages within this of the carrier / home
