@@ -372,3 +372,24 @@ The Hornet is a stand-in: gatlings, leads with acceleration, keeps about 600-700
 3. Damage from a direction with nothing tracked there: `FIRE FROM <bearing> deg (unseen)` and the same dodge.
 4. `lookout off` on the Spotter PB: the old behaviour (the drone becomes the Helm's target).
 5. Report: the drone's weapons, its range, whether `[TU]` turrets and the vanilla turret fired, which blocks went first, the Spotter `Ins` line.
+
+## 12. Warden, Leviathan and Corsair (2026-10-14, owner: "implement harasser defence on the big ships")
+
+* **Where it runs.** The Lookout is now the shared block `LOOKOUT` (`tools/lookout_block.cs`, `tools/blocks.json`), in `SpotterAI.cs` (Ballista, on by default) and in `StaffAI.cs` (off by default: the Shrike's Staff PB must not dodge small craft, they are its targets). The Warden, Leviathan and Corsair blueprints switch it on in their `[Staff]` PB's Custom Data (`[Harasser Defence] Enabled=true`). No new PB, no PCU. A Staff copy stands down while a `[Spotter]` PB is on the ship, so the Ballista still has exactly one Lookout. `HARASSER LINK` v1.1 in the Helm sends to a `[Spotter]` or a `[Staff]` PB. `Max Fire Range (m)` is now a key (was the constant 1700): Warden and Leviathan 1700 (large railguns, 2,000 m), Corsair 1300 (small railguns, 1,400 m).
+* **Tuning.** Warden and Leviathan: `Jink Speed (m/s)=10`, `Away Speed (m/s)=15` (slow ships: 1.6 m/s2 on most axes, a 30 m/s jink is never reached and the kite would drag them off their fight). Corsair: the defaults (30 / 40).
+* **Sim A/B** [stand-in; Tech Hunter held at 1.6 km + a Hornet harasser, 90 s cap, 6 seeds per row; the vanilla turret model never killed the Hornet in any row]:
+
+  | Ship | Lookout | damage taken avg | harasser hit rate |
+  |---|---|---|---|
+  | Warden | off | 200 k | 80 % |
+  | Warden | on, default dodge | 175 k | 79 % |
+  | Warden | on, no dodge (targeting rule only) | 175 k | 80 % |
+  | Warden | on, 10 / 15 (shipped) | 180 k | 79 % |
+  | Corsair | off | 23.4 k | 91 % |
+  | Corsair | on, default (shipped) | 25.8 k | 74 % |
+  | Leviathan | off | 1.17 M | 95 % |
+  | Leviathan | on, default dodge | 1.18 M | 97 % |
+  | Leviathan | on, 10 / 15 (shipped) | 1.14 M | 92 % |
+  | Ballista (check after the move) | off / on | 28.2 k / 14.6 k | 46 % / 29 % |
+
+  Reading: on the Warden the gain (about -10 to -13 % damage) comes from keeping the large target, not from the dodge. The Corsair is hit less often but takes about the same damage. The Leviathan (222 m, slow) cannot be missed and gains nothing measurable; it relies on its turrets, whose stand-in model is weak. Nothing verified in the game; in-game checks as section 11, on the Staff PB screen (`LOOKOUT link OK`).

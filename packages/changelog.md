@@ -1,3 +1,7 @@
+### v2.7 (unreleased): harasser defence on the Warden, Leviathan and Corsair
+- The Ballista's Lookout (harasser defence) is now the shared block `LOOKOUT` (`tools/lookout_block.cs`) in `SpotterAI.cs` and `StaffAI.cs` (off by default there); the Warden, Leviathan and Corsair switch it on in their Staff PB Custom Data (`[Harasser Defence] Enabled=true`, new key `Max Fire Range (m)`; Warden/Leviathan dodge gently: Jink 10, Away 15 m/s). One Lookout per ship (a Staff copy stands down beside a Spotter). `HARASSER LINK` v1.1: the Helm also talks to a `[Staff]` PB.
+- Sim A/B (Tech Hunter + Hornet harasser, 6 seeds): Warden damage taken -10 to -13 %, Corsair harasser hit rate 91 -> 74 % (damage the same), Leviathan no measurable change; Ballista unchanged in behaviour (damage 28 k -> 15 k with the Lookout on). Helm selftests hsplit/M2/M3/M6 pass. `docs/design/ballista_harasser_defence.md` section 12. Nothing verified in the game. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): no latch outside a drone's outline
 - **Tube** (all 8 variants): the merge latch that hung under the tail is gone; every block now sits inside the W x H section. The tubes can no longer be printed or racked (nothing did that yet).
 - **Gnat**: the merge block is set flush into the belly (it replaces the armour cube under the antenna) instead of hanging below it, so the Gnat stays inside its 2 x 2 section. The Hive printers still print it (`check_docking` has a flush mode; the bays are re-solved). Not tested in the game.

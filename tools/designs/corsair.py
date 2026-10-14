@@ -61,6 +61,10 @@ Wing Surface=2
 
 [Wing]
 Types=HORNET,WASP,WATCHER,HARRIER,LANCER,AEGIS
+
+[Harasser Defence]
+Enabled=true
+Max Fire Range (m)=1300
 """
 
 # the bay manager (scripts/CradleBayAI.cs) is its own PB, as on the pods: the Staff sends it "<Tag>.S2P release n" over IGC (control_arch 4.2)
