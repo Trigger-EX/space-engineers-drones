@@ -51,6 +51,7 @@
       "file": "tools/fb_block.cs",
       "scripts": [
         "WaspAI",
+        "WaspFlightAI",
         "MantisAI",
         "ShrikeAI"
       ]

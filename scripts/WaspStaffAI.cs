@@ -728,9 +728,10 @@ void GetBlocks()
     GridTerminalSystem.GetBlocksOfType(_ai, b => b.CubeGrid == g && (b.CustomName.Contains("[AI]") || b.BlockDefinition.ToString().Contains("OffensiveCombat") || b.BlockDefinition.ToString().Contains("FlightMovement")));
     var fl = new List<IMyProgrammableBlock>();
     GridTerminalSystem.GetBlocksOfType(fl, b => b != Me && b.IsSameConstructAs(Me) && b.CustomName.StartsWith("[Flight]", StringComparison.OrdinalIgnoreCase));
-    _fpb = null; double best = double.MaxValue;
-    foreach (var p in fl) { double q = (p.GetPosition() - Me.GetPosition()).LengthSquared(); if (q < best) { best = q; _fpb = p; } }
+    var oldK = _fk; _fpb = null; double best = double.MaxValue;
+    foreach (var p in fl) { if (p.CubeGrid != g) continue; double q = (p.GetPosition() - Me.GetPosition()).LengthSquared(); if (q < best) { best = q; _fpb = p; } }
     _fk = _fpb != null ? "WSPL" + _fpb.EntityId : "";
+    if (_fk != oldK) { _f2sN = 0; _f2sTick = _tick; _down = false; }
     LoadFlightCfg();
     _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.75f; _lcd.Font = "Monospace";
     string sig = Tag + "|" + _fk;
@@ -769,6 +770,7 @@ void Tick(string arg, UpdateType src)
     _now += dt; _tick++;
     if (_tick % 600 == 0 || Me.CubeGrid != _myGrid) { _myGrid = Me.CubeGrid; GetBlocks(); }
     ReadF2S();
+    if (_f2sN > 0 && _down && _tick % 60 == 0) GetBlocks();   // Flight is down: look for it (rebuilt PB = new EntityId) at 1 Hz
     if (_rc == null || !_rc.IsFunctional || !_rc.IsSameConstructAs(Me)) { if (_tick % 60 == 0) GetBlocks(); Watch(false); if (_tick % 30 == 0) Display(); return; }
     ReadIGC();
     FollowStep();

@@ -651,6 +651,17 @@ void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { if (LkAliv
 
 void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }   // a failing setup step must not kill the script for good: the rest still runs and the error is on the screen
 
+// >>> FRIENDLY BEACON v1.0 (shared block, synced by tools/blocks_sync.py, see docs/friendly-avoidance.md) >>>
+// The sending half of FRIENDLY AVOIDANCE for the scripts that have no room for the whole block (Mantis, Wasp: 100,000-character limit) and
+// for the Shrike Helm (80,900 budget): broadcasts this grid's bounding sphere (id, centre, velocity, radius) on the IGC channel DRONE_SPACE,
+// so drones that do avoid friendly grids keep clear of this one. Hook: FaBeacon() in BroadcastStatus() (10 Hz). Uses _rc.
+void FaBeacon()
+{
+    var v = Me.CubeGrid.WorldVolume;
+    IGC.SendBroadcastMessage("DRONE_SPACE", new MyTuple<long, Vector3D, Vector3D, float>(Me.CubeGrid.EntityId, v.Center, _rc.GetShipVelocities().LinearVelocity, (float)v.Radius));
+}
+// <<< FRIENDLY BEACON v1.0 <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
@@ -734,7 +745,7 @@ void Tick(string arg, UpdateType src)
     if ((src & UpdateType.Update1) == 0) return;
 
     double dt = Runtime.TimeSinceLastRun.TotalSeconds;
-    if (dt <= 0 || dt > 0.5) dt = 1.0 / 60.0;
+    if (dt <= 0 || dt > 0.5) { dt = 1.0 / 60.0; _aiOn = !_aiOn; _firing = false; _aiKick = false; }   // run gap (PB was off / halted): the Staff watchdog may have switched the AI blocks off, so force the next pass to send the AI and gun state again
     _now += dt; _tick++;
     _avgMs = _avgMs * 0.98 + Runtime.LastRunTimeMs * 0.02;
 
@@ -1953,6 +1964,7 @@ void ReadSwarm()
 }
 void BroadcastStatus()
 {
+    FaBeacon();
     IGC.SendBroadcastMessage(Tag + "_SWARM", new MyTuple<long, Vector3D, Vector3D, long, int>(
         Me.CubeGrid.EntityId, _rc.GetPosition(), _rc.GetShipVelocities().LinearVelocity, _tgt != null ? _tgt.Id : 0, (UnderFire ? 1 : 0) | (OwnAlert ? 2 : 0) | (LockStale ? 4 : 0)));
 }
