@@ -4,13 +4,14 @@
     python3 -I tools/build_all.py [--jobs N] [--only "Name" ...] [--out DIR] [--no-zip]
 
 1. imports every design module (tools/designs/*.py; absent modules are reported and skipped),
-2. builds every model in both variants ("<Name>" and "<Name> Lite") into  out/Blueprints/<Name>/{bp.sbc,thumb.png},
+2. builds every model in its Full variant ("<Name>") into  out/Blueprints/<Name>/{bp.sbc,thumb.png}.  The Lite variants ("<Name> Lite") are
+   built by tools/build_lite.py (same code, lite=True), which is rarely needed,
 3. re-validates each one: sebp validate (mount points, one connected piece, no overlaps, DLC), an independent DLC check against
    defs_stats.json, the written XML (well formed, no <DLC>, no <IsStatic>, block count, unique block ids and names, Program present for
    scripted ships) and a reload of the written file through sebp.load_sbc (every CubeGrid, projected ones included, must validate),
    plus cross-checks (unique folder names and blueprint ids),
-4. writes out/dist/MODELS.md and the zips  Drones_v<VERSION>_Full / Drones_v<VERSION>_Lite / Warships_v<VERSION>_Full / Warships_v<VERSION>_Lite /
-   Printers_v<VERSION>_Full / Printers_v<VERSION>_Lite / SpaceEngineers_Drones_v<VERSION>_All  (Blueprints/, Scripts/, README.md).  README text comes from
+4. writes out/dist/MODELS.md and the zips  Drones_v<VERSION>_Full / Warships_v<VERSION>_Full / Printers_v<VERSION>_Full /
+   SpaceEngineers_Drones_v<VERSION>_All (Full only)  (Blueprints/, Scripts/, README.md); build_lite.py writes the *_Lite zips and MODELS_Lite.md.  README text comes from
    packages/*.md and *.tmpl.  Model kinds: drone, ship (the warships and the Cradle Pod: designs.SHIP_MODULES), printer, test (never packaged).
 
 Exit code 1 if any model fails or any check fails.  The printers dominate the run time (bay solver), so models are built in parallel
@@ -348,7 +349,7 @@ PACKAGES = [   # (zip base name, kinds, variants, template, intro)
     ('Warships_v%s_Lite' % VERSION, ('ship',), (True,), 'README_Warships.md.tmpl',
      'The warships Shrike, Corsair, Warden and Leviathan in their **Lite** design (only block shapes seen in a game-written blueprint: no turrets, sensors or decoys), with the Cradle Pod.'),
     ('SpaceEngineers_Drones_v%s_All' % VERSION, ('drone', 'ship', 'printer'), (False, True), 'README_All.md.tmpl',
-     'Every drone, every warship and every printer, Full and Lite, in one zip.'),
+     'Every drone, every warship and every printer, Full design, in one zip.'),
 ]
 
 SHIP_PB = {'ShrikeAI.cs': 'Helm (every ship)', 'TurretAI.cs': 'Turret PB (Shrike, Corsair, Warden, Leviathan)', 'StaffAI.cs': 'Staff (Corsair, Warden, Leviathan)', 'CradleBayAI.cs': 'Bay / Pod PB (Corsair, each pod)',
@@ -401,7 +402,8 @@ def make_zip(path, rows, readme, extra_files):
     return len(files), scripts
 
 # ---------------------------------------------------------------------------------------------
-def main(argv):
+def main(argv, lites=(False,)):
+    """lites: which variants this run builds: (False,) = Full (build_all.py), (True,) = Lite (build_lite.py)"""
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 1)
     ap.add_argument('--only', nargs='*', help='build only these model names (base names, e.g. "Hornet" "Hive Mother"); zips are then skipped unless --zip (written to <out>/dist_partial)')
@@ -416,7 +418,7 @@ def main(argv):
     tasks = []
     for kind, modname, model, _fn in designs.iter_models(mods):
         if a.only and model not in a.only: continue
-        for lite in (False, True):
+        for lite in lites:
             if lite and model in getattr(mods[modname], 'NO_LITE', ()): continue      # test ships have one variant
             tasks.append((kind, modname, model, lite, a.out))
     names = [(t[2], t[3]) for t in tasks]
@@ -449,6 +451,7 @@ def main(argv):
     if not a.only:
         import shutil
         for d in sorted(os.listdir(bp_root)):
+            if d.endswith(' Lite') != (lites == (True,)): continue                 # the other variant's folders belong to the other script
             if d not in keep and os.path.isdir(os.path.join(bp_root, d)) and not failed:
                 shutil.rmtree(os.path.join(bp_root, d)); print(f'removed stale out/Blueprints/{d}')
     for c in cross: print('CROSS-CHECK FAIL:', c)
@@ -456,15 +459,18 @@ def main(argv):
     if (not a.only and not a.no_zip) or (a.only and a.zip and not failed):
         os.makedirs(dist, exist_ok=True)
         md = models_md(rows, failed)
-        open(os.path.join(dist, 'MODELS.md'), 'w', encoding='utf-8').write(md + '\n')
+        open(os.path.join(dist, 'MODELS_Lite.md' if lites == (True,) else 'MODELS.md'), 'w', encoding='utf-8').write(md + '\n')
         os.makedirs(os.path.join(dist, 'readmes'), exist_ok=True)
         for base, kinds, variants, tmpl, intro in PACKAGES:
             prow = [r for r in ok_rows if r['kind'] in kinds and r['lite'] in variants]
+            variants = tuple(v for v in variants if v in lites)              # build_all.py: Full only, build_lite.py: Lite only
+            if not variants: continue
+            prow = [r for r in prow if r['lite'] in variants]
             if a.only and not prow: continue                                 # a partial build: only the packages that have a model
-            variant = 'Full + Lite' if len(variants) == 2 else ('Lite' if variants[0] else 'Full')
+            variant = 'Lite' if variants[0] else 'Full'
             readme = render_readme(tmpl, intro, variant, prow, kinds)
             open(os.path.join(dist, 'readmes', base + '_README.md'), 'w', encoding='utf-8').write(readme)
-            extra = {'MODELS.md': (md + '\n').encode()} if len(variants) == 2 else {}
+            extra = {'MODELS_Lite.md' if lites == (True,) else 'MODELS.md': (md + '\n').encode()} if base.endswith('_All') else {}
             n, sc = make_zip(os.path.join(dist, base + '.zip'), prow, readme, extra)
             print(f'zip {base}.zip: {len(prow)} blueprints, {n} files, scripts {", ".join(sc) or "-"}, {os.path.getsize(os.path.join(dist, base + ".zip")) // 1024} KB')
     print(f'\n{len(ok_rows)} PASS, {len(failed)} FAIL, {len(cross)} cross-check failures, {time.time() - t0:.0f}s total')
