@@ -51,6 +51,8 @@ synced by `tools/kz_sync.py`, sim scenario kind `kamikaze`).
 
 ## 3. Ground truth from the user's in-game testing
 
+> **MULTI-PB WORKS (owner-tested in the real game, 2026-10).** Two programmable blocks on one grid linked by IGC (`TransmissionDistance.CurrentConstruct`) fly and fight: `Wasp Split` = `scripts/WaspFlightAI.cs` (hot path) + `scripts/WaspStaffAI.cs` (launch/follow/fleet/display/watchdog). So the 100,000-character cap is no longer a design limit: add PBs instead of cutting features. Rules and numbers: `CLAUDE.md` ("Script size"), `docs/design/wasp_split.md`, `docs/audit/multi_pb_feasibility.md` (IGC hop = 2 ticks, queue 25, keep aim/lead/fire in one PB, one writer per override). Rollout to the other drones is in progress (`docs/design/split_rollout.md` when it lands).
+
 Trust these over anything inferred.
 
 - **Flight and aim work.** Drones fly, turn onto targets and shoot. So the gyro sign convention in the
