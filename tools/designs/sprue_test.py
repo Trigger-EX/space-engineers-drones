@@ -28,13 +28,16 @@ import reach as R
 
 NAME = 'Sprue Test'
 NAME_NG = 'Sprue Test No Grinder'
-NO_LITE = (NAME, NAME_NG)
+NAME_CL = 'Sprue Test Close'
+NO_LITE = (NAME, NAME_NG, NAME_CL)
 SCRIPT = 'SprueProbe.cs'
 DOCS = {
     NAME: 'TEST SHIP (option-A printer test, not packaged): a small printer projects a 7-cell armour neck plus a dummy drone (battery, PB, ion '
           'thruster); 3 welders print it, a Small Ship Grinder flush beside the neck cuts it. SprueProbe on both PBs: weld / charge / cut / hand / '
           'push / auto / stop; answers fused yes/no, grinder cuts its own grid yes/no, welded PB and battery state, payload leaves, neck re-welds. '
           'Ship Grinder XML is a GUESS (fallback: Sprue Test No Grinder).',
+    NAME_CL: 'TEST SHIP (option-A printer test, not packaged): Sprue Test with the Small Ship Grinder pointing its TIP straight at the middle of the neck, one block of air in between '
+             '(Sprue Test lays the grinder beside the neck, which only reaches if the game\'s working sphere is centred at the tip and about 1 m wide). Same script, same payload.',
     NAME_NG: 'TEST SHIP: Sprue Test without the Ship Grinder block (its XML is a guess): paste this if Sprue Test fails to paste, then place a '
              'Small Ship Grinder by hand on the yellow seat (the PB screen says "pos OK" when it sits right).',
 }
@@ -44,8 +47,16 @@ HUB, PAY_BAT, PAY_PB, PAY_THR = (0, 0, -4), (0, 0, -5), (0, -1, -4), (0, 1, -5)
 STUB, CORE, PROJ, PB, BAT = (0, 0, 4), (0, 0, 5), (0, 1, 5), (0, 0, 6), (0, -1, 5)
 BEAM = [(x, 0, 5) for x in range(1, 7)]
 WELDERS = ((1, -1, 2), (2, -1, -1), (1, -1, -4))        # Forward=Left (tip -x), Up=Up; Welder 2 keeps ONE cell of air (its tip would sit in the grinder sphere)
-GRINDER = (-3, -4, -1)                                  # Forward=Up (tip +y), Up=Forward: cells x-3..-1 y-4..1 z-1..1, flush beside N3..N5
-G_STALK = [(-1, -5, z) for z in range(1, 6)] + [(-1, y, 5) for y in range(-4, 1)]   # seat (-1,-5,1) under a corner of the grinder's back ring .. (-1,0,5)
+# grinder layouts: 'side' = Sprue Test (long axis y, tip +y, flush BESIDE N3..N5), 'close' = Sprue Test Close (long axis x, tip +x, one block of air in front of N4).
+# seat = the armour cube under a corner of the grinder's back ring (its Back mount is a thin frame), stalk = armour from the seat to the core,
+# tier = how many of reach.FAMILY (tip, tip-1, tip-2, mid) must cut the neck, collateral = printer blocks the sphere may touch (guarded at run time).
+LAYOUTS = {
+    'side':  dict(min=(-3, -4, -1), fwd='Up', up='Forward', tip='Up', tier=4, collateral=(),
+                  stalk=[(-1, -5, z) for z in range(1, 6)] + [(-1, y, 5) for y in range(-4, 1)]),
+    'close': dict(min=(-7, -1, -1), fwd='Right', up='Up', tip='Right', tier=2, collateral=('Sprue Welder 1', 'Sprue Welder 3'),
+                  stalk=[(-8, -1, z) for z in range(1, 6)] + [(-8, 0, 5)] + [(x, 0, 5) for x in range(-7, 0)]),
+}
+GRINDER = LAYOUTS['side']['min']; G_STALK = LAYOUTS['side']['stalk']
 YELLOW, NECK_RED, WELD_GREEN, PROJ_COL = (0.13, 0.9, 0.9), C.RED, (0.33, 0.7, 0.4), (0.6, 0.3, 0.1)
 GUARD_CELLS = 4.0                                       # printer cells this close (cells) to a grinder sphere centre are watched by the PB
 HAND_CUT = 1                                            # the owner hand-grinds NECK[1] = N2 (second red cell): N1 stays on the printer, no orphan after CUT2
@@ -79,13 +90,15 @@ def payload_bp():
     return pay
 
 def grinder_centres(bp):
-    gb = dict(min=GRINDER, fwd='Up', up='Forward', size=(3, 3, 6))
+    L = LAYOUTS[getattr(bp, 'layout', 'side')]
+    gb = dict(min=L['min'], fwd=L['fwd'], up=L['up'], size=(3, 3, 6))
     cs = bp.cells(gb)
-    return cs, [(h, R.tip_point_from_cells(cs, DIR['Up'], h.backoff)) for h in R.FAMILY]
+    return cs, [(h, R.tip_point_from_cells(cs, DIR[L['tip']], h.backoff)) for h in R.FAMILY]
 
-def sprue_test(lite=False, grinder=True):
+def sprue_test(lite=False, grinder=True, layout='side'):
     register_shapes()
-    name = NAME if grinder else NAME_NG
+    L = LAYOUTS[layout]
+    name = NAME_CL if layout == 'close' else (NAME if grinder else NAME_NG)
     pay = payload_bp()
     bp = Blueprint(name, 'Small', seed=C.seed_for(name), legacy_shapes=True)
     bp.armor(*STUB, color=YELLOW)
@@ -97,17 +110,18 @@ def sprue_test(lite=False, grinder=True):
     pb = bp.add('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', PB, 'Forward', 'Up', 'Sprue PB', extra=pb_extra(script_text(SCRIPT)), kind='ctrl')
     for i, mn in enumerate(WELDERS, 1):
         bp.add('MyObjectBuilder_ShipWelder', 'SmallShipWelder', mn, 'Left', 'Up', f'Sprue Welder {i}', WELD_GREEN, kind='welder', enabled=False)
-    for i, c in enumerate(G_STALK): bp.armor(*c, color=YELLOW if i == 0 else None)
+    for i, c in enumerate(L['stalk']): bp.armor(*c, color=YELLOW if i == 0 else None)
+    bp.layout = layout
     if grinder:
-        bp.add('MyObjectBuilder_ShipGrinder', 'SmallShipGrinder', GRINDER, 'Up', 'Forward', 'Sprue Grinder', WELD_GREEN, kind='grinder', enabled=False)
+        bp.add('MyObjectBuilder_ShipGrinder', 'SmallShipGrinder', L['min'], L['fwd'], L['up'], 'Sprue Grinder', WELD_GREEN, kind='grinder', enabled=False)
         bp.notes.append('UNSEEN XML: SmallShipGrinder written as the legacy small-welder form with the grinder xsi:type (fallback: Sprue Test No Grinder)')
     gcells, cen = grinder_centres(bp)
     guard = sorted({c for b in bp.blocks if b['sub'] != 'SmallShipGrinder' for c in bp.cells(b) if min(R.cell_dist(p, c) for _, p in cen) < GUARD_CELLS})
     gmax = tuple(max(c[k] for c in gcells) for k in range(3))
-    pb['custom_data'] = ('[Sprue]\nRole=printer\nMe Cell=%s\nNeck=%s\nCluster=%s\nGuard=%s\nGrinder Min=%s\nGrinder Max=%s\nGrinder Forward=Up\n'
+    pb['custom_data'] = ('[Sprue]\nRole=printer\nMe Cell=%s\nNeck=%s\nCluster=%s\nGuard=%s\nGrinder Min=%s\nGrinder Max=%s\nGrinder Forward=%s\n'
                          'Projector=Sprue Projector\nBattery=Sprue Battery\nPayload PB=Sprue Payload PB\nPayload Battery=Sprue Payload Battery\n'
                          'Cycles=2\nCharge Seconds=30\nCut Seconds=60\nClear Metres=6\nBlueprint Owner=%d\n'
-                         % (cells_txt([PB]), cells_txt(NECK), cells_txt([HUB, PAY_BAT, PAY_PB, PAY_THR]), cells_txt(guard), cells_txt([GRINDER]), cells_txt([gmax]),
+                         % (cells_txt([PB]), cells_txt(NECK), cells_txt([HUB, PAY_BAT, PAY_PB, PAY_THR]), cells_txt(guard), cells_txt([L['min']]), cells_txt([gmax]), L['tip'],
                             sebp.DEFAULT_OWNER))
     bp.validate()
     bp.payload, bp.projection_offset, bp.guard_cells = pay, off, guard
@@ -147,8 +161,10 @@ def verify(bp):
             assert any(R.reaches(R.welder_tip(bp, w, h.backoff)[0], bp.payload.cells(b), r) for w in welders), f'{h.name}: no welder reaches {b["name"] or b["min"]}'
     _, cen = grinder_centres(bp)
     rmax = max(R.radius_cells(h) for h, _ in cen)
+    L = LAYOUTS[getattr(bp, 'layout', 'side')]
     for b in f.blocks:
         if b['sub'] == 'SmallShipGrinder' or (id(b) in did and tuple(b['min']) in NECK): continue
+        if (b['name'] or '') in L['collateral']: continue                  # known guarded collateral (see LAYOUTS): checked below
         for c in f.cells(b):
             d = min(R.cell_dist(p, c) for _, p in cen)
             assert d > rmax, f'{b["name"] or b["sub"]} cell {c} is {d:.2f} cells from a grinder sphere centre (r {rmax})'
@@ -166,19 +182,21 @@ def verify(bp):
         assert len(comps) == 2, f'{what}: {len(comps)} pieces {sorted(len(c) for c in comps)} (orphan neck cell?)'
         assert len(pr) > len(pc[0]), f'{what}: printer piece {len(pr)} is not larger than the payload {len(pc[0])}: it would lose its grid'
         return len(pr), len(pc[0])
-    for h, p in cen:                                                   # D1 world: the grinder cuts the FUSED neck
+    hit = {b['name'] for b in f.blocks if (b['name'] or '') in L['collateral'] and any(min(R.cell_dist(p, c) for _, p in cen) <= rmax for c in f.cells(b))}
+    assert hit <= set(L['collateral']), f'unexpected collateral {hit}'
+    for h, p in cen[:L['tier']]:                                       # D1 world: the grinder cuts the FUSED neck (only the hypotheses the layout promises)
         cut = {c for c in NECK if R.cell_dist(p, c) <= R.radius_cells(h)}
         assert cut, f'grinder {h.name}: no neck cell in reach'
         assert NECK[0] not in cut, f'grinder {h.name}: reaches N1'
         check_split(cut_away(cut), f'grinder {h.name}')
     hand = {NECK[HAND_CUT]}                                            # expected world: hand cut of N2, then CUT2 on the payload grid's neck
     check_split(cut_away(hand), 'hand cut N2')
-    for h, p in cen:
+    for h, p in cen[:L['tier']]:
         cut = {c for c in NECK if R.cell_dist(p, c) <= R.radius_cells(h)} | hand
         check_split(cut_away(cut), f'hand cut N2 + CUT2 {h.name}')
     return True
 
-MODELS = {NAME: sprue_test, NAME_NG: lambda lite=False: sprue_test(lite, grinder=False)}
+MODELS = {NAME: sprue_test, NAME_NG: lambda lite=False: sprue_test(lite, grinder=False), NAME_CL: lambda lite=False: sprue_test(lite, layout='close')}
 
 if __name__ == '__main__':
     bad = 0

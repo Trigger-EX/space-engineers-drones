@@ -14,16 +14,17 @@ class SprueTest(unittest.TestCase):
     def setUpClass(cls):
         cls.bp = S.sprue_test()
         cls.ng = S.MODELS[S.NAME_NG](False)
+        cls.cl = S.MODELS[S.NAME_CL](False)
         cls.xml = cls.bp.build_xml()
 
     def test_registered_as_test_kind(self):
         mods, _ = designs.load(('sprue_test',))
         kinds = {m: k for k, _, m, _ in designs.iter_models(mods)}
-        self.assertEqual(kinds, {S.NAME: 'test', S.NAME_NG: 'test'})
-        self.assertEqual(set(S.NO_LITE), {S.NAME, S.NAME_NG})
+        self.assertEqual(kinds, {S.NAME: 'test', S.NAME_NG: 'test', S.NAME_CL: 'test'})
+        self.assertEqual(set(S.NO_LITE), {S.NAME, S.NAME_NG, S.NAME_CL})
 
     def test_verify_passes_for_both(self):
-        self.assertTrue(S.verify(self.bp)); self.assertTrue(S.verify(self.ng))
+        self.assertTrue(S.verify(self.bp)); self.assertTrue(S.verify(self.ng)); self.assertTrue(S.verify(self.cl))
 
     def test_neck_ends_outside_every_grinder_sphere(self):
         _, cen = S.grinder_centres(self.bp)
@@ -64,6 +65,24 @@ class SprueTest(unittest.TestCase):
         self.assertIn('Battery=Sprue Payload Battery', S.payload_head())
         self.assertIn('Clear Metres=6', self.xml)
         self.assertIn('Blueprint Owner=%d' % S.sebp.DEFAULT_OWNER, self.xml)
+
+    def test_close_layout_points_the_tip_at_the_neck_and_reaches_it(self):
+        gcells, cen = S.grinder_centres(self.cl)
+        self.assertEqual(self.cl.layout, 'close')
+        xs = sorted({c[0] for c in gcells}); self.assertEqual((xs[0], xs[-1]), (-7, -2))        # long axis x, tip face one block short of the neck (x = 0)
+        for h, p in cen[:2]:                                                                      # tip and tip-1, r 1.3 m: N2..N6 are cut, N1 / N7 never
+            cut = {c for c in S.NECK if R.cell_dist(p, c) <= R.radius_cells(h) and R.radius_cells(h) > 2.5}
+            if R.radius_cells(h) > 2.5: self.assertEqual(sorted(c[2] for c in cut), [-2, -1, 0, 1, 2])
+        self.assertIn('Grinder Forward=Right', self.cl.build_xml())
+        self.assertIn('Grinder Forward=Up', self.xml)
+
+    def test_close_layout_only_welders_1_and_3_may_be_touched(self):
+        _, cen = S.grinder_centres(self.cl)
+        rmax = max(R.radius_cells(h) for h, _ in cen)
+        touched = {b['name'] for b in self.cl.blocks if b['sub'] != 'SmallShipGrinder' and any(min(R.cell_dist(p, c) for _, p in cen) <= rmax for c in self.cl.cells(b))}
+        self.assertEqual(touched, {'Sprue Welder 1', 'Sprue Welder 3'})
+        _, cen0 = S.grinder_centres(self.bp)
+        self.assertFalse([b for b in self.bp.blocks if b['sub'] != 'SmallShipGrinder' and any(min(R.cell_dist(p, c) for _, p in cen0) <= rmax for c in self.bp.cells(b))])
 
     def test_hand_cut_n1_would_leave_an_orphan(self):              # why the owner grinds N2, not N1
         old = S.HAND_CUT

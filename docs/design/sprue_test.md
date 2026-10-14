@@ -1,6 +1,6 @@
 # Sprue Test: one-session test of printer option A
 
-Owner: `tools/designs/sprue_test.py` (models `Sprue Test`, `Sprue Test No Grinder`, kind `test`: built by `build_all.py --only ...`, never packaged), `scripts/SprueProbe.cs` (runs on both PBs), `tools/tests/test_sprue_test.py` (10 tests). Owner copy for the game: `test_designs/Sprue Test/`.
+Owner: `tools/designs/sprue_test.py` (models `Sprue Test`, `Sprue Test No Grinder`, `Sprue Test Close`, kind `test`: built by `build_all.py --only ...`, never packaged), `scripts/SprueProbe.cs` (runs on both PBs), `tools/tests/test_sprue_test.py` (12 tests). Owner copy for the game: `test_designs/Sprue Test/`.
 Nothing here has run in the game. The simulator models neither fused grids nor grinders, so no simulation was run. Release zips are not rebuilt.
 
 ## 1. Why
@@ -56,7 +56,9 @@ Welder coverage: tier A (`FAMILY[:4]`) reaches all 11 payload blocks (N4 under t
 
 ## 5. SprueProbe.cs
 
-Update10, C# 6, ASCII (24.6k characters minified), stubs API only (no `IMyShipGrinder` in the stubs: the grinder is found as `IMyFunctionalBlock` by name "Grinder" on its own grid). Every screen line is cut to 46 characters (Monospace 0.42); the same text is Echoed every run (K menu), and the full log is in Custom Data `[Log]` (printer: last 60 lines, with the payload's lines copied as `P:`; read back after a Recompile or reload, the RESULTS block is not, the log lines keep the answers).
+Update10, C# 6, ASCII (26.6k characters minified), stubs API only (no `IMyShipGrinder` in the stubs: the grinder is found as `IMyFunctionalBlock` by name "Grinder" on its own grid). Every screen line is cut to 46 characters (Monospace 0.42); the same text is Echoed every run (K menu), and the full log is in Custom Data `[Log]` (printer: last 60 lines, with the payload's lines copied as `P:`; read back after a Recompile or reload, the RESULTS block is not, the log lines keep the answers).
+
+**Armour is not readable (game finding, section 9).** In the first game test `GetCubeBlock` returned null for every plain armour cube (the 4 armour guard cells of the printer and the 8 armour cells of the payload) while battery, PB, thruster and welders were found. The script therefore reads a cell with `GetCubeBlock` and, when that gives null, with `CubeExists`: map characters are `O` full, `o` partial, `x` exists but its integrity cannot be read (counted as full), `.` missing or unreadable. BUILT then needs all cells present and, when some are `x`, `Settle Seconds` (default 25) of waiting; when the neck cannot be read at all, a BLIND fallback (`Blind Seconds`, default 40, after the projector shows 0 left and battery, PB and thruster are at 100 %) ends the weld with the log line `BUILT (armour BLIND)` and Q1 is taken from the payload PB sharing the printer's grid. A cut that does not split reports `UNTOUCHED` only when the neck cells could be compared; otherwise it says `NO SPLIT, and this API cannot read the neck: LOOK at it`. The first SNAP and the RESULTS block carry `API neck cells (armour): GetCubeBlock a/7, CubeExists b/7`, which tells us which call sees armour.
 
 Printer commands (terminal, select `Sprue PB`, type into Argument, Run):
 
@@ -91,19 +93,36 @@ States: IDLE, WELD (`PLACED`, then `BUILT in Ns ... -> Q1 FUSED`), CHARGE, CUT /
 **E. Control after D3 (hand N2 + CUT2).** E1 the hand cut gives SPLIT: removal splits. E1a CUT2 valid and the middle cells vanish: the grinder works on OTHER grids and the geometry is right; next design **A' = grinder on a rotor/hinge head of the printer** (small rotor XML unseen, paste probe first; collateral next to an other-grid grinder is untested, so a `Sprue Test Pod` variant comes first) or **option B = projector on a rotor head**. E1b CUT2 valid but nothing vanishes: reach geometry wrong, build a reach ladder before any A'. E1c CUT2 INVALID: fix and repeat. E2 no split after the hand cut: another link exists (Info tab, welder tips, a merge face).
 **F. Leave and repeat (Q4).** `TryRun(push) true`: a printer can command a cut drone through a cached reference; `false`: arm drones BEFORE the cut. F1 `PAYLOAD LEFT`: free. F2 `PAYLOAD STUCK`, thrust > 0, moved about 0: jammed against the welder tips, real bays need one cell of clearance; `thrust was 0 N (override ignored)`: thruster override needs a controller (drones have one). F3 cycle 2 `BUILT` + new `COMPILED boot 1`: repeatable with Keep Projection. F4 projection gone: HiveMotherAI must re-assert Keep Projection. F5 the neck does not regrow: payload still near or a loose cube in a missing cell; COOLDOWN must wait for distance and release must leave no orphan cells. `printer kept its grid NO`: the largest-group rule differs; production printers must out-count drones.
 
-## 8. Results table (to fill in after the game test)
+## 8. Results table (first game test 2026-10-14 filled in; the rest is open)
 
 | item | result |
 |---|---|
-| Paste: Sprue Test / No Grinder | |
-| Q1 fused | |
+| Paste: Sprue Test / No Grinder | `Sprue Test` pasted and ran (the guessed grinder XML was accepted; the grinder block is in the terminal list) |
+| Q1 fused | payload PB on the printer grid (both PBs report the same grid id; `onprinter=1`); neck armour stays with the projector off (real blocks, not the hologram) |
 | Q2b grinder on own grid (cut) | |
 | Q2 hand N2 + CUT2 | |
 | Q2c guards / payload damage | |
-| Q3 program / heartbeat / Custom Data | |
-| Q3 owner (raw ids) | |
-| Q3 welded battery MWh | |
+| Q3 program / heartbeat / Custom Data | YES: compiled by itself about 10 s after the weld started (`COMPILED boot 1`), heartbeat rising, `cd=ok`, no Recompile |
+| Q3 owner (raw ids) | blueprint owner ...915, welded PB owner ...919 = the printer owner (the welder's owner replaces the blueprint's) |
+| Q3 welded battery MWh | 0.05/0.05 at 97 s (blueprint wrote 0.04): full, or charged by the printer while fused; not separable, the BUILT-time value was never recorded (armour blind) |
 | Q4 payload leaves / cycle 2 | |
 | World: game mode, multipliers, safe zone, new world | |
+
+## 9. First game test (2026-10-14): what it showed
+
+1. **Nothing is automatic**: the welders are saved off and start only on `weld`.
+2. **The welded PB is on the printer's grid and runs by itself** (Q1 for the PB, Q3 yes). A scripted drone can be printed: the program, its Custom Data and an owner survive the weld.
+3. **Plain armour cannot be read by `GetCubeBlock`** (12 of 12 armour cells read null, 0 of 7 non-armour cells did). The first script version needed the armour cells, so it never reached BUILT, kept the welders running and its `cut` checks were blind; the current script reads armour with `CubeExists` and falls back as described in section 5. The jump from "neck not found" to "neck is real" came from switching the projector off (blocks stayed) and the guards line (27/31 = exactly the 4 armour guards).
+4. **Consequences outside this rig (not fixed here):** the `HiveMotherAI.cs` FINISH scan (counts unique blocks by `GetCubeBlock` over the drone box) and the lane check of `CradleBayAI.cs` (`GetCubeBlock != null`, so armour in the lane is invisible) assume armour is readable; both need `CubeExists` as a second opinion before they can be trusted in the game. The flown drones' damage scan skips cells with `GetCubeBlock == null`, so it never counted armour.
+5. **Second run (clean paste of v3, 2026-10-14): armour is readable with `CubeExists`.** The neck map reads `xxxxxxx` at cut start: `GetCubeBlock` is null and `CubeExists` is true for all 7 armour cells. The weld ended by itself (BUILT after the settle timer, welders off) and `charge` ran.
+6. Still open: the cut itself (Q2: the owner suspects the grinder's reach, see the control in section 6), the push and the second cycle (Q4).
+
+## 10. Sprue Test Close (grinder pointing at the neck)
+
+Why: the owner suspected that the first layout's grinder cannot reach the neck. `Sprue Test` lays the grinder BESIDE the neck (its long axis along y, the neck 1.5 to 1.8 cells (0.75 to 0.9 m) from every sphere centre), which is the right choice when the game's working sphere is centred somewhere along the tool's axis, but it only reaches if the sphere is about 1 m wide and not centred ahead of the tip. A failed cut then has two explanations (reach, or the grinder ignores its own grid, section 2) and the hand-cut control (section 6 step 4) is what separates them. `Sprue Test Close` removes the first explanation for the likely sphere positions: the grinder's long axis is x, its tip (`Forward=Right`) points at the middle of the neck from the -x side, the tip plane is one cell (0.5 m) from the neck column, the seat sits under a corner of its Back ring at (-8,-1,1), and an armour stalk (-8,-1,1..5), (-8,0,5), (-7..-1,0,5) joins the core. 28 blocks, 2,669 kg, 736 PCU.
+
+Geometry (`LAYOUTS['close']` in `sprue_test.py`, checked by `verify()` and unit tests): grinder cells x-7..-2, y-1..1, z-1..1. For the tip and tip-1 hypotheses at r 1.3 m the cut set is N2..N6 (r 1.0 m: tip N2..N6, tip-1 only N4); the tip-2 and mid hypotheses (centre 3 and 4 cells behind the tip plane) do not reach the neck, so `verify()` demands only the first two (`tier=2`). N1, N7, the hub and the stub are never inside a sphere. **Collateral:** the tip cells of Welder 1 and Welder 3 (2.5 to 2.55 cells from the tip centre) can be inside the r 1.3 m sphere; this only matters in the world where a grinder cuts its own grid (D1), where the guard stop (37 guard cells) switches the grinder off at the first lost printer block and logs `GUARD HIT (D2)`. The PB Custom Data carries `Grinder Forward=Right`; the position hint prints `tip->Right` when the grinder is turned the wrong way.
+
+Use: paste `Sprue Test Close` instead of `Sprue Test`; the procedure and the decision tree are the same. A split here with `cut` (D1) or a CUT2 where the middle cells vanish (E1a) now also proves the geometry; a CUT2 that still leaves the neck alone with this layout would mean the sphere is much smaller than 0.5 m ahead of the tip or sits behind it (E1b).
 
 Release zips are not rebuilt.
