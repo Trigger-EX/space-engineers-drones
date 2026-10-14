@@ -19,7 +19,7 @@ HULL_COL = (0.58, -0.78, -0.25)
 
 def tube_frame(name, W, H, cap, body, spec):
     """W x H section, `cap` heavy nose layers, `body` layers before the thruster bank (z 0..body-1).  spec = dict with keys
-    rc, pb, gyros, battery ('s' = one small battery per entry in bats, or 'L' = one 3x2x3 battery at bat_min), nose (cells), left, right, ant (cell, fwd), latch x."""
+    rc, pb, gyros, ai (AI Offensive cell, AI Flight cell), battery ('s' = one small battery per entry in bats, or 'L' = one 3x2x3 battery at bat_min), nose (cells), left, right, ant (cell, fwd), latch x."""
     bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     script = script_text("TubeRamAI.cs")
     custom = f"[Tube]\nIGC Tag=TUBE\nBlock Tag={name}\n"
@@ -42,6 +42,10 @@ def tube_frame(name, W, H, cap, body, spec):
         C.bat(bp, spec["bat_min"], f"{name} Battery", small=False)
     for i, c in enumerate(spec.get("bats", ())):
         C.bat(bp, c, f"{name} Battery {i+1}")
+    # AI blocks (the script hands the ship to them while it has no target and confirms what they find with camera rays)
+    for kind_, sub_, xt_, label_, cell_ in (("AI Offensive", "SmallOffensiveCombat", "MyObjectBuilder_OffensiveCombatBlock", "AI Offensive [AI]", spec["ai"][0]),
+                                            ("AI Flight", "SmallFlightMovement", "MyObjectBuilder_FlightMovementBlock", "AI Flight [AI]", spec["ai"][1])):
+        bp.add(xt_, sub_, cell_, name=f"{name} {label_}", kind="ai")
     # service layer: flush side cameras, antenna
     for (x, y, z), d, label in spec["cams"]:
         C.cam(bp, (x, y, z), d, "Up", f"{name} Camera {label}")
@@ -70,19 +74,19 @@ def _variant(name):
         return dict(W=2, H=2, cap=2, body=6, spec=dict(
             nose=[(0, 1)], rc=(0, 0, 2), pb=(1, 0, 2), gyros=[(0, 1, 2)],
             bats=[(1, 1, 2), (0, 0, 3), (1, 0, 3), (0, 1, 3), (1, 1, 3)],
-            cams=[((0, 0, 4), "Left", "Left")], ant=((1, 1, 4), "Backward", "Up"), latch=0))
+            cams=[((0, 0, 4), "Left", "Left")], ant=((1, 1, 4), "Backward", "Up"), latch=0, ai=[(1, 0, 5), (0, 1, 5)]))
     if name == "Tube 2x4":      # 4 wide x 2 tall
         return dict(W=4, H=2, cap=3, body=7, spec=dict(
             nose=[(1, 1)], rc=(3, 0, 3), pb=(3, 0, 4), gyros=[(3, 1, 3)], bat_min=(0, 0, 3),
-            cams=[((0, 0, 6), "Left", "Left"), ((3, 0, 6), "Right", "Right")], ant=((1, 1, 6), "Right", "Up"), latch=1))
+            cams=[((0, 0, 6), "Left", "Left"), ((3, 0, 6), "Right", "Right")], ant=((1, 1, 6), "Right", "Up"), latch=1, ai=[(3, 0, 5), (3, 1, 5)]))
     if name == "Tube 3x3":
         return dict(W=3, H=3, cap=3, body=7, spec=dict(
             nose=[(1, 1)], rc=(0, 2, 3), pb=(0, 2, 4), gyros=[(1, 2, 3)], bat_min=(0, 0, 3),
-            cams=[((0, 1, 6), "Left", "Left"), ((2, 1, 6), "Right", "Right")], ant=((1, 2, 6), "Right", "Up"), latch=1))
+            cams=[((0, 1, 6), "Left", "Left"), ((2, 1, 6), "Right", "Right")], ant=((1, 2, 6), "Right", "Up"), latch=1, ai=[(1, 2, 4), (2, 2, 4)]))
     if name == "Tube 4x4":
         return dict(W=4, H=4, cap=4, body=8, spec=dict(
             nose=[(1, 1), (2, 2)], rc=(3, 0, 4), pb=(1, 2, 4), gyros=[(3, 1, 4), (0, 2, 4)], bat_min=(0, 0, 4),
-            cams=[((0, 1, 7), "Left", "Left"), ((3, 1, 7), "Right", "Right")], ant=((1, 3, 7), "Right", "Up"), latch=1))
+            cams=[((0, 1, 7), "Left", "Left"), ((3, 1, 7), "Right", "Right")], ant=((1, 3, 7), "Right", "Up"), latch=1, ai=[(2, 2, 5), (3, 2, 5)]))
     raise KeyError(name)
 
 def build(name):
@@ -93,13 +97,12 @@ MODELS = {n: (lambda lite=False, n=n: build(n)) for n in ("Tube 2x2", "Tube 2x4"
 NO_LITE = set(MODELS)
 REQUIRED_AXES = {m: ("Forward",) for m in MODELS}
 DOCS = {
-    'Tube 2x2': 'Kinetic ram drone, 1 x 1 m section, 4 m long, about 3.2 t, about 18 m/s2: heavy-armour nose, one ion thruster per cell of the rear face, merge latch. No weapon: it flies into the target at full speed and re-rams while it can still fly.',
-    'Tube 2x4': 'Kinetic ram drone, 2 m wide x 1 m tall section, 4.5 m long, about 5.8 t, about 20 m/s2: heavy-armour nose, 4 MW battery, 8 ion thrusters. No weapon: it flies into the target at full speed and re-rams.',
-    'Tube 3x3': 'Kinetic ram drone, 1.5 x 1.5 m section, 4.5 m long, about 6.4 t, about 20 m/s2: heavy-armour nose, 4 MW battery, 9 ion thrusters. No weapon: it flies into the target at full speed and re-rams.',
-    'Tube 4x4': 'Kinetic ram drone, 2 x 2 m section, 5 m long, about 12.4 t, about 18.5 m/s2: four-layer heavy-armour nose, 4 MW battery, 16 ion thrusters, two gyros. No weapon: it flies into the target at full speed and re-rams.',
+    'Tube 2x2': 'Kinetic ram drone, 1 x 1 m section, 4 m long, about 3.4 t, about 17 m/s2: heavy-armour nose, one ion thruster per cell of the rear face, merge latch. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams while it can still fly.',
+    'Tube 2x4': 'Kinetic ram drone, 2 m wide x 1 m tall section, 4.5 m long, about 6.1 t, about 19 m/s2: heavy-armour nose, 4 MW battery, 8 ion thrusters. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
+    'Tube 3x3': 'Kinetic ram drone, 1.5 x 1.5 m section, 4.5 m long, about 6.6 t, about 19.5 m/s2: heavy-armour nose, 4 MW battery, 9 ion thrusters. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
+    'Tube 4x4': 'Kinetic ram drone, 2 x 2 m section, 5 m long, about 12.7 t, about 18 m/s2: four-layer heavy-armour nose, 4 MW battery, 16 ion thrusters, two gyros. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
 }
-_NOTE = ('Thrust only forward: it brakes by flipping. Needs targets from the fleet / hive / carrier channels or a player\'s `lock`; on its own it sees only what its nose '
-         'camera points at. Ram damage is not verified in the game.')
+_NOTE = ('Thrust only forward: it brakes by flipping. Finds targets with its AI Offensive / AI Flight blocks (AI Behavior must be on; the in-game behaviour of the AI blocks is unverified) or takes them from the fleet / hive / carrier channels or a player\'s `lock`. Ram damage is not verified in the game.')
 MODEL_NOTES = {m: _NOTE for m in MODELS}
 SCRIPTS = ['TubeRamAI.cs']
 

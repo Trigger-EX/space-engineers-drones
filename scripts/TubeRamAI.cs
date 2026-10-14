@@ -15,6 +15,10 @@
 //  carriers and the hive (any of the listed IGC tags). `lock` raycasts what the nose points at.
 //  Warheads are optional: if any block with the Block Tag is a warhead it is armed in TERM only.
 //
+//  SEARCH With no target and AI Offensive / AI Flight blocks tagged [AI] on board, `launch` hands the ship to the AI blocks (AI GATE block:
+//         switches AI Behavior on, time-shares with a script spin if the AI does nothing) and the nose cameras confirm what the AI points at
+//         with boresight / spiral rays. The first valid contact (or an IGC cue) takes the ship back and starts HUNT. Same pattern as the Gnat.
+//
 //  COMMANDS: launch (hunt) | abort | idle (stop) | rtb | lock | disarm | reload
 // =====================================================================
 const string VER = "1.0";
@@ -24,10 +28,11 @@ string Tag = "TUBE", BlockTag = "";
 double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 200, SafeDistance = 150, Gain = 2.5;
 double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300;
 int MaxRams = 0;
+bool AiSearch = true; double AiConfirmRange = 1300, AiConfirmLong = 2600;
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false, ReAttack = true;
 double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
 
-enum Mode { WAIT, HUNT, TERM, EXTEND, RTB, IDLE }
+enum Mode { WAIT, SEARCH, HUNT, TERM, EXTEND, RTB, IDLE }
 Mode _mode = Mode.WAIT;
 MyIni _ini = new MyIni();
 double _now; long _tick; int _peakIns = 0;   // PB limit is Runtime.MaxInstructionCount per run
@@ -225,10 +230,113 @@ Vector3D FaWant(Vector3D want, Vector3D me)
 }
 // <<< FRIENDLY AVOIDANCE v1.0 <<<
 
+// >>> AI GATE v1.1 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
+// The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
+// default, so switching them on (Enabled) may do nothing at all. In-game report 2026-10-13: Full drones in GUARD stood still and
+// HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
+// The gate:
+//  * tries to switch "AI Behavior" on (a bool terminal property whose id contains "Behavior"; the exact id is not documented);
+//  * until the AI blocks have shown that they work (flown the ship once: sped it up or turned it), gives them the ship for
+//    AI Window seconds, then runs the script's own search (camera sweep + scan rays) for Script Search Window seconds, and so on;
+//    under fire the script searches. While the AI flies the ship it keeps it, up to Max AI Hold seconds. Once the AI has flown the
+//    ship it is trusted and gets the ship whenever the script wants it, as before v2.1 (sim: time-sharing a working AI cost most of
+//    its kills, 1v1 decisive 90 % -> 35 %).
+// v1.1 (opt-in, audit F-03/SL-11, default OFF = the behaviour of v1.0): "Use Typed AI Block API=true" sets IMyFlightMovementBlock.SpeedLimit
+// ("AI Flight Speed Limit (m/s)") on the AI Flight blocks and counts a block as switched on when IsAutoPilotEnabled reads true instead of
+// when the "Behavior" terminal property was found. Rests on the ModAPI documentation only (not tested in the game; unit of SpeedLimit unconfirmed).
+// Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
+// Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
+// "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
+bool AiGateOn = true, AiBehaviorSwitch = true, AiTyped = false;
+double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
+bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
+int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
+List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
+
+void AiGateLoad()
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "AI Gate";
+    if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
+    if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
+    if (!ini.ContainsKey(S, "Use Typed AI Block API")) ini.Set(S, "Use Typed AI Block API", AiTyped);
+    if (!ini.ContainsKey(S, "AI Flight Speed Limit (m/s)")) ini.Set(S, "AI Flight Speed Limit (m/s)", AiSpeed);
+    if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
+    if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
+    if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
+    AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
+    AiTyped = ini.Get(S, "Use Typed AI Block API").ToBoolean(AiTyped);
+    AiSpeed = Math.Max(1, ini.Get(S, "AI Flight Speed Limit (m/s)").ToDouble(AiSpeed));
+    AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
+    ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
+    AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
+}
+
+void AiGateFind(List<IMyFunctionalBlock> ai)
+{
+    if (!AiBehaviorSwitch || ai.Count == 0) return;
+    int n = 0;
+    foreach (var b in ai)
+    {
+        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
+        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
+        _agProps.Clear(); b.GetProperties(_agProps);
+        ITerminalProperty<bool> sw = null;
+        foreach (var p in _agProps)
+        {
+            string id = p.Id.ToLowerInvariant();
+            if (!id.Contains("behavio")) continue;
+            var bp = p.As<bool>();
+            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
+        }
+        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
+        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
+    }
+    _agFound = n;
+}
+
+bool AiGate(bool want)
+{
+    if (!want || !AiGateOn || _agLive) { _agT0 = -1; return want; }
+    var vs = _rc.GetShipVelocities();
+    double v = vs.LinearVelocity.Length();
+    if (_agT0 < 0) { _agT0 = _now; _agAi = !UnderFire; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
+    double age = _now - _agT0;
+    if (_agAi)
+    {
+        // The AI flies if it speeds the ship up again (the dampeners alone only slow it), keeps turning it, or has turned it more than
+        // 25 deg since the hand-over (it turns fast onto what it found, then may only brake; the script's own sweep coasts on for
+        // less than that). Speed and turn rate are ignored for the first 1.5 / 2.5 s while the ship coasts from the script's control.
+        if (!_agFwdSet) { _agFwd = _rc.WorldMatrix.Forward; _agFwdSet = true; }
+        if (age < 1.0) _agMinV = v;
+        else
+        {
+            _agMinV = Math.Min(_agMinV, v);
+            if ((age > 1.5 && v > _agMinV + 3) || (age > 2.5 && vs.AngularVelocity.LengthSquared() > 0.0144) || Vector3D.Dot(_rc.WorldMatrix.Forward, _agFwd) < 0.906)
+            { _agMoveT = _now; _agLive = true; }
+        }
+        bool busy = _now - _agMoveT < 4 && age < AiHoldMax;
+        if (!busy && (age >= AiWin || (UnderFire && age >= 1.5))) { _agAi = false; _agT0 = _now; }
+    }
+    else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
+    return _agAi;
+}
+
+string AiGateStatus()
+{
+    if (_agFound < 0) return "";
+    if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
+    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
+}
+// <<< AI GATE <<<
+
 public Program()
 {
     LoadConfig();
-    FleetLoad(true);
+    FleetLoad(true); AiGateLoad();
     foreach (var t in ListenTags.Split(',')) if (t.Trim() != "") _lTgt.Add(IGC.RegisterBroadcastListener(t.Trim().Contains("_") ? t.Trim() : t.Trim() + "_TGT"));
     _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
     GetBlocks();
@@ -243,6 +351,9 @@ void LoadConfig()
     Tag = C(S, "IGC Tag", Tag);
     BlockTag = C(S, "Block Tag", BlockTag);
     AutoLaunch = C(S, "Auto Launch When Released", AutoLaunch);
+    AiSearch = C(S, "AI Block Search", AiSearch);
+    AiConfirmRange = C(S, "AI Confirm Raycast Range", AiConfirmRange);
+    AiConfirmLong = C(S, "AI Confirm Long Raycast Range", AiConfirmLong);
     LaunchRange = C(S, "Max Target Distance", LaunchRange);
     ArmRange = C(S, "Arm Warheads Within", ArmRange);
     SafeDistance = C(S, "Safe Distance From Launch", SafeDistance);
@@ -287,6 +398,7 @@ void GetBlocks()
     GridTerminalSystem.GetBlocksOfType(_sensors, Mine);
     GridTerminalSystem.GetBlocksOfType(_merges, Mine);
     foreach (var c in _cams) c.EnableRaycast = true;
+    FindAi();
     _fwd.Clear();
     if (_rc != null) foreach (var t in _thr) if (Vector3D.Dot(t.WorldMatrix.Backward, _rc.WorldMatrix.Forward) > 0.9) _fwd.Add(t);
     _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.8f;
@@ -350,9 +462,10 @@ void Tick(string arg, UpdateType src)
     if (_rc == null) { _status = "No remote control"; Show(); return; }
 
     bool docked = Docked();
-    if (docked && _mode != Mode.WAIT && _mode != Mode.IDLE) { Release(); _mode = Mode.WAIT; }
+    if (docked && _mode != Mode.WAIT && _mode != Mode.IDLE) { AiOff(); Release(); _mode = Mode.WAIT; }
     if (_mode == Mode.WAIT && !docked && AutoLaunch && Nearest() != null) Launch();
-    if (_mode == Mode.HUNT || _mode == Mode.TERM) Hunt(dt);
+    if (_mode == Mode.SEARCH) Search(dt);
+    else if (_mode == Mode.HUNT || _mode == Mode.TERM) Hunt(dt);
     else if (_mode == Mode.EXTEND) Extend(dt);
     else if (_mode == Mode.RTB) Rtb(dt);
     _prevVel = _rc.GetShipVelocities().LinearVelocity;
@@ -365,12 +478,12 @@ void SetMode(Mode m) { _mode = m; _modeT = _now; }
 void Command(string a)
 {
     if (a.StartsWith("launch") || a.StartsWith("hunt")) { if (!Docked()) Launch(); else _status = "Still docked"; }
-    else if (a == "abort") { Disarm(); Release(); SetMode(Mode.IDLE); }
-    else if (a == "idle" || a == "stop") { Disarm(); Release(); SetMode(Mode.IDLE); }
-    else if (a == "rtb") { if (!Docked()) SetMode(Mode.RTB); }
+    else if (a == "abort") { Disarm(); AiOff(); Release(); SetMode(Mode.IDLE); }
+    else if (a == "idle" || a == "stop") { Disarm(); AiOff(); Release(); SetMode(Mode.IDLE); }
+    else if (a == "rtb") { if (!Docked()) { AiOff(); SetMode(Mode.RTB); } }
     else if (a == "lock") Lock();
     else if (a == "disarm") Disarm();
-    else if (a == "reload") { LoadConfig(); FleetLoad(true); GetBlocks(); }
+    else if (a == "reload") { LoadConfig(); FleetLoad(true); AiGateLoad(); GetBlocks(); }
 }
 
 void Lock()
@@ -396,8 +509,13 @@ Track Nearest()
 void Launch()
 {
     if (_tgt == null) _tgt = Nearest();
-    if (_tgt == null) { _status = "No target in range"; return; }
     GetBlocks();
+    if (_tgt == null)
+    {
+        if (AiSearch && _ai.Count > 0 && _rc != null) { _launchPos = _rc.GetPosition(); _rams = 0; SetMode(Mode.SEARCH); _status = "Searching with the AI blocks"; }
+        else _status = "No target in range";
+        return;
+    }
     SetMode(Mode.HUNT); _launchPos = _rc.GetPosition(); _rams = 0; _slowT = 0;
 }
 
@@ -420,7 +538,7 @@ bool FriendlyInWay(Vector3D me, Vector3D p)
 
 void Hunt(double dt)
 {
-    if (_tgt == null) { _tgt = Nearest(); if (_tgt == null) { _status = "Lost target"; Release(); SetMode(Mode.WAIT); return; } }
+    if (_tgt == null) { _tgt = Nearest(); if (_tgt == null) { _status = "Lost target"; Release(); SetMode(AiSearch && _ai.Count > 0 ? Mode.SEARCH : Mode.WAIT); return; } }
     // keep the lock with the nose camera when possible
     double age = _now - _tgt.Seen;
     Vector3D me = _rc.GetPosition(), myVel = _rc.GetShipVelocities().LinearVelocity, g = _rc.GetNaturalGravity();
@@ -504,6 +622,66 @@ void Hunt(double dt)
         if (_now - _modeT > 20 && closing < 0) { SetMode(Mode.HUNT); }   // overshot: re-plan
     }
     _status = (_mode == Mode.TERM ? "TERM " : "HUNT ") + dist.ToString("0") + " m  tgo " + tgo.ToString("0.0") + "s  rams " + _rams;
+}
+
+// ---- AI block search (same pattern as the Gnat: the AI blocks fly, the nose cameras confirm what they point at) ----
+List<IMyFunctionalBlock> _ai = new List<IMyFunctionalBlock>();
+bool _aiOn = false; int _aiScan = 0;
+bool UnderFire { get { return false; } }   // (AI GATE hook: tubes have no damage sensing)
+bool IsAiBlock(IMyTerminalBlock b)
+{
+    if (!Mine(b)) return false;
+    if (b.CustomName.Contains("[AI]")) return true;
+    string d = b.BlockDefinition.ToString();
+    return d.Contains("OffensiveCombat") || d.Contains("FlightMovement");
+}
+void FindAi()
+{
+    GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
+    foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
+    AiGateFind(_ai);
+}
+void AiOff()
+{
+    _aiOn = false; _agT0 = -1;
+    foreach (var b in _ai) b.Enabled = false;
+}
+
+void Search(double dt)
+{
+    if (_tgt == null) _tgt = Nearest();
+    if (_tgt != null)
+    {   // found (a confirm ray or an IGC cue): the script takes the ship back
+        AiOff(); foreach (var g in _gyros) g.GyroOverride = false;
+        _launchPos = _rc.GetPosition(); _slowT = 0; SetMode(Mode.HUNT); return;
+    }
+    bool want = AiGate(_ai.Count > 0);   // AI GATE: the AI blocks may do nothing (AI Behavior off): time-share with a script spin
+    if (want != _aiOn)
+    {
+        _aiOn = want;
+        if (want) Release();                    // thrusters and gyros go to the AI
+        foreach (var b in _ai) b.Enabled = want;
+    }
+    if (!_aiOn)
+    {   // the script's own window: coast and spin slowly so the nose cameras sweep the sky
+        foreach (var t in _thr) t.ThrustOverridePercentage = 0;
+        foreach (var gy in _gyros) { gy.GyroOverride = true; gy.Pitch = 0; gy.Roll = 0; gy.Yaw = 0.6f; }
+    }
+    int nFwd = 0; foreach (var c in _cams) if (c.IsWorking && Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.9) nFwd++;
+    bool longCam = nFwd > 1;          // a tube with a single nose camera only casts the short ray
+    foreach (var c in _cams)
+    {
+        if (!c.IsWorking || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.9) continue;
+        double len = longCam ? AiConfirmLong : AiConfirmRange;
+        longCam = false;
+        if (c.AvailableScanRange < len) continue;
+        _aiScan++;
+        double r = 0, th = _aiScan * 2.39996323;
+        if ((_aiScan & 1) == 1) { int j = (_aiScan >> 1) % 16; r = 0.15 + 2.35 * Math.Pow((j + 0.5) / 16.0, 1.5); }
+        var e = c.Raycast(len, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
+        if (Valid(e)) Add(e.EntityId, e.Position, new Vector3D(e.Velocity), e.BoundingBox.Size.Length() / 2);
+    }
+    _status = "SEARCH " + (_aiOn ? "AI flying" : "script spin") + "  contacts " + _contacts.Count;
 }
 
 // fly away from the target (sideways of the line) until the run-up distance is reached, then hunt again
@@ -595,7 +773,7 @@ void Show()
     int w = 0; foreach (var t in _fwd) if (t.IsWorking) w++;
     string s = "TUBE RAM v" + VER + "\nMode: " + _mode + (Docked() ? "  (docked)" : "") + "\nTarget : " + tl + "\nSpeed: " + (_rc != null ? _rc.GetShipVelocities().LinearVelocity.Length().ToString("0") : "-") + " m/s   Rams: " + _rams +
                "\nThrusters: " + w + " / " + _fwd.Count + "\nContacts: " + _contacts.Count + (_heads.Count > 0 ? "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") : "") +
-               "\n" + _status + "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
+               "\n" + AiGateStatus() + _status + "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);
 }

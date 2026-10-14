@@ -8,7 +8,7 @@ Hooks that call the block (AiGateLoad / AiGateFind / AiGate / AiGateStatus) are 
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI",
-           "BasiliskAI", "ShrikeAI"]
+           "BasiliskAI", "ShrikeAI", "TubeRamAI"]
 BEGIN, END = "// >>> AI GATE", "// <<< AI GATE <<<"
 
 def unlisted():

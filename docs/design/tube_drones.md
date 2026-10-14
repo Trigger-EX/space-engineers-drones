@@ -316,20 +316,22 @@ Do **not** add the tubes to `golden_hashes.json` until the owner has pasted them
 
 ## 8. Results
 
-Built with the plan's defaults for the open questions (closed box, 2x4 = 4 wide x 2 tall, no warhead, no AI blocks, small grid only, no rack); the owner can still change any of them.
+Built with the plan's defaults for the open questions (closed box, 2x4 = 4 wide x 2 tall, no warhead, small grid only, no rack). **Q4 was answered by the owner afterwards: the tubes carry AI Offensive + AI Flight blocks so they find targets alone** (see "AI blocks" below); the owner can still change any of them.
 
 **Blueprints** (`python3 -I tools/designs/tube.py`, all PASS, forward acceleration only):
 
 | Model | Blocks | Mass | Forward accel | Size (m) |
 |---|--:|--:|--:|---|
-| Tube 2x2 | 29 | 3,168 kg | 18.2 m/s2 | 1.0 x 2.0 x 4.0 |
-| Tube 2x4 | 48 | 5,833 kg | 19.8 m/s2 | 2.0 x 2.0 x 4.5 |
-| Tube 3x3 | 56 | 6,370 kg | 20.3 m/s2 | 1.5 x 2.5 x 4.5 |
-| Tube 4x4 | 128 | 12,443 kg | 18.5 m/s2 | 2.0 x 3.0 x 5.0 |
+| Tube 2x2 | 29 | 3,440 kg | 16.7 m/s2 | 1.0 x 2.0 x 4.0 |
+| Tube 2x4 | 48 | 6,105 kg | 18.9 m/s2 | 2.0 x 2.0 x 4.5 |
+| Tube 3x3 | 56 | 6,642 kg | 19.5 m/s2 | 1.5 x 2.5 x 4.5 |
+| Tube 4x4 | 128 | 12,715 kg | 18.1 m/s2 | 2.0 x 3.0 x 5.0 |
 
 `build_all.py --no-zip --only "Tube 2x2" ...` : 4 PASS, 0 FAIL. Tests: `tools/tests/test_tube.py` (4 tests, OK). `blocks_sync.py --check` green.
 
-**Script** `scripts/TubeRamAI.cs` v1.0: 22,156 characters minified (limit 80,000, one PB). Modes WAIT, HUNT, TERM (proportional navigation, friendly guard), EXTEND (re-ram), RTB, IDLE.
+**AI blocks (owner request after the first build):** every tube has an `AI Offensive [AI]` and an `AI Flight [AI]` block in place of two light-armour cells (about +270 kg). `TubeRamAI` gets a SEARCH mode: on `launch` with no target it hands the ship to the AI blocks (shared AI GATE block: switches AI Behavior on, time-shares with a script spin if the AI does nothing), the nose cameras confirm what the AI points at with boresight / spiral rays (Gnat pattern), and the first valid contact or IGC cue takes the ship back for HUNT. It returns to SEARCH when it loses its target. Sim (1 seed, start distance 800 to 1200 m because the sim's AI search radius is 2,500 m): the AI blocks switch on and find a Basilisk, HUNT starts; at the default 3,000 m spawn distance an AI-only ship never sees the enemy in the sim (same for the Hornet). The AI blocks' real in-game behaviour is still unverified (HANDOFF section 3).
+
+**Script** `scripts/TubeRamAI.cs` v1.0: 27,608 characters minified (limit 80,000, one PB). Modes WAIT, HUNT, TERM (proportional navigation, friendly guard), EXTEND (re-ram), RTB, IDLE.
 Not in v1: the `TUBE_RAM` salvo spacing broadcast of section 4.2 (tubes on one target do not yet space themselves; see the sim note below).
 
 **Sim changes made:** `SimSettings.CollisionFineProbe` (default true) and its use in `Physics.Contact` (the finer grid is the probe in mixed-size pairs; equal sizes unchanged);

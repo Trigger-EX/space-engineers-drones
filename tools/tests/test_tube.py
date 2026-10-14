@@ -34,6 +34,12 @@ class TubeTests(unittest.TestCase):
             self.assertIn(f'Block Tag={n}', pbs[0].get('custom_data', ''))
             self.assertEqual(sum(b['xtype'] == 'MyObjectBuilder_MyProgrammableBlock' for b in bp.blocks), 1, n)
 
+    def test_ai_blocks(self):
+        for n, bp in self.bps.items():
+            ai = {b['sub']: b for b in bp.blocks if b['kind'] == 'ai'}
+            self.assertEqual(set(ai), {'SmallOffensiveCombat', 'SmallFlightMovement'}, n)
+            for b in ai.values(): self.assertTrue(b['name'].startswith(n) and b['name'].endswith('[AI]'), b['name'])
+
     def test_envelope_nose_thrust_power(self):
         for n, bp in self.bps.items():
             W, H = SECTION[n]
