@@ -65,7 +65,7 @@ class ShipTests(unittest.TestCase):
         self.assertIn('Point Defence (OFF/B1..B4)', B._script('ShrikeAI.cs'))
 
     def test_the_wing_spreads_out_and_clears_its_wingmates(self):
-        for k in ('Wingmate Separation Range (m)', 'Wingmate Separation Speed (m/s)', 'Wingmate Fire Clearance (m)'):
+        for k in ('Kamikaze Rail Hold Range (m)', 'Wingmate Separation Range (m)', 'Wingmate Separation Speed (m/s)', 'Wingmate Fire Clearance (m)'):
             self.assertIn(k + '=', B.HELM_DATA)
             self.assertIn(k, B._script('ShrikeAI.cs'))
 

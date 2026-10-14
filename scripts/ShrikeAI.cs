@@ -913,14 +913,14 @@ void ManShow()
 //   MaxTurn = 0.85 x sqrt(2 a x 0.6 rad) and AimKp = MaxTurn / 0.6 (the ship can stop inside the 0.6 rad PD zone); stored in Storage (field 8).
 // Hooks: BatCfg() at the end of LoadConfig; BatSort() at the end of GetBlocks (after _guns); PrimGuns() instead of _guns for the gun centre in Control() and for SetFire(); SetFire() starts with
 //   "if (_bat[_prim].Cool > 0) { _firing = on; BatShoot(_bat[_prim], on); return; }"; BatOk(_bat[_prim], dist) in the primary's fire decision (Control); BatFire(haveAim, myVel) after it
-//   (BatFire(false, ..) in IDLE, Release and ManFly); "+ BatHope(t)" in the target score of PruneAndSelect; BatTurn(w) in Aim(); BatSave() / BatLoad(..) for Storage; BatStatus() in Display.
+//   (BatFire(false, ..) in IDLE, Release and ManFly); "+ BatHope(t) + BatKz(t, dist)" in the target score of PruneAndSelect; BatTurn(w) in Aim(); BatSave() / BatLoad(..) for Storage; BatStatus() in Display.
 class Bat
 {
     public string Cls = "-"; public double Speed = 800, Range = 700, MinR, Cool, Rel, Dps, Dsp, Next, Rdy, Pend = -1, Am, Sc; public bool On, Saw, Want, Sv; public int I; public IMyUserControllableGun Gn; public long[] Ar;
     public List<IMyUserControllableGun> G = new List<IMyUserControllableGun>();
 }
 Bat[] _bat = { new Bat(), new Bat(), new Bat(), new Bat() };
-int _pd; bool PdEx = true; double PdRad = 6;   // point-defence battery (1-based, 0 = none) and the largest track radius it counts as "small"
+int _pd; bool PdEx = true; double KzHold = 0; double PdRad = 6;   // point-defence battery (1-based, 0 = none) and the largest track radius it counts as "small"
 bool _rkt; int _prim, _batFix; double _primT = -99, _bs0, _br0; bool BatSo = true; string BatTur = "AUTO", BatCal = "AUTO", BatSal = "OFF";
 List<IMyUserControllableGun> PrimGuns() { return _bat[_prim].G; }
 
@@ -936,6 +936,7 @@ void BatCfg()
     string pd = Cfg(S, "Point Defence (OFF/B1..B4)", "OFF").Trim().ToUpperInvariant();   // that battery shoots only small / incoming-kamikaze tracks, one gun at a time; the other batteries leave those tracks alone
     _pd = pd.Length == 2 && pd[0] == 'B' && pd[1] >= '1' && pd[1] <= '4' ? pd[1] - '0' : 0;
     PdRad = Cfg(S, "Point Defence Max Radius (m)", PdRad); PdEx = Cfg(S, "Point Defence Exclusive", PdEx);
+    KzHold = Cfg(S, "Kamikaze Rail Hold Range (m)", KzHold);   // 0 = off; > 0: railgun / shell batteries leave a classified incoming kamikaze alone beyond this range
 }
 
 void BatSp(Bat b, string c, double sp, double rg, double mr, double cool, double rel, double dps, double dsp)
@@ -1031,9 +1032,13 @@ bool PdTgt(Track t) { return t != null && (KzLive(t.Id) || t.Radius <= PdRad); }
 bool BatOk(Bat b, double d)
 {
     if (_pd > 0 && (b == _bat[_pd - 1] ? !PdTgt(_tgt) : PdEx && PdTgt(_tgt))) return false;   // the point-defence battery shoots small / kamikaze tracks only; with PdEx the other batteries leave those tracks alone
+    if (KzHold > 0 && (b.Cls == "RAIL" || b.Cls == "SHEL") && _tgt != null && KzLive(_tgt.Id) && d > KzHold) return false;   // slow-reloading heavy guns are not spent on an incoming kamikaze until it is this close
     if (b.Cls == "ROCK" && BatUnc(_tgt, d / 200) > Math.Max(_tgt.Radius * 0.8, 3)) return false;   // rockets cannot be recalled: not at a jinking target (FireGate)
     return !BatTO() || BatPh(b, d, _tgt) >= 0.15;
 }
+// target score (lower = better) of an incoming kamikaze that the heavy guns will not shoot yet (Kamikaze Rail Hold Range): its priority bonus is cancelled and it is
+// ranked behind every other track, so the tracking stays free for a large ship that comes into range; with nothing else about it is still the target (the turrets answer it)
+double BatKz(Track t, double dist) { return KzHold > 0 && dist > KzHold && KzLive(t.Id) ? 3000 - KzScore(t) : 0; }
 double BatHope(Track t)
 {
     if (!BatTO() || _rc == null) return 0;
@@ -1850,7 +1855,7 @@ void PruneAndSelect()
         if (t == _tgt) score -= Stickiness;                            // stickiness
         score += Math.Max(0, (_now - t.Seen) - 1.0) * 150;             // stale tracks lose to fresh sightings
         if (dist < 150) score -= 350;                                  // something right on top of us comes first
-        score += HiveScore(t) + KzScore(t) + BatHope(t);
+        score += HiveScore(t) + KzScore(t) + BatHope(t) + BatKz(t, dist);
         if (score < bestScore) { bestScore = score; best = t; }
     }
     _tgt = best;

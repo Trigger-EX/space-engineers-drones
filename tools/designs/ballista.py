@@ -64,6 +64,7 @@ Script Search Window (s)=5
 Primary (AUTO/B1..B4)=B1
 Standoff By Weapons=false
 Salvo (AUTO/ON/OFF)=ON
+Kamikaze Rail Hold Range (m)=250
 """
 
 GUNC = (0.0, -0.81, -0.45)
