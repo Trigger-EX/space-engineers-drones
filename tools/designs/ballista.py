@@ -30,6 +30,10 @@ from types import SimpleNamespace
 
 NAME = 'Ballista'
 TAG = 'BALLISTA'
+# optional point-defence rails: [B2] rails the Helm fires one at a time at small / kamikaze tracks (needs [Battery] Point Defence=B2)
+PD_RAILS = set()      # {(x, r) for x in (-1, 0, 1) for r in (0, 2)} would tag six rails [B2]; with Point Defence=B2 they shoot small tracks alone.  Off: sim A/B (docs 3e) showed no gain over the turrets + full salvo
+# vanilla gatling turrets (3x3x3, base on the breech wall's armour cubes beside the mast): min corner, up, place
+PD_TURRETS = (((-4, 6, 7), 'Up', 'Top P'), ((2, 6, 7), 'Up', 'Top S'), ((-4, -3, 7), 'Down', 'Belly P'), ((2, -3, 7), 'Down', 'Belly S'))
 COLS = tuple(range(-4, 5))        # 9 columns of railguns
 ROWS = 3                          # 3 rows (2 cells each) -> 27 guns
 N_GYRO = 12
@@ -48,6 +52,9 @@ Evasive Jinking=true
 Orbit Speed=30
 Combat Speed=100
 Auto Camera Scan=false
+Wingmate Separation Range (m)=300
+Wingmate Separation Speed (m/s)=12
+Wingmate Fire Clearance (m)=45
 
 [AI Gate]
 AI Window (s)=20
@@ -73,6 +80,7 @@ class Ship:
     """collects the placed blocks by role (same contract as warden.Ship)"""
     def __init__(self, bp):
         self.bp, self.occ, self.r = bp, bp.occupancy(), {}
+        self.pd_rails = []
 
     def put(self, role, b):
         for c in self.bp.cells(b): self.occ[c] = b
@@ -101,8 +109,10 @@ def _rails(S):
     for row in range(ROWS):
         for x in COLS:
             n += 1
+            pd = (x, row) in PD_RAILS
             b = S.fixed('rail', 'MyObjectBuilder_SmallMissileLauncherReload', 'LargeRailgun', (x, 2 * row, 0), 'Forward', 'Up',
-                        nm(f'[B1] Railgun {n:02d}'), GUNC, kind='rail')
+                        nm(f'[B2] PD Railgun {n:02d}' if pd else f'[B1] Railgun {n:02d}'), GUNC, kind='rail')
+            if pd: S.pd_rails.append(b)
             bp.preload(b, items=[Item.ammo('LargeRailgunAmmo', 6)], state={'capacitor': 'full'})
             bp.keep_clear(b, 3, 'muzzle')
     # breech wall: every Back mount seats on it
@@ -165,21 +175,28 @@ def _core(S, full):
 
 def _sensing(S, full):
     bp = S.bp
-    S.armor(0, 6, 8, role='mast'); S.armor(0, 7, 8, role='mast')
-    specs = [('Front', (0, 6, 7), 'Forward', 'Up'), ('Rear', (0, 6, 9), 'Backward', 'Up'), ('Port', (-1, 6, 8), 'Left', 'Up'),
-             ('Starboard', (1, 6, 8), 'Right', 'Up'), ('Top', (0, 8, 8), 'Up', 'Backward')]
+    for y in (6, 7, 8, 9): S.armor(0, y, 8, role='mast')          # (the top turrets stand beside the mast: the side cameras sit above their roofs)
+    specs = [('Front', (0, 6, 7), 'Forward', 'Up'), ('Rear', (0, 6, 9), 'Backward', 'Up'), ('Port', (-1, 9, 8), 'Left', 'Up'),
+             ('Starboard', (1, 9, 8), 'Right', 'Up'), ('Top', (0, 10, 8), 'Up', 'Backward')]
     for tag, mn, look, up in specs:
         S.put('cam', C.cam(bp, mn, look, up, nm(f'Camera {tag}'), 3))
     S.armor(0, -1, 8, role='mast')
     S.put('cam', C.cam(bp, (0, -2, 8), 'Down', 'Forward', nm('Camera Belly'), 3))
-    S.add('ant', 'MyObjectBuilder_RadioAntenna', 'LargeBlockCompactRadioAntenna', (1, 7, 8), 'Forward', 'Up', nm('Antenna'), extra=ant_extra(10000), kind='ant')
+    S.add('ant', 'MyObjectBuilder_RadioAntenna', 'LargeBlockCompactRadioAntenna', (1, -3, 8), 'Forward', 'Down', nm('Antenna'), extra=ant_extra(10000), kind='ant')   # (belly: the top-side turrets took the space)
     if full:
         S.add('sensor', 'MyObjectBuilder_SensorBlock', 'LargeBlockSensor', (-1, 7, 8), 'Up', 'Forward', nm('Sensor'), color=GUND, kind='sensor')
 
+def _defence(S, full):
+    """four vanilla gatling turrets (autonomous point defence against whatever gets inside 800 m; they are also designators for the Helm)"""
+    for n, (mn, up, where) in enumerate(PD_TURRETS, 1):
+        b = S.fixed('pdturret', 'MyObjectBuilder_LargeGatlingTurret', '', mn, 'Forward', up, nm(f'[PD] Gatling Turret {n} {where}'), GUNC, kind='turret')
+        S.bp.fill_ammo(b)
+
 def _groups(S):
     bp, R = S.bp, S.r
-    bp.group('B1', R['rail'])
-    bp.group('Weapons', R['rail'])
+    bp.group('B1', [b for b in R['rail'] if b not in S.pd_rails])
+    bp.group('B2', S.pd_rails)
+    bp.group('Weapons', R['rail'] + R.get('pdturret', []))
     bp.group('Thrusters', [b for k in R if k.startswith('thr_') for b in R[k]])
     bp.group('Gyros', R['gyro']); bp.group('Reactors', R['reactor']); bp.group('Batteries', R['bat'])
 
@@ -290,6 +307,7 @@ def ballista(lite=False, with_foundry=True):
     _pods(S)
     _core(S, full)
     _sensing(S, full)
+    _defence(S, full)
     _groups(S)
     bp.ship = S
     if with_foundry:

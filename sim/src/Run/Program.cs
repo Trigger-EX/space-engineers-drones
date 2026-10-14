@@ -62,7 +62,7 @@ namespace SeSim.Run
         }
 
         static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "face-away", "endless", "allow-mismatch" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "face-away", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data", "events", "event-team" };
+        static readonly HashSet<string> Known = new HashSet<string> { "kamikaze-extra", "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "face-away", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data", "events", "event-team" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -237,6 +237,7 @@ namespace SeSim.Run
                 if (l.Count == 0) throw new ArgumentException("--enemy-fleets is empty");
                 ScenarioGen.EnemyFleets = l;
             }
+            if (o.Has("kamikaze-extra")) ScenarioGen.KamikazeExtra = o.Get("kamikaze-extra", "").Split(',');
             if (o.Has("enemy-brain"))
             {
                 string b = o.Get("enemy-brain", "pirate");

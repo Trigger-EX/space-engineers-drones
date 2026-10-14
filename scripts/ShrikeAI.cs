@@ -920,6 +920,7 @@ class Bat
     public List<IMyUserControllableGun> G = new List<IMyUserControllableGun>();
 }
 Bat[] _bat = { new Bat(), new Bat(), new Bat(), new Bat() };
+int _pd; bool PdEx = true; double PdRad = 6;   // point-defence battery (1-based, 0 = none) and the largest track radius it counts as "small"
 bool _rkt; int _prim, _batFix; double _primT = -99, _bs0, _br0; bool BatSo = true; string BatTur = "AUTO", BatCal = "AUTO", BatSal = "OFF";
 List<IMyUserControllableGun> PrimGuns() { return _bat[_prim].G; }
 
@@ -932,6 +933,9 @@ void BatCfg()
     BatTur = Cfg(S, "Turret Only (AUTO/ON/OFF)", BatTur).Trim().ToUpperInvariant();
     BatCal = Cfg(S, "Auto Max Turn (AUTO/ON/OFF)", BatCal).Trim().ToUpperInvariant();
     BatSal = Cfg(S, "Salvo (AUTO/ON/OFF)", BatSal).Trim().ToUpperInvariant();
+    string pd = Cfg(S, "Point Defence (OFF/B1..B4)", "OFF").Trim().ToUpperInvariant();   // that battery shoots only small / incoming-kamikaze tracks, one gun at a time; the other batteries leave those tracks alone
+    _pd = pd.Length == 2 && pd[0] == 'B' && pd[1] >= '1' && pd[1] <= '4' ? pd[1] - '0' : 0;
+    PdRad = Cfg(S, "Point Defence Max Radius (m)", PdRad); PdEx = Cfg(S, "Point Defence Exclusive", PdEx);
 }
 
 void BatSp(Bat b, string c, double sp, double rg, double mr, double cool, double rel, double dps, double dsp)
@@ -962,7 +966,7 @@ void BatSort()
         if (k < 0) k = BatBall(s) ? 0 : s.Contains("Calibre") ? 3 : s.Contains("Railgun") ? 2 : 1;
         _bat[k].G.Add(g);
     }
-    foreach (var b in _bat) { BatSpec(b); b.Sv = b.Rel > 0 && (BatSal == "ON" || (BatSal == "AUTO" && b.G.Count >= 6)); }
+    foreach (var b in _bat) { BatSpec(b); b.Sv = b.Rel > 0 && (BatSal == "ON" || (BatSal == "AUTO" && b.G.Count >= 6)) && !(_pd > 0 && b == _bat[_pd - 1]); }
     BatSet(_batFix > 0 && _bat[_batFix - 1].G.Count > 0 ? _batFix - 1 : _bat[_prim].G.Count > 0 ? _prim : BatFirst());
 }
 int BatFirst() { for (int i = 0; i < 4; i++) if (BatN(_bat[i]) > 0) return i; return 0; }
@@ -989,7 +993,7 @@ double BatPh(Bat b, double r, Track t) { return MathHelper.Clamp(1 - (BatUnc(t, 
 double BatSc(Bat b, double r, double w)
 {
     int n = BatN(b);
-    if (n == 0 || r < b.MinR || r > b.Range) return 0;
+    if (n == 0 || r < b.MinR || r > b.Range || (_pd > 0 && b == _bat[_pd - 1])) return 0;
     return b.Dps * n * BatPh(b, r, _tgt) * (b.Rel > 0 && _now + 1.5 < b.Rdy ? 1 - w : 1);
 }
 
@@ -1023,8 +1027,10 @@ void BatStand()
 // silhouette window (deg) of the tracked target at this range: the fire window of every battery
 double BatWin(double dist) { double aimR = AimActive(_tgt) ? Math.Min(_tgt.Radius * 0.6, 3) : _tgt.Radius * 0.6; return Math.Max(0.3, Math.Atan(aimR / Math.Max(dist, 1)) * 57.2958) * FireTol; }
 bool BatTO() { return BatTur == "ON" || (BatTur == "AUTO" && _turrets.Count > 0); }
+bool PdTgt(Track t) { return t != null && (KzLive(t.Id) || t.Radius <= PdRad); }
 bool BatOk(Bat b, double d)
 {
+    if (_pd > 0 && (b == _bat[_pd - 1] ? !PdTgt(_tgt) : PdEx && PdTgt(_tgt))) return false;   // the point-defence battery shoots small / kamikaze tracks only; with PdEx the other batteries leave those tracks alone
     if (b.Cls == "ROCK" && BatUnc(_tgt, d / 200) > Math.Max(_tgt.Radius * 0.8, 3)) return false;   // rockets cannot be recalled: not at a jinking target (FireGate)
     return !BatTO() || BatPh(b, d, _tgt) >= 0.15;
 }
@@ -1499,6 +1505,7 @@ void LoadConfig()
     Tag = Cfg(S, "IGC Tag", Tag);
     StartMode = Cfg(S, "Start Mode (GUARD/HUNT/ASSIST/IDLE)", StartMode);
     Standoff = Cfg(S, "Standoff Range", Standoff);
+    SepRange = Cfg(S, "Wingmate Separation Range (m)", SepRange); SepSpeed = Cfg(S, "Wingmate Separation Speed (m/s)", SepSpeed); MateClear = Cfg(S, "Wingmate Fire Clearance (m)", MateClear);
     MinRange = Cfg(S, "Min Range", MinRange);
     MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
     OrbitSpeed = Cfg(S, "Orbit Speed", OrbitSpeed);
@@ -1985,7 +1992,9 @@ void Control(double dt)
     {
         Vector3D d = home - me; double dist = d.Length();
         double v = Math.Min(Math.Min(CruiseSpeed, dist * 0.8), Math.Sqrt(2 * aBrake * dist));
-        want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade() + Separation(me);
+        Vector3D sep = Separation(me);
+        if (_mode != Mode.RTB && _tgt == null && sep.LengthSquared() > 1 && _now - _assistT >= 4) _home += sep * dt;   // idle: the wing spreads out (the home point moves away from the mates, or it would pull the ship back to its paste spot)
+        want = (dist > 0.5 ? d / dist * v : Vector3D.Zero) + Evade() + sep;
         if (_mode == Mode.RTB && dist < 15 && myVel.Length() < 2) { SetMode(Mode.IDLE); _err = "Home - idle"; return; }
     }
     else
@@ -2082,7 +2091,7 @@ Vector3D Separation(Vector3D me)
 // Friendly-fire gate from the IGC positions: hold fire while a hive mate stands within MateClear metres of the line
 // from the guns to the target (bullets fly 0.5-1 s, so the mate is extrapolated by its age only). Works with no camera
 // charge, unlike the camera ray in CheckLineOfFire, which can only look once per second and fails open.
-const double MateClear = 14;
+double MateClear = 14;   // hold fire while a hive mate is this close to the line of fire
 void MatesInLine(Vector3D gunPos, Vector3D gunFwd, double dist)
 {
     foreach (var m in _mates.Values)

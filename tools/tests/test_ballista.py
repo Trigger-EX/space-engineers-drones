@@ -51,7 +51,23 @@ class ShipTests(unittest.TestCase):
         self.assertEqual(len(rails), 27)
         for b in rails:
             self.assertEqual(sum(it.amount for it in bp.items_of(b) if it.kind == 'AmmoMagazine'), 6)
-            self.assertIn('[B1]', b['name'])
+            self.assertTrue('[B1]' in b['name'] or '[B2] PD' in b['name'], b['name'])
+
+    def test_point_defence_turrets(self):
+        bp = full_no_foundry()
+        names = [b['name'] for b in bp.blocks if b['sub'] == 'LargeRailgun']
+        self.assertEqual(sum('[B1]' in n for n in names), 27 - len(B.PD_RAILS))
+        tur = [b for b in bp.blocks if b['xtype'].endswith('LargeGatlingTurret')]
+        self.assertEqual(len(tur), 4)
+        for b in tur:
+            self.assertTrue(b['name'].startswith('[SH] [PD]'), b['name'])           # the Helm's Link prefix; "[PD]" is the repo's point-defence tag
+            self.assertGreater(sum(it.amount for it in bp.items_of(b)), 0)           # loaded
+        self.assertIn('Point Defence (OFF/B1..B4)', B._script('ShrikeAI.cs'))
+
+    def test_the_wing_spreads_out_and_clears_its_wingmates(self):
+        for k in ('Wingmate Separation Range (m)', 'Wingmate Separation Speed (m/s)', 'Wingmate Fire Clearance (m)'):
+            self.assertIn(k + '=', B.HELM_DATA)
+            self.assertIn(k, B._script('ShrikeAI.cs'))
 
     def test_no_dlc_no_prototech(self):
         pods.assert_clean(full_no_foundry())
@@ -63,7 +79,7 @@ class ShipTests(unittest.TestCase):
         foundry_full = n['pcu_foundry'] + 400          # the Full foundry is ~270 PCU above the Lite one (sensor-free shell, same welders)
         probe = pcu(P.peeper(False)) + len(P.peeper(False).blocks)      # a live probe + its projection (1 PCU per projected block)
         self.assertLess(ship + foundry_full + probe, PCU_LIMIT)
-        self.assertLess(ship, 5000)
+        self.assertLess(ship, 5600)        # 4,349 + 4 PD gatling turrets + the thrust PB
 
     def test_agility(self):
         acc = B.numbers(lite_docked())['accel_loaded_m_s2']

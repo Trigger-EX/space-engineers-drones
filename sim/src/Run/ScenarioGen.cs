@@ -136,7 +136,8 @@ namespace SeSim.Run
             if (a == null || b == null) return null;
             var sc = Build(kind, a, b);
             if (sc.Name != name) sc.Name = name;
-            sc.BlueprintCustomData = sc.RigidSubgrids = kind == "ship";      // M6: warship scenarios start with the Custom Data the blueprint carries
+            if (kind == "kamikaze") sc.SwarmCueSeconds = 0.5;   // as in Kamikaze(): the swarm is cued to its target
+            sc.BlueprintCustomData = sc.RigidSubgrids = kind == "ship" || Array.IndexOf(a, "Ballista") >= 0;      // M6: warship scenarios start with the Custom Data the blueprint carries
             return sc;
         }
 
@@ -148,7 +149,7 @@ namespace SeSim.Run
                 string p = part.Trim(); int n = 1;
                 int x = p.IndexOf('x'); int parsed;
                 if (x > 0 && int.TryParse(p.Substring(0, x), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out parsed) && parsed >= 1 && parsed <= 64) { n = parsed; p = p.Substring(x + 1).Trim(); }
-                if (p != "Pirate" && !IsEnemy(p) && !System.IO.File.Exists(System.IO.Path.Combine(System.IO.Path.Combine(bpDir, p), "bp.sbc"))) return null;
+                if (p != "Pirate" && !(p == "Stinger" && System.IO.File.Exists(System.IO.Path.Combine(System.IO.Path.Combine(bpDir, "Stinger Rack"), "bp.sbc"))) && !IsEnemy(p) && !System.IO.File.Exists(System.IO.Path.Combine(System.IO.Path.Combine(bpDir, p), "bp.sbc"))) return null;
                 for (int i = 0; i < n; i++) l.Add(p);
             }
             return l.Count == 0 ? null : l.ToArray();
@@ -323,6 +324,7 @@ namespace SeSim.Run
         static readonly string[] KamikazeTargets = { "Aegis", "Basilisk", "Gnat", "Harrier", "Hornet", "Lancer", "Longbow L", "Longbow S", "Mantis", "Wasp" };
 
         /// <summary>Incoming kamikaze swarms: cued Stingers (4 / 8) against each scripted combat model (x1 / x2) and against 3 Gnats.</summary>
+        public static string[] KamikazeExtra = new string[0];
         public static List<Scenario> Kamikaze()
         {
             var l = new List<Scenario>();
@@ -333,6 +335,13 @@ namespace SeSim.Run
                 l.Add(Build("kamikaze", Rep(m, 2), Rep("Stinger", 8)));
             }
             l.Add(Build("kamikaze", Rep("Gnat", 3), Rep("Stinger", 8)));
+            foreach (string x in KamikazeExtra)      // --kamikaze-extra "Ballista": further models of out/Blueprints (warships get their blueprint Custom Data and rigid subgrids), 4 and 8 Stingers
+                foreach (int n in new[] { 4, 8 })
+                {
+                    var sc = Build("kamikaze", new[] { x }, Rep("Stinger", n));
+                    if (x == "Ballista") sc.BlueprintCustomData = sc.RigidSubgrids = true;
+                    l.Add(sc);
+                }
             foreach (var sc in l) sc.SwarmCueSeconds = 0.5;
             return l;
         }
