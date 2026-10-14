@@ -10,6 +10,12 @@ Space Engineers combat drones, printer ships, in-game C# scripts and a simulatio
 - Never use DLC blocks in blueprints (the block index `defs.json` records each block's DLC).
 - Blueprint rule: delete old blueprint folders before copying new ones in-game (stale `.sbcB5` cache).
 
+## Script size: there is no practical limit anymore (read before trimming or skipping a feature)
+- The 100,000-character cap is **per programmable block (PB)**, and a ship may carry any number of PBs. Wasp Split (`scripts/WaspFlightAI.cs` + `WaspStaffAI.cs`, `docs/design/wasp_split.md`, findings in `docs/audit/multi_pb_feasibility.md`) works in the real game: owner-tested, two PBs on one grid linked by IGC `TransmissionDistance.CurrentConstruct`.
+- So **never drop, shrink, compress or postpone a feature "because the script is near 100k"**, and don't treat old notes saying "no room / budget / headroom" as binding. When a PB nears about 80k minified, move a module that is off the hot path into another PB (launch, follow, fleet, display, config, logging, extra weapons logic) and link it over IGC.
+- Keep the hot path (tracking, lead, aim, control, firing) in ONE PB: a PB-to-PB hop costs 2 ticks (measured in the sim). One writer per thruster/gyro override.
+- Add a PB for every extra module you need; budget each PB at about 80k minified (hard cap 100k).
+
 ## Release zips: only when asked
 - Do not build or rebuild the release zips (`tools/build_all.py` without `--no-zip`, `releases/*.zip`) on your own, and do not commit rebuilt zips. Build them only when the user asks for it.
 - When a task needs blueprints for the simulator, use `python3 -I tools/build_all.py --no-zip --only "<Model>" ...` (fast); a full run takes about 12 minutes.
