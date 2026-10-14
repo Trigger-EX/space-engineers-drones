@@ -1,29 +1,23 @@
-# Handoff: v2.7 + rotor AI turrets
+# Handoff: Ballista tuning, Helm split
 
 ## Goal
-Keep the Space Engineers drone/warship project consistent: scripts, generator, simulator, release zips. Nothing here has run in the real game.
+Keep the drone/warship project consistent (scripts, generators, sim, zips). Nothing has run in the real game except Wasp Split and the owner's Ballista tests below.
 
 ## Decisions and constraints
-- **Multi-PB is proven in the real game** (Wasp Split, owner-tested): no practical script-size limit; split modules into extra PBs over IGC instead of dropping features (CLAUDE.md "Script size").
-- Work and push on `main` only (CLAUDE.md). Sim runs: few seeds (CLAUDE.md).
-- **Rotor + hinge AI turrets** (this session): `scripts/TurretAI.cs` 1.0 (17,316 chars), `tools/designs/turrets.py` (PD4L large, PD2S small), `sebp.Blueprint.mount()`, `sebp_multi.top_pose/TOP_OFFSETS` (measured on the Tech Hunter), docs `docs/design/turrets.md`, tests `tools/tests/test_turrets.py`. On Shrike 1, Corsair 2 (Full only), Warden 4, Leviathan 8 (Lite 10). Names `[TU] ...`, PB `[TU] Turret PB`; every Helm Custom Data has `[Link] Block Prefix=[SH]`.
-- Audit: `docs/audit/SUMMARY.md`; SATELLITE formation `docs/follow-mode.md`; warships `docs/design/ships/*.md`, `control_arch.md`. Helm `ShrikeAI.cs` is 79,977 of 80,000 chars: no headroom.
-- Mono works here (`apt install mono-mcs mono-runtime mono-devel`; `sim/build.sh`). Baseline: 18 `test_sebp_ext` tests need the owner's `ref/user-samples` (not in the repo) and fail without it.
+- Work and push on `main` only; no PRs; zips only when asked; few sim seeds; PB size: add a PB (Opus plan first), never raise the cap (CLAUDE.md).
+- Ballista (owner game tests drove these): `Standoff Range=1600` with `Standoff By Weapons=false` (sim: 1,600 m never hit by a 100 m/s Tech Hunter, 1,000 m always hit); `Auto Camera Scan=false` (idle sweep spun the ship); wing spacing keys (300 m / 12 m/s / 45 m fire clearance); 4 gatling PD turrets; `Kamikaze Rail Hold Range=250` + `BatKz` (tracking stays free for the launcher); `1st contact` line on the Helm screen. Details `docs/design/ships/Ballista.md` 3b-3e.
+- Helm split (`docs/design/helm_split.md`): FLEET channel + damage sensing now in `StaffAI.cs` 1.5 (HELMLINK 1.2, H2S bit 8); ShrikeAI 81,100 min, gate 86,000; Ballista `[Staff][SH]` (Mothership=false), Shrike `[Staff] Shrike`.
+- Charge test: `pc/plans/charge_standoff.plan` (+ `tools/gen_charge_plan.py`, `tools/charge_standoff_report.py`): owner runs it, then I adjust each design's standoff.
 
 ## Current state
-Release zips are NOT rebuilt for the turrets (CLAUDE.md: only when asked; `python3 -I tools/build_all.py` takes about 12 minutes). `selftest m6` and `ship/Warden-vs-Pirate` pass with the turrets; the sim has no rotor model, so the turret heads are inert there and no combat result exists.
-
-- Ballista (post-v2.7, zips not rebuilt): large-grid railgun drone (27 rails, ~8,200 PCU with its docked Probe Foundry, 9,990 of the 10,000 in the test; 3 large reactors + 13 batteries = 1,056 MW for the 1,026 MW recharge of all rails, 22 thrusters, 13 gyros: `Ballista.md` section 9, zips not rebuilt, not run in sim), Peeper probe, `SpotterAI.cs` (vitals memory, feed to the Helm, foundry control), ShrikeAI `<Tag>_AIM` hook (Helm budget now 81,600 chars). Game-test fixes (salvo, AI assist, AI-behavior gate): `Ballista.md` 3a; run-off at paste NOT reproduced in the sim. `docs/design/ships/Ballista.md`, `tools/tests/test_ballista.py`. Not run in game or sim; the printed-probe separation risk (audit printers-01) applies.
-- **Sprue Test** (option A of the printer fix, zips not rebuilt, nothing run in game or sim): `tools/designs/sprue_test.py` (`Sprue Test`, `Sprue Test No Grinder`, kind test), `scripts/SprueProbe.cs` (both PBs), `docs/design/sprue_test.md`, owner copy `test_designs/Sprue Test/`. Keen's old source says a ship grinder skips its own grid, so the main cut is expected to be `UNTOUCHED`; the hand-cut control (grind N2, then `cut`) shows whether a grinder works on another grid. The new script and blueprints change the sim provenance key: finish or restart interrupted `pc/` plan runs before `--resume`.
+All on `main`, zips NOT rebuilt. `selftest hsplit m2 m3 m6` green; `m1 m4 m5` and 5 scenario checks fail as before the split. Five blueprints (Wasp, Aegis, Mantis, Longbow S/L) failed `build_all` at 100k until the thrust-vector split fixed them (check `build_all`).
 
 ## Open questions
-In-game: `packages/tests.md` 38-42 (paste/attach of the rotor turrets, motion, Helm ignores them, masks/friendly fire, ammo), `packages/unknowns.md` K-T1..K-T12, plus the earlier list (merge clamp face T1, cockpit toolbar Run argument K3, IGC across docked pods, ammo/hydrogen feed). Printer option A: Q1 fused, Q2 grinder on own grid / other grid, Q3 welded PB, owner and battery, Q4 payload leaves and the neck re-welds (`docs/design/sprue_test.md` section 1).
+Why the 4-Ballista cluster did not lock on while the pilot was in the line (friendly in the way? unverified); kamikaze defence unverified (sim Stingers crawl); HUD/menu (cut 2) not moved.
 
 ## Next step
-The owner runs `test_designs/Sprue Test` in a creative world and sends the Sprue PB screen and `[Log]`; follow the decision tree in `docs/design/sprue_test.md` section 7 (expected: D3 then E1a, so the next design is a grinder on a rotor/hinge head, A', or the projector on a rotor head, B).
-Add a `SimMotorStator` (velocity mode, limits, the `top_pose` chain) and head-grid weapons to the simulator, then run 3-10 seeds of turret scenarios (Hornet pair, Pirate, kamikaze swarm). Or run the in-game tests first and fix what they show.
-Run the in-game tests (Ballista list: `docs/design/ships/Ballista.md` section 8, starting with `SeekerProbe.cs`), then fix what they show. Known weak spots: lone Shrike (2/5 vs a Hornet), Lite ships have no AI blocks and find nothing alone, drone recovery into cradles (phase 2), `pc/reference` and `docs/RESULTS.md` need regenerating after the sim fidelity changes.
+Owner rebuilds and tests the Ballista wing; or sends the charge-test report, then set each design's standoff from it. Older items (Sprue Test, rotor turrets in-game tests) are in git history of this file and `docs/design/sprue_test.md`, `turrets.md`.
 
 ## Chat
 Base name: ultracode drone audit ships
-Run: 2
+Run: 3
