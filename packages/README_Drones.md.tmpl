@@ -22,6 +22,14 @@ Printed drones start in IDLE and wait for the printer's `_JOIN`; a drone pasted 
   With nothing in sight it stays put and turns in place to scan; it does not patrol. If a ship runs a Mothership link, its live position
   replaces that spot (so guard drags along behind a carrier), but guard flies to the ship's centre and falls back to the old spot if
   the link stops: for an escort use `follow`.
+- `sentry` (or `Start Mode` SENTRY) parks the drone where it is, still, and waits. As soon as anything comes within `Sentry Range (m)`
+  (2,500 m by default, the AI Offensive block's search range) it goes after it wherever it flies (no `Guard Radius` leash) until it is
+  destroyed or lost, takes on whatever else is in range, then flies back to its spot and waits again. A carrier link does not move the spot.
+  Every armed drone has it: Hornet, Watcher, Lancer, Harrier, Aegis, Mantis, Basilisk, Wasp, Longbow S/L, the Gnat swarm (holds its sphere
+  round the spot), the Tube rams (AI search from the spot, ram, fly back; kept across a world reload) and the Stinger (waits with dampeners on and
+  launches at the first target in range, even with `Auto Launch When Released` off; it does not come back). Not the scriptless Midge.
+  `fleet sentry` from a Mothership link reaches drones whose `[Fleet] Allowed Commands` line has `sentry` (new drones do; older ones: add it
+  or delete the line and run `reload`).
 - `follow` (or `escort`) keeps the drone with **you**: (v2.2)
   - **in a ship**: put a Mothership link script (`HornetMothership.cs`, `LongbowMothership.cs` or `GnatMothership.cs`, any of them
     drives every drone type over the FLEET channel) on a Programmable Block on your ship. Your ship needs an antenna.

@@ -41,6 +41,8 @@
 //
 //  COMMANDS (argument, toolbar, or IGC "<Tag>_CMD" to command the swarm)
 //   form | attack | rtb | idle | lock | unlock | home | reload
+//   sentry   the swarm holds THIS spot until a target comes within Sentry Range (2,500 m = the AI Offensive search range), hunts it down
+//            with no Engage Radius leash, then comes back and waits again (Start Mode SENTRY works too)
 //   satellite (sat, orbit): FORM as a slowly turning vertical ring round the carrier / home point (ring size grows with the swarm)
 //   follow / escort = form: the formation sphere sits round whatever broadcasts the home point (a ship running a Mothership
 //   link), outside its hull, and moves with it (v1.11: the drones match the ship's velocity, so they keep up)
@@ -90,7 +92,8 @@ enum Run { SETUP, RUN, CORRECT, BREAK }
 Mode _mode = Mode.IDLE; Run _run = Run.SETUP;
 MyIni _ini = new MyIni();
 double _now = 0; long _tick = 0;
-Vector3D _home; bool _homeSet = false, _ready = false;
+Vector3D _home; bool _homeSet = false, _ready = false, _sentry = false;
+double SentryRange = 2500;   // SENTRY: wake on a target this close (the AI Offensive block's search range). CustomData "Sentry Range (m)"
 Vector3D _dynHome; double _dynHomeT = -99;
 Vector3D _hvP, _homeV; double _hvT = -99;   // carrier velocity from successive home fixes (FORM / RTB feed-forward)
 
@@ -769,12 +772,12 @@ public Program()
     catch (Exception ex) { CtorErr("modules", ex); }
     try
     {
-        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _mode = _ready ? Mode.FORM : ParseMode(StartMode, Mode.IDLE);
+        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _sentry = StartMode.Trim().ToUpperInvariant() == "SENTRY"; _mode = _ready || _sentry ? Mode.FORM : ParseMode(StartMode, Mode.IDLE);
         if (!string.IsNullOrEmpty(Storage))
         {
             var p = Storage.Split(';'); double x, y, z;
             if (p.Length >= 5 && double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
-            { _ready = p[0] == "READY"; _mode = _ready ? Mode.FORM : ParseMode(p[0], _mode); _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
+            { _ready = p[0] == "READY"; _sentry = p[0] == "SENTRY"; _mode = _ready || _sentry ? Mode.FORM : ParseMode(p[0], _mode); _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
         }
     }
     catch (Exception ex) { CtorErr("storage", ex); }
@@ -802,15 +805,16 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _ready ? "READY" : _mode == Mode.FORM && SatOn ? "SAT" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
+    Storage = string.Join(";", _ready ? "READY" : _sentry ? "SENTRY" : _mode == Mode.FORM && SatOn ? "SAT" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
 }
 
 Mode ParseMode(string s, Mode d)
 {
     switch (s.Trim().ToUpperInvariant())
     {
-        case "SATELLITE": case "SAT": case "ORBIT": if ((int)d == -1) return SatOn && !_ready ? Mode.FORM : (Mode)(-2); SatOn = true; return Mode.FORM;      // (d == -1: the Staff link asks whether the verb changes nothing)
-        case "FORM": case "GUARD": if ((int)d == -1) return !SatOn && !_ready ? Mode.FORM : (Mode)(-2); return Mode.FORM;
+        case "SATELLITE": case "SAT": case "ORBIT": if ((int)d == -1) return SatOn && !_ready && !_sentry ? Mode.FORM : (Mode)(-2); SatOn = true; return Mode.FORM;      // (d == -1: the Staff link asks whether the verb changes nothing)
+        case "FORM": case "GUARD": if ((int)d == -1) return !SatOn && !_ready && !_sentry ? Mode.FORM : (Mode)(-2); return Mode.FORM;
+        case "SENTRY": return (int)d == -1 && _sentry && _mode == Mode.FORM ? Mode.FORM : d;
         case "IDLE": return Mode.IDLE; case "ATTACK": case "HUNT": return Mode.ATTACK; case "RTB": return Mode.RTB;
         default: return d;
     }
@@ -888,11 +892,12 @@ void Command(string a)
         case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;
         case "focus": SplitFocus = false; break;
         case "ready": SatOn = false; SetMode(Mode.FORM); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _ready = true; } break;   // READY: hold this spot (the carrier link's HOME is ignored), scan all round, fight when something comes, come back
+        case "sentry": SatOn = false; SetMode(Mode.FORM); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _sentry = true; } break;   // SENTRY: the swarm holds this spot, hunts down anything that comes within Sentry Range (no Engage Radius leash), comes back
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "reload": LoadConfig(); KzLoad(); AiGateLoad(); GetBlocks(); break;
     }
 }
-void SetMode(Mode m) { _mode = m; _ready = false; _run = Run.SETUP; if (m == Mode.IDLE) Release(); }
+void SetMode(Mode m) { _mode = m; _ready = false; _sentry = false; _run = Run.SETUP; if (m == Mode.IDLE) Release(); }
 
 // =====================================================================
 void LoadConfig()
@@ -918,6 +923,7 @@ void LoadConfig()
     SatPeriod = Math.Max(0, Cfg(S, "Satellite Orbit Period (s)", SatPeriod));
     SepRadius = Cfg(S, "Separation Radius", SepRadius);
     EngageRadius = Cfg(S, "Engage Radius From Home", EngageRadius);
+    SentryRange = Cfg(S, "Sentry Range (m)", SentryRange);
     MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
     CruiseSpeed = Cfg(S, "Cruise Speed", CruiseSpeed);
     AccelGain = Cfg(S, "Velocity Gain", AccelGain);
@@ -1101,7 +1107,7 @@ void ReadIGC()
         _hvP = _dynHome; _hvT = _dynHomeT;
     }
 }
-Vector3D HomeVel() { return (!_ready && _now - _dynHomeT < 2 && !(_mode != Mode.RTB && _tgt == null && _now - _assistT < 4)) ? _homeV : Vector3D.Zero; }   // zero while the home point is not the carrier
+Vector3D HomeVel() { return (!_ready && !_sentry && _now - _dynHomeT < 2 && !(_mode != Mode.RTB && _tgt == null && _now - _assistT < 4)) ? _homeV : Vector3D.Zero; }   // zero while the home point is not the carrier
 
 void Broadcast()
 {
@@ -1254,7 +1260,8 @@ void Housekeeping()
     foreach (var t in _contacts.Values)
     {
         Vector3D p = t.P(_now);
-        if (_mode == Mode.FORM && Vector3D.Distance(p, home) > EngageRadius && !KzLive(t.Id)) continue;
+        if (_sentry && _mode == Mode.FORM) { if (t != _tgt && Vector3D.DistanceSquared(p, me) > SentryRange * SentryRange && !KzLive(t.Id)) continue; }   // SENTRY: wake on anything inside Sentry Range, then chase it anywhere
+        else if (_mode == Mode.FORM && Vector3D.Distance(p, home) > EngageRadius && !KzLive(t.Id)) continue;
         double score = Vector3D.Distance(p, me);
         score += HiveScore(t) + KzScore(t);                    // split across targets (or focus fire)
         if (t == _tgt) score -= 400;
@@ -1332,7 +1339,7 @@ Vector3D SpherePoint(int i, int n)
 double HomePad() { return (_now - _homeRT < 5 && _now - _dynHomeT < 5) ? _homeR + 25 : 0; }   // stay outside a carrier's hull
 Vector3D Home()
 {
-    if (_ready && _mode == Mode.FORM) return _home;
+    if ((_ready || _sentry) && _mode == Mode.FORM) return _home;
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
     return (_now - _dynHomeT < 5) ? _dynHome : _home;
 }
@@ -1607,7 +1614,7 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("GNAT SWARM AI v").Append(VER).Append('\n');
-    _sb.Append("Mode : ").Append(_mode).Append(_tgt != null && _mode != Mode.RTB ? "  " + _run : "").Append('\n');
+    _sb.Append("Mode : ").Append(_sentry && _mode == Mode.FORM ? "SENTRY" : _mode.ToString()).Append(_tgt != null && _mode != Mode.RTB ? "  " + _run : "").Append('\n');
     _sb.Append("Swarm: #").Append(_idx + 1).Append(" of ").Append(_n).Append('\n');
     if (_fc != "") _sb.Append("1st contact ").Append(_fc).Append(' ').Append((_now - _fcT).ToString("0")).Append(" s ago\n");
     if (SatOn && _mode == Mode.FORM) _sb.Append("Satellite : ring ").Append(_satR.ToString("0")).Append(" m\n");
@@ -1975,7 +1982,7 @@ bool RaidOn
     get
     {
         if (_tgt != null || !(_mode == Mode.ATTACK || _mode == Mode.FORM) || _aiOn || _now - _hitLastT >= RaidLife) return false;
-        if (_mode == Mode.FORM && Vector3D.Distance(_rc.GetPosition(), Home()) > EngageRadius * 0.5) return false;   // guard mode: do not wander off
+        if (_mode == Mode.FORM && !_sentry && Vector3D.Distance(_rc.GetPosition(), Home()) > EngageRadius * 0.5) return false;   // guard mode: do not wander off
         double st; HitAxis(out st);
         return st >= (_raidActive ? RaidMinHold : RaidMinStart);   // wait until the bearing is trustworthy (a few hits)
     }

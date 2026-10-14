@@ -17,6 +17,12 @@ Shared script blocks (`tools/blocks.json`, `tools/*_sync.py`) are the cheapest w
 
 (none)
 
+## Applied 2026-10-14 (SENTRY mode, owner request "sentry mode for all drones")
+
+| Improvement | Applied to | Not applied to (why) |
+|---|---|---|
+| `sentry` command / `Start Mode` SENTRY + `Sentry Range (m)=2500`: still on the spot until a target is within range, then hunt it with no leash, then back to the spot (Storage keeps it) | Hornet, Watcher, Lancer, Harrier, Aegis, Mantis, Basilisk, Wasp (Flight), Longbow S/L, Gnat, Shrike + every warship Helm, Tube rams (all), Stinger (wait and launch only); FLEET block default `Allowed Commands` | Midge (scriptless), Peeper / Spotter (unarmed scouts), `WaspAI.cs` (legacy single-PB, no blueprint, would pass 100k) |
+
 ## Applied 2026-10-14 (from the Ballista work of the day)
 
 Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95 wins of 270, no script exceptions; Helm selftests hsplit, M2, M3, M6 pass. Nothing verified in the game. Release zips not rebuilt.
@@ -37,6 +43,7 @@ Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95
 | Improvement | Applied to | Notes |
 |---|---|---|
 | Harasser defence (Ballista Lookout) | Warden, Leviathan, Corsair: the LOOKOUT block now also lives in StaffAI.cs, switched on in their Staff PB Custom Data | sim: Warden -10 to -13 % damage, Corsair hit rate 91 -> 74 % (damage unchanged), Leviathan no measurable gain; docs/design/ballista_harasser_defence.md section 12 |
+| Railgun power (Ballista: power for a full rail recharge, thrust to pay for it) | Longbow S, Longbow L (+ Seeker), Mantis: reactors >= rail draw; reactors + batteries >= rail + larger thruster group per axis; acceleration and turn rates >= before | docs/design/railgun_power.md; Warden, Corsair, Leviathan already covered by their reactors |
 
 ## Role-specific (checked, not retrofitted)
 - Tube drones (2026-10-14): critical systems at the rear, side thrusters right behind the nose; W tubes come back for a kinetic second ram after the blast. Ram drones only: their nose is the weapon and takes the impact.

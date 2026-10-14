@@ -112,7 +112,8 @@ enum Mode { IDLE, GUARD, HUNT, ASSIST, RTB, FOLLOW }
 Mode _mode = Mode.IDLE;
 MyIni _ini = new MyIni();
 double _now = 0; long _tick = 0;
-Vector3D _home; bool _homeSet = false, _ready = false;
+Vector3D _home; bool _homeSet = false, _ready = false, _sentry = false;
+double SentryRange = 2500;   // SENTRY: wake on a target this close (the AI Offensive block's search range). CustomData "Sentry Range (m)"
 Vector3D _dynHome; double _dynHomeT = -99;
 
 IMyShipController _rc;
@@ -842,13 +843,13 @@ public Program()
     catch (Exception ex) { CtorErr("modules", ex); }
     try
     {
-        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _mode = _ready ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
+        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _sentry = StartMode.Trim().ToUpperInvariant() == "SENTRY"; _mode = _ready || _sentry ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
         if (!string.IsNullOrEmpty(Storage))
         {
             var p = Storage.Split(';');
             double x, y, z;
             if (p.Length >= 5 && double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
-            { _mode = ParseMode(p[0], _mode); _ready = p.Length > 5 && p[5] == "1"; _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
+            { _mode = ParseMode(p[0], _mode); _ready = p.Length > 5 && p[5] == "1"; _sentry = p.Length > 6 && p[6] == "1"; _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
         }
     }
     catch (Exception ex) { CtorErr("storage", ex); }
@@ -872,14 +873,15 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", _ready ? "1" : "0");
+    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", _ready ? "1" : "0", _sentry ? "1" : "0");
 }
 
 Mode ParseMode(string s, Mode def)
 {
     switch (s.Trim().ToUpperInvariant())
     {
-        case "IDLE": return Mode.IDLE; case "GUARD": return Mode.GUARD; case "HUNT": return Mode.HUNT;
+        case "IDLE": return Mode.IDLE; case "GUARD": return (int)def == -1 && (_ready || _sentry) ? (Mode)(-2) : Mode.GUARD; case "HUNT": return Mode.HUNT;
+        case "SENTRY": return (int)def == -1 && _sentry && _mode == Mode.GUARD ? Mode.GUARD : def;   // (def == -1: the Staff link asks whether the verb changes nothing)
         case "ASSIST": return Mode.ASSIST; case "RTB": return Mode.RTB; case "FOLLOW": case "ESCORT": return Mode.FOLLOW; case "SATELLITE": case "SAT": case "ORBIT": return Mode.FOLLOW; default: return def;
     }
 }
@@ -959,13 +961,14 @@ void Command(string a)
         case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;
         case "focus": SplitFocus = false; break;
         case "ready": SetMode(Mode.GUARD); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _ready = true; } break;   // READY: hold this spot (the carrier link's HOME is ignored), scan all round, fight when something comes, come back
+        case "sentry": SetMode(Mode.GUARD); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _sentry = true; } break;   // SENTRY: hold this spot, hunt down anything that comes within Sentry Range (no leash), come back
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range": double r; if (w.Length > 1 && double.TryParse(w[1], out r)) ForcedRange = Math.Max(0, r); break;
         case "reload": LoadConfig(); KzLoad(); AiGateLoad(); GetBlocks(); break;
     }
 }
 
-void SetMode(Mode m) { _mode = m; _ready = false; if (m == Mode.IDLE || m == Mode.ASSIST) Release(); }
+void SetMode(Mode m) { _mode = m; _ready = false; _sentry = false; if (m == Mode.IDLE || m == Mode.ASSIST) Release(); }
 
 // =====================================================================
 void LoadConfig()
@@ -996,6 +999,7 @@ void LoadConfig()
     GatTol = Cfg(S, "Gatling Fire Window Multiplier", GatTol);
     ForcedRange = Cfg(S, "Forced Range (0: auto)", ForcedRange);
     GuardRadius = Cfg(S, "Guard Radius", GuardRadius);
+    SentryRange = Cfg(S, "Sentry Range (m)", SentryRange);
     MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
     CruiseSpeed = Cfg(S, "Cruise Speed", CruiseSpeed);
     DriftSpeed = Cfg(S, "Drift Speed While Aiming", DriftSpeed);
@@ -1370,7 +1374,8 @@ void PruneAndSelect()
     foreach (var t in _contacts.Values)
     {
         Vector3D p = t.P(_now);
-        if (_mode == Mode.GUARD && Vector3D.Distance(p, home) > GuardRadius && !KzLive(t.Id)) continue;
+        if (_sentry && _mode == Mode.GUARD) { if (t != _tgt && Vector3D.DistanceSquared(p, me) > SentryRange * SentryRange && !KzLive(t.Id)) continue; }   // SENTRY: wake on anything inside Sentry Range, then chase it anywhere
+        else if (_mode == Mode.GUARD && Vector3D.Distance(p, home) > GuardRadius && !KzLive(t.Id)) continue;
         if (_mode == Mode.FOLLOW && Vector3D.DistanceSquared(p, home) > LkEngage * LkEngage) continue;   // FOLLOW: only threats near the owner
         Vector3D d = p - me; double dist = d.Length();
         double ang = Math.Acos(MathHelper.Clamp(Vector3D.Dot(d / Math.Max(dist, 1), fwd), -1, 1)) * 57.2958;
@@ -1390,7 +1395,7 @@ void PruneAndSelect()
 
 Vector3D Home()
 {
-    if (_ready && _mode == Mode.GUARD) return _home;
+    if ((_ready || _sentry) && _mode == Mode.GUARD) return _home;
     if (_mode == Mode.FOLLOW && _lkOwner) return _lkOwnerP;   // FOLLOW: the owner (ship link or on foot), see the FOLLOW block
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
     return (_now - _dynHomeT < 5) ? _dynHome : _home;
@@ -1658,7 +1663,7 @@ void Control(double dt)
             }
         }
         want = (threat == 2 ? tv * 0.3 : tv + dir * vr) + lat + evade + (aimingPhase ? Vector3D.Zero : Evade()) + Separation(me);
-        if (_mode == Mode.GUARD && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
+        if (_mode == Mode.GUARD && !_sentry && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
         if (_mode == Mode.FOLLOW && LkFar(me)) want = LkBack(me);   // leash: drop the fight, back to the owner
     }
     double cap = (_tgt != null && _mode != Mode.RTB) || _mode == Mode.FOLLOW ? MaxSpeed : CruiseSpeed;
@@ -1937,7 +1942,7 @@ void Display()
 {
     string aim = "";
     if (_tgt != null) aim = "\nAim: " + AimLabel(_tgt) + " (" + _tgt.Hull.Count + " hull pts)" + AimInfo();
-    string s = "FLIGHT " + VER + "  " + _mode + "  tgt " + (_tgt != null ? _tgt.Src : "-") + "  staff " + (LkAlive ? "ok" : "none") + aim + (_fc != "" ? "\n1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago" : "") + (_err != ""? "\n! " + _err : "") + (_crash != "" ? "\n! Script error: " + _crash : "");
+    string s = "FLIGHT " + VER + "  " + (_sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString()) + "  tgt " + (_tgt != null ? _tgt.Src : "-") + "  staff " + (LkAlive ? "ok" : "none") + aim + (_fc != "" ? "\n1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago" : "") + (_err != ""? "\n! " + _err : "") + (_crash != "" ? "\n! Script error: " + _crash : "");
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);
 }
