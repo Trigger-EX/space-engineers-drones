@@ -56,6 +56,9 @@ DRONES = {
     'Mantis':     ('extra',   'Mantis',    'MANTIS',   True),
     'Stinger':    ('stinger', 'Stinger',   'STINGER',  False),
     'Peeper':     ('peeper',  'Peeper',    'PEEPER',   False),
+    'Midge':      ('support', 'Midge',     'MIDGE',    False),       # scriptless (AI blocks): Hive Mother switches its AI behaviour on at release
+    # tube rams (TubeRamAI v1.1: held while welded to the printer, _SWARM heartbeat): no merge block of their own -> latch stalk
+    **{f'Tube {s}{w}': ('tube', f'Tube {s}{w}', 'TUBE', True) for s in ('2x2', '2x4', '3x3', '4x4') for w in ('', ' W')},
 }
 _DRONE_CACHE = {}
 
@@ -127,6 +130,12 @@ SPECS = [
          doc='6 Gnat bays, no thrusters: a stationary hive (still a DYNAMIC grid; never convert it to a station).'),
     dict(name='Probe Foundry',   groups=[('Peeper', 1, (1, 1))], max=1, per_dir=0,
          doc='1 bay, prints Peeper vitals probes (a stationary foundry: the Ballista carries one docked on connectors).'),
+    dict(name='Midge Nest',      groups=[('Midge', 2, (2, 1))], max=6, per_dir=2,
+         doc='2 bays, prints scriptless Midges (AI blocks, EXPERIMENTAL) and switches their AI behaviour on as they leave; 3 prints per bay (it cannot report in), then \'reload\'.'),
+    dict(name='Tube Foundry',    groups=[('Tube 2x2', 1, (1, 1)), ('Tube 2x4', 1, (1, 1)), ('Tube 3x3', 1, (1, 1)), ('Tube 4x4', 1, (1, 1))], max=8, per_dir=3,
+         caps={'TUBE': 8}, doc='one bay per small Tube ram (2x2, 2x4, 3x3, 4x4): reprints each tube that rams.'),
+    dict(name='Tube W Foundry',  groups=[('Tube 2x2 W', 1, (1, 1)), ('Tube 2x4 W', 1, (1, 1)), ('Tube 3x3 W', 1, (1, 1)), ('Tube 4x4 W', 1, (1, 1))], max=8, per_dir=3,
+         caps={'TUBE': 8}, doc='the warhead Tubes (2x2 W .. 4x4 W), one bay each.'),
     dict(name='Stinger Rack',    groups=[('Stinger', 4, (2, 2))], max=4, per_dir=2, rack=True,
          doc='RACK MODE: 4 Stingers stay docked; one is released per enemy sighting and told to launch.'),
 ]
@@ -143,7 +152,8 @@ def build(spec, lite):
         # one drone type: its cap is the printer's Max Drones (Hive Mother stopped at 6 of 8 with 3 per bay); mixed printers share it out
         cap = (spec.get('caps') or {}).get(tag, spec['max'] if len(spec['groups']) == 1 else max(4, 3 * count))
         for n in nums:
-            cfg.append(dict(n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
+            scriptless = not any('ProgrammableBlock' in b['xtype'] for b in drone.blocks)      # never reports in: cap the prints instead
+            cfg.append(dict(n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=max(1, cap // count) if scriptless else 0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
 
     if spec.get('turret') and not lite: pr.add_turret()
     if spec.get('guns'): pr.add_guns(spec['guns'])
@@ -158,7 +168,8 @@ def build(spec, lite):
     for dn, cc in comps.items(): comments.append(f'{dn}: ' + ', '.join(f'{k} {v}' for k, v in sorted(cc.items())))
     ini = PL.hive_ini(cfg, spec['max'], rack=spec.get('rack', False), relay=spec.get('relay', False), comments=comments)
     bp = pr.finish(script_text('HiveMotherAI.cs'), ini)
-    bp.spec = spec
+    bp.spec = spec; bp.printer = pr
+    PL.check_lanes(pr, bp)                   # every bay's exit lane free of printer blocks and other bays' drones (build fails otherwise)
     return bp
 
 DOCS = {s['name']: s['doc'] for s in SPECS}          # one-line description per printer (for the package README)

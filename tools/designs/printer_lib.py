@@ -149,6 +149,23 @@ def exit_prism(design, length=None, e=None):
     e = e or getattr(design, 'exit', None) or neg(design.c)
     return {(x + e[0] * k, y + e[1] * k, z + e[2] * k) for (x, y, z) in design.D for k in range(1, L + 1)}
 
+def check_lanes(printer, bp=None):
+    """the finished printer: every bay's exit lane (exit_prism along the bay's real exit direction, EXIT_LEN cells) holds no printer block
+    (bay hardware, pod, thrusters, guns, turret, antenna) and no cell of another bay's drone.  Raises AssertionError naming the blockers."""
+    bp = bp or printer.bp
+    occ = bp.occupancy()
+    drones = {r['n']: {add3(c, r['T']) for c in r['design'].D} for r in printer.records}
+    bad = []
+    for r in printer.records:
+        d = r['design']
+        lane = {add3(c, r['T']) for c in exit_prism(d, e=getattr(d, 'exit', None) or neg(d.c))}
+        hit = sorted(c for c in lane if c in occ)
+        oth = sorted((n, c) for n, cs in drones.items() if n != r['n'] for c in cs & lane)
+        if hit or oth:
+            bad.append(f'bay {r["n"]}: ' + ', '.join(sorted({occ[c]['name'] or occ[c]['sub'] for c in hit})[:4]) + (f' + {len(oth)} cells of other bays\' drones' if oth else ''))
+    assert not bad, f'{bp.name}: launch lane blocked: ' + '; '.join(bad)
+    return True
+
 def front_prism(design, length=None):
     """cells swept by the drone's footprint when it flies NOSE FIRST (drone Forward, 16 cells).  Welder bodies are 3 m long and used to end up
     in front of the nose (5 of 11 Hornet welders), so a drone that tried to take off straight ahead flew into them.  Empty when the printer's

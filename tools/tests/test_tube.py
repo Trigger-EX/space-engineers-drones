@@ -12,6 +12,33 @@ SECTION = {"Tube 2x2": (2, 2), "Tube 2x4": (4, 2), "Tube 3x3": (3, 3), "Tube 4x4
 CAP = {"Tube 2x2": 2, "Tube 2x4": 3, "Tube 3x3": 3, "Tube 4x4": 4}
 for _b in list(SECTION): SECTION[_b + " W"] = SECTION[_b]; CAP[_b + " W"] = CAP[_b]     # the warhead variants
 
+
+SYSTEM_KINDS = ('ctrl', 'gyro', 'bat', 'ai', 'ant')
+
+def check_rear_systems(tc, n, bp):
+    """critical systems at the rear: every RC / PB / gyro / battery / AI block / antenna (and side camera) lies behind both side-thruster
+    layers and the filler, in the layers just in front of the rear bank; the side thrusters sit right behind the nose; the nose camera stays in front"""
+    zs = lambda b: [c[2] for c in bp.cells(b)]
+    thr = [b for b in bp.blocks if b['kind'] == 'thr']
+    bank = min(min(zs(b)) for b in thr if b['fwd'] == 'Backward')
+    side_z = [z for b in thr if b['fwd'] != 'Backward' for z in zs(b)]
+    sys_ = [b for b in bp.blocks if b['kind'] in SYSTEM_KINDS]
+    tc.assertEqual(len([b for b in sys_ if b['kind'] == 'ctrl']), 2, n)
+    first = min(min(zs(b)) for b in sys_)
+    tc.assertGreater(first, max(side_z), f'{n}: a system block in front of the side thrusters')
+    occ = bp.occupancy()
+    # nothing but the nose (armour, warheads, nose cameras) in front of the side thrusters, nothing but armour between them and the systems
+    for (x, y, z), b in occ.items():
+        if z < min(side_z): tc.assertIn(b['kind'], ('armor', 'warhead', 'cam'), f'{n}: {b["name"] or b["sub"]} at {(x, y, z)} in the nose')
+        if max(side_z) < z < first: tc.assertIn(b['kind'], ('armor', None, ''), f'{n}: {b["name"] or b["sub"]} at {(x, y, z)}')
+    # the systems fill the layers right in front of the bank (Tube L 1x1: behind the bulkhead layer the outer rear thrusters sit on)
+    last_sys = max(max(zs(b)) for b in sys_)
+    tc.assertGreaterEqual(last_sys, bank - 2, f'{n}: systems end at z {last_sys}, bank at {bank}')
+    nose = [b for b in bp.blocks if b['kind'] == 'cam' and b['fwd'] == 'Forward']
+    tc.assertTrue(nose and all(max(zs(b)) <= 1 for b in nose), n)
+    for b in bp.blocks:
+        if b['kind'] == 'cam' and b['fwd'] != 'Forward': tc.assertGreaterEqual(min(zs(b)), first, f'{n}: side camera {b["name"]} not with the systems')
+
 class TubeTests(unittest.TestCase):
     def setUp(self):
         self.bps = {n: tube.MODELS[n](False) for n in SECTION}
@@ -77,15 +104,18 @@ class TubeTests(unittest.TestCase):
         for n, bp in self.bps.items():
             heads = [b for b in bp.blocks if b['sub'] == 'SmallWarhead']
             pb = [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_MyProgrammableBlock'][0]
+            self.assertNotIn('Max Rams', pb.get('custom_data', ''), n)                 # W tubes re-ram after the blast (no one-shot limit)
             if not n.endswith(' W'):
-                self.assertEqual(heads, [], n); self.assertNotIn('Max Rams=1', pb.get('custom_data', ''), n); continue
+                self.assertEqual(heads, [], n); continue
             W, H = SECTION[n]
             self.assertEqual(len(heads), W * H, n)                                   # one full layer...
             self.assertTrue(all(bp.cells(b)[0][2] == 1 for b in heads), n)       # ...right under the front heavy-armour layer
-            self.assertIn('Max Rams=1', pb.get('custom_data', ''), n)                # one-shot
             base = self.bps[n[:-2]]
             self.assertEqual(len(bp.blocks), len(base.blocks), n)                     # same size, a layer swapped
             self.assertAlmostEqual(C.total_mass(bp), C.total_mass(base), delta=0.05 * C.total_mass(base))
+
+    def test_rear_systems(self):
+        for n, bp in self.bps.items(): check_rear_systems(self, n, bp)
 
     def test_script_budget(self):
         self.assertLessEqual(len(C.script_text('TubeRamAI.cs')), 80000)
@@ -107,11 +137,14 @@ class TubeLargeTests(unittest.TestCase):
             self.assertEqual(len(pbs), 1, n); self.assertEqual(pbs[0]['name'], f'{n} PB')
             cd = pbs[0].get('custom_data', '')
             self.assertIn(f'Block Tag={n}', cd); self.assertIn('Start Mode (WAIT/HUNT)=HUNT', cd)
-            self.assertEqual(n.endswith(' W'), 'Max Rams=1' in cd, n)
+            self.assertNotIn('Max Rams', cd, n)                                    # W tubes re-ram after the blast
             self.assertEqual('1x1' in n, 'Nose Camera Setback (m)=2.5' in cd, n)
             names = [b['name'] for b in bp.blocks if b['name']]
             self.assertEqual(len(names), len(set(names)), n)
             self.assertEqual({b['sub'] for b in bp.blocks if b['kind'] == 'ai'}, {'LargeOffensiveCombat', 'LargeFlightMovement'}, n)
+
+    def test_rear_systems(self):
+        for n, bp in self.bps.items(): check_rear_systems(self, n, bp)
 
     def test_thrust_power_panels(self):
         st = C.stats_db()

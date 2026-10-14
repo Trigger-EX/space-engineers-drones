@@ -12,11 +12,13 @@
 //     fire on their own (a ship with turrets runs the turret-only mode: the fixed batteries refuse a track none of them can hit)
 //   * optional: a Timer whose name contains "Deadman" (5 s, Silent; its toolbar cuts thrusters and weapons), cameras, sensor, AI blocks tagged [AI]
 //
-//  MODES  AUTO = the Hornet modes (_mode: react guard hunt assist rtb idle; Start Mode default REACT, saved in Storage), MANUAL = somebody sits in the seat
+//  MODES  AUTO = the Hornet modes (_mode: react guard sentry hunt assist rtb idle; Start Mode default REACT, saved in Storage), MANUAL = somebody sits in the seat
 //   (held >= Seat Debounce 0.4 s) or "manual" was sent. The tick the seat is taken every gyro / thruster override is released, the dampener switch goes back to the
 //   pilot's own state, the AI blocks go off; tracking, sensors, turrets and the lock keep running. Seat empty >= Release Delay 1.5 s: back to _mode, the turn-rate cap
 //   ramps from the present rate to Max Turn over 2 s. No script output while MANUAL touches the guns (Auto Fire In Manual = false).
 //  COMMANDS (PB argument, IGC "<Tag>_CMD", toolbar)   all Hornet verbs except follow / satellite / seeker / launch / armed / disarm, and
+//   sentry                           hold THIS spot until a target comes within Sentry Range (2,500 m = the AI Offensive search range), hunt it
+//                                    down with no Guard Radius leash, then fly back and wait again (Start Mode SENTRY works too; saved in Storage)
 //   manual | auto | pilot (toggle)   MANUAL / AUTO regardless of the seat until the seat changes ("auto" with a pilot aboard = the ship flies itself with a HUD)
 //   assist hud | fbw | off           HUD: lead pip + fire window on the cockpit surface; FBW: fly-by-wire blend (stick rate + PD rate to the lead point, lock needed)
 //   assist (no word)                 the Hornet ASSIST mode (script aims and fires, you fly)
@@ -80,7 +82,8 @@ MyIni _ini = new MyIni();
 double _now = 0;
 long _tick = 0;
 Vector3D _home;
-bool _homeSet = false;
+bool _homeSet = false, _sentry = false;
+double SentryRange = 2500;   // SENTRY: wake on a target this close (the AI Offensive block's search range). CustomData "Sentry Range (m)"
 Vector3D _dynHome; double _dynHomeT = -99;
 
 // blocks
@@ -775,7 +778,7 @@ void ManFly(double dt)
     _asOv = ov;
 }
 
-string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl == 2 ? "FBW" : "HUD") : "") : (_occ ? "AUTO (pilot aboard) " : "AUTO ") + _mode; }
+string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl == 2 ? "FBW" : "HUD") : "") : (_occ ? "AUTO (pilot aboard) " : "AUTO ") + (_sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString()); }
 
 // compact cockpit page (<= 8 lines)
 string ManHud()
@@ -1366,13 +1369,13 @@ public Program()
     catch (Exception ex) { CtorErr("modules", ex); }
     try
     {
-        _mode = ParseMode(StartMode, Mode.IDLE);
+        _sentry = StartMode.Trim().ToUpperInvariant() == "SENTRY"; _mode = _sentry ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
         if (!string.IsNullOrEmpty(Storage))
         {
             var p = Storage.Split(';');
             if (p.Length >= 5)
             {
-                _mode = ParseMode(p[0], _mode);
+                _sentry = p[0] == "SENTRY"; _mode = _sentry ? Mode.GUARD : ParseMode(p[0], _mode);
                 double x, y, z;
                 if (double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
                 { _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
@@ -1402,7 +1405,7 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", ManSave(), BatSave());
+    Storage = string.Join(";", _sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", ManSave(), BatSave());
 }
 
 Mode ParseMode(string s, Mode def)
@@ -1471,6 +1474,7 @@ void Command(string a)
     {
         case "guard": SetMode(Mode.GUARD); break;
         case "react": SetMode(Mode.REACT); break;
+        case "sentry": SetMode(Mode.GUARD); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _sentry = true; } break;   // SENTRY: hold this spot, hunt down anything that comes within Sentry Range (no leash), come back
         case "hunt": SetMode(Mode.HUNT); break;
         case "assist": SetMode(Mode.ASSIST); break;
         case "rtb": SetMode(Mode.RTB); break;
@@ -1493,7 +1497,7 @@ void Command(string a)
 
 void SetMode(Mode m)
 {
-    _mode = m;
+    _mode = m; _sentry = false;
     if ((m == Mode.IDLE || m == Mode.ASSIST) && !Man) Release();
 }
 
@@ -1506,6 +1510,7 @@ void LoadConfig()
     const string S = "Shrike";
     Tag = Cfg(S, "IGC Tag", Tag);
     StartMode = Cfg(S, "Start Mode (GUARD/HUNT/ASSIST/IDLE)", StartMode);
+    SentryRange = Cfg(S, "Sentry Range (m)", SentryRange);
     Standoff = Cfg(S, "Standoff Range", Standoff);
     SepRange = Cfg(S, "Wingmate Separation Range (m)", SepRange); SepSpeed = Cfg(S, "Wingmate Separation Speed (m/s)", SepSpeed); MateClear = Cfg(S, "Wingmate Fire Clearance (m)", MateClear);
     MinRange = Cfg(S, "Min Range", MinRange);
@@ -1838,7 +1843,8 @@ void PruneAndSelect()
     foreach (var t in _contacts.Values)
     {
         Vector3D p = t.P(_now);
-        if (Gd && !Man && Vector3D.Distance(p, home) > GuardRadius && !KzLive(t.Id)) continue;
+        if (_sentry && _mode == Mode.GUARD) { if (!Man && t != _tgt && Vector3D.DistanceSquared(p, me) > SentryRange * SentryRange && !KzLive(t.Id)) continue; }   // SENTRY: wake on anything inside Sentry Range, then chase it anywhere
+        else if (Gd && !Man && Vector3D.Distance(p, home) > GuardRadius && !KzLive(t.Id)) continue;
         Vector3D d = p - me; double dist = d.Length();
         double ang = Math.Acos(MathHelper.Clamp(Vector3D.Dot(d / Math.Max(dist, 1), fwd), -1, 1)) * 57.2958;
         double closing = Vector3D.Dot(t.V(_now) - myVel, -d / Math.Max(dist, 1));
@@ -1855,6 +1861,7 @@ void PruneAndSelect()
 
 Vector3D Home()
 {
+    if (_sentry && _mode == Mode.GUARD) return _home;
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
     return (_now - _dynHomeT < 5) ? _dynHome : _home;
 }
@@ -2017,7 +2024,7 @@ void Control(double dt)
         }
         double orbit = !_flee && dist < Math.Max(MaxFireRange, Standoff) * 1.2 ? OrbitSpeed : 0;
         want = tv + dir * vr + tan * orbit * _orbitSign + (Jink && !_flee && !HdJ() ? _jink : Vector3D.Zero) + Evade() + Separation(me);
-        if (Gd && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
+        if (Gd && !_sentry && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
     }
     double cap = _tgt != null && _mode != Mode.RTB ? MaxSpeed : CruiseSpeed;
     want = HdWant(want, cap);   // HARASSER LINK: the Spotter's dodge bias (corner jink across the harasser's line of sight)

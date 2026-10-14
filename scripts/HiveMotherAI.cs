@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.6  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.7  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -59,6 +59,9 @@
 //  (it still waits until the old drone has left the projection), and the welders stay on from CHARGE to the next BUILD
 //  ("Welders Stay On Through Release", not in rack mode).
 //
+//  v2.7 SCRIPTLESS DRONES (Midge): with no drone PB, ARM collects the drone's AI Flight / AI Offensive / AI Defensive blocks and Separate
+//  switches their AI behaviour on in the tick the merge blocks go off (after the split the printer can no longer reach them).
+//
 //  COMMANDS: start | stop | max <n> | release [bay] | hold <bay> | unhold <bay> |
 //            reload | relay on|off
 //  CONFIG: Custom Data ([Hive Mother] and [Bay N] sections, created on first run).
@@ -66,7 +69,7 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.6";
+const string VER = "2.7";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
@@ -90,7 +93,7 @@ class Bay
 {
     public int N; public string Tag = "GNAT", Prefix = "Gnat"; public bool Held; public int Cap = 8, MaxPrints = 0, Printed = 0;
     public IMyProjector Proj; public List<IMyShipWelder> Welders = new List<IMyShipWelder>(); public IMyShipMergeBlock Merge;
-    public IMyShipMergeBlock DMerge; public IMyProgrammableBlock DPb; public List<IMyBatteryBlock> DBats = new List<IMyBatteryBlock>();
+    public IMyShipMergeBlock DMerge; public List<IMyTerminalBlock> Ai = new List<IMyTerminalBlock>(); public IMyProgrammableBlock DPb; public List<IMyBatteryBlock> DBats = new List<IMyBatteryBlock>();
     public string State = "IDLE"; public double T; public int Rem = -1; public double LastProgress; public bool SawWork, Recompiled, Nudged;
     public string Msg = ""; public int Faults; public Vector3D Away; public string Exit = "";
     // finish check
@@ -881,7 +884,15 @@ bool StillAttached(Bay b)
 bool Arm(Bay b)
 {
     FindDrone(b);
-    if (b.DPb == null) { b.Msg = "ARM: drone PB not visible - relying on the JOIN broadcast"; return false; }
+    if (b.DPb == null)
+    {   // scriptless drone (Midge: AI blocks only): its AI behaviour is switched on in Separate, the tick its merge block goes off
+        b.Ai.Clear();
+        GridTerminalSystem.GetBlocksOfType(_tmp, x => x != null && x.CustomName.StartsWith(b.Prefix) && !x.CustomName.Contains("[Bay") && x.CubeGrid == b.Merge.CubeGrid &&
+            (x.BlockDefinition.TypeIdString.Contains("FlightMovement") || x.BlockDefinition.TypeIdString.Contains("CombatBlock")) && Nearest(x.GetPosition()) == b);
+        b.Ai.AddRange(_tmp);
+        b.Msg = b.Ai.Count > 0 ? "" : "ARM: drone PB not visible - relying on the JOIN broadcast";
+        return b.Ai.Count > 0;
+    }
     try
     {
         if (!b.LaunchWritten)
@@ -922,6 +933,8 @@ void Separate(Bay b)
     _where = "bay " + b.N + " Separate merge blocks off";
     SetOn(b.Merge, false);
     SetOn(b.DMerge, false);
+    foreach (var x in b.Ai) { try { x.ApplyAction("OnOff_On"); x.ApplyAction("ActivateBehavior_On"); } catch (Exception ex) { Err(ex, b); } }
+    b.Ai.Clear();
     b.State = "RELEASE"; b.T = _now; b.Nudged = false; b.Printed++;
 }
 
@@ -971,7 +984,7 @@ void Command(string a)
         case "hold": if (w.Length > 1 && int.TryParse(w[1], out n)) foreach (var b in _bays) if (b.N == n) SetHold(b, true); break;
         case "unhold": if (w.Length > 1 && int.TryParse(w[1], out n)) foreach (var b in _bays) if (b.N == n) { SetHold(b, false); if (b.State == "FAULT") b.State = "IDLE"; } break;
         case "relay": Relay = w.Length < 2 || w[1] != "off"; break;
-        case "reload": LoadConfig(); GetBlocks(); _errs.Clear(); _errTotal = 0; break;
+        case "reload": LoadConfig(); GetBlocks(); _errs.Clear(); _errTotal = 0; foreach (var b in _bays) b.Printed = 0; break;   // also restarts the Max Prints count
     }
 }
 

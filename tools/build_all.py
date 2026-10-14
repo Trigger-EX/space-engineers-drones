@@ -74,6 +74,7 @@ MODEL_NOTES = {
 }
 COMMAND_DOC = {
     'guard': 'hold the home point, engage anything inside Guard Radius', 'hunt': 'chase and engage any target, actively scan',
+    'sentry': 'hold this spot, still, until a target comes within Sentry Range (2.5 km, the AI Offensive search range); then hunt it down with no leash and come back',
     'assist': 'you fly, the script aims and fires', 'rtb': 'fly home, then idle', 'idle': 'release all control (`stop` is an alias)',
     'lock': 'raycast-lock whatever the nose camera points at', 'unlock': 'drop the current target', 'next': 'ignore the current target for 60 s',
     'split': 'split targets across the hive', 'focus': 'focus fire', 'ai': '`ai on|off` AI-block search assist', 'aim': '`aim <mode>` aim point (AUTO / BREACH / ENGINES / FACING / SPREAD / CENTER)', 'breach': '`breach on|off` AUTO drills one hole into big ships (v2.6)', 'seeker': '`seeker on|off` let a [Seeker] turret guide the aim (v2.6, experimental)',
