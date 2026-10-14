@@ -124,12 +124,112 @@ def _variant(name):
             ins=7, up=[0, 3], down=[0, 3], left=[0, 3], right=[0, 3]))
     raise KeyError(name)
 
+# ---------------------------------------------------------------------------------------------
+# LARGE-grid tubes: Tube L 1x1 (a long one-block column) and Tube L 2x2.  Same idea, large blocks (2.5 m cells): heavy-armour nose
+# (second layer = large warheads in the W variants), RC / PB / batteries / gyro / AI blocks / compact antenna in the body, side thrusters
+# (push up, down, left, right; no reverse), a rear bank, and heavy armour panels bolted round the body (gunfire killed the small tubes'
+# systems from the side before they reached a Basilisk in the sim).  Large-grid quirks: the large ion thruster is 1 x 1 x 2, so the 1x1
+# column cannot recess its side thrusters (each sits half in the column, its nozzle flush with the panels) and gets a cruciform rear bank of
+# five (one thruster would give 3 m/s2); PB, gyro and compact antenna mount on their Bottom face only, so they face it forward onto the
+# block in front; the 1x1's nose cameras sit above and below the nose, one block back, so the contact fuse adds that setback.
+# No merge latch: the racks and printers are small grid.
+
+LHEAVY, LLIGHT, LPANEL = "LargeHeavyBlockArmorBlock", "LargeBlockArmorBlock", "LargeArmorPanelHeavy"
+
+def _orient(face, gdir, along=None):
+    """(fwd, up) for a block whose local `face` points along grid direction `gdir`; with `along`, prefer an orientation whose local Forward
+    lies on that grid axis (so panels in a row meet edge to edge)"""
+    cands = []
+    for f in DIR:
+        for u in DIR:
+            if sum(a * b for a, b in zip(DIR[f], DIR[u])): continue
+            r = sebp.cross(DIR[f], DIR[u])
+            loc = {"Forward": DIR[f], "Backward": tuple(-v for v in DIR[f]), "Up": DIR[u], "Down": tuple(-v for v in DIR[u]),
+                   "Right": r, "Left": tuple(-v for v in r)}
+            if loc[face] == DIR[gdir]: cands.append((f, u))
+    if along: cands.sort(key=lambda fu: 0 if fu[0] in along else 1)
+    return cands[0]
+
+def tube_large(name):
+    w = name.endswith(" W"); base = name[:-2] if w else name
+    bp = Blueprint(name, "Large", seed=seed_for(name), legacy_shapes=True)
+    script = script_text("TubeRamAI.cs")
+    one = base == "Tube L 1x1"
+    custom = (f"[Tube]\nIGC Tag=TUBE\nBlock Tag={name}\n" + ("Max Rams=1\n" if w else "") + "Start Mode (WAIT/HUNT)=HUNT\n"
+              + ("Nose Camera Setback (m)=2.5\n" if one else "") + "\n[AI Gate]\nAI Window (s)=20\nScript Search Window (s)=5\n")
+    BF = _orient("Down", "Forward", along=("Up", "Down"))          # Bottom face forward (PB, gyro, compact antenna)
+    def heavy(c, col=HULL_COL): bp.armor(*c, color=col, sub=LHEAVY)
+    def light(c): bp.armor(*c, color=HULL_COL, sub=LLIGHT)
+    def warhead(c, i): bp.add("MyObjectBuilder_Warhead", "LargeWarhead", c, "Forward", "Up", f"{name} Warhead {i}", (0.98, 0.65, 0.05), kind="warhead")
+    def rc(c): bp.add("MyObjectBuilder_RemoteControl", "LargeBlockRemoteControl", c, "Forward", "Up", f"{name} Remote Control", kind="ctrl")
+    def pb(c): bp.add("MyObjectBuilder_MyProgrammableBlock", "LargeProgrammableBlock", c, BF[0], BF[1], f"{name} PB", extra=pb_extra(script), kind="ctrl", custom_data=custom)
+    def gyro(c, n=""): bp.add("MyObjectBuilder_Gyro", "LargeBlockGyro", c, BF[0], BF[1], f"{name} Gyroscope{n}", kind="gyro")
+    def ai(c, off): bp.add("MyObjectBuilder_OffensiveCombatBlock" if off else "MyObjectBuilder_FlightMovementBlock", "LargeOffensiveCombat" if off else "LargeFlightMovement",
+                           c, "Forward", "Up", f"{name} AI {'Offensive' if off else 'Flight'} [AI]", kind="ai")
+    def antenna(c): bp.add("MyObjectBuilder_RadioAntenna", "LargeBlockCompactRadioAntenna", c, BF[0], BF[1], f"{name} Antenna", extra=C.ant_extra(2500), kind="ant")
+    nbat = [0]
+    def battery(c): nbat[0] += 1; C.bat(bp, c, f"{name} Battery {nbat[0]}")
+    def side(c, d, label): C.thr(bp, c, d, "Forward" if d in ("Up", "Down") else "Up", f"{name} Ion Side {label}")
+    nmain = [0]
+    def main(c): nmain[0] += 1; C.thr(bp, c, "Backward", "Up", f"{name} Ion Main {nmain[0]}")
+    PANEL_TO = {(-1, 0): "Right", (1, 0): "Left", (0, -1): "Up", (0, 1): "Down"}     # ring offset -> grid direction of the hull it is bolted to
+    def panels(cells, skip):
+        occ = bp.occupancy()
+        for c in cells:
+            if c in occ or c in skip: continue
+            x, y, z = c
+            off = (-1 if x < 0 else 1 if x >= W else 0, -1 if y < 0 else 1 if y >= H else 0)
+            f, u = _orient("Right", PANEL_TO[off], along=("Forward", "Backward"))
+            bp.add("MyObjectBuilder_CubeBlock", LPANEL, c, f, u, color=HULL_COL)
+    if one:
+        W = H = 1
+        heavy((0, 0, 0), CAP_COL)
+        if w: warhead((0, 0, 1), 1)
+        else: heavy((0, 0, 1))
+        C.cam(bp, (0, 1, 1), "Forward", "Up", f"{name} Camera Nose 1", 3); heavy((0, 1, 2))
+        C.cam(bp, (0, -1, 1), "Forward", "Up", f"{name} Camera Nose 2", 3); heavy((0, -1, 2))
+        rc((0, 0, 2)); pb((0, 0, 3))
+        for z in (4, 5, 6): battery((0, 0, z))
+        gyro((0, 0, 7)); light((0, 0, 8))
+        ai((0, 0, 9), True); light((0, 0, 10)); ai((0, 0, 11), False); light((0, 0, 12))
+        antenna((0, 0, 13))                                   # z 13..15
+        side((-1, 0, 16), "Left", "Left"); side((0, 0, 17), "Right", "Right")
+        side((0, 0, 18), "Up", "Up"); side((0, -1, 19), "Down", "Down")
+        light((0, 0, 20))
+        for c in ((-1, 0, 20), (1, 0, 20), (0, -1, 20), (0, 1, 20)): light(c)          # bulkhead the outer rear thrusters sit on
+        for c in ((0, 0, 21), (-1, 0, 21), (1, 0, 21), (0, -1, 21), (0, 1, 21)): main(c)
+        ring = [(x, y, z) for z in range(2, 20) for (x, y) in ((-1, 0), (1, 0), (0, -1), (0, 1))]
+        panels(ring, skip=set(bp.reserve))
+    else:
+        W = H = 2
+        for x in (0, 1):
+            for y in (0, 1):
+                if (x, y) != (0, 1): heavy((x, y, 0), CAP_COL)
+        C.cam(bp, (0, 1, 0), "Forward", "Up", f"{name} Camera Nose", 3)
+        i = 0
+        for x in (0, 1):
+            for y in (0, 1):
+                if w: i += 1; warhead((x, y, 1), i)
+                else: heavy((x, y, 1))
+        pb((0, 0, 2)); rc((1, 0, 2)); battery((0, 1, 2)); battery((1, 1, 2))
+        light((0, 0, 3)); light((1, 0, 3)); ai((0, 1, 3), True); ai((1, 1, 3), False)
+        gyro((0, 0, 4)); antenna((1, 0, 4))                  # antenna z 4..6
+        for c in ((0, 1, 4), (1, 1, 4), (0, 0, 5), (0, 1, 5), (1, 1, 5), (0, 0, 6), (0, 1, 6), (1, 1, 6)): light(c)
+        side((0, 0, 7), "Up", "Up"); side((1, 0, 7), "Down", "Down")          # columns: nozzles flush with the top / bottom face
+        side((0, 1, 8), "Left", "Left"); side((0, 0, 8), "Right", "Right")    # rows: nozzles flush with the left / right face
+        for x in (0, 1):
+            for y in (0, 1): main((x, y, 9))
+        ring = [(x, y, z) for z in range(2, 9) for (x, y) in ((-1, 0), (-1, 1), (2, 0), (2, 1), (0, -1), (1, -1), (0, 2), (1, 2))]
+        panels(ring, skip=set(bp.reserve))
+    return finalize(bp)
+
 def build(name):
+    if name.startswith("Tube L "): return tube_large(name)
     w = name.endswith(" W")                         # "Tube 3x3 W": the warhead variant of "Tube 3x3"
     v = _variant(name[:-2] if w else name)
     return tube_frame(name, v["W"], v["H"], v["cap"], v["body"], v["spec"], warheads=w)
 
-BASE = ("Tube 2x2", "Tube 2x4", "Tube 3x3", "Tube 4x4")
+BASE = ("Tube 2x2", "Tube 2x4", "Tube 3x3", "Tube 4x4", "Tube L 1x1", "Tube L 2x2")
 MODELS = {n: (lambda lite=False, n=n: build(n)) for n in BASE + tuple(b + " W" for b in BASE)}
 NO_LITE = set(MODELS)
 REQUIRED_AXES = {m: ("Forward", "Up", "Down", "Left", "Right") for m in MODELS}   # no reverse thrust: it brakes by flipping
@@ -139,13 +239,21 @@ DOCS = {
     'Tube 3x3': 'Kinetic ram drone, 1.5 x 1.5 m section, 5.5 m long, about 7.3 t, about 18 m/s2 forward and 2 m/s2 sideways: heavy-armour nose, 4 MW battery, 9 main ion thrusters, 4 recessed side thrusters (no reverse). AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
     'Tube 4x4': 'Kinetic ram drone, 2 x 2 m section, 6 m long, about 14.1 t, about 16 m/s2 forward and 2 m/s2 sideways: four-layer heavy-armour nose, 4 MW battery + 1 small, 16 main ion thrusters, 8 recessed side thrusters (2 per side, no reverse), two gyros. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
 }
+DOCS['Tube L 1x1'] = ('LARGE-grid ram drone: a one-block (2.5 m) column 52 m long plus a cruciform tail, about 107 t, about 16 m/s2 forward and 3 m/s2 sideways: '
+                      'two-block heavy-armour nose, heavy armour panels round the body, 3 large batteries, one large gyro, 4 side thrusters half sunk in the column (no reverse), '
+                      '5 rear thrusters, AI Offensive + AI Flight, compact antenna, nose cameras above and below the nose. Re-rams while it can fly. No merge latch.')
+DOCS['Tube L 2x2'] = ('LARGE-grid ram drone: 5 x 5 m section, 27.5 m long, about 105 t, about 13 m/s2 forward and 3.3 m/s2 sideways: two-layer heavy-armour nose with a flush '
+                      'camera, heavy armour panels round the body, 2 large batteries, one large gyro, 4 recessed side thrusters (no reverse), 4 rear thrusters, AI Offensive + AI Flight, '
+                      'compact antenna. Re-rams while it can fly. No merge latch.')
+DOCS['Tube L 1x1 W'] = 'Tube L 1x1 with its second nose block a large warhead (22 m blast): one-shot, fired on impact or by the contact fuse, armed only at the last moment.'
+DOCS['Tube L 2x2 W'] = 'Tube L 2x2 with its second nose layer 4 large warheads (22 m blast): one-shot, fired on impact or by the contact fuse, armed only at the last moment.'
 _WN = {'Tube 2x2 W': 4, 'Tube 2x4 W': 8, 'Tube 3x3 W': 9, 'Tube 4x4 W': 16}
 for _m, _n in _WN.items():
     DOCS[_m] = (f'{_m[:-2]} with its second nose layer replaced by {_n} small warheads, right under the front heavy armour (same size and mass): it rams once and fires them on impact '
                 '(velocity jump or the nose camera\'s contact fuse), armed only at the last moment (20 m from the hull or 0.3 s out, because gunfire sets armed warheads off) and never near its launch point.')
 _NOTE = ('Main thrust forward, recessed side thrusters up/down/left/right, no reverse: it brakes by flipping. Hunts by itself once off its rack (Start Mode HUNT). Finds targets with its AI Offensive block, rescanning every 5 s, confirmed by nose-camera rays (AI Behavior must be on; the in-game behaviour of an unarmed grid\'s AI blocks is unverified) or takes them from the fleet / hive / carrier channels or a player\'s `lock`. Ram damage is not verified in the game.')
 MODEL_NOTES = {m: _NOTE for m in MODELS}
-for _m in _WN: MODEL_NOTES[_m] = _NOTE + ' One-shot (Max Rams=1). The warheads are armed only by the script; keep the tube off friendly ships while it is in its final run.'
+for _m in list(_WN) + ['Tube L 1x1 W', 'Tube L 2x2 W']: MODEL_NOTES[_m] = _NOTE + ' One-shot (Max Rams=1). The warheads are armed only by the script; keep the tube off friendly ships while it is in its final run.'
 SCRIPTS = ['TubeRamAI.cs']
 
 if __name__ == "__main__":

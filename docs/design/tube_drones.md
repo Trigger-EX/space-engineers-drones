@@ -340,6 +340,34 @@ correction goes to the side thrusters first (`SideScale`), and only what they ca
 Sim, 1 seed each (same scenarios as before, not enough for a direction): 6 Tube 2x2 vs a Basilisk 3 contacts / 11.2 kHP (before 1 / 3.7 kHP),
 4 Tube 3x3 2 / 3.7 kHP (before 3 / 12.3 kHP), 4 Tube 4x4 1 / 2.6 kHP (before 1 / 7.6 kHP), 2 Tube 2x4 beat a Gnat; no script exceptions.
 
+**Large-grid tubes `Tube L 1x1`, `Tube L 2x2` and their W versions (owner request: large grid, with and without warheads, 1x1 long and
+2x2, armour panels on the sides allowed):** `tube_large()` in `tools/designs/tube.py`. Large-grid facts that shaped them: the large ion
+thruster is 1 x 1 x 2 (4.4 t, 346 kN, 3.36 MW: 79 N/kg against 119 for the small one), the large gyro weighs 12.8 t, PB / gyro / compact
+antenna mount on their Bottom face only (they face it forward onto the block in front), the large warhead blasts 22 m (small: 4.5 m).
+* **Tube L 1x1**: a one-block column, 21 blocks long. Heavy nose (2 blocks), RC, PB, 3 batteries (36 MW), gyro, AI Offensive, AI Flight,
+  compact antenna; four side thrusters each half sunk in the column (a 1-wide column cannot recess a 2-long thruster), nozzles flush with
+  the panels; a cruciform rear bank of 5 (one thruster alone gave about 3 m/s2). Nose cameras above and below the nose, one block back:
+  `Nose Camera Setback (m)=2.5` in its Custom Data, which the contact fuse adds. 107 t, 16.1 m/s2 forward, 3.2 sideways, 57.5 m overall.
+* **Tube L 2x2**: flush nose camera, two heavy nose layers, PB / RC / 2 batteries, AI blocks, gyro, compact antenna, recessed side
+  thrusters (as the small 2x2), 4 rear thrusters. 105 t, 13.1 m/s2 forward, 3.3 sideways, 27.5 m long.
+* **Armour panels**: `LargeArmorPanelHeavy` (330 kg, 1,650 HP, no DLC) on every free side cell of the body, kept off nozzle exhaust and
+  camera views. Why: in the sim the small tubes lost their systems to side fire before they reached a Basilisk.
+* **W**: the second nose layer is large warheads (1 on the 1x1, 4 on the 2x2), same script logic (one-shot, last-moment arming).
+* No merge latch (the racks and printers are small grid).
+
+Sim, 5 seeds each, 1v1 against a Basilisk at 1.5 to 2.2 km, no target cue and no start command (Start Mode HUNT):
+
+| Model | first target | rams | warheads fired | Basilisk damage avg | Basilisk blocks lost | tube blocks left |
+|---|---|--:|--:|--:|--:|--:|
+| Tube L 1x1 | 9.3 s | 9 | - | 24 kHP | 3.6 of 54 | 93 of 98 (won 1 of 5) |
+| Tube L 1x1 W | 6.7 to 9.3 s | 5 | 5 | 240 kHP | 35 of 54 | 65 of 98 |
+| Tube L 2x2 | 1.3 to 4 s | 7 | - | 24 kHP | 3.6 of 54 | 80 of 86 |
+| Tube L 2x2 W | 2.7 to 5.3 s | 1 | 16 | 278 kHP | 43 of 54 | 20 of 86 |
+
+The large tubes survive the approach (the small ones were shot apart); kinetic rams alone barely hurt a Basilisk in the sim's assumed
+collision model, the W versions wreck it (they are lost with it). The sim is optimistic for large ships (`packages/unknowns.md`: large
+thrusters and batteries die too slowly there). Nothing verified in the game.
+
 **Detection, the Ballista way (owner report: "tube is not detecting enemies"), and Start Mode HUNT:** the Ballista finds enemies with its
 AI Offensive block, not its cameras (`docs/design/ships/Ballista.md` 2: the cameras cover too little sky), and its Helm makes that block
 usable. `TubeRamAI` now does the same:

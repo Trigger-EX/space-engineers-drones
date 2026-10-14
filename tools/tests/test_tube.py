@@ -94,5 +94,48 @@ class TubeTests(unittest.TestCase):
             self.assertEqual(C.check_docking(bp, [b for b in bp.blocks if b['kind'] == 'merge'][0]), 'Down', n)
         self.assertLessEqual(len(C.script_text('TubeRamAI.cs')), 80000)
 
+class TubeLargeTests(unittest.TestCase):
+    """Tube L 1x1 / 2x2 (+ W): large grid, heavy nose, side thrusters without reverse, heavy armour panels round the body."""
+    NAMES = ("Tube L 1x1", "Tube L 2x2", "Tube L 1x1 W", "Tube L 2x2 W")
+
+    def setUp(self):
+        self.bps = {n: tube.MODELS[n](False) for n in self.NAMES}
+
+    def test_build_validate_dlc(self):
+        stats = C.stats_db()
+        for n, bp in self.bps.items():
+            bp.validate()
+            self.assertEqual(bp.grid, 'Large', n)
+            for b in bp.blocks: self.assertFalse(stats.get(b['key'], {}).get('dlc'), f"{n}: {b['name']}")
+            pbs = [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_MyProgrammableBlock']
+            self.assertEqual(len(pbs), 1, n); self.assertEqual(pbs[0]['name'], f'{n} PB')
+            cd = pbs[0].get('custom_data', '')
+            self.assertIn(f'Block Tag={n}', cd); self.assertIn('Start Mode (WAIT/HUNT)=HUNT', cd)
+            self.assertEqual(n.endswith(' W'), 'Max Rams=1' in cd, n)
+            self.assertEqual('1x1' in n, 'Nose Camera Setback (m)=2.5' in cd, n)
+            names = [b['name'] for b in bp.blocks if b['name']]
+            self.assertEqual(len(names), len(set(names)), n)
+            self.assertEqual({b['sub'] for b in bp.blocks if b['kind'] == 'ai'}, {'LargeOffensiveCombat', 'LargeFlightMovement'}, n)
+
+    def test_thrust_power_panels(self):
+        st = C.stats_db()
+        for n, bp in self.bps.items():
+            acc, m = C.twr(bp)
+            self.assertGreaterEqual(acc['Forward'], 12, n)
+            self.assertEqual(acc['Backward'], 0, n)                        # no reverse thrust
+            for d in ('Up', 'Down', 'Left', 'Right'): self.assertGreater(acc[d], 2.5, n)
+            thr = [b for b in bp.blocks if b['kind'] == 'thr']
+            main = [b for b in thr if b['fwd'] == 'Backward']
+            side = {d: [b for b in thr if b['fwd'] == d] for d in ('Up', 'Down', 'Left', 'Right')}
+            need = sum(st[b['key']]['stats']['max_power_mw'] for b in main)
+            grp = sorted((sum(st[b['key']]['stats']['max_power_mw'] for b in l) for l in side.values()), reverse=True)
+            need += grp[0] + grp[1]
+            bats = sum(st[b['key']]['stats']['max_output_mw'] for b in bp.blocks if b['kind'] == 'bat')
+            self.assertGreaterEqual(bats, 1.05 * need, n)
+            self.assertGreaterEqual(sum(b['sub'] == tube.LPANEL for b in bp.blocks), 40, n)      # armour panels round the body
+            heads = [b for b in bp.blocks if b['sub'] == 'LargeWarhead']
+            self.assertEqual(len(heads), (1 if '1x1' in n else 4) if n.endswith(' W') else 0, n)
+            for b in heads: self.assertEqual(bp.cells(b)[0][2], 1, n)                          # under the front heavy layer
+
 if __name__ == '__main__':
     unittest.main()

@@ -33,7 +33,7 @@ string Tag = "TUBE", BlockTag = "";
 double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 20, SafeDistance = 150, Gain = 2.5;
 double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300;
 int MaxRams = 0;
-bool ContactFuse = true, AiSearch = true, StartHunt = true; double AiConfirmRange = 1300, AiConfirmLong = 2600, AiRepick = 20; double _launchTry = -99;
+double NoseSetback = 0; bool ContactFuse = true, AiSearch = true, StartHunt = true; double AiConfirmRange = 1300, AiConfirmLong = 2600, AiRepick = 20; double _launchTry = -99;
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false, ReAttack = true;
 double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
 
@@ -372,6 +372,7 @@ void LoadConfig()
     LaunchRange = C(S, "Max Target Distance", LaunchRange);
     ArmRange = C(S, "Arm Warheads Within", ArmRange);
     ContactFuse = C(S, "Warhead Contact Fuse", ContactFuse);
+    NoseSetback = C(S, "Nose Camera Setback (m)", NoseSetback);   // nose cameras behind the front face (Tube L 1x1: one 2.5 m block)
     SafeDistance = C(S, "Safe Distance From Launch", SafeDistance);
     MaxSpeed = C(S, "Max Speed", MaxSpeed);
     TermTime = C(S, "Terminal Time", TermTime);
@@ -665,7 +666,7 @@ void Hunt(double dt)
                 {
                     if (!c.IsWorking || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.97 || !c.CanScan(45)) continue;
                     var he = c.Raycast(45);
-                    if (!he.IsEmpty() && he.HitPosition.HasValue && Valid(he) && Vector3D.Distance(he.HitPosition.Value, c.GetPosition()) < Math.Max(1.5, Math.Max(closing, 20) * dt * 1.5))
+                    if (!he.IsEmpty() && he.HitPosition.HasValue && Valid(he) && Vector3D.Distance(he.HitPosition.Value, c.GetPosition()) < NoseSetback + Math.Max(1.5, Math.Max(closing, 20) * dt * 1.5))
                     { Boom("contact at " + closing.ToString("0") + " m/s"); return; }
                     break;
                 }
