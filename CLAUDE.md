@@ -26,5 +26,5 @@ Space Engineers combat drones, printer ships, in-game C# scripts and a simulatio
 - Rough guide: 3-10 seeds to check that something runs or to catch a regression; 20-50 for a rough A/B direction; 100+ only when you have to show a difference of a few percent, and only on the scenarios that matter (narrow it with `--filter`). Stop adding seeds once the answer is clear.
 - No full-matrix or "100 per variation" runs in a Claude session unless the user asks for that run. The big runs live in the local scripts (`pc/run.bat`, `pc/run_mint.sh`, `pc/run_plan.*` running `pc/plans/*.plan`). They run on the user's PC and keep their own explicit `--seeds` counts.
 
-## Lite variants
-- `tools/build_all.py` builds the **Full** variants only. The Lite variants ("<Name> Lite") have their own script, `tools/build_lite.py` (same options, lite=True; writes the `*_Lite` zips and `MODELS_Lite.md`). Lite is rarely used: don't build it unless asked.
+## Lite variants: retired
+- The Lite variants ("<Name> Lite") are **retired** until the owner asks for them back. `tools/build_all.py` builds Full only; `tools/build_lite.py` exits immediately while `RETIRED = True` (flip it to bring Lite back). The Lite design code stays in `tools/designs/`; don't build, package, test or maintain Lite output, and don't mention Lite in new docs.
