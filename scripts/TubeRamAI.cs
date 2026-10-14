@@ -33,7 +33,7 @@ string Tag = "TUBE", BlockTag = "";
 double MaxSpeed = 100, LaunchRange = 3000, ArmRange = 20, SafeDistance = 150, Gain = 2.5;
 double TermTime = 2.5, NavGain = 3.5, ImpactDv = 15, RunUp = 0, FriendlyClear = 25, TermRange = 300;
 int MaxRams = 0;
-bool ContactFuse = true, AiSearch = true, StartHunt = true; double AiConfirmRange = 1300, AiConfirmLong = 2600, AiRepick = 20; int AiSearchEvery = 5; double _launchTry = -99;
+bool ContactFuse = true, AiSearch = true, StartHunt = true; double AiConfirmRange = 1300, AiConfirmLong = 2600, AiRepick = 20; double _launchTry = -99;
 bool AutoLaunch = true, TargetLarge = true, TargetSmall = true, TargetNeutral = false, ReAttack = true;
 double AimKp = 9, AimKd = 0.3, MaxTurn = 8;
 
@@ -366,7 +366,6 @@ void LoadConfig()
     AutoLaunch = C(S, "Auto Launch When Released", AutoLaunch);
     AiSearch = C(S, "AI Block Search", AiSearch);
     StartHunt = C(S, "Start Mode (WAIT/HUNT)", StartHunt ? "HUNT" : "WAIT").Trim().ToUpperInvariant() != "WAIT";
-    AiSearchEvery = (int)C(S, "AI Search Interval (s)", (double)AiSearchEvery);
     AiRepick = C(S, "AI Re-pick After (s)", AiRepick);
     AiConfirmRange = C(S, "AI Confirm Raycast Range", AiConfirmRange);
     AiConfirmLong = C(S, "AI Confirm Long Raycast Range", AiConfirmLong);
@@ -693,9 +692,7 @@ void FindAi()
 {
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
     foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
-    // the AI Offensive block is the detector (2,500 m, all round), but it rescans only every 30 s by default: an AI window would often
-    // see no search at all (the Ballista's Helm does the same)
-    if (AiSearchEvery > 0) foreach (var b in _ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
+    // (AI GATE v1.2 writes [AI Gate] AI Search Interval (s)=5 to the AI Offensive blocks: the detector rescans every 5 s, not 30)
     AiGateFind(_ai);
 }
 void AiOff()

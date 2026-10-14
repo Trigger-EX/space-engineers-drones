@@ -6,7 +6,10 @@ Shared script blocks (`tools/blocks.json`, `tools/*_sync.py`) are the cheapest w
 
 ## Pending
 
-(none)
+| Improvement (origin) | Could go to | Note |
+|---|---|---|
+| The first forward camera always casts the long AI-confirm ray, even when it is the only forward camera (before: `longCam = nFwd > 1`, so a drone with one nose camera cast only 1,300 m rays and never confirmed a target the AI held at 1.3 to 2.6 km). TubeRamAI, tube detection commit | Gnat (same `nFwd > 1` rule) and any other single-nose-camera AI-search script | Sim, Tube vs Basilisk/Hornet at 1.5 to 2.2 km, 5 seeds: first target 1 to 5 s instead of 21 to 80 s (together with the 5 s search interval and 20 s AI windows) |
+| Warheads armed at the last moment (gap to the hull under 20 m or 0.3 s at the closing speed), because gunfire sets armed warheads off: a Tube 4x4 W armed at 200 m was blown up 148 m short by the target's rockets (sim). TubeRamAI, warhead variants commit | StingerAI (`Arm Warheads Within=200`), Ram / Ram Tandem (`tools/designs/ram.py`, StingerAI placeholder) | The Stinger's camera hull-distance fuse already fires close in; only the arming point moves |
 
 ## Needs the owner's call
 
@@ -32,6 +35,8 @@ Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95
 | Full FRIENDLY AVOIDANCE steering (older improvement the Mantis never got: no room before its split, and the split left its beacon block unhooked, so it neither dodged nor beaconed) | Mantis Flight (81.7 k minified) | - |
 
 ## Role-specific (checked, not retrofitted)
+
+* **Tube ram drones**: `Start Mode (WAIT/HUNT)=HUNT` (owner request: a launched tube is a munition and hunts by itself; a gun drone's start mode stays the owner's per-model choice); `[AI Gate]` 20 s / 5 s windows (the AI Offensive block is its only detector, as on the Ballista); recessed side thrusters driven by the terminal guidance (ram geometry); warhead layer with impact / contact fuse (W variants).
 
 * **Ballista**: `Standoff Range=1600` / `Standoff By Weapons=false` (rail sniper vs a 100 m/s charge; other designs wait for the charge-test report, `pc/plans/charge_standoff.plan`); `Salvo=ON` (27-rail alpha strike); `Auto Camera Scan=false` and `[AI Gate]` 20 s / 5 s windows (the AI Offensive block is its detector; Warden and Leviathan run without the AI assist, so their camera scan is their only non-turret detector); point-defence rail battery (off); harasser defence (above); three reactors for the 27-rail recharge; four PD turrets, two of them rotor + hinge AI turrets (Warden, Leviathan, Corsair and Shrike already have rotor + hinge turrets).
 * **Helm split** (Staff PB with the fleet channel and damage sensing): Warden, Leviathan and Corsair already had a Staff PB; Shrike and Ballista got theirs.

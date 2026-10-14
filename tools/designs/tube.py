@@ -143,7 +143,7 @@ _WN = {'Tube 2x2 W': 4, 'Tube 2x4 W': 8, 'Tube 3x3 W': 9, 'Tube 4x4 W': 16}
 for _m, _n in _WN.items():
     DOCS[_m] = (f'{_m[:-2]} with its second nose layer replaced by {_n} small warheads, right under the front heavy armour (same size and mass): it rams once and fires them on impact '
                 '(velocity jump or the nose camera\'s contact fuse), armed only at the last moment (20 m from the hull or 0.3 s out, because gunfire sets armed warheads off) and never near its launch point.')
-_NOTE = ('Main thrust forward, recessed side thrusters up/down/left/right, no reverse: it brakes by flipping. Hunts by itself once off its rack (Start Mode HUNT). Finds targets with its AI Offensive block, rescanning every 5 s, confirmed by nose-camera rays (AI Behavior must be on; the in-game behaviour of an unarmed grid's AI blocks is unverified) or takes them from the fleet / hive / carrier channels or a player\'s `lock`. Ram damage is not verified in the game.')
+_NOTE = ('Main thrust forward, recessed side thrusters up/down/left/right, no reverse: it brakes by flipping. Hunts by itself once off its rack (Start Mode HUNT). Finds targets with its AI Offensive block, rescanning every 5 s, confirmed by nose-camera rays (AI Behavior must be on; the in-game behaviour of an unarmed grid\'s AI blocks is unverified) or takes them from the fleet / hive / carrier channels or a player\'s `lock`. Ram damage is not verified in the game.')
 MODEL_NOTES = {m: _NOTE for m in MODELS}
 for _m in _WN: MODEL_NOTES[_m] = _NOTE + ' One-shot (Max Rams=1). The warheads are armed only by the script; keep the tube off friendly ships while it is in its final run.'
 SCRIPTS = ['TubeRamAI.cs']
