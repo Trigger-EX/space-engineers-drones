@@ -25,10 +25,15 @@
 //   Assist Max Rate, Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale, Pilot Priority Rate, Auto Fire In Manual, Scan In Manual, Run Menu, Run Menu Wait,
 //   Deadman Timer Name, Seat Exclude (name part, default "gunnery": a seat with that word in its name does not switch the Helm to MANUAL), HUD Surface (cockpit text surface, -1 off); [Battery] Primary (AUTO/B1..B4), Standoff By Weapons, Turret Only (AUTO/ON/OFF), Auto Max Turn
 //   (AUTO/ON/OFF); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
+//  LARGE-GRID SHIPS (Corsair, Warden, Leviathan: Me.CubeGrid is a large grid, "Big")   slow to turn, so: (1) the idle search turns steadily at half Max Turn and nods slowly (the Shrike's fast
+//   nod tipped a dreadnought back and forth); (2) every working camera scans, out to 1.8 km, also in REACT (no sweep there, the cameras look all round); (3) CAPITAL SHIPS (target radius >= 50 m,
+//   whose turrets reach 800 m by themselves): standoff = max(Standoff Range, Capital Standoff Range = 1000; 0 switches this and (4) off), and (4) one in the rear half inside that range makes the
+//   ship point its nose AWAY and burn its strongest thrusters until the range is open (+100 m), the target is no longer behind, or 20 s have passed, then turn round and fight (40 s pause before it can flee again);
+//   (5) braking distance uses the thrust available in the direction of travel, no random evasion, no jinking while fleeing.
 //  STAFF LINK (HELMLINK block, optional)   with a second PB "[Staff] ..." on the construct (StaffAI.cs) the Helm sends a heartbeat (2 Hz), its mode / target / battery
 //   (5 Hz) and seat changes over IGC (CurrentConstruct) and obeys the verbs the Staff forwards; the Staff releases every override when the heartbeat stops for 1.5 s.
 //   [Link] Enable (AUTO/ON/OFF) (AUTO = on while a [Staff] PB exists, so the single-PB ship is untouched), Ship Tag (SHIP, same in the Staff), Heartbeat (s).
-//   To fit 80,000 characters the rarely used keys Jink Interval (+ Random), Seconds Before Dropping Disabled Target, Ghost Target Time, Wingmate Separation Range / Speed,
+//   To fit 80,000 characters the rarely used keys Aim Point, Breach Large Ships (the `aim` / `breach` commands remain), Listen To IGC Tags, Friendly Fire Check, Guard Radius, Cruise Speed, Max Fire Range, Projectile Speed, Jink Interval (+ Random), Seconds Before Dropping Disabled Target, Ghost Target Time, Wingmate Separation Range / Speed,
 //   Lead Scale, AI Confirm Raycast Range / Long Raycast Range / Rays Shorten, Target Stickiness, AI Re-pick Interval / Only Within, AI Takes Over After Stale Lock,
 //   Search Patrol (all), Breach Min Target Radius, Breach Stall, Evade Speed When Hit, Close Scan Range, Scan Cone Degrees, All-around Close Scan, and (M3) Split Targets,
 //   Projectiles Inherit Ship Velocity, Use Target Acceleration, Aim Margin, Max Track Age To Fire, Target Characters, Target Neutral/Unowned, Manual Lock Range, Jink Speed,
@@ -55,6 +60,7 @@ double LockRange = 2500;     // manual "lock" raycast distance
 double ScanRange = 1200;     // auto-scan raycast distance
 double ScanCone = 35;        // auto-scan half-angle (deg)
 double AimKp = 6, AimKd = 0.35, MaxTurn = 5; // gyro tuning (rad/s)
+double CapRange = 1000; const double FleeMax = 20; bool _flee; double _fleeT = -99;   // CAPITAL FLEE (see Control)
 double FireTol = 1.0;        // multiplier on silhouette fire window
 double LeadScale = 1.0;      // scales the lead offset if shots land consistently ahead/behind
 bool UseTargetAccel = true;
@@ -64,7 +70,6 @@ bool AiAssist = true; double AiConfirmRange = 2600;   // confirm rays are this l
 double AiConfirmLong = 2600;   // the first forward camera casts this long instead (0.77 casts/s)
 double RtbBattery = 0.15;    // fraction
 double SepRange = 70, SepSpeed = 25;   // wingmate separation: push away from hive mates closer than this (m) at up to this speed (m/s)
-bool TargetLarge = true, TargetSmall = true, TargetChars = false, TargetNeutral = false;
 bool AutoScan = true, ShareTargets = true, Jink = true, FriendCheck = true, InheritVel = true;
 string StartMode = "REACT";   // a Shrike is combat-ready but passive (REACT) until told otherwise (and again whenever the pilot leaves the seat)
 
@@ -92,7 +97,7 @@ IMyTextSurface _lcd;
 IMyTerminalBlock _aimRef;
 
 // IGC
-IMyBroadcastListener _lTgt, _lCmd, _lHome;
+IMyBroadcastListener _lTgt, _lCrit, _lCmd, _lHome;
 string ListenTags = "HORNET,SHRIKE,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER";   // other fleets' target feeds ("<TAG>_TGT"), same tuple on every fleet
 List<IMyBroadcastListener> _lFeed = new List<IMyBroadcastListener>();
 void RegisterFeeds()
@@ -1241,6 +1246,7 @@ public Program()
         _lTgt = IGC.RegisterBroadcastListener(Tag + "_TGT");
         _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
         _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
+        _lCrit = IGC.RegisterBroadcastListener(Tag + "_AIM");
         RegisterFeeds();
         _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
     }
@@ -1294,7 +1300,6 @@ void Tick(string arg, UpdateType src)
     double dt = Runtime.TimeSinceLastRun.TotalSeconds;
     if (dt <= 0 || dt > 0.5) dt = 1.0 / 60.0;
     _now += dt; _tick++;
-    _avgMs = _avgMs * 0.98 + Runtime.LastRunTimeMs * 0.02;
 
     if (_tick % 600 == 0) GetBlocks();
     CheckGrid();
@@ -1309,7 +1314,7 @@ void Tick(string arg, UpdateType src)
     if (_tick % 6 == 0) PollDesignators();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
-    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.HUNT || Gd && !Calm) && (!Man || ManScan) && !Hot()) AutoScanStep();
+    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.HUNT || Gd && (!Calm || Big)) && (!Man || ManScan) && !Hot()) AutoScanStep();
     if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0 && !Hot()) ShareTarget();
 
     ManTick(); HlkTick();
@@ -1333,14 +1338,14 @@ void Command(string a)
         case "rtb": SetMode(Mode.RTB); break;
         case "idle": case "stop": SetMode(Mode.IDLE); break;
         case "lock": ManualLock(); break;
+        case "split": SplitFocus = true; break;
+        case "focus": SplitFocus = false; break;
         case "unlock": _tgt = null; _contacts.Clear(); break;
         case "next": if (_tgt != null) IgnoreTarget(_tgt, 60, true); break;
-        case "split": SplitFocus = true; break;
         case "aialert": _alertT = _now; break;
         case "ai": if (w.Length > 1) AiAssist = w[1] == "on"; break;
         case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;
         case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;
-        case "focus": SplitFocus = false; break;
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
             double r; if (w.Length > 1 && double.TryParse(w[1], out r)) Standoff = MathHelper.Clamp(r, MinRange, MaxFireRange); break;
@@ -1363,24 +1368,17 @@ void LoadConfig()
     const string S = "Shrike";
     Tag = Cfg(S, "IGC Tag", Tag);
     StartMode = Cfg(S, "Start Mode (GUARD/HUNT/ASSIST/IDLE)", StartMode);
-    ProjSpeed = Cfg(S, "Projectile Speed", ProjSpeed);
-    MaxFireRange = Cfg(S, "Max Fire Range", MaxFireRange);
     Standoff = Cfg(S, "Standoff Range", Standoff);
     MinRange = Cfg(S, "Min Range", MinRange);
-    GuardRadius = Cfg(S, "Guard Radius", GuardRadius);
     MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
-    CruiseSpeed = Cfg(S, "Cruise Speed", CruiseSpeed);
     OrbitSpeed = Cfg(S, "Orbit Speed", OrbitSpeed);
     Jink = Cfg(S, "Evasive Jinking", Jink);
     AutoScan = Cfg(S, "Auto Camera Scan", AutoScan);
     ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
-    FriendCheck = Cfg(S, "Friendly Fire Check", FriendCheck);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
-    ListenTags = Cfg(S, "Listen To IGC Tags (target feeds)", ListenTags);
-    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
-    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
+    CapRange = Cfg(S, "Capital Standoff Range", CapRange);
     ManCfg(); HlkCfg(); BatCfg();
     string out1 = _ini.ToString();
     if (out1 != Me.CustomData) Me.CustomData = out1;
@@ -1435,17 +1433,7 @@ void GetBlocks()
 bool Valid(MyDetectedEntityInfo e)
 {
     if (e.IsEmpty() || Ignored(e.EntityId) || e.EntityId == Me.CubeGrid.EntityId) return false;
-    switch (e.Type)
-    {
-        case MyDetectedEntityType.LargeGrid: if (!TargetLarge) return false; break;
-        case MyDetectedEntityType.SmallGrid: if (!TargetSmall) return false; break;
-        case MyDetectedEntityType.CharacterHuman:
-        case MyDetectedEntityType.CharacterOther: if (!TargetChars) return false; break;
-        default: return false;
-    }
-    var r = e.Relationship;
-    if (r == MyRelationsBetweenPlayerAndBlock.Enemies) return true;
-    return TargetNeutral && (r == MyRelationsBetweenPlayerAndBlock.Neutral || r == MyRelationsBetweenPlayerAndBlock.NoOwnership);
+    return (e.Type == MyDetectedEntityType.LargeGrid || e.Type == MyDetectedEntityType.SmallGrid) && e.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies;   // (grids only: no characters, no neutrals)
 }
 
 bool Friendly(MyDetectedEntityInfo e)
@@ -1500,6 +1488,17 @@ void ReadIGC()
     {
         var msg = _lHome.AcceptMessage();
         if (msg.Data is Vector3D) { _dynHome = (Vector3D)msg.Data; _dynHomeT = _now; }
+    }
+    // SPOTTER feed: <Tag>_AIM = (target id, vital block in the target frame) from the Spotter PB: it becomes the breach point, drilled along the line of fire
+    while (_lCrit.HasPendingMessage)
+    {
+        var msg = _lCrit.AcceptMessage();
+        if (!(msg.Data is MyTuple<long, Vector3D>)) continue;
+        var d = (MyTuple<long, Vector3D>)msg.Data; Track t;
+        Vector3D fl;
+        if (!_contacts.TryGetValue(d.Item1, out t) || !t.HasOri || (fl = t.P(_now) - Me.GetPosition()).LengthSquared() < 1) continue;
+        if (_bId != t.Id) { _bId = t.Id; _bOn = false; _bBad.Clear(); }
+        if (!BreachBad(d.Item2) && (!_bOn || (_bS - d.Item2).LengthSquared() > 25)) BreachSet(d.Item2, Vector3D.TransformNormal(Vector3D.Normalize(fl), MatrixD.Transpose(t.O)));   // (a stalled point is in _bBad: it is not fed back in)
     }
     FleetPump(Command, p => { if (!HlkOn || (p - Me.GetPosition()).LengthSquared() > 2500) { _dynHome = p; _dynHomeT = _now; } });   // (the Staff of my own ship broadcasts HOME = my own position: not a home)
 }
@@ -1642,8 +1641,9 @@ Vector3D ReacquirePoint(Track t, Vector3D centre, Vector3D dir, double age)
 void AutoScanStep()
 {
     IMyCameraBlock cam = null;
+    double sr = Big ? 1800 : ScanRange;   // a warship looks 1.8 km out through every camera it has (a ray costs its length in charge; a capital ship's turrets reach only 800 m)
     foreach (var c in _cams)
-        if (c.IsWorking && Forwardish(c) && c.AvailableScanRange >= ScanRange && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
+        if (c.IsWorking && (Big || Forwardish(c)) && c.AvailableScanRange >= sr && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
     if (cam == null) return;
     _scanIdx++;
     // just lost a target: every other ray goes round where it was last seen, widening with time
@@ -1653,7 +1653,7 @@ void AutoScanStep()
         Vector3D lp = _lostPos + _lostVel * Math.Min(lostAge, 10);
         double rr = Math.Min(250, _lostRad + 6 * lostAge) * Math.Sqrt(((_scanIdx >> 1) % 23 + 0.5) / 23.0), th2 = _scanIdx * 2.39996323;
         Vector3D dl = lp - cam.GetPosition(); double dd = dl.Length();
-        if (dd > 30 && dd < ScanRange)
+        if (dd > 30 && dd < sr && Vector3D.Dot(dl / dd, cam.WorldMatrix.Forward) > 0.75)
         {
             dl /= dd;
             Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
@@ -1666,7 +1666,7 @@ void AutoScanStep()
     const int N = 120;
     double r = ScanCone * Math.Sqrt((_scanIdx % N + 0.5) / N);
     double th = _scanIdx * 2.39996323; // golden-angle spiral
-    var e = cam.Raycast(ScanRange, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
+    var e = cam.Raycast(sr, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
     if (Valid(e)) AddContact(e, "SCAN");
 }
 
@@ -1773,10 +1773,27 @@ void Control(double dt)
 
     if (_mode == Mode.IDLE) { SetFire(false); BatFire(false, myVel); return; }
 
+    // ---------- CAPITAL FLEE ----------
+    // A capital ship (radius >= 50 m) has turrets that reach 800 m by themselves, and a slow ship cannot turn its guns onto one that is behind it (180 degrees take ~18 s).
+    // So: it keeps a longer standoff (Capital Standoff Range), and when such a ship is in the rear half inside that range the nose is pointed AWAY from it and the
+    // strongest thrusters burn until the range is open (or Flee Time ends), then the ship turns round and fights. Fixed guns are silent meanwhile, the turrets are not.
+    Vector3D toT = Vector3D.Zero; double so = Standoff, tDist = 1;
+    if (_tgt != null && _mode != Mode.RTB)
+    {
+        toT = _tgt.P(_now) - me; tDist = Math.Max(toT.Length(), 1);
+        bool capital = Big && CapRange > 0 && _tgt.Radius >= 50;   // (Capital Standoff Range=0 switches the whole thing off)
+        if (capital) so = Math.Max(so, CapRange);
+        double cosA = Vector3D.Dot(toT / tDist, _rc.WorldMatrix.Forward);
+        if (!_flee && capital && tDist < so && cosA < -0.35 && _now - _fleeT > FleeMax + 40) { _flee = true; _fleeT = _now; }
+        if (_flee && (!capital || tDist > so + 100 || cosA > 0.2 || _now - _fleeT > FleeMax)) _flee = false;
+    }
+    else _flee = false;
+
     // ---------- aiming ----------
     Vector3D aimDir = Vector3D.Zero, aimPoint = Vector3D.Zero;
     bool haveAim = false;
-    if (_tgt != null && _mode != Mode.RTB)   // (no guns = scout: still tracks with the nose cameras)
+    if (_flee) { Aim(-toT / tDist, Vector3D.Zero, Vector3D.Zero, dt); _havePrev = false; }
+    else if (_tgt != null && _mode != Mode.RTB)   // (no guns = scout: still tracks with the nose cameras)
     {
         Vector3D gunPos = Vector3D.Zero; int n = 0;
         foreach (var g in PrimGuns()) if (g.IsFunctional) { gunPos += g.GetPosition(); n++; }
@@ -1803,7 +1820,7 @@ void Control(double dt)
     else _havePrev = false;
     if (haveAim) _sweepUpSet = false;
 
-    if (!haveAim)
+    if (!haveAim && !_flee)
     {
         if (_mode == Mode.ASSIST) { ReleaseGyros(); }
         else
@@ -1841,8 +1858,9 @@ void Control(double dt)
         Vector3D tp = _tgt.P(_now), tv = _tgt.V(_now);
         Vector3D d = tp - me; double dist = d.Length();
         Vector3D dir = dist > 1 ? d / dist : _rc.WorldMatrix.Forward;
-        double e = dist - Standoff;
-        double vr = Math.Sign(e) * Math.Min(Math.Min(Math.Abs(e) * 0.6, MaxSpeed), Math.Sqrt(2 * aBrake * Math.Abs(e)));
+        double e = dist - so - (_flee ? 100 : 0);
+        double ab = AccelDir(e > 0 ? -dir : dir, mass) * 0.55;   // braking comes from the thrusters on the far side of the way it moves
+        double vr = Math.Sign(e) * Math.Min(Math.Min(Math.Abs(e) * 0.6, MaxSpeed), Math.Sqrt(2 * ab * Math.Abs(e)));
         if (dist < MinRange) vr = -MaxSpeed * 0.6;
         Vector3D upRef = grav.LengthSquared() > 0.1 ? -Vector3D.Normalize(grav) : _rc.WorldMatrix.Up;
         Vector3D tan = Vector3D.Cross(dir, upRef);
@@ -1856,8 +1874,8 @@ void Control(double dt)
             rnd -= Vector3D.Dot(rnd, dir) * dir;
             _jink = rnd.LengthSquared() > 1e-6 ? Vector3D.Normalize(rnd) * JinkSpeed : Vector3D.Zero;
         }
-        double orbit = dist < Math.Max(MaxFireRange, Standoff) * 1.2 ? OrbitSpeed : 0;
-        want = tv + dir * vr + tan * orbit * _orbitSign + (Jink ? _jink : Vector3D.Zero) + Evade() + Separation(me);
+        double orbit = !_flee && dist < Math.Max(MaxFireRange, Standoff) * 1.2 ? OrbitSpeed : 0;
+        want = tv + dir * vr + tan * orbit * _orbitSign + (Jink && !_flee ? _jink : Vector3D.Zero) + Evade() + Separation(me);
         if (Gd && Vector3D.Distance(me, home) > GuardRadius * 1.3) want = Vector3D.Normalize(home - me) * CruiseSpeed;
     }
     double cap = _tgt != null && _mode != Mode.RTB ? MaxSpeed : CruiseSpeed;
@@ -2020,15 +2038,25 @@ double MinAccel(double mass, Vector3D grav)
     return Math.Max(0.5, min * _powerScale / mass - grav.Length());
 }
 
+// components along the six thruster groups (Forward, Backward, Left, Right, Up, Down of the controller)
+double[] Comp(Vector3D f) { MatrixD m = _rc.WorldMatrix; double x = Vector3D.Dot(f, m.Forward), r = Vector3D.Dot(f, m.Right), u = Vector3D.Dot(f, m.Up); return new[] { x, -x, -r, r, u, -u }; }
+// acceleration the working thrusters can give along the world direction u (the weakest group that u needs, scaled by its share of u)
+double AccelDir(Vector3D u, double mass)
+{
+    double[] c = Comp(u); double a = 1e9;
+    for (int i = 0; i < 6; i++)
+    {
+        if (c[i] < 0.1) continue;
+        double f = 0; foreach (var t in _thrDir[i]) if (t.IsWorking) f += t.MaxEffectiveThrust;
+        a = Math.Min(a, f * _powerScale / mass / c[i]);
+    }
+    return a > 1e8 ? 1 : a;
+}
+
 void ApplyThrust(Vector3D forceWorld)
 {
     _rc.DampenersOverride = false;
-    MatrixD m = _rc.WorldMatrix;
-    // components along Forward, Right, Up of the controller
-    double[] comp = {
-        Vector3D.Dot(forceWorld, m.Forward), -Vector3D.Dot(forceWorld, m.Forward),
-        -Vector3D.Dot(forceWorld, m.Right), Vector3D.Dot(forceWorld, m.Right),
-        Vector3D.Dot(forceWorld, m.Up), -Vector3D.Dot(forceWorld, m.Up) };
+    double[] comp = Comp(forceWorld);
     for (int i = 0; i < 6; i++)
     {
         double max = 0;
@@ -2065,9 +2093,8 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("SHRIKE AI v").Append(VER).Append('\n').Append(ManHud()).Append(BatStatus());
-    _sb.Append("Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append(" peak ").Append(_peakIns).Append(" ms ").Append(_avgMs.ToString("0.000")).Append('\n');
+    _sb.Append("Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append('\n');
     _sb.Append(UnderFire ? "UNDER FIRE\n" : "").Append(AiStatus()).Append(_crash != "" ? "! Script error: " + _crash + "\n" : ""); _sb.Append(KzStatus());
-    if (Me.OwnerId == 0) _sb.Append("! PB has no owner: set ownership\n");
     string s = _sb.ToString();
     if (_lcd != null) _lcd.WriteText(s);
     ManShow();
@@ -2086,8 +2113,8 @@ Vector3D SweepDir(Vector3D gravUp)
     {   // just hit: circle the nose cameras 15-45 deg round the side that was hit, where the shooter is
         Vector3D a = Vector3D.Cross(_hitDir, Math.Abs(_hitDir.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); a.Normalize();
         Vector3D b = Vector3D.Cross(_hitDir, a);
-        double ph = _now * 1.3, rr = 0.27 + 0.5 * (0.5 + 0.5 * Math.Sin(_now * 0.37));
-        return Vector3D.Normalize(_hitDir + (a * Math.Cos(ph) + b * Math.Sin(ph)) * rr);
+        double ph = _now * 1.3;
+        return Vector3D.Normalize(_hitDir + (a * Math.Cos(ph) + b * Math.Sin(ph)) * 0.5);
     }
     if (!_sweepUpSet) { _sweepUp = _rc.WorldMatrix.Up; _sweepUpSet = true; }
     Vector3D upRef = gravUp.LengthSquared() > 0.5 ? gravUp : _sweepUp;
@@ -2095,8 +2122,8 @@ Vector3D SweepDir(Vector3D gravUp)
     h -= Vector3D.Dot(h, upRef) * upRef;
     if (h.LengthSquared() < 1e-4) h = Vector3D.Cross(upRef, _rc.WorldMatrix.Right);
     h.Normalize();
-    h = Vector3D.Transform(h, MatrixD.CreateFromAxisAngle(upRef, -0.035));
-    double pitch = 0.6 * Math.Sin(_now * 0.4);
+    h = Vector3D.Transform(h, MatrixD.CreateFromAxisAngle(upRef, Big ? -0.5 * MaxTurn / AimKp : -0.035));   // (a big ship turns steadily at half its turn rate and nods slowly: the fast nod tipped it back and forth)
+    double pitch = Big ? 0.35 * Math.Sin(_now * 0.05) : 0.6 * Math.Sin(_now * 0.4);
     return Vector3D.Normalize(h * Math.Cos(pitch) + upRef * Math.Sin(pitch));
 }
 
@@ -2242,7 +2269,7 @@ void CheckDamage()   // (sliced: CdSlice blocks per call - a 1,300-block ship re
 // Random evasive velocity while under fire (new direction every 1-2.5 s and on every new hit).
 Vector3D Evade()
 {
-    if (!UnderFire) return Vector3D.Zero;
+    if (!UnderFire || Big) return Vector3D.Zero;
     if (_now > _evadeNext || _hits != _evadeHits)
     {
         _evadeHits = _hits; _evadeNext = _now + 1 + _evRng.NextDouble() * 1.5;
@@ -2539,6 +2566,7 @@ string AiStatus()
 bool AiModeOk() { return _mode == Mode.HUNT || Gd && !Calm; }
 // REACT: weapons, tracking and turrets live, but the ship does not sweep, scan or hand itself to the AI blocks until something wakes it:
 // an AI block alarm ("aialert" from an AI Defensive block, or a mate's alarm), damage taken, or a target already held.
+bool Big { get { return Me.CubeGrid.GridSizeEnum == MyCubeSize.Large; } }   // a large-grid ship: slow to turn, huge, many turrets
 bool Gd { get { return _mode == Mode.GUARD || _mode == Mode.REACT; } }
 bool Calm { get { return _mode == Mode.REACT && _tgt == null && !Alerted && !UnderFire && _now - _hitDirT >= 10; } }
 

@@ -65,7 +65,7 @@ feed-forward   from the line-of-sight rate: d' = (r x v_rel / |r|^2) x d;  az' =
 * Moving inertia / slew (`slew_rates`): PD4L azimuth 616 kg m2, hinge 1,022 kg m2; PD2S 174 / 395. With the written `Torque 1E+06` that is 160-5,700 rad/s2: **torque never limits**.
   The turn rate is the rotor's velocity cap (30 rpm large = 3.1 rad/s, 60 rpm small; from game knowledge, not in `defs.json`, test K-T3). Script cap `Max Rate 3` rad/s, slew
   limit `Max Accel 12` rad/s2, so a turret follows a 100 m/s crosser down to about 33 m (the vanilla gatling turret to about 67 m).
-* Ammunition: each gun carries its own 4 magazines (`fill_ammo`); whether a conveyor passes a rotor/hinge is unknown (K-T9, test 40), so no feed is assumed. 560 rounds at 700 rpm = 48 s of fire.
+* Ammunition: each gun carries its own 4 magazines (`fill_ammo`); whether a conveyor passes a rotor/hinge is unknown (K-T9, test 42), so no feed is assumed. 560 rounds at 700 rpm = 48 s of fire.
 * A turret takes the cells of the vanilla turret it replaces; the swing sphere (centre = hinge centre, radius = farthest head cell + 0.25 m: 1.9 m PD4L, 1.8 m PD2S) must lie inside
   that footprint (`sphere_conflicts`, `sweep`).
 

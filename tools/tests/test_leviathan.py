@@ -332,7 +332,7 @@ class HangarTests(unittest.TestCase):
 
     def test_locked_variant_with_eight_drones_writes_reloads_and_fits(self):
         """one Lite build, connectors locked, four Hornet-class drones in each pod: the file reloads with 2 + 16 sub-grids, every drone stays 0.25 m clear of the hull,
-        and the unlocked default writes no connector link"""
+        (and lock=False writes no connector link)"""
         import core, extra, wasp, support
         names = {}
         for mod in (core, extra, wasp, support):
@@ -361,8 +361,8 @@ class HangarTests(unittest.TestCase):
             self.assertEqual(xml.count('<ConnectedEntityId>'), 8)                    # 2 pods x 2 pairs x both sides
             self.assertEqual(xml.count('<CubeGrid>'), 3 + 8 + 2 * 10)         # + a top and a head grid for each of the 10 rotor turrets (the Lite ship has the Deck rocket sites too)
         with tempfile.TemporaryDirectory() as d:
-            ship(True).write(d)
-            self.assertEqual(open(os.path.join(d, 'bp.sbc'), encoding='utf-8').read().count('<ConnectedEntityId>'), 0)      # unlocked by default (the Tech Hunter form)
+            ship(True, lock=False).write(d)
+            self.assertEqual(open(os.path.join(d, 'bp.sbc'), encoding='utf-8').read().count('<ConnectedEntityId>'), 0)      # lock=False writes no link (the Tech Hunter form)
 
 class FamilyTests(unittest.TestCase):
     def test_registered_in_the_design_package(self):

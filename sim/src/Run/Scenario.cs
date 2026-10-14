@@ -37,7 +37,7 @@ namespace SeSim.Run
         public bool RandomOrientation = true;
         /// <summary>After placement, turn every ship so its controller's Forward points at the nearest enemy team centroid
         /// (keeps the random roll). Used for the "pilot points the drone and presses lock" validation runs (`--face`).</summary>
-        public bool FaceEnemies;
+        public bool FaceEnemies, FaceAway;   // FaceAway (--face-away): our ships start with their back to the nearest enemy (the 'caught from behind' test)
         /// <summary>M6: PBs start with the Custom Data stored in the blueprint (ModStorage), as a pasted ship does. Off for the drone scenarios (their results predate it); on for "ship/" scenarios.</summary>
         public bool BlueprintCustomData;
         /// <summary>M6: a body of a ship that is not fused to its main body (a connector-docked pod) is held rigidly in its spawn pose (RigidLink). "ship/" scenarios only.</summary>
@@ -312,7 +312,7 @@ namespace SeSim.Run
                 for (int k = 0; k < sh.Bodies.Count; k++) { sh.Bodies[k].Position += delta; sh.Bodies[k].UpdateWorldMatrix(); }
             }
 
-            if (sc.FaceEnemies)
+            if (sc.FaceEnemies || sc.FaceAway)
                 for (int i = 0; i < n; i++)
                 {
                     var sh = ships[i];
@@ -326,6 +326,7 @@ namespace SeSim.Run
                     if (best == double.MaxValue) continue;
                     // the enemy's actual position when it is a single ship (exact boresight for 1v1)
                     for (int j = 0; j < n; j++) if (ships[j].Team != sh.Team && counts[ships[j].Team] == 1 && (centroid[ships[j].Team] - tgt).LengthSquared() < 1e-6) tgt = ships[j].Main.WorldBoundCenter;
+                    if (sc.FaceAway && !ScenarioGen.IsEnemy(sh.Spec.Model) && sh.Spec.Model != "Pirate") tgt = sh.Main.WorldBoundCenter * 2 - tgt;
                     FaceTowards(sh, tgt);
                 }
 

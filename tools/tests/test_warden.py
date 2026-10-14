@@ -236,10 +236,10 @@ class HangarTests(unittest.TestCase):
             main.validate_all()
             xml = open(os.path.join(d, 'bp.sbc'), encoding='utf-8').read()
             self.assertEqual(xml.count('<ConnectedEntityId>'), 4)
-        free = W.warden(False)
+        free = W.warden(False, lock=False)
         with tempfile.TemporaryDirectory() as d:
             free.write(d)
-            self.assertEqual(open(os.path.join(d, 'bp.sbc'), encoding='utf-8').read().count('<ConnectedEntityId>'), 0)      # unlocked by default (Tech Hunter form)
+            self.assertEqual(open(os.path.join(d, 'bp.sbc'), encoding='utf-8').read().count('<ConnectedEntityId>'), 0)      # lock=False writes no link (Tech Hunter form)
 
     def test_doors_and_connectors(self):
         bp = ship(False)

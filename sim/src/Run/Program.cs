@@ -10,6 +10,7 @@
 //   summarize --in runs.jsonl [--out summary.csv]    rebuild summary.csv from a runs.jsonl
 //   dock-launch [--model Hornet] [--seconds 30] [--release-at 3] ...   printed drone merged to a dummy printer, merge off, no _JOIN (sim/src/Run/DockLaunch.cs)
 //   printer-test [--model "Mobile Hive"] [--fault none|noproj|halfload|...] [--script-file F]   Hive Mother on the real printer blueprint with real-game-like faulty projectors (sim/src/Run/PrinterTest.cs)
+//   multipb-probe [--seeds 3] [--model "Warden Wing"]   several synthetic PBs + timers on one grid: IGC latency/throughput, TryRun, timer chains (sim/src/Run/MultiPbProbe.cs)
 //   follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] ...   FOLLOW mode vs a moving owner (sim/src/Run/FollowTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
 //   M0 (docs/design/control_arch.md): --pilot "0:sit;5:move 0 0 -1;20:leave" [--pilot-team 0] puts a ScriptedPilot into the cockpit of our ships (verbs: ScriptedPilot.cs),
@@ -58,8 +59,8 @@ namespace SeSim.Run
             public double Dbl(string k, double d) { string v; if (!Kv.TryGetValue(k, out v)) return d; double r; if (!double.TryParse(v, NumberStyles.Float, Inv, out r)) throw new ArgumentException("--" + k + " needs a number"); return r; }
         }
 
-        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "endless", "allow-mismatch" };
-        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data" };
+        static readonly HashSet<string> Flags = new HashSet<string> { "profile", "resume", "quiet", "no-summary", "echo", "face", "face-away", "endless", "allow-mismatch" };
+        static readonly HashSet<string> Known = new HashSet<string> { "filter", "kind", "seeds", "seed", "jobs", "shard", "out", "batch", "scenario", "seed-index", "seed-start", "trace", "trace-every", "profile", "resume", "quiet", "no-summary", "repo", "cap-seconds", "unfair", "in", "echo", "echo-every", "echo-ship", "commands", "start-distance", "face", "face-away", "custom-data", "enemies", "enemy-counts", "enemy-brain", "enemy-fleets", "endless", "target", "max-drones", "min-drones", "models", "min-fights", "allow-mismatch", "pilot", "pilot-team", "pb-custom-data" };
 
         static Opts Parse(string[] a, int start, SimSettings settings)
         {
@@ -168,6 +169,8 @@ namespace SeSim.Run
                     return DockLaunch.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "printer-test":
                     return PrinterTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
+                case "multipb-probe":
+                    return MultiPbProbe.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "follow-test":
                     return FollowTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "compile-scripts":
@@ -294,6 +297,7 @@ namespace SeSim.Run
                 }
             }
             if (o.Has("face") && o.Get("face", "true") != "false") foreach (var sc in scs) sc.FaceEnemies = true;
+            if (o.Has("face-away") && o.Get("face-away", "true") != "false") foreach (var sc in scs) sc.FaceAway = true;
             if (o.Has("start-distance"))
             {
                 string[] p = o.Get("start-distance", "").Split(':');

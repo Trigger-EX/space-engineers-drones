@@ -10,6 +10,14 @@ directions) with docking bays on stalks. A bay is a projector `[Bay N]` (the dro
 the printer's power and its PB is recompiled), RELEASE (merge blocks off, the printer nudges away, `<Tag>_JOIN` is broadcast) and
 COOLDOWN. Printed drones then start working by themselves.
 
+**Timer chain (no script needed):** every bay also has three timers, `Timer Build / Release / Reclamp [Bay N]`. Press `Start` on `Timer Build [Bay N]`
+once and the bay loops on timers alone: welders off after the build time, the printer's merge block off (the drone's own LAUNCH block sees it and flies
+off), merge block and welders on again after 30 s. Use it when the printer's script is missing or has stopped; while one of a bay's timers counts down
+the script leaves the bay alone. The delays are guesses (a timer cannot see when a print is finished): tune `Timer Build`. `Stop` on any timer ends the loop.
+
+**Free lanes:** the drone's path straight ahead (16 cells = 8 m) and its exit lane (9 m) are kept free of welders and scaffold, so a printed drone can take off
+nose first. Details: `docs/printer-release.md`.
+
 {{INSTALL}}
 
 ## Models
