@@ -83,13 +83,13 @@ def minify(t):
         elif prev is not None and not gap:
             pass
         res.append(k); prev = k; gap = False
-    # break into lines of ~200 chars at statement ends (the in-game editor copes badly with one giant line)
+    # break into lines of ~600 chars at statement ends (the in-game editor copes badly with one giant line; 200 cost ~300 characters of newlines and Mantis / Aegis had run out of room)
     s = ''.join(res)
     out, line = [], []
     ln = 0
     for k in _split_keep(s):
         line.append(k); ln += len(k)
-        if ln > 200 and k in (';', '{', '}'):
+        if ln > 600 and k in (';', '{', '}'):
             out.append(''.join(line)); line = []; ln = 0
     if line: out.append(''.join(line))
     return '\n'.join(out) + '\n'

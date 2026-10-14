@@ -112,7 +112,7 @@ enum Mode { IDLE, GUARD, HUNT, ASSIST, RTB, FOLLOW }
 Mode _mode = Mode.IDLE;
 MyIni _ini = new MyIni();
 double _now = 0; long _tick = 0;
-Vector3D _home; bool _homeSet = false;
+Vector3D _home; bool _homeSet = false, _ready = false;
 Vector3D _dynHome; double _dynHomeT = -99;
 
 IMyShipController _rc;
@@ -240,7 +240,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -453,7 +453,7 @@ string AiGateStatus()
 // "if (_mode == Mode.FOLLOW && FollowFar(me)) want = FollowBack(me);"; speed cap MaxSpeed in FOLLOW; FollowStatus() in the status.
 double FoDist = 60, FoFootDist = 20, FoRadius = 25, FoEngage = 800, FoLeash = 1200, FoCoast = 3;
 bool FoFoot = true, FoSat = false, FoSatAlong = false;
-double FoSatDist = 100, FoSatPeriod = 180, _foSatPh = 0, _foSatT = -99, _foSatR = 100;
+double FoSatDist = 400, FoSatPeriod = 180, _foSatPh = 0, _foSatT = -99, _foSatR = 400;
 Vector3D _foSlotV;
 Vector3D _foP, _foV, _foLinkP, _foLinkV, _foFwd, _foUp;
 double _foT = -99, _foLinkT = -99, _foFootT = -99, _foR = 0, _foRT = -99, _foPhase = 0, _foAcc = 0;
@@ -1318,13 +1318,13 @@ public Program()
     catch (Exception ex) { CtorErr("modules", ex); }
     try
     {
-        _mode = ParseMode(StartMode, Mode.IDLE);
+        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _mode = _ready ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
         if (!string.IsNullOrEmpty(Storage))
         {
             var p = Storage.Split(';');
             double x, y, z;
             if (p.Length >= 5 && double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
-            { _mode = ParseMode(p[0], _mode); _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
+            { _mode = ParseMode(p[0], _mode); _ready = p.Length > 5 && p[5] == "1"; _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
         }
     }
     catch (Exception ex) { CtorErr("storage", ex); }
@@ -1347,7 +1347,7 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
+    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", _ready ? "1" : "0");
 }
 
 Mode ParseMode(string s, Mode def)
@@ -1432,6 +1432,7 @@ void Command(string a)
         case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;
         case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;
         case "focus": SplitFocus = false; break;
+        case "ready": SetMode(Mode.GUARD); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _ready = true; } break;   // READY: hold this spot (the carrier link's HOME is ignored), scan all round, fight when something comes, come back
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range": double r; if (w.Length > 1 && double.TryParse(w[1], out r)) ForcedRange = Math.Max(0, r); break;
         case "reload": LoadConfig(); FleetLoad(true); LaunchLoad(); KzLoad(); AiGateLoad(); FoLeash = Math.Max(FoLeash, 2200); FollowLoad(); GetBlocks(); break;
@@ -1439,7 +1440,7 @@ void Command(string a)
     }
 }
 
-void SetMode(Mode m) { _mode = m; if (m == Mode.IDLE || m == Mode.ASSIST) Release(); }
+void SetMode(Mode m) { _mode = m; _ready = false; if (m == Mode.IDLE || m == Mode.ASSIST) Release(); }
 
 // =====================================================================
 void LoadConfig()
@@ -1857,6 +1858,7 @@ void PruneAndSelect()
 
 Vector3D Home()
 {
+    if (_ready && _mode == Mode.GUARD) return _home;
     if (_mode == Mode.FOLLOW && FollowKnown()) return FollowPos();   // FOLLOW: the owner (ship link or on foot), see the FOLLOW block
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
     return (_now - _dynHomeT < 5) ? _dynHome : _home;
@@ -2396,7 +2398,7 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("MANTIS HYBRID AI v").Append(VER).Append('\n');
-    _sb.Append("Mode   : ").Append(_mode).Append("   ").Append(_wName).Append('\n');
+    _sb.Append("Mode   : ").Append(_ready ? "READY" : _mode.ToString()).Append("   ").Append(_wName).Append('\n');
     _sb.Append(FollowStatus());
     if (_tgt != null)
     {

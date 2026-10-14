@@ -63,9 +63,9 @@ copy round its home point / carrier link (it has no on-foot owner tracking).
 - **Shape**: the drones spread evenly round a **vertical circle centred on the owner**; the whole ring turns slowly (`Satellite Orbit Period (s)`, default 180 s,
   about 2 deg/s, 3.5 m/s at 100 m). `Satellite Ring (ACROSS/ALONG)`: ACROSS (default) is square to the owner's heading, a halo round the ship that covers every
   side; ALONG is side-on. The plane turns with the owner's (lagged) heading; with a parked owner every drone uses the same world axes, so they share one plane.
-- **Distance**: `Satellite Distance (m)` (default 100, at least the owner's hull radius + 45 m). It grows with the number of ships so neighbours stay a wingmate
+- **Distance**: `Satellite Distance (m)` (default **400** since 2026-10-14, was 100: a wider surveillance net and time to react when the ship manoeuvres; at least the owner's hull radius + 45 m). It grows with the number of ships so neighbours stay a wingmate
   separation apart (`max(SepRange x 1.1, 40) / (2 sin(pi/n))`; Hornets: 6 ships 100 m, 12 ships 149 m), capped at 600 m, and up to 2x while the owner manoeuvres hard.
-  On foot: 20-40 m so the sensor keeps seeing you. 100 m keeps the ring inside the cameras' and turrets' mutual cover while leaving room for a 20-30 m hull.
+  On foot: 20-40 m so the sensor keeps seeing you. (The old 100 m kept the ring inside the cameras' and turrets' mutual cover while leaving room for a 20-30 m hull; at 400 m the drones cover each other with cameras only. Sim `follow-test --cmd satellite` at 400 m: ring radius 400 +/- 0.1 m, 1.99 deg/s, no drone inside the hull, also towed at 40 m/s (p95 406-412 m).)
 - **Phase**: there is no shared clock in the game, so each drone averages the ring phase implied by the mates that sit on the ring (circular mean, 2 %/tick).
 - **Threat**: unchanged FOLLOW combat. Targets within `Engage Radius` (800 m) of the owner are engaged by the whole hive, the drones leave their slots and fight under
   the `Leash`; when nothing is left they fly back to their slots, which have kept turning.

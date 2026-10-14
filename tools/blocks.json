@@ -44,14 +44,14 @@
         "LancerAI",
         "HarrierAI",
         "AegisAI",
-        "BasiliskAI"
+        "BasiliskAI",
+        "WaspFlightAI"
       ]
     },
     "FRIENDLY BEACON": {
       "file": "tools/fb_block.cs",
       "scripts": [
         "WaspAI",
-        "WaspFlightAI",
         "MantisAI",
         "ShrikeAI"
       ]

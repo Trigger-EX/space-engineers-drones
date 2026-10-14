@@ -53,6 +53,7 @@
 //
 //  COMMANDS (PB argument, toolbar, or IGC "<Tag>_CMD")
 //   guard    hold home point, engage anything inside GuardRadius
+//   ready    like guard, but holds THIS spot (the carrier link's HOME is ignored), scans all round and fires when something comes; moves only to fight, then returns (Start Mode READY works too)
 //   follow   stay with the owner: a ship running a Mothership link, or you on foot near the drone ("escort" works too)
 //   satellite (sat, orbit)   FOLLOW, but the drones spread round a slowly turning vertical ring centred on the owner (ring size grows with their number); [Follow] section
 //   hunt     chase and engage any target, actively scan
@@ -124,7 +125,7 @@ MyIni _ini = new MyIni();
 double _now = 0;
 long _tick = 0;
 Vector3D _home;
-bool _homeSet = false;
+bool _homeSet = false, _ready = false;
 Vector3D _dynHome; double _dynHomeT = -99;
 
 // blocks
@@ -236,7 +237,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -449,7 +450,7 @@ string AiGateStatus()
 // "if (_mode == Mode.FOLLOW && FollowFar(me)) want = FollowBack(me);"; speed cap MaxSpeed in FOLLOW; FollowStatus() in the status.
 double FoDist = 60, FoFootDist = 20, FoRadius = 25, FoEngage = 800, FoLeash = 1200, FoCoast = 3;
 bool FoFoot = true, FoSat = false, FoSatAlong = false;
-double FoSatDist = 100, FoSatPeriod = 180, _foSatPh = 0, _foSatT = -99, _foSatR = 100;
+double FoSatDist = 400, FoSatPeriod = 180, _foSatPh = 0, _foSatT = -99, _foSatR = 400;
 Vector3D _foSlotV;
 Vector3D _foP, _foV, _foLinkP, _foLinkV, _foFwd, _foUp;
 double _foT = -99, _foLinkT = -99, _foFootT = -99, _foR = 0, _foRT = -99, _foPhase = 0, _foAcc = 0;
@@ -1314,13 +1315,13 @@ public Program()
     catch (Exception ex) { CtorErr("modules", ex); }
     try
     {
-        _mode = ParseMode(StartMode, Mode.IDLE);
+        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _mode = _ready ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
         if (!string.IsNullOrEmpty(Storage))
         {
             var p = Storage.Split(';');
             if (p.Length >= 5)
             {
-                _mode = ParseMode(p[0], _mode);
+                _mode = ParseMode(p[0], _mode); _ready = p.Length > 5 && p[5] == "1";
                 double x, y, z;
                 if (double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
                 { _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
@@ -1348,7 +1349,7 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
+    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", _ready ? "1" : "0");
 }
 
 Mode ParseMode(string s, Mode def)
@@ -1433,6 +1434,7 @@ void Command(string a)
         case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;
         case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;
         case "focus": SplitFocus = false; break;
+        case "ready": SetMode(Mode.GUARD); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _ready = true; } break;   // READY: hold this spot (the carrier link's HOME is ignored), scan all round, fight when something comes, come back
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
             double r; if (w.Length > 1 && double.TryParse(w[1], out r)) Standoff = MathHelper.Clamp(r, MinRange, FireRange); break;
@@ -1443,7 +1445,7 @@ void Command(string a)
 
 void SetMode(Mode m)
 {
-    _mode = m; _noTgtSince = _now; _patrolLeg = false; _patrolStopSet = false;
+    _mode = m; _ready = false; _noTgtSince = _now; _patrolLeg = false; _patrolStopSet = false;
     if (m == Mode.IDLE || m == Mode.ASSIST) Release();
 }
 
@@ -1887,6 +1889,7 @@ void PruneAndSelect()
 
 Vector3D Home()
 {
+    if (_ready && _mode == Mode.GUARD) return _home;
     if (_mode == Mode.FOLLOW && FollowKnown()) return FollowPos();   // FOLLOW: the owner (ship link or on foot), see the FOLLOW block
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
     if (_mode == Mode.HUNT && _tgt == null && _patrolStopSet) return _patrolStop;   // search patrol: hold the listening stop, not fly home
@@ -2317,7 +2320,7 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("WASP DRONE AI v").Append(VER).Append('\n');
-    _sb.Append("Mode   : ").Append(_mode).Append('\n');
+    _sb.Append("Mode   : ").Append(_ready ? "READY" : _mode.ToString()).Append('\n');
     _sb.Append(FollowStatus());
     if (_tgt != null)
     {

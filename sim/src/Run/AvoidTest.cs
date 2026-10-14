@@ -2,7 +2,7 @@
 // FRIENDLY ship (team 0, no script, so nothing beacons for it) sits on the line between them. Without the avoidance block the drones fly
 // through it; with it they sidestep or brake. --beacon injects the DRONE_SPACE beacon the friendly's script would send (else the drones can
 // only see it with their cameras / sensors).
-//   mono SimHost.exe avoid-test [--model Hornet] [--count 3] [--bystander Hornet] [--bx 30] [--mode hunt|transit] [--hx 400] [--beacon] [--seconds 90] [--seed 1] [--repo DIR]
+//   mono SimHost.exe avoid-test [--model Hornet] [--count 3] [--bystander Hornet] [--bx 30] [--mode hunt|transit] [--hx 400] [--beacon] [--rock] [--seconds 90] [--seed 1] [--repo DIR]
 // Reported: closest approach of each drone to the bystander's centre, ticks inside the two hulls' bounding spheres, whether the enemy was
 // engaged (min distance to it). FAIL = any drone within 10 m of the two bounding spheres (or a script death).
 using System;
@@ -11,6 +11,8 @@ using System.Globalization;
 using System.IO;
 using Sandbox.ModAPI.Ingame;
 using VRage;
+using VRage.Game.ModAPI.Ingame;
+using VRage.Game;
 using VRageMath;
 using SeSim.Core;
 using SeSim.Blueprint;
@@ -30,7 +32,7 @@ namespace SeSim.Run
             string model = Arg(args, "--model", "Hornet"), by = Arg(args, "--bystander", "Hornet");
             int count = (int)Dbl(args, "--count", 3);
             double secs = Dbl(args, "--seconds", 90); ulong seed = (ulong)Dbl(args, "--seed", 1);
-            bool beacon = Has(args, "--beacon"), transit = Arg(args, "--mode", "hunt") == "transit";   // transit: GUARD with a HOME beyond the friendly (a straight run through it), no enemy cue
+            bool rock = Has(args, "--rock"), beacon = Has(args, "--beacon"), transit = Arg(args, "--mode", "hunt") == "transit";   // transit: GUARD with a HOME beyond the friendly (a straight run through it), no enemy cue
             var settings = new SimSettings();
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
             string bpDir = Path.Combine(Path.Combine(repo, "out"), "Blueprints");
@@ -50,6 +52,10 @@ namespace SeSim.Run
             foreach (var d in drones) foreach (var b in d) foreach (var bi in b.Blocks) if (bi.Api is SimProgrammableBlock && pbs.Count == drones.IndexOf(d)) pbs.Add((SimProgrammableBlock)bi.Api);
             foreach (var p in pbs) if (p.Runner == null) { Console.Error.WriteLine("test setup failed: no scripted PB in " + model); return 2; }
             Body fb = friend[0], eb = foe[0];
+            Vector3D rockAt = Vector3D.Zero;
+            var sensors = new List<SimSensor>();
+            foreach (var d in drones) foreach (var b in d) foreach (var bi in b.Blocks) if (bi.Api is SimSensor) sensors.Add((SimSensor)bi.Api);
+            if (rock && sensors.Count == 0) { Console.Error.WriteLine("--rock needs a drone with a sensor"); return 2; }
             var minF = new double[count]; var minE = new double[count]; var inside = new int[count];
             for (int i = 0; i < count; i++) { minF[i] = minE[i] = double.MaxValue; }
             long ticks = (long)(secs * SimSettings.TicksPerSecond);
@@ -62,12 +68,16 @@ namespace SeSim.Run
                 if (!transit && t >= 60 && t % 15 == 0 && eb.Alive)   // the enemy is cued over IGC (a parked ship 700 m away is beyond what the HUNT sweep finds quickly)
                     w.Igc.InjectBroadcast("HORNET_TGT", new MyTuple<long, Vector3D, Vector3D, double, long>(eb.EntityId, eb.WorldBoundCenter, Vector3D.Zero, eb.BoundRadius, 0));
                 w.Step();
+                if (rock)   // an asteroid reported by every working sensor with a hit point at the origin (a camera ray would give the same entity)
+                    foreach (var s in sensors)
+                        if (s.IsWorking) s.Detected.Add(new MyDetectedEntityInfo(555000111L, "Rock", MyDetectedEntityType.Asteroid, new Vector3D(0, 0, 0), MatrixD.Identity, Vector3.Zero,
+                            MyRelationsBetweenPlayerAndBlock.NoOwnership, new BoundingBoxD(new Vector3D(-500, -500, -500), new Vector3D(500, 500, 500)), (long)(t * 16)));
                 for (int i = 0; i < count; i++)
                 {
                     var m = drones[i][0]; if (!m.Alive) continue;
-                    double df = (m.WorldBoundCenter - fb.WorldBoundCenter).Length(), de = (m.WorldBoundCenter - eb.WorldBoundCenter).Length();
+                    double df = (m.WorldBoundCenter - (rock ? rockAt : fb.WorldBoundCenter)).Length(), de = (m.WorldBoundCenter - eb.WorldBoundCenter).Length();
                     if (df < minF[i]) minF[i] = df; if (de < minE[i]) minE[i] = de;
-                    if (df < m.BoundRadius + fb.BoundRadius) inside[i]++;
+                    if (df < m.BoundRadius + (rock ? 40 : fb.BoundRadius)) inside[i]++;
                 }
             }
             bool ok = true;
@@ -75,7 +85,7 @@ namespace SeSim.Run
             for (int i = 0; i < count; i++)
             {
                 bool dead = pbs[i].Runner.Dead && (pbs[i].Runner.DeathReason ?? "") != "detached" && (pbs[i].Runner.DeathReason ?? "") != "block destroyed";
-                bool good = !dead && inside[i] == 0 && minF[i] >= drones[i][0].BoundRadius + fb.BoundRadius + 10;   // at least 10 m of air between the two bounding spheres
+                bool good = !dead && inside[i] == 0 && minF[i] >= drones[i][0].BoundRadius + (rock ? 40 : fb.BoundRadius) + 10;   // at least 10 m of air between the two bounding spheres
                 ok &= good;
                 Console.WriteLine(string.Format(Inv, "  drone {0}: closest to friendly {1,6:F1} m (hulls touch at {2:F1}) | inside {3,4:F1} s | closest to enemy {4,6:F0} m | {5}",
                     i, minF[i], drones[i][0].BoundRadius + fb.BoundRadius, inside[i] / (double)SimSettings.TicksPerSecond, minE[i], dead ? "SCRIPT DEAD " + pbs[i].Runner.DeathReason : good ? "ok" : "FAIL"));

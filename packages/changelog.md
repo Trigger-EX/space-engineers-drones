@@ -1,3 +1,8 @@
+### v2.7 (unreleased): SATELLITE 400 m, READY mode, rocks
+- **Satellite Distance default 400 m** (was 100) in every FOLLOW-block script, the Gnat and WaspStaff: a wider surveillance net and time to react to the ship moving. Custom Data keys already written in a PB keep their value.
+- **`ready` mode** in all drones (Hornet, Wasp, Lancer, Harrier, Aegis, Mantis, Basilisk, Longbow, Gnat, Wasp Split Flight): hold this spot, scan all round, fight only when something comes, then return. `docs/friendly-avoidance.md`.
+- **Rocks**: the friendly-avoidance block keeps asteroid ray hits as 40 m spheres (the sim has no voxels; tested with an injected report). The minifier now breaks lines at ~600 characters (was 200): about 300 characters back, which Aegis and Mantis needed.
+
 ### v2.7 (unreleased): FRIENDLY AVOIDANCE
 Drones now keep clear of every grid that is not an enemy (`docs/friendly-avoidance.md`). Trigger: Hornets orbiting a target flew into a Ballista that was not on their tag, not a contact and never seen.
 - Shared blocks `FRIENDLY AVOIDANCE` (`tools/fa_block.cs`: IGC beacon `DRONE_SPACE`, sightings from `Valid()`, barrier + ramp + sidestep in `FaWant`) in Hornet, Gnat, Longbow, Lancer, Harrier, Aegis, Basilisk; `FRIENDLY BEACON` (`tools/fb_block.cs`) in Mantis, Wasp and the Shrike Helm (they have no room to steer: 100,000 / 80,900 characters).

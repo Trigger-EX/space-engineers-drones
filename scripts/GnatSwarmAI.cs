@@ -90,7 +90,7 @@ enum Run { SETUP, RUN, CORRECT, BREAK }
 Mode _mode = Mode.IDLE; Run _run = Run.SETUP;
 MyIni _ini = new MyIni();
 double _now = 0; long _tick = 0;
-Vector3D _home; bool _homeSet = false;
+Vector3D _home; bool _homeSet = false, _ready = false;
 Vector3D _dynHome; double _dynHomeT = -99;
 Vector3D _hvP, _homeV; double _hvT = -99;   // carrier velocity from successive home fixes (FORM / RTB feed-forward)
 IMyBroadcastListener _lHomeR2; string _lHomeR2Key = null;   // "<fleet>_HOMER" (carrier radius from any link)
@@ -189,7 +189,7 @@ IMyBroadcastListener _flCmd, _flHome;
 List<IMyBroadcastListener> _flAll = new List<IMyBroadcastListener>();
 List<string> _flOut = new List<string>();      // full IGC tags that target shares are copied to
 string _flKey = "", _flChan = "";              // fingerprint of the registered tags / resolved channel name ("" = off)
-string _flAllowed = "hunt,attack,guard,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
+string _flAllowed = "hunt,attack,guard,ready,follow,escort,form,assist,rtb,idle,stop,launch,abort,split,focus,next,unlock,aialert";
 bool _flCmdOn = true, _flHomeOn = true;
 
 string FleetTag(string t, string ch)
@@ -976,18 +976,27 @@ void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message
 //   1 BARRIER   closing speed on the sphere is capped at sqrt(2 x 4 m/s2 x gap), so the drone can always stop in time
 //   2 RAMP      inside margin + 40 m a radial push away from it (up to 50 m/s, more inside the margin)
 //   3 SIDESTEP  if the straight line (actual or commanded velocity) passes inside the margin within 8 s, a push sideways
+//   ROCKS    asteroids seen by a camera ray (the scans all go through Valid()) are kept as 40 m spheres on the hit point for 60 s, so the same
+//            barrier / ramp / sidestep keep the drone off them. Voxels give no hull radius and sensors give no hit point: only rays count.
 // Ignored: RTB and IDLE (docking, parked), and any obstacle whose sphere I am inside (launching from a bay, merged, docked).
 // No Custom Data keys (the 100,000-character limit); constants are below. Registers its listener on the first call.
 // Script hooks: FaSee(e) first line of Valid(); want = FaWant(want, me) right after the KzWant line (the speed cap comes after).
-// Enemies are skipped: my target and every contact (_contacts holds only valid targets), since IGC does not tell friend from foe.
-// Uses from the script: _rc, _now, _mode, _tgt, _contacts, Valid(), Mode.RTB / Mode.IDLE.
-class FaO { public Vector3D P, V; public double R, T; public bool B; }
+// Enemies are skipped: every contact (_contacts holds only valid targets, my target included), since IGC does not tell friend from foe.
+// Uses from the script: _rc, _now, _mode, _contacts, Valid(), Mode.RTB / Mode.IDLE.
+class FaO { public Vector3D P, V; public double R, T; public bool B, K; }
 Dictionary<long, FaO> _fa = new Dictionary<long, FaO>(); IMyBroadcastListener _faL; double _faT, _faR = 6;
+FaO FaGet(long id) { FaO o; if (!_fa.TryGetValue(id, out o)) _fa[id] = o = new FaO(); return o; }
 void FaSee(MyDetectedEntityInfo e)
 {
-    if (e.IsEmpty() || e.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies || (e.Type != MyDetectedEntityType.LargeGrid && e.Type != MyDetectedEntityType.SmallGrid) || e.EntityId == Me.CubeGrid.EntityId || (_tgt != null && _tgt.Id == e.EntityId)) return;
-    FaO o;
-    if (!_fa.TryGetValue(e.EntityId, out o)) _fa[e.EntityId] = o = new FaO(); else if (o.B && _now - o.T < 1) return;   // (a fresh beacon fix beats a sighting)
+    if (e.Type == MyDetectedEntityType.Asteroid)   // rock: only a camera ray gives a point on it; one 40 m sphere per 40 m cell, kept 60 s
+    {
+        if (e.HitPosition == null || _fa.Count > 150) return;
+        Vector3D h = e.HitPosition.Value; FaO a = FaGet(((long)(h.X / 40) << 40) ^ ((long)(h.Y / 40) << 20) ^ (long)(h.Z / 40));
+        a.P = h; a.V = Vector3D.Zero; a.R = 40; a.T = _now; a.B = false; a.K = true; return;
+    }
+    if (e.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies || (e.Type != MyDetectedEntityType.LargeGrid && e.Type != MyDetectedEntityType.SmallGrid) || e.EntityId == Me.CubeGrid.EntityId) return;
+    FaO o = FaGet(e.EntityId);
+    if (o.B && _now - o.T < 1) return;   // (a fresh beacon fix beats a sighting)
     o.P = e.Position; o.V = e.Velocity; o.R = Math.Max(e.BoundingBox.Size.Length() * 0.5, 2); o.T = _now; o.B = false;
 }
 Vector3D FaWant(Vector3D want, Vector3D me)
@@ -999,8 +1008,7 @@ Vector3D FaWant(Vector3D want, Vector3D me)
         if (!(m.Data is MyTuple<long, Vector3D, Vector3D, float>)) continue;
         var d = (MyTuple<long, Vector3D, Vector3D, float>)m.Data;
         if (d.Item1 == Me.CubeGrid.EntityId) continue;
-        FaO q;
-        if (!_fa.TryGetValue(d.Item1, out q)) _fa[d.Item1] = q = new FaO();
+        FaO q = FaGet(d.Item1);
         q.P = d.Item2; q.V = d.Item3; q.R = d.Item4; q.T = _now; q.B = true;
     }
     Vector3D mv = _rc.GetShipVelocities().LinearVelocity, push = Vector3D.Zero;
@@ -1008,17 +1016,17 @@ Vector3D FaWant(Vector3D want, Vector3D me)
     {
         _faT = _now; var v = Me.CubeGrid.WorldVolume; _faR = v.Radius;
         IGC.SendBroadcastMessage("DRONE_SPACE", new MyTuple<long, Vector3D, Vector3D, float>(Me.CubeGrid.EntityId, v.Center, mv, (float)v.Radius));
-        var gone = new List<long>(); foreach (var kv in _fa) if (_now - kv.Value.T > (kv.Value.B ? 3 : 12)) gone.Add(kv.Key);
+        var gone = new List<long>(); foreach (var kv in _fa) if (_now - kv.Value.T > (kv.Value.B ? 3 : kv.Value.K ? 60 : 12)) gone.Add(kv.Key);
         foreach (var id in gone) _fa.Remove(id);
     }
     if (_mode == Mode.RTB || _mode == Mode.IDLE) return want;
     foreach (var kv in _fa)
     {
         var o = kv.Value;
-        if ((_tgt != null && _tgt.Id == kv.Key) || _contacts.ContainsKey(kv.Key)) continue;   // an enemy's beacon (or my target's): the fight is meant to close in on it
+        if (_contacts.ContainsKey(kv.Key)) continue;   // an enemy's beacon (or my target's): the fight is meant to close in on it
         Vector3D rel = me - (o.P + o.V * Math.Min(_now - o.T, 3));
         double dist = rel.Length(), r = o.R + _faR, inner = r + 15;
-        if (dist < r || dist < 1) continue;   // inside its bounding sphere: launching, merged or docked
+        if ((dist < r && !o.K) || dist < 1) continue;   // inside a ship's bounding sphere: launching, merged or docked (a rock's sphere is only a hit point's margin: still avoid it)
         Vector3D n = rel / dist;
         double cl = -Vector3D.Dot(want - o.V, n), lim = Math.Sqrt(8 * Math.Max(dist - inner, 0));
         if (cl > lim) want += n * (cl - lim);
@@ -1028,7 +1036,7 @@ Vector3D FaWant(Vector3D want, Vector3D me)
             Vector3D w = (k == 0 ? mv : want) - o.V; double ww = w.LengthSquared(), t = -Vector3D.Dot(rel, w) / Math.Max(ww, 1);
             if (ww < 4 || t <= 0 || t > 8) continue;
             Vector3D miss = rel + w * t; double ml = miss.Length();
-            if (ml < inner) push += (ml > 1 ? miss / ml : Vector3D.Normalize(Vector3D.Cross(w, Math.Abs(w.Y) < 0.9 * Math.Sqrt(ww) ? Vector3D.Up : Vector3D.Right))) * 50 * (1 - t / 8) * (1 - ml / inner);
+            if (ml < inner) push += (ml > 1 ? miss / ml : Vector3D.Up) * 50 * (1 - t / 8) * (1 - ml / inner);
         }
     }
     return want + push;
@@ -1049,12 +1057,12 @@ public Program()
     catch (Exception ex) { CtorErr("modules", ex); }
     try
     {
-        _mode = ParseMode(StartMode, Mode.IDLE);
+        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _mode = _ready ? Mode.FORM : ParseMode(StartMode, Mode.IDLE);
         if (!string.IsNullOrEmpty(Storage))
         {
             var p = Storage.Split(';'); double x, y, z;
             if (p.Length >= 5 && double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
-            { _mode = ParseMode(p[0], _mode); _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
+            { _ready = p[0] == "READY"; _mode = _ready ? Mode.FORM : ParseMode(p[0], _mode); _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
         }
     }
     catch (Exception ex) { CtorErr("storage", ex); }
@@ -1081,7 +1089,7 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode == Mode.FORM && SatOn ? "SAT" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
+    Storage = string.Join(";", _ready ? "READY" : _mode == Mode.FORM && SatOn ? "SAT" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0");
 }
 
 Mode ParseMode(string s, Mode d)
@@ -1164,12 +1172,13 @@ void Command(string a)
         case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;
         case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;
         case "focus": SplitFocus = false; break;
+        case "ready": SatOn = false; SetMode(Mode.FORM); if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; _ready = true; } break;   // READY: hold this spot (the carrier link's HOME is ignored), scan all round, fight when something comes, come back
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "reload": LoadConfig(); FleetLoad(true); LaunchLoad(); KzLoad(); AiGateLoad(); GetBlocks(); break;
         case "armed": case "launch": case "disarm": LaunchCmd(w[0]); break;
     }
 }
-void SetMode(Mode m) { _mode = m; _run = Run.SETUP; if (m == Mode.IDLE) Release(); }
+void SetMode(Mode m) { _mode = m; _ready = false; _run = Run.SETUP; if (m == Mode.IDLE) Release(); }
 
 // =====================================================================
 void LoadConfig()
@@ -1378,7 +1387,7 @@ void ReadIGC()
         _hvP = _dynHome; _hvT = _dynHomeT;
     }
 }
-Vector3D HomeVel() { return (_now - _dynHomeT < 2 && !(_mode != Mode.RTB && _tgt == null && _now - _assistT < 4)) ? _homeV : Vector3D.Zero; }   // zero while the home point is not the carrier
+Vector3D HomeVel() { return (!_ready && _now - _dynHomeT < 2 && !(_mode != Mode.RTB && _tgt == null && _now - _assistT < 4)) ? _homeV : Vector3D.Zero; }   // zero while the home point is not the carrier
 
 void Broadcast()
 {
@@ -1564,7 +1573,7 @@ Vector3D ConePoint(Vector3D axis, double coneDeg, int i, int n)
 // so neighbours stay apart (more drones = a bigger ring), never inside the carrier hull + 45 m. The ring plane is square to the carrier's heading.
 // Ring phase: no clock, each drone averages the phase implied by the mates on the ring. Fights and returns work as in FORM. Same behaviour as
 // the SATELLITE formation of the other drones (tools/follow_block.cs). In gravity only the upper arc is used and the drones sway.
-bool SatOn = false; double SatDist = 100, SatPeriod = 180, _satPh = 0, _satT = -99, _satR = 100; Vector3D _satFwd = Vector3D.Right, _satV;
+bool SatOn = false; double SatDist = 400, SatPeriod = 180, _satPh = 0, _satT = -99, _satR = 400; Vector3D _satFwd = Vector3D.Right, _satV;
 double SatBase(int k, int n, bool grav) { return grav ? Math.PI * (k + 0.5) / n : 2 * Math.PI * (k + 0.5) / n; }
 Vector3D SatSlot()
 {
@@ -1609,6 +1618,7 @@ Vector3D SpherePoint(int i, int n)
 double HomePad() { return (_now - _homeRT < 5 && _now - _dynHomeT < 5) ? _homeR + 25 : 0; }   // stay outside a carrier's hull
 Vector3D Home()
 {
+    if (_ready && _mode == Mode.FORM) return _home;
     if (_mode != Mode.RTB && _tgt == null && _now - _assistT < 4) return _assist;   // go help a hive member under fire
     return (_now - _dynHomeT < 5) ? _dynHome : _home;
 }

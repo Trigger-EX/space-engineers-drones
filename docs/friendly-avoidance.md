@@ -28,6 +28,10 @@ if it was installed before the release zips are rebuilt.
   1. *barrier*: closing speed capped at `sqrt(2 * 4 m/s2 * gap)` (the drones manage 6.5 m/s2, so it can always stop);
   2. *ramp*: inside margin + 40 m a radial push up to 50 m/s;
   3. *sidestep*: if the straight line (actual or commanded velocity) passes inside the margin within 8 s, a lateral push.
+* **Rocks** (2026-10-14): an asteroid reported with a hit point (a camera ray; every scan goes through `Valid()`) is kept as a 40 m sphere on that
+  point for 60 s (one per 40 m cell, at most 150 obstacles) and gets the same barrier / ramp / sidestep. Sensors give no hit point, so only rays count.
+  Not in the sim (it has no voxels): `avoid-test --rock` injects an asteroid report through the sensors (before: 5 m from the point; now 89 m).
+  Aegis is at 99,989 of 100,000 characters. Wasp Split Flight (76 k) has the full block; the single-PB Mantis and Wasp only beacon (they have no room: moving a module such as launch, follow or display into a second PB would make it).
 * **Not applied** in RTB and IDLE, to an obstacle whose sphere I am inside (launching, merged, docked), to my target, or to any current contact
   (IGC cannot tell friend from foe: an enemy running the same beacon must not be dodged).
 * **No Custom Data keys**: several scripts are within 1-4 k of the 100,000-character limit; the constants are in the block.
@@ -42,3 +46,10 @@ beyond a parked friendly. Before: closest approach 5.1 m (FAIL); after: 47-51 m.
 even before: the wingmate separation and the standoff keep the drones apart in that geometry). 10-seed regression, 48 scenarios (1v1 among
 Aegis/Basilisk/Gnat/Harrier/Hornet/Lancer/Longbow S, Lancer+Mantis mixed, Gnat swarms): wins, timeouts, collisions and exceptions unchanged
 within noise (collisions 0 and 0).
+
+## READY mode (2026-10-14)
+`ready` (PB argument, `<Tag>_CMD`, toolbar, `Start Mode=READY`, fleet / `wing ready`): GUARD with the home point fixed to where the drone is when ordered
+(the carrier link's HOME and the satellite ring are ignored), so it holds still (dampeners), keeps the all-round camera scan, engages what comes within
+`Guard Radius` of that spot (full combat movement, friendly avoidance included), and returns to the spot afterwards. Any other mode command ends it.
+The status line shows `Mode   : READY`; the Storage field keeps it over a recompile. Gnat: FORM round the spot. The Shrike Helm keeps its own `react`.
+The two-PB Wasp Split has it in the Flight PB only (the Staff screen shows GUARD).
