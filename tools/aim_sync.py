@@ -9,7 +9,7 @@ feeds BreachHit, the status line shows AimInfo(), SeekerSetup() runs after the c
 """
 import os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI"]
+SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI", "BasiliskAI"]
 BEGIN, END = "// >>> BREACH + SEEKER", "// <<< BREACH + SEEKER <<<"
 
 def unlisted():
