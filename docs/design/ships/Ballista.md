@@ -58,6 +58,21 @@ Owner's report: the Ballista did not notice enemies until they were well inside 
 * **The AI Offensive block is the detector** (2,500 m, all round) but its default search interval is 30 s [wiki], longer than the 6 s window. Changes (unverified in game): the Helm sets `UpdateTargetInterval` to 5 s on its AI blocks (`[Shrike] AI Search Interval (s)=5`, 0 = leave alone) and the Ballista's Custom Data gives the AI 20 s windows (`[AI Gate] AI Window (s)=20`, `Script Search Window (s)=5`).
 * If it is still blind in game: send `ai off` is not the fix (it removes the best detector); instead lock it by hand (cockpit/Remote Control lock + `assist`) or tell me what the AI Offensive block's terminal shows (found enemy, interval).
 
+### 3c. Standoff vs a 100 m/s charge (post-v2.7, sim)
+
+Tech Hunter flown straight at the Ballista at 100 m/s (`--pirate-rush true --pirate-cruise-speed 100`) from 3 km, 8 seeds per standoff, `tools/ballista_charge_sweep.py`. The sim Helm only notices the target at about 1.8 km, then flees at the 100 m/s cap (same as the charger), so the gap stops shrinking.
+
+| Standoff Range | closest approach avg / worst | damage taken avg | runs hit |
+|---|---|---|---|
+| 800-1000 (what `Standoff By Weapons=true` gave) | 312 / 20 m | 1.10 M | 8/8 |
+| 1200 | 421 / 14 m | 0.61 M | 8/8 |
+| 1400 | 903 / 728 m | 1.5 k | 1/8 |
+| 1500 | 996 / 620 m | 47 k | 1/8 |
+| **1600** (default) | 1,120 / 1,026 m | 0 | 0/8 |
+| 1700 (the cap) | 1,160 / 969 m | 0 | 0/8 |
+
+Caveats [sim, stand-in AI]: one notice distance only (a later notice shrinks the margin); the Tech Hunter's turrets never fired in the 1,600+ runs, so "hit" is damage taken; never run in the game.
+
 * **Spotter** `[Spotter][SH] Ballista Spotter` runs `SpotterAI.cs` (section 5).
 * No cockpit: a drone. Hand flying needs a seat added by hand (the Helm switches to MANUAL when somebody sits in a flight seat).
 
