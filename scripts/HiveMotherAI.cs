@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.5  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.6  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -54,6 +54,11 @@
 //  a welded PB compiles by itself), Armour Settle Seconds 30 -> 5, CHARGE releases as soon as the drone's
 //  batteries are at 95 % (the welded battery keeps the blueprint's charge).
 //
+//  v2.6 TIGHT CYCLE: release 2 s ("Armour Settle Seconds") after the first scan pass that finds every drone block present and every
+//  readable block complete (the last block printed), ARM separates as soon as the drone PB took its orders, Cooldown Seconds 6 -> 1
+//  (it still waits until the old drone has left the projection), and the welders stay on from CHARGE to the next BUILD
+//  ("Welders Stay On Through Release", not in rack mode).
+//
 //  COMMANDS: start | stop | max <n> | release [bay] | hold <bay> | unhold <bay> |
 //            reload | relay on|off
 //  CONFIG: Custom Data ([Hive Mother] and [Bay N] sections, created on first run).
@@ -61,19 +66,19 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.5";
+const string VER = "2.6";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
 bool RackMode = false;
 string LaunchTag = "STINGER";
-double ChargeSeconds = 25, CooldownSeconds = 6, StallSeconds = 45, BuildTimeout = 600, FaultSeconds = 60;
+double ChargeSeconds = 25, CooldownSeconds = 1, StallSeconds = 45, BuildTimeout = 600, FaultSeconds = 60;
 double NudgeSeconds = 1.5, NudgePower = 0.25, GapSeconds = 1.0, RecompileWait = 3, MatchRadius = 12;
-double ArmourSettle = 5, FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
+double ArmourSettle = 2, FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
 string FleetCh = "FLEET";
 const int ScanBudget = 150;
 int ParallelBuilds = 2;
-bool Printing = true, DoRecompile = false, Relay = false;
+bool Printing = true, WeldersStayOn = true, DoRecompile = false, Relay = false;
 int _peakIns = 0;
 
 MyIni _ini = new MyIni();
@@ -214,6 +219,7 @@ void LoadConfig()
     TargetTags = C(S, "Rack Target Tags (enemy sightings that release a drone)", TargetTags);
     ChargeSeconds = C(S, "Max Charge Seconds", ChargeSeconds);
     CooldownSeconds = C(S, "Cooldown Seconds", CooldownSeconds);
+    WeldersStayOn = C(S, "Welders Stay On Through Release", WeldersStayOn);
     StallSeconds = C(S, "Stall Warning Seconds", StallSeconds);
     BuildTimeout = C(S, "Build Timeout Seconds", BuildTimeout);
     FaultSeconds = C(S, "Fault Retry Seconds", FaultSeconds);
@@ -485,8 +491,8 @@ void StepBay(Bay b, ref int building, ref int docked)
     switch (b.State)
     {
         case "IDLE":
-            Power(b, false);
-            if (building < ParallelBuilds && Wants(b, docked)) { StartBuild(b); building++; }
+            if (building < ParallelBuilds && Wants(b, docked)) { StartBuild(b); building++; Power(b, true); }
+            else Power(b, false);
             break;
         case "BUILD":
             Power(b, true);
@@ -509,7 +515,7 @@ void StepBay(Bay b, ref int building, ref int docked)
             StepFinish(b, t);
             break;
         case "CHARGE":
-            Power(b, false);
+            Power(b, StayOn());
             _where = "bay " + b.N + " CHARGE find drone";
             FindDrone(b);
             _where = "bay " + b.N + " CHARGE recompile drone PB";
@@ -527,10 +533,10 @@ void StepBay(Bay b, ref int building, ref int docked)
             if (_targets.Count > _launched && _targets.Count > 0) { _launched++; Release(b); }
             break;
         case "ARM":      // the drone is still on this grid: its PB is visible, so give it its take-off orders now
-            Power(b, false);
+            Power(b, StayOn());
             _where = "bay " + b.N + " ARM drone PB";
             if (!b.Armed) b.Armed = Arm(b);
-            if ((b.Armed && t >= 0.5) || t >= ArmSeconds) Separate(b);
+            if (b.Armed || t >= ArmSeconds) Separate(b);      // TryRun is synchronous: an armed drone has already read its orders
             break;
         case "RELEASE":
             _where = "bay " + b.N + " RELEASE nudge";
@@ -784,6 +790,8 @@ bool StockEmpty()
 
 // Welders are only switched OFF outside BUILD/FINISH. In those two states "off" requests are ignored,
 // and every welder (except the one being kicked for 2 s) is forced back on each tick.
+// v2.6: welders stay on from CHARGE to the next BUILD, so the next drone is welded the moment the old one clears the projection (not in rack mode)
+bool StayOn() { return WeldersStayOn && !RackMode; }
 void Power(Bay b, bool on)
 {
     _where = "bay " + b.N + " " + b.State + " Power projector";
@@ -833,7 +841,7 @@ bool DroneCharged(Bay b)
 
 void Release(Bay b)
 {
-    Power(b, false);
+    Power(b, StayOn());
     FindDrone(b);
     b.Away = Vector3D.Zero;
     if (b.DMerge != null)

@@ -140,7 +140,8 @@ def build(spec, lite):
         drone = get_drone(key, lite)
         tag = DRONES[key][2]
         nums = pr.add_group(drone, count, grid)
-        cap = (spec.get('caps') or {}).get(tag, max(4, 3 * count))
+        # one drone type: its cap is the printer's Max Drones (Hive Mother stopped at 6 of 8 with 3 per bay); mixed printers share it out
+        cap = (spec.get('caps') or {}).get(tag, spec['max'] if len(spec['groups']) == 1 else max(4, 3 * count))
         for n in nums:
             cfg.append(dict(n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
 
