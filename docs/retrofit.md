@@ -13,11 +13,7 @@ Shared script blocks (`tools/blocks.json`, `tools/*_sync.py`) are the cheapest w
 
 ## Needs the owner's call
 
-| Item | Why it is not applied |
-|---|---|
-| Wing spacing for the large Helm ships (`Wingmate Separation Range / Speed / Fire Clearance`, the Ballista has 300 m / 12 m/s / 45 m) | Scaled values (Corsair 150 / 15 / 25, Warden 400 / 10 / 45, Leviathan 700 / 8 / 80) made the Corsair worse in the sim: 3 Corsairs in a line vs a parked Hornet, 5 seeds, the Hornet was left untouched in 3 of 5 runs against 1 of 5 with the defaults. Warden showed no difference. Not applied; a game report of Wardens or Corsairs crowding each other would justify a tuned try. |
-| Longbow S / L and Mantis railgun recharge under full thrust | The Ballista got power for a full rail recharge. Every other rail carrier already covers its rails' recharge draw (Longbow S 4.0 MW for 3.6, Longbow L 48 for 38, Mantis 4.0 for 3.6, Warden, Corsair and Leviathan 1.2 to 2x), but the ion thrusters are served first, so at full thrust the Longbow L recharge stops (48 MW against 38 + 77) and the small ones slow down. Fix would be more batteries (mass, layout); not done without a game report. |
-| Harasser defence (Lookout module + `HARASSER LINK`) on Warden / Leviathan / Corsair | The Helm side is already in every ShrikeAI ship (inactive without a Lookout). The Lookout lives in the Ballista's Spotter PB; those ships have many turrets that kill small craft, which the railgun-only Ballista lacked. Would need a Lookout PB each. |
+(none)
 
 ## Applied 2026-10-14 (from the Ballista work of the day)
 
@@ -34,11 +30,19 @@ Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95
 | `Kamikaze Rail Hold Range (m)=250`. Ballista, `1395231` | Warden, Leviathan, Corsair Helm Custom Data (they have rails or shell guns and point-defence turrets; Corsair 5-seed wing test: same as before) | Shrike (fighter, no rails) |
 | Full FRIENDLY AVOIDANCE steering (older improvement the Mantis never got: no room before its split, and the split left its beacon block unhooked, so it neither dodged nor beaconed) | Mantis Flight (81.7 k minified) | - |
 
+## Applied 2026-10-14 (second round, owner's requests)
+
+| Improvement | Applied to | Notes |
+|---|---|---|
+| Harasser defence (Ballista Lookout) | Warden, Leviathan, Corsair: the LOOKOUT block now also lives in StaffAI.cs, switched on in their Staff PB Custom Data | sim: Warden -10 to -13 % damage, Corsair hit rate 91 -> 74 % (damage unchanged), Leviathan no measurable gain; docs/design/ballista_harasser_defence.md section 12 |
+
 ## Role-specific (checked, not retrofitted)
+- HiveMotherAI v2.4/v2.5 (printers only): FINISH scan counts armour seen only by `CubeExists`, 5 s armour settle, no drone-PB recompile (threw NRE in the game), release on finish. Printer-controller logic, no drone uses it. (`CradleBayAI`'s lane check has the same armour blind spot: separate fix.)
 
 * **Tube ram drones** (large ones too: heavy armour panels round the body, `Nose Camera Setback (m)` for the contact fuse): `Start Mode (WAIT/HUNT)=HUNT` (owner request: a launched tube is a munition and hunts by itself; a gun drone's start mode stays the owner's per-model choice); `[AI Gate]` 20 s / 5 s windows (the AI Offensive block is its only detector, as on the Ballista); recessed side thrusters driven by the terminal guidance (ram geometry); warhead layer with impact / contact fuse (W variants).
 
 * **Ballista**: `Standoff Range=1600` / `Standoff By Weapons=false` (rail sniper vs a 100 m/s charge; other designs wait for the charge-test report, `pc/plans/charge_standoff.plan`); `Salvo=ON` (27-rail alpha strike); `Auto Camera Scan=false` and `[AI Gate]` 20 s / 5 s windows (the AI Offensive block is its detector; Warden and Leviathan run without the AI assist, so their camera scan is their only non-turret detector); point-defence rail battery (off); harasser defence (above); three reactors for the 27-rail recharge; four PD turrets, two of them rotor + hinge AI turrets (Warden, Leviathan, Corsair and Shrike already have rotor + hinge turrets).
+* **Wing spacing on the slow warships** (owner, 2026-10-14: "wing spacing can stay low for slow ships"): Warden, Leviathan and Corsair keep the defaults (70 m / 14 m). A scaled try made the Corsair worse in the sim (3 Corsairs vs a parked Hornet, 5 seeds: Hornet untouched in 3 of 5 runs against 1 of 5).
 * **Helm split** (Staff PB with the fleet channel and damage sensing): Warden, Leviathan and Corsair already had a Staff PB; Shrike and Ballista got theirs.
 
 ## Audited 2026-10-14, already everywhere

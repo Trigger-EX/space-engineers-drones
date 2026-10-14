@@ -49,6 +49,7 @@ IMyProgrammableBlock _hive;
 List<IMyShipConnector> _conn = new List<IMyShipConnector>();
 int[] _prio = { 0, 1, 2, 3 };
 
+bool LkDefOn = true;   // LOOKOUT: Enabled by default in the Spotter
 double _now, _tgtSeen = -99, _lastFeed = -99, _lastBay = -99, _lastSave = -99, _noProbeSince = -99, _lastProbeSeen = -99, _saveGap = 15, _holdBayUntil = -99;
 long _tid; double _tRad; Vector3D _tPos;
 Vector3D? _fedP; int _fedG = -1; long _fedT;
@@ -271,9 +272,9 @@ void Bay()
     }
 }
 
+// >>> LOOKOUT v1.1 (shared block: harasser defence, identical in SpotterAI (Ballista) and StaffAI (Warden, Leviathan, Corsair), synced by tools/blocks_sync.py; docs/design/ballista_harasser_defence.md) >>>
 // ---------------------------------------------------------------------------------------------------------------
-//  LOOKOUT: harasser defence (docs/design/ballista_harasser_defence.md)
-//  A small hostile craft that stays around and shoots (an AI drone launched by an enemy warship) is neither a kamikaze (the Helm's KAMIKAZE DEFENCE) nor a wreck, and the Ballista's rails cannot answer it.
+//  A small hostile craft that stays around and shoots (an AI drone launched by an enemy warship) is neither a kamikaze (the Helm's KAMIKAZE DEFENCE) nor a wreck, and the ship's heavy fixed guns cannot answer it.
 //  This module finds it, and picks a "corner jink": a velocity bias along the corner of the ship's own thrust box that lies across the harasser's line of sight (only acceleration across the line of
 //  sight makes a shot miss), changed every 0.8-2.5 s at random so a gunner cannot lead it, plus a roll that puts the harasser above or below the hull (where the top and belly turrets, cameras and
 //  AI turrets see it), and kites out of its gun range (Away Speed, within the large target's stand-off band). The Helm applies the bias (HARASSER LINK block) and stays the only writer of thrusters and gyros; the nose stays on the large target. Fire from a bearing nobody sees
@@ -281,9 +282,13 @@ void Bay()
 //  COMMANDS: lookout on | lookout off.  CUSTOM DATA [Harasser Defence]: Enabled, Max Radius (m), Band Min / Max (m), Dwell (s), Latch (s), Jink Speed (m/s), Jink Period Min / Max (s),
 //   Harasser Projectile Speed (m/s), Turret Range (m), Phantom Range (m), Roll To Threat, Away Speed (m/s) / Away Within (m) (kiting: also open the range while a harasser is inside its gun range)
 // ---------------------------------------------------------------------------------------------------------------
+//  v1.1 (2026-10-14): shared with StaffAI. The host declares "bool LkDefOn" (Enabled default: Spotter true, Staff false; the Warden, Leviathan and Corsair Staff Custom Data say true);
+//   a copy that is not in a "[Spotter]" PB stands down while a "[Spotter]" PB is on the construct (one Lookout per ship); "Max Fire Range (m)" (was a constant 1700).
+//  Hooks: LkLoad() while the host parses Custom Data (before it writes _ini back); LkBind() every ~5 s; LkStep() every Update10 run (in its own try/catch);
+//   LkStatus() on the screen; "lookout on|off" commands. Uses from the host: _ini (MyIni), _now (seconds), Me, GridTerminalSystem, IGC.
 bool LkOn = true, LkRoll = true;
 double LkMaxR = 15, LkBandMin = 30, LkBandMax = 1600, LkDwell = 3, LkLatch = 15, LkJink = 30, LkPerMin = 0.8, LkPerMax = 2.5, LkVp = 800, LkTurR = 800, LkPhR = 1000, LkAway = 40, LkAwayR = 900;
-const double LkMargin = 150, LkMaxFire = 1700, LkNose = 0.94;
+const double LkMargin = 150, LkNose = 0.94; double LkMaxFire = 1700;
 class LkT { public long Id; public Vector3D P, V; public double R, Seen, In = -1, Ev = -99, KzT = -99, Rng; public int St; }
 Dictionary<long, LkT> _lk = new Dictionary<long, LkT>();
 IMyBroadcastListener _lkA, _lkK;
@@ -291,7 +296,7 @@ long _lkHid, _lkTid, _lkI1, _lkI2;
 double _lkHeard = -99, _lkHitAt = -99, _lkHitDirT = -99, _lkStand = 1600, _lkPhT = -99, _lkNext = -99, _lkBoxT = -99, _lkAF, _lkAB, _lkAR, _lkAL, _lkAU, _lkAD;
 int _lkHits = -1, _lkCur = -1, _lkNH, _lkFl, _lkSent;
 Vector3D _lkHitDir, _lkTPos, _lkPhU, _lkB, _lkUp;
-bool _lkRollOn;
+bool _lkRollOn, _lkYield;
 IMyRemoteControl _lkRc;
 List<IMyThrust> _lkThr = new List<IMyThrust>();
 List<IMyLargeTurretBase> _lkTur = new List<IMyLargeTurretBase>();
@@ -302,11 +307,12 @@ bool LkCfgB(string k, bool d) { if (!_ini.ContainsKey("Harasser Defence", k)) _i
 double LkCfg(string k, double d) { if (!_ini.ContainsKey("Harasser Defence", k)) _ini.Set("Harasser Defence", k, d); return _ini.Get("Harasser Defence", k).ToDouble(d); }
 void LkLoad()
 {
-    LkOn = LkCfgB("Enabled", LkOn); LkRoll = LkCfgB("Roll To Threat", LkRoll);
+    LkOn = LkCfgB("Enabled", LkDefOn); LkRoll = LkCfgB("Roll To Threat", LkRoll);
     LkMaxR = LkCfg("Max Radius (m)", LkMaxR); LkBandMin = LkCfg("Band Min (m)", LkBandMin); LkBandMax = LkCfg("Band Max (m)", LkBandMax);
     LkDwell = LkCfg("Dwell (s)", LkDwell); LkLatch = LkCfg("Latch (s)", LkLatch); LkJink = LkCfg("Jink Speed (m/s)", LkJink);
     LkPerMin = LkCfg("Jink Period Min (s)", LkPerMin); LkPerMax = Math.Max(LkPerMin, LkCfg("Jink Period Max (s)", LkPerMax));
     LkAway = LkCfg("Away Speed (m/s)", LkAway); LkAwayR = LkCfg("Away Within (m)", LkAwayR);
+    LkMaxFire = LkCfg("Max Fire Range (m)", LkMaxFire);
     LkVp = Math.Max(100, LkCfg("Harasser Projectile Speed (m/s)", LkVp)); LkTurR = LkCfg("Turret Range (m)", LkTurR); LkPhR = LkCfg("Phantom Range (m)", LkPhR);
 }
 
@@ -314,6 +320,9 @@ void LkBind()   // the Helm (re-found every 5 s: a rebuilt Helm has a new Entity
 {
     var pbs = new List<IMyProgrammableBlock>();
     GridTerminalSystem.GetBlocksOfType(pbs, b => b != Me && b.IsSameConstructAs(Me) && b.CustomName.StartsWith("[Helm]", StringComparison.OrdinalIgnoreCase));
+    var sp = new List<IMyProgrammableBlock>();
+    GridTerminalSystem.GetBlocksOfType(sp, b => b != Me && b.IsSameConstructAs(Me) && b.CustomName.StartsWith("[Spotter]", StringComparison.OrdinalIgnoreCase));
+    _lkYield = sp.Count > 0 && !Me.CustomName.StartsWith("[Spotter]", StringComparison.OrdinalIgnoreCase);   // one Lookout per ship: the Spotter's
     long id = pbs.Count > 0 ? pbs[0].EntityId : 0;
     if (id != _lkHid)
     {
@@ -486,6 +495,7 @@ void LkSend()
 void LkStep()
 {
     if (!LkOn) { _lkNote = "off"; return; }
+    if (_lkYield) { _lkNote = "the Spotter PB runs it"; return; }
     if (_lkA == null) { _lkNote = "no Helm"; return; }
     while (_lkA.HasPendingMessage)
     {
@@ -524,13 +534,14 @@ void LkStep()
 string LkStatus()
 {
     var s = new StringBuilder("LOOKOUT  ").Append(_lkNote).Append('\n');
-    if (!LkOn || _lkA == null) return s.ToString();
+    if (!LkOn || _lkYield || _lkA == null) return s.ToString();
     int sus = 0, har = 0; double near = 0;
     foreach (var t in _lk.Values) { if (t.St == 1) sus++; else if (t.St == 2) { har++; if (near == 0 || t.Rng < near) near = t.Rng; } }
     s.Append("Threat   ").Append(har > 0 ? "HARASSER " + near.ToString("0") + " m x" + har : _now - _lkPhT < 10 ? "FIRE FROM " + Math.Round(Math.Atan2(_lkPhU.X, _lkPhU.Z) * 57.3) + " deg (unseen)" : "none").Append("  tracks ").Append(_lk.Count).Append(" (").Append(sus).Append(" suspect)\n");
     s.Append("Dodge    ").Append(_lkB.LengthSquared() > 1 ? "corner " + _lkCur + "  " + _lkB.Length().ToString("0") + " m/s" : "-").Append(_lkRollOn ? "  roll" : "").Append("  sent ").Append(_lkSent).Append('\n');
     return s.ToString();
 }
+// <<< LOOKOUT v1.1 <<<
 
 string GroupName(int g) { return g == 0 ? "power" : g == 1 ? "weapons" : g == 2 ? "propulsion" : "default"; }
 

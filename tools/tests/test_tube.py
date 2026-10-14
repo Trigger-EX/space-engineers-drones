@@ -44,8 +44,7 @@ class TubeTests(unittest.TestCase):
     def test_envelope_nose_thrust_power(self):
         for n, bp in self.bps.items():
             W, H = SECTION[n]
-            latch = [b for b in bp.blocks if b['kind'] == 'merge']
-            self.assertEqual(len(latch), 1)
+            self.assertEqual([b['name'] for b in bp.blocks if b['kind'] == 'merge'], [], n)   # no latch: nothing may stand outside the section
             allthr = [b for b in bp.blocks if b['kind'] == 'thr']
             thr = [b for b in allthr if b['fwd'] == 'Backward']          # the main bank: one per section cell, exhaust aft
             self.assertEqual(len(thr), W * H, n)
@@ -55,7 +54,6 @@ class TubeTests(unittest.TestCase):
             self.assertEqual(len(allthr), len(thr) + sum(len(l) for l in side.values()), f'{n}: a thruster that is neither main nor side (no reverse thrust)')
             occ = bp.occupancy()
             for (x, y, z), b in occ.items():
-                if y < 0: continue                      # the docking latch below the tail
                 self.assertTrue(0 <= x < W and 0 <= y < H, f'{n}: {b["name"]} at {(x, y, z)} outside the section')
             for z in range(CAP[n]):
                 for y in range(H):
@@ -89,9 +87,7 @@ class TubeTests(unittest.TestCase):
             self.assertEqual(len(bp.blocks), len(base.blocks), n)                     # same size, a layer swapped
             self.assertAlmostEqual(C.total_mass(bp), C.total_mass(base), delta=0.05 * C.total_mass(base))
 
-    def test_docking_and_script_budget(self):
-        for n, bp in self.bps.items():
-            self.assertEqual(C.check_docking(bp, [b for b in bp.blocks if b['kind'] == 'merge'][0]), 'Down', n)
+    def test_script_budget(self):
         self.assertLessEqual(len(C.script_text('TubeRamAI.cs')), 80000)
 
 class TubeLargeTests(unittest.TestCase):

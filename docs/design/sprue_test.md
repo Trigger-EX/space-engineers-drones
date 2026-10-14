@@ -144,3 +144,6 @@ Our printers already use this layout (printer merge + drone merge, clamp to clam
 Outcomes: RELEASE OK -> drop the sprue/grinder line (option A and A'), keep merge-pair printers, and switch HiveMother's release to the drone's own merge (or keep the printer's if `release printer` also works). NO SPLIT for both -> something in the 10X differs (the rotor-head grid? the connector pair?): build the next rig as an exact one-tube copy.
 
 Release zips are not rebuilt.
+
+### 11.1 Result (owner's game, 2026-10-14): RELEASE OK
+`weld` BUILT in 46 s (Q1 FUSED, neck 7/7), `release` (payload merge block OFF): SPLIT 0 s later, printer kept its grid, the payload PB saw a new grid; it pushed itself away (PAYLOAD LEFT, 6 m in 27 s); cycle 2 `weld` placed the next payload. `charge` was refused before BUILT (by design) and not needed (the welded battery came charged). Conclusion: merge-pair release works for projector-welded drones; option A (sprue + grinder) and A' (grinder on a rotor head) are dropped. Next step: Hive Mother v2.4 on real Gnats (`test_designs/Printer Test/`).

@@ -5,8 +5,8 @@ Module contract: MODELS = {"<Name>": callable(lite: bool) -> sebp.Blueprint}.  S
 
 A tube is a closed box of armour: a solid heavy-armour nose cap (with the nose camera set flush in the front layer), the systems packed behind
 it, two layers of recessed side thrusters (nozzles flush with the hull: push up, down, left, right; never reverse) so it can correct its
-path without turning its flank to the target, a service layer (side cameras, antenna, docking latch) and the WHOLE rear face one bank of
-ion thrusters, exhaust aft.  No warhead: the kill
+path without turning its flank to the target, a service layer (side cameras, antenna) and the WHOLE rear face one bank of
+ion thrusters, exhaust aft.  Nothing stands outside the W x H section (no merge latch: the section is a hard requirement).  No warhead: the kill
 is kinetic.  Frame (core.py convention): x = Right (0..W-1), y = Up (0..H-1), z = Backward, nose front layer z = 0, cells are 0.5 m.
 No reverse thrust (it brakes by flipping the nose round).
 """
@@ -21,7 +21,7 @@ HULL_COL = (0.58, -0.78, -0.25)
 
 def tube_frame(name, W, H, cap, body, spec, warheads=False):
     """W x H section, `cap` heavy nose layers, `body` layers before the thruster bank (z 0..body-1).  spec = dict with keys
-    rc, pb, gyros, ai (AI Offensive cell, AI Flight cell), battery ('s' = one small battery per entry in bats, or 'L' = one 3x2x3 battery at bat_min), nose (cells), left, right, ant (cell, fwd), latch x."""
+    rc, pb, gyros, ai (AI Offensive cell, AI Flight cell), battery ('s' = one small battery per entry in bats, or 'L' = one 3x2x3 battery at bat_min), nose (cells), left, right, ant (cell, fwd)."""
     bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     script = script_text("TubeRamAI.cs")
     custom = f"[Tube]\nIGC Tag=TUBE\nBlock Tag={name}\n" + ("Max Rams=1\n" if warheads else "")
@@ -88,10 +88,6 @@ def tube_frame(name, W, H, cap, body, spec, warheads=False):
         for y in range(H):
             for x in range(W):
                 if (x, y, z) not in occ: bp.armor(x, y, z, HULL_COL)
-    # docking latch below the tail on the centre line (the merge block is the lowest block)
-    lx = spec["latch"]; lz = body - 1
-    bp.armor(lx, -1, lz, RED)
-    C.merge_small(bp, (lx, -2, lz), "Down", f"{name} Merge")
     # thruster bank: one ion thruster per section cell, exhaust aft
     n = 0
     for y in range(H):
@@ -105,22 +101,22 @@ def _variant(name):
         return dict(W=2, H=2, cap=2, body=6, spec=dict(
             nose=[(0, 1)], rc=(0, 0, 2), pb=(1, 0, 2), gyros=[(0, 1, 2)],
             bats=[(1, 1, 2), (0, 0, 3), (1, 0, 3), (0, 1, 3), (1, 1, 3), (1, 0, 4), (0, 1, 4)],
-            cams=[((0, 0, 4), "Left", "Left")], ant=((1, 1, 4), "Backward", "Up"), latch=0, ai=[(1, 0, 5), (0, 1, 5)],
+            cams=[((0, 0, 4), "Left", "Left")], ant=((1, 1, 4), "Backward", "Up"),  ai=[(1, 0, 5), (0, 1, 5)],
             ins=4, up=[0], down=[1], left=[1], right=[0]))
     if name == "Tube 2x4":      # 4 wide x 2 tall
         return dict(W=4, H=2, cap=3, body=7, spec=dict(
             nose=[(1, 1)], rc=(3, 0, 3), pb=(3, 0, 4), gyros=[(3, 1, 3)], bat_min=(0, 0, 3),
-            cams=[((0, 0, 6), "Left", "Left"), ((3, 0, 6), "Right", "Right")], ant=((1, 1, 6), "Right", "Up"), latch=1, ai=[(3, 0, 5), (3, 1, 5)],
+            cams=[((0, 0, 6), "Left", "Left"), ((3, 0, 6), "Right", "Right")], ant=((1, 1, 6), "Right", "Up"),  ai=[(3, 0, 5), (3, 1, 5)],
             ins=6, up=[0, 3], down=[1, 2], left=[0, 1], right=[0, 1]))
     if name == "Tube 3x3":
         return dict(W=3, H=3, cap=3, body=7, spec=dict(
             nose=[(1, 1)], rc=(0, 2, 3), pb=(0, 2, 4), gyros=[(1, 2, 3)], bat_min=(0, 0, 3),
-            cams=[((0, 1, 6), "Left", "Left"), ((2, 1, 6), "Right", "Right")], ant=((1, 2, 6), "Right", "Up"), latch=1, ai=[(1, 2, 4), (2, 2, 4)],
+            cams=[((0, 1, 6), "Left", "Left"), ((2, 1, 6), "Right", "Right")], ant=((1, 2, 6), "Right", "Up"),  ai=[(1, 2, 4), (2, 2, 4)],
             ins=6, up=[0], down=[2], left=[0], right=[2]))
     if name == "Tube 4x4":
         return dict(W=4, H=4, cap=4, body=8, spec=dict(
             nose=[(1, 1), (2, 2)], rc=(3, 0, 4), pb=(1, 2, 4), gyros=[(3, 1, 4), (0, 2, 4)], bat_min=(0, 0, 4), bats=[(2, 2, 4)],
-            cams=[((0, 1, 7), "Left", "Left"), ((3, 1, 7), "Right", "Right")], ant=((1, 3, 7), "Right", "Up"), latch=1, ai=[(2, 2, 5), (3, 2, 5)],
+            cams=[((0, 1, 7), "Left", "Left"), ((3, 1, 7), "Right", "Right")], ant=((1, 3, 7), "Right", "Up"),  ai=[(2, 2, 5), (3, 2, 5)],
             ins=7, up=[0, 3], down=[0, 3], left=[0, 3], right=[0, 3]))
     raise KeyError(name)
 
@@ -234,7 +230,7 @@ MODELS = {n: (lambda lite=False, n=n: build(n)) for n in BASE + tuple(b + " W" f
 NO_LITE = set(MODELS)
 REQUIRED_AXES = {m: ("Forward", "Up", "Down", "Left", "Right") for m in MODELS}   # no reverse thrust: it brakes by flipping
 DOCS = {
-    'Tube 2x2': 'Kinetic ram drone, 1 x 1 m section, 5 m long, about 4.2 t, about 14 m/s2 forward and 3.4 m/s2 sideways: heavy-armour nose, 4 main ion thrusters on the rear face, 4 recessed side thrusters (up, down, left, right; no reverse), 7 small batteries, merge latch. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams while it can still fly.',
+    'Tube 2x2': 'Kinetic ram drone, 1 x 1 m section, 5 m long, about 4.2 t, about 14 m/s2 forward and 3.4 m/s2 sideways: heavy-armour nose, 4 main ion thrusters on the rear face, 4 recessed side thrusters (up, down, left, right; no reverse), 7 small batteries. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams while it can still fly.',
     'Tube 2x4': 'Kinetic ram drone, 2 m wide x 1 m tall section, 5.5 m long, about 7.1 t, about 16 m/s2 forward and 4 m/s2 sideways: heavy-armour nose, 4 MW battery, 8 main ion thrusters, 8 recessed side thrusters (2 per side, no reverse). AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
     'Tube 3x3': 'Kinetic ram drone, 1.5 x 1.5 m section, 5.5 m long, about 7.3 t, about 18 m/s2 forward and 2 m/s2 sideways: heavy-armour nose, 4 MW battery, 9 main ion thrusters, 4 recessed side thrusters (no reverse). AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',
     'Tube 4x4': 'Kinetic ram drone, 2 x 2 m section, 6 m long, about 14.1 t, about 16 m/s2 forward and 2 m/s2 sideways: four-layer heavy-armour nose, 4 MW battery + 1 small, 16 main ion thrusters, 8 recessed side thrusters (2 per side, no reverse), two gyros. AI Offensive + AI Flight blocks (it can search alone). No weapon: it flies into the target at full speed and re-rams.',

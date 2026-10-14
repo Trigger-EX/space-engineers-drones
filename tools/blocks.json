@@ -63,6 +63,13 @@
       "scripts": [
         "ShrikeAI"
       ]
+    },
+    "LOOKOUT": {
+      "file": "tools/lookout_block.cs",
+      "scripts": [
+        "SpotterAI",
+        "StaffAI"
+      ]
     }
   }
 }
