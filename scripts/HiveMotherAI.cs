@@ -795,9 +795,10 @@ void FindDrone(Bay b)
     GridTerminalSystem.GetBlocksOfType(_mergesAll, x => x != null && x.CustomName.StartsWith(b.Prefix) && !x.CustomName.Contains("[Bay"));
     b.DMerge = null; double bd = 1e9;
     foreach (var m in _mergesAll) { try { Vector3D q = m.GetPosition(); double d = Vector3D.Distance(q, mp); if (d < bd && d < MatchRadius && Nearest(q) == b) { bd = d; b.DMerge = m; } } catch (Exception) { } }
-    GridTerminalSystem.GetBlocksOfType(_pbs, x => x != null && x != Me && x.CustomName.StartsWith(b.Prefix) && !x.CustomName.Contains("[Bay"));
-    b.DPb = null; bd = 1e9;
-    foreach (var p in _pbs) { try { Vector3D q = p.GetPosition(); double d = Vector3D.Distance(q, mp); if (d < bd && Nearest(q) == b) { bd = d; b.DPb = p; } } catch (Exception) { } }
+    // a split drone's PBs are "[Staff] <Prefix> PB" (holds LAUNCH and the [Launch] keys), "[Flight] <Prefix> PB" and "[Thrust] <Prefix> PB" (never armed): prefer Staff, then Flight, then a plain "<Prefix> PB"; the nearest to the merge block within a rank
+    GridTerminalSystem.GetBlocksOfType(_pbs, x => x != null && x != Me && !x.CustomName.Contains("[Bay") && (x.CustomName.StartsWith(b.Prefix) || x.CustomName.StartsWith("[Staff] " + b.Prefix) || x.CustomName.StartsWith("[Flight] " + b.Prefix)));
+    b.DPb = null; bd = 1e9; int br = 9;
+    foreach (var p in _pbs) { try { Vector3D q = p.GetPosition(); double d = Vector3D.Distance(q, mp); int r = p.CustomName.StartsWith("[Staff]") ? 0 : p.CustomName.StartsWith("[Flight]") ? 1 : 2; if ((r < br || (r == br && d < bd)) && Nearest(q) == b) { br = r; bd = d; b.DPb = p; } } catch (Exception) { } }
     GridTerminalSystem.GetBlocksOfType(_bats, x => x != null && x.CustomName.StartsWith(b.Prefix) && !x.CustomName.Contains("[Bay"));
     b.DBats.Clear();
     foreach (var x in _bats) { try { if (Nearest(x.GetPosition()) == b) b.DBats.Add(x); } catch (Exception) { } }

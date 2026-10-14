@@ -1,3 +1,6 @@
+### v2.7 (unreleased): bays find a split drone's PB
+- `HiveMotherAI.FindDrone` and `CradleBayAI.Mine/FindDrone` now accept `[Staff] <Prefix> PB` and `[Flight] <Prefix> PB` (a split drone) next to the plain `<Prefix> PB`, arm the Staff PB first (it holds LAUNCH and the `[Launch]` keys), then Flight, and never `[Thrust]` or a `[Spare]` PB. Before, every split Hornet/Watcher/Harrier/Lancer/Wasp/Aegis/Mantis/Longbow fell back to the JOIN message only. Sim: dock-launch Hornet/Harrier and `--cradle` 3 seeds pass except `Cradle Test: spinning host (expect: waits)`, which fails the same way without this change. Release zips NOT rebuilt.
+
 ### v2.7 (unreleased): extra PBs where a ship needs one
 - Printed copies of Wasp, Aegis, Mantis and Longbow S now carry their `[Flight]` + `[Staff]` + `[Thrust]` PBs, and the Peeper its `[Thrust]` PB (the model function adds them; a printer projects that grid and build_all only touched the top-level blueprint).
 - Gnat, Basilisk, Basilisk Seeker and Shrike carry one blank `[Spare]` PB reserved for the Staff half still to be split off their over-budget script (Ballista has had one since the first step). Plan, sizes and the CradleBay/HiveMother `FindDrone` bug: `docs/design/pb_headroom.md`. Release zips NOT rebuilt.

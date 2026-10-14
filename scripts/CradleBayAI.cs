@@ -203,7 +203,8 @@ bool Mine(Bay b, IMyTerminalBlock x, bool box)
 {
     if (x == Me || x.CubeGrid != Me.CubeGrid || x == b.Merge) return false;
     string n = x.CustomName;
-    if (n.StartsWith("[")) return false;
+    if (n.StartsWith("[Staff] ") || n.StartsWith("[Flight] ")) n = n.Substring(n.IndexOf(' ') + 1);      // a split drone's PBs; "[Thrust] ..." and every other "[" name stay out
+    else if (n.StartsWith("[")) return false;
     if (b.Prefix != "" && !n.StartsWith(b.Prefix, StringComparison.OrdinalIgnoreCase)) return false;
     if (box)
     {
@@ -225,7 +226,7 @@ void FindDrone(Bay b)
     {
         bool box = pass == 0;
         GridTerminalSystem.GetBlocksOfType(_pbs, x => Mine(b, x, box));
-        foreach (var x in _pbs) { b.DPb = x; break; }
+        foreach (var x in _pbs) if (b.DPb == null || (x.CustomName.StartsWith("[Staff]") && !b.DPb.CustomName.StartsWith("[Staff]")) || (x.CustomName.StartsWith("[Flight]") && !b.DPb.CustomName.StartsWith("[Staff]") && !b.DPb.CustomName.StartsWith("[Flight]"))) b.DPb = x;      // Staff first (it holds LAUNCH), then Flight, then a plain PB
         foreach (var x in _mgs) if (Mine(b, x, box)) { b.DMerge = x; break; }
         if (b.DPb == null && b.DMerge == null) continue;
         GridTerminalSystem.GetBlocksOfType(_bts, x => Mine(b, x, box));
