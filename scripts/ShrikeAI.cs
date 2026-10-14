@@ -66,7 +66,7 @@ double LeadScale = 1.0;      // scales the lead offset if shots land consistentl
 bool UseTargetAccel = true;
 bool SplitFocus = true;
 double DisabledGrace = 5, EvadeSpeed = 20;
-bool AiAssist = true; double AiConfirmRange = 2600;   // confirm rays are this long (0.77 casts/s per camera at 2 km/s charge; both forward cameras reach the full 2.6 km)
+int AiSearchEvery = 5; bool AiAssist = true; double AiConfirmRange = 2600;   // confirm rays are this long (0.77 casts/s per camera at 2 km/s charge; both forward cameras reach the full 2.6 km)
 double AiConfirmLong = 2600;   // the first forward camera casts this long instead (0.77 casts/s)
 double RtbBattery = 0.15;    // fraction
 double SepRange = 70, SepSpeed = 25;   // wingmate separation: push away from hive mates closer than this (m) at up to this speed (m/s)
@@ -1427,6 +1427,7 @@ void LoadConfig()
     ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
+    AiSearchEvery = (int)Cfg(S, "AI Search Interval (s)", (double)AiSearchEvery);
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
     CapRange = Cfg(S, "Capital Standoff Range", CapRange);
     ManCfg(); HlkCfg(); BatCfg();
@@ -2544,6 +2545,7 @@ void FindAi()
 {
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
     foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
+    if (AiAssist && AiSearchEvery > 0) foreach (var b in _ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }   // the block rescans every 30 s by default: a 6 s AI window would often see no search at all
     if (AiAssist) AiGateFind(_ai);   // (AI Assist off: the AI blocks stay as they came, "AI Behavior" off - switching it on lets the AI Flight block fly the ship away on its own)
 }
 bool AiStep()

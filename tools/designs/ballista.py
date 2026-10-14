@@ -48,6 +48,10 @@ Evasive Jinking=true
 Orbit Speed=30
 Combat Speed=100
 
+[AI Gate]
+AI Window (s)=20
+Script Search Window (s)=5
+
 [Battery]
 Primary (AUTO/B1..B4)=B1
 Standoff By Weapons=false

@@ -49,6 +49,13 @@ Owner's report: the Ballista did not notice enemies until they were well inside 
   (independent of the block's On/Off), the AI Flight block flies the ship away from the first tick. The Helm now leaves the AI blocks alone unless the assist is on (`if (AiAssist) AiGateFind(_ai)`; `ai on|off` re-runs it). With the assist on again the
   AI blocks do fly the ship while it searches; if the Ballista still leaves its paste point, the next suspects are an inbound `FLEET_HOME` (set `[Fleet] Accept Home=false` in the Helm's Custom Data) and the sensor/AI blocks' own default settings.
 
+### 3b. Blind at 900 m, stationary Tech Hunter (game screenshot: `TGT none`, `AI: own search`, Ins 356/50000)
+
+* Not the instruction budget (356 of 50,000). The AI block had not yet shown that it flies the ship, so the AI gate time-shared: 6 s AI, 8 s own camera search.
+* **Own camera search is nearly blind for a warship** [sim, AI assist off, Tech Hunter held at 900 m, ship pointing at it]: no target for 50 s. `AutoScanStep` casts 1,800 m rays through all six cameras (about 6.5 rays/s, 264 in 40 s), each in a 35 degree cone round its own axis, so only about 1 ray/s goes forward; the Rear camera mostly hits the docked foundry. Covering the sphere at about 6 degrees spacing takes about 3 minutes of ray budget.
+* **The AI Offensive block is the detector** (2,500 m, all round) but its default search interval is 30 s [wiki], longer than the 6 s window. Changes (unverified in game): the Helm sets `UpdateTargetInterval` to 5 s on its AI blocks (`[Shrike] AI Search Interval (s)=5`, 0 = leave alone) and the Ballista's Custom Data gives the AI 20 s windows (`[AI Gate] AI Window (s)=20`, `Script Search Window (s)=5`).
+* If it is still blind in game: send `ai off` is not the fix (it removes the best detector); instead lock it by hand (cockpit/Remote Control lock + `assist`) or tell me what the AI Offensive block's terminal shows (found enemy, interval).
+
 * **Spotter** `[Spotter][SH] Ballista Spotter` runs `SpotterAI.cs` (section 5).
 * No cockpit: a drone. Hand flying needs a seat added by hand (the Helm switches to MANUAL when somebody sits in a flight seat).
 
