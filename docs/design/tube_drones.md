@@ -340,6 +340,29 @@ correction goes to the side thrusters first (`SideScale`), and only what they ca
 Sim, 1 seed each (same scenarios as before, not enough for a direction): 6 Tube 2x2 vs a Basilisk 3 contacts / 11.2 kHP (before 1 / 3.7 kHP),
 4 Tube 3x3 2 / 3.7 kHP (before 3 / 12.3 kHP), 4 Tube 4x4 1 / 2.6 kHP (before 1 / 7.6 kHP), 2 Tube 2x4 beat a Gnat; no script exceptions.
 
+**Warhead variants `Tube 2x2 W`, `Tube 2x4 W`, `Tube 3x3 W`, `Tube 4x4 W` (owner request: warheads under the armour, fired on impact):**
+the same tubes with the second nose layer (z = 1) replaced by a full layer of `SmallWarhead` blocks (4 / 8 / 9 / 16) right under the
+front heavy-armour layer: same size, mass within 1 % (a warhead is 106 kg, heavy armour 112 kg). One-shot: Custom Data `Max Rams=1`.
+`TubeRamAI` (only when it finds warheads with its Block Tag):
+* arms them at the last moment in TERM: the gap to the target's hull under `Arm Warheads Within` (default now 20 m) or 0.3 s at the
+  closing speed, never within `Safe Distance From Launch` of the release point. Arming earlier was a bug the sim showed: a Tube 4x4 W armed
+  at 200 m, Basilisk rockets hit the armed warheads 148 m out and the tube blew itself up short of the hull (gunfire sets armed warheads off,
+  in the sim and in the game);
+* fires them on impact (the velocity jump) or by the contact fuse `Warhead Contact Fuse=true`: the nose camera sits flush in the front face,
+  so its ray measures the gap to the hull; when that gap is under one tick of travel it fires (the impact check alone sees the hit a tick late);
+* disarms them on an abort (friendly in the way) or when the tube falls back out of the terminal phase.
+Sim (4 tubes or 6 Tube 2x2 vs one Basilisk; 3 seeds, the 3x3 / 4x4 rows 10 seeds): average damage dealt to the Basilisk
+
+| Group | plain | W |
+|---|--:|--:|
+| 6x Tube 2x2 | 9.9 kHP (0 of 3 won) | 38.7 kHP (1 of 3 won) |
+| 4x Tube 3x3 | 2.4 kHP | 17.2 kHP (1 of 10 won) |
+| 4x Tube 4x4 | 5.6 kHP | 19.6 kHP |
+
+A single Tube 4x4 or 4x4 W never reaches the Basilisk in 3 seeds (shot down at 200 to 280 m). Warhead layer at z = 1 vs the last cap layer:
+10 seeds each, no clear difference (3x3 W 17.2 vs 21.5 kHP, 4x4 W 19.6 vs 15.4 kHP). No script exceptions in any run. In the game, unverified:
+whether `Detonate()` on a freshly armed warhead fires at once, and whether the impact itself sets off armed warheads before the script runs.
+
 **AI blocks (owner request after the first build):** every tube has an `AI Offensive [AI]` and an `AI Flight [AI]` block in place of two light-armour cells (about +270 kg). `TubeRamAI` gets a SEARCH mode: on `launch` with no target it hands the ship to the AI blocks (shared AI GATE block: switches AI Behavior on, time-shares with a script spin if the AI does nothing), the nose cameras confirm what the AI points at with boresight / spiral rays (Gnat pattern), and the first valid contact or IGC cue takes the ship back for HUNT. It returns to SEARCH when it loses its target. Sim (1 seed, start distance 800 to 1200 m because the sim's AI search radius is 2,500 m): the AI blocks switch on and find a Basilisk, HUNT starts; at the default 3,000 m spawn distance an AI-only ship never sees the enemy in the sim (same for the Hornet). The AI blocks' real in-game behaviour is still unverified (HANDOFF section 3).
 
 **Script** `scripts/TubeRamAI.cs` v1.0: 27,608 characters minified (limit 80,000, one PB). Modes WAIT, HUNT, TERM (proportional navigation, friendly guard), EXTEND (re-ram), RTB, IDLE.
