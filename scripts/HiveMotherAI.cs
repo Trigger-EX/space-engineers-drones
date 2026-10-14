@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.8  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.9  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -65,6 +65,9 @@
 //  v2.8 "component stock empty" only after the [Stock] cargo has held parts this session (creative worlds never fill it: the stall was
 //  really out-of-reach blocks, now reported as such).
 //
+//  v2.9 CONVEYOR CHECK: printers carry conveyor junctions from every welder to the [Stock] cargo (survival); each bay line shows
+//  "PIPES n/m" when only n of its m welders are joined to the stock (a welder port or a junction the game does not connect).
+//
 //  COMMANDS: start | stop | max <n> | release [bay] | hold <bay> | unhold <bay> |
 //            reload | relay on|off
 //  CONFIG: Custom Data ([Hive Mother] and [Bay N] sections, created on first run).
@@ -72,7 +75,7 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.8";
+const string VER = "2.9";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
@@ -94,7 +97,7 @@ int _rackLaunchLeft = 0;
 
 class Bay
 {
-    public int N; public string Tag = "GNAT", Prefix = "Gnat"; public bool Held; public int Cap = 8, MaxPrints = 0, Printed = 0;
+    public int Piped = -1; public int N; public string Tag = "GNAT", Prefix = "Gnat"; public bool Held; public int Cap = 8, MaxPrints = 0, Printed = 0;
     public IMyProjector Proj; public List<IMyShipWelder> Welders = new List<IMyShipWelder>(); public IMyShipMergeBlock Merge;
     public IMyShipMergeBlock DMerge; public List<IMyTerminalBlock> Ai = new List<IMyTerminalBlock>(); public IMyProgrammableBlock DPb; public List<IMyBatteryBlock> DBats = new List<IMyBatteryBlock>();
     public string State = "IDLE"; public double T; public int Rem = -1; public double LastProgress; public bool SawWork, Recompiled, Nudged;
@@ -319,6 +322,17 @@ void GetBlocks()
     foreach (var b2 in _bays) KeepProjection(b2);
     _where = "GetBlocks stock/thrusters";
     GridTerminalSystem.GetBlocksOfType(_stock, b => b != null && b.CustomName.Contains("[Stock]") && b.IsSameConstructAs(Me));
+    _where = "GetBlocks conveyor check";
+    foreach (var b2 in _bays)
+    {   // survival: how many of the bay's welders the conveyor network joins to a [Stock] container (they pull components through it)
+        b2.Piped = -1; if (_stock.Count == 0) continue;
+        int n = 0;
+        foreach (var w in b2.Welders)
+        {
+            try { var wi = w.GetInventory(0); foreach (var k in _stock) { if (wi != null && wi.IsConnectedTo(k.GetInventory(0))) { n++; break; } } } catch (Exception) { }
+        }
+        b2.Piped = n;
+    }
     GridTerminalSystem.GetBlocksOfType(_thr, b => b != null && b.IsSameConstructAs(Me) && b.CubeGrid == Me.CubeGrid);
     if (Relay)
     {
@@ -1010,6 +1024,7 @@ void Show()
             _sb.Append("Bay ").Append(b.N).Append(' ').Append(b.Tag).Append(": ").Append(b.State);
             if (b.Printed > 0) _sb.Append(" #").Append(b.Printed);
             if (b.Held) _sb.Append(" (held)");
+            if (b.Piped >= 0 && b.Piped < b.Welders.Count) _sb.Append("  PIPES ").Append(b.Piped).Append('/').Append(b.Welders.Count);   // survival: welders not on the conveyor to [Stock]
             if (b.State == "BUILD") _sb.Append("  ").Append(b.Rem >= 0 ? b.Rem + " left" : "no projection");
             if (b.State == "FINISH")
             {

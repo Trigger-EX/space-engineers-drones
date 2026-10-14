@@ -206,7 +206,11 @@ def longbow_frame(grid, script, lite=False, seeker=False):
         bp.add("MyObjectBuilder_OffensiveCombatBlock", sub("SmallOffensiveCombat", "LargeOffensiveCombat"), (1, -3, -3), name=f"{tag} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", sub("SmallFlightMovement", "LargeFlightMovement"), (1, -3, -1) if L else (1, -3, -2), name=f"{tag} AI Flight [AI]", kind="ai")
     if L: large_rail_power(bp, tag)
-    else: small_rail_power(bp, tag, mains=(((-1, -2, 1), "L2"), ((1, -2, 1), "R2")))
+    else:
+        # PRINTABLE (owner, 2026-10-14): the cells (-1,-1,-2) and (0,-1,-2) sit between the thruster column and the railgun, out of every welder's reach
+        # (the work sphere the game showed: printer_lib.CALIB_HYPS).  Reactor 1 moves to the belly (-1,-5,1) and the filler armour goes; both cells stay empty.
+        small_rail_power(bp, tag, mains=(((-1, -2, 1), "L2"), ((1, -2, 1), "R2")), reactors=[(-1, -5, 1)] + SMALL_RAIL_REACTORS[1:])
+        C.swap_armour(bp, (-1, -1, -2)); C.swap_armour(bp, (0, -1, -2))
     return finalize(bp)
 
 # ---------------------------------------------------------------------------------------------
@@ -214,14 +218,14 @@ def longbow_frame(grid, script, lite=False, seeker=False):
 # diagonal manoeuvre (C.power_budget); thrusters / gyros that pay for the extra mass (acceleration on every axis and turn rates not below the original ones)
 SMALL_RAIL_REACTORS = [(x, y, z) for z in (-2, -1) for y in (-1, -2) for x in (-1, 1)]     # 8 hull armour cells beside the gyro, on the centre of mass
 
-def small_rail_power(bp, tag, mains=()):
+def small_rail_power(bp, tag, mains=(), reactors=None):
     """Longbow S / Mantis spine (railgun on the centre line, hull x -1..1, y -2..-1, z -3..0, 1 MWh battery under it).
     8 SmallBlockSmallGenerator (4 MW >= the 3.6 MW recharge) in place of hull armour: a reactor mounts on all six faces like the armour it replaces.
     The reactors' 2.2 t cost turn rate, so Gyroscope 2 replaces the armour behind the first gyro (it stands on the battery); with it every axis needs a
     second thruster pair beside the old one (the Longbow L pattern; one more per axis is not enough for the gyro's 614 kg) + `mains` ((cell, label) of the
     extra main engines, which differ: the Mantis has 4 already)."""
-    for i, c in enumerate(SMALL_RAIL_REACTORS):
-        C.swap_armour(bp, c)
+    for i, c in enumerate(reactors or SMALL_RAIL_REACTORS):
+        if c in SMALL_RAIL_REACTORS: C.swap_armour(bp, c)            # a moved reactor (Longbow S) takes an empty cell
         C.reactor(bp, c, f"{tag} Reactor {i + 1}")
     C.swap_armour(bp, (0, -2, 0))
     bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro", (0, -2, 0), "Forward", "Up", f"{tag} Gyroscope 2", kind="gyro")
@@ -256,7 +260,14 @@ def large_rail_power(bp, tag):
     for c, ex, up, s in LARGE_RAIL_THRUSTERS: thr(bp, c, ex, up, f"{tag} Ion {s}")
     return bp
 
-def longbow_s(lite=False): return C.add_support_pbs(longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Longbow S printed by a Foundry carries its Staff PB
+def longbow_s(lite=False):
+    bp = C.add_support_pbs(longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite))
+    # PRINTABLE: free_pb_spot would put the [Thrust] PB into one of the two cells emptied for the printer (out of welder reach); (1,0,-2) is reached
+    t = [b for b in bp.blocks if (b['name'] or '').startswith('[Thrust]')]
+    if t and tuple(t[0]['min']) in ((-1, -1, -2), (0, -1, -2)):
+        t[0]['min'] = (1, 0, -2); t[0]['fwd'], t[0]['up'] = 'Down', 'Forward'
+        bp.validate()
+    return bp      # [Flight] + [Staff] (+ [Thrust]) here too, so a Longbow S printed by a Foundry carries its Staff PB
 def longbow_l(lite=False): return longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite)
 
 def longbow_l_seeker(lite=False):

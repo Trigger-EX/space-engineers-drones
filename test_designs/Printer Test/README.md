@@ -21,3 +21,13 @@ reach misses. Every bay is now solved so that each drone block is reached with t
 Aegis Shipyard, Hornet Forge, Harrier Forge, Wasp Foundry, Lancer Foundry, Watcher Pad, Fleet Forge, Escort Carrier, Probe Foundry.
 "Component stock empty" no longer appears in a creative world (it was really "blocks out of reach").
 Longbow Foundry and Mantis Foundry are NOT included: no welder layout can reach 2-3 blocks buried inside those drones (see the chat for the options).
+
+## Survival conveyors, nose-first Tubes, printer guard (2026-10-14, Hive Mother v2.9)
+Every printer now has conveyor junctions from each welder's back to the two `Component Stock [Stock]` containers in its core, so it can print in
+SURVIVAL: fill the stock containers with components (the PB's Custom Data lists what one drone of each type needs). Printers carry more thrusters
+to keep their speed with the pipes' mass. If a bay line on the Hive Mother screen shows `PIPES n/m`, only n of its m welders reach the stock through the
+conveyors: tell me the printer and bay (the welder's conveyor port position is not confirmed in the game yet).
+Tube Foundry / Tube W Foundry: the tubes now face out of their bays and burn clear for 2.5 s when released, then search or hunt.
+Printed drones no longer touch the printer's thrusters while they are still welded on (the Watcher Pad problem).
+Longbow Foundry: the Longbow S had a reactor, an armour block and its [Thrust] PB where no welder reaches; they moved inside its outline.
+Mantis Foundry is not included yet (see the chat).
