@@ -20,8 +20,8 @@ class SprueTest(unittest.TestCase):
     def test_registered_as_test_kind(self):
         mods, _ = designs.load(('sprue_test',))
         kinds = {m: k for k, _, m, _ in designs.iter_models(mods)}
-        self.assertEqual(kinds, {S.NAME: 'test', S.NAME_NG: 'test', S.NAME_CL: 'test'})
-        self.assertEqual(set(S.NO_LITE), {S.NAME, S.NAME_NG, S.NAME_CL})
+        self.assertEqual(kinds, {S.NAME: 'test', S.NAME_NG: 'test', S.NAME_CL: 'test', S.NAME_MG: 'test'})
+        self.assertEqual(set(S.NO_LITE), {S.NAME, S.NAME_NG, S.NAME_CL, S.NAME_MG})
 
     def test_verify_passes_for_both(self):
         self.assertTrue(S.verify(self.bp)); self.assertTrue(S.verify(self.ng)); self.assertTrue(S.verify(self.cl))
@@ -84,6 +84,20 @@ class SprueTest(unittest.TestCase):
         self.assertEqual(touched, {'Sprue Welder 1', 'Sprue Welder 3'})
         _, cen0 = S.grinder_centres(self.bp)
         self.assertFalse([b for b in self.bp.blocks if b['sub'] != 'SmallShipGrinder' and any(min(R.cell_dist(p, c) for _, p in cen0) <= rmax for c in self.bp.cells(b))])
+
+    def test_merge_layout_holds_the_payload_only_by_the_merge_pair(self):   # the 10X Missle Platform method (docs/design/sprue_test.md)
+        mg = S.MODELS[S.NAME_MG](False)
+        self.assertTrue(S.verify(mg))
+        xml = mg.build_xml()
+        self.assertNotIn('SmallShipGrinder', xml)
+        pm = [b for b in mg.blocks if b['kind'] == 'merge']; dm = [b for b in mg.payload.blocks if b['kind'] == 'merge']
+        self.assertEqual([tuple(b['min']) for b in pm], [S.STUB]); self.assertEqual([tuple(b['min']) for b in dm], [S.NECK[0]])
+        self.assertIs(mg.payload.blocks[0], dm[0])                     # the projection's first block is the merge block, as in the 10X missile
+        self.assertEqual((S.C.merge_clamp_dir(mg, pm[0]), S.C.merge_clamp_dir(mg.payload, dm[0])), ('Forward', 'Backward'))
+        for k in ('Release=merge', 'Printer Merge=Sprue Printer Merge', 'Payload Merge=Sprue Payload Merge'): self.assertIn(k, xml)
+        self.assertNotIn('Grinder Min=', xml)
+        with open(os.path.join(TOOLS, '..', 'scripts', 'SprueProbe.cs'), encoding='utf-8') as fh: src = fh.read()
+        self.assertIn('S("Release", "") == "merge"', src)
 
     def test_hand_cut_n1_would_leave_an_orphan(self):              # why the owner grinds N2, not N1
         old = S.HAND_CUT

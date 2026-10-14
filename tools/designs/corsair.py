@@ -46,6 +46,7 @@ HUD Surface=0
 
 [Battery]
 Standoff By Weapons=true
+Kamikaze Rail Hold Range (m)=250
 """
 
 STAFF_DATA = """[Ship]

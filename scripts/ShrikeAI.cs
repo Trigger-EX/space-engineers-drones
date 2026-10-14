@@ -66,7 +66,7 @@ double LeadScale = 1.0;      // scales the lead offset if shots land consistentl
 bool UseTargetAccel = true;
 bool SplitFocus = true;
 double DisabledGrace = 5, EvadeSpeed = 20;
-int AiSearchEvery = 5; bool AiAssist = true; double AiConfirmRange = 2600;   // confirm rays are this long (0.77 casts/s per camera at 2 km/s charge; both forward cameras reach the full 2.6 km)
+bool AiAssist = true; double AiConfirmRange = 2600;   // confirm rays are this long (0.77 casts/s per camera at 2 km/s charge; both forward cameras reach the full 2.6 km)
 double AiConfirmLong = 2600;   // the first forward camera casts this long instead (0.77 casts/s)
 double RtbBattery = 0.15;    // fraction
 double SepRange = 70, SepSpeed = 25;   // wingmate separation: push away from hive mates closer than this (m) at up to this speed (m/s)
@@ -170,7 +170,7 @@ StringBuilder _sb = new StringBuilder();
 
 // (the fleet channel and the other fleets' feeds live in the Staff PB since the Helm split: docs/design/helm_split.md; the Helm hears them as "<Ship Tag>.TGT" and ".S2H")
 
-// >>> AI GATE v1.1 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
+// >>> AI GATE v1.2 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
 // The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
 // default, so switching them on (Enabled) may do nothing at all. In-game report 2026-10-13: Full drones in GUARD stood still and
 // HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
@@ -184,11 +184,15 @@ StringBuilder _sb = new StringBuilder();
 // v1.1 (opt-in, audit F-03/SL-11, default OFF = the behaviour of v1.0): "Use Typed AI Block API=true" sets IMyFlightMovementBlock.SpeedLimit
 // ("AI Flight Speed Limit (m/s)") on the AI Flight blocks and counts a block as switched on when IsAutoPilotEnabled reads true instead of
 // when the "Behavior" terminal property was found. Rests on the ModAPI documentation only (not tested in the game; unit of SpeedLimit unconfirmed).
+// v1.2 (2026-10-14, from the Ballista Helm, unverified in the game): "AI Search Interval (s)" (default 5, 0 = leave the block alone) is written
+// to IMyOffensiveCombatBlock.UpdateTargetInterval: the block rescans only every 30 s by default [wiki], longer than the AI Window, so a
+// window often saw no search at all. Scripts with an AI Block Search Assist switch call AiGateFind only while it is on (with it off the
+// AI blocks stay as they came, "AI Behavior" off: switched on, the AI Flight block may fly the ship away on its own) and re-run FindAi on `ai on|off`.
 // Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
 // Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
 // "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
 bool AiGateOn = true, AiBehaviorSwitch = true, AiTyped = false;
-double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60;
+double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60; int AiSearchEvery = 5;
 bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
 int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
 List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
@@ -205,6 +209,7 @@ void AiGateLoad()
     if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
     if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
     if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
+    if (!ini.ContainsKey(S, "AI Search Interval (s)")) ini.Set(S, "AI Search Interval (s)", AiSearchEvery);
     string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
     AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
     AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
@@ -213,10 +218,12 @@ void AiGateLoad()
     AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
     ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
     AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
+    AiSearchEvery = Math.Max(0, ini.Get(S, "AI Search Interval (s)").ToInt32(AiSearchEvery));
 }
 
 void AiGateFind(List<IMyFunctionalBlock> ai)
 {
+    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
     if (!AiBehaviorSwitch || ai.Count == 0) return;
     int n = 0;
     foreach (var b in ai)
@@ -1509,7 +1516,6 @@ void LoadConfig()
     ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
     FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
-    AiSearchEvery = (int)Cfg(S, "AI Search Interval (s)", (double)AiSearchEvery);
     MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
     CapRange = Cfg(S, "Capital Standoff Range", CapRange);
     ManCfg(); HlkCfg(); BatCfg();
@@ -2565,7 +2571,6 @@ void FindAi()
 {
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
     foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
-    if (AiAssist && AiSearchEvery > 0) foreach (var b in _ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }   // the block rescans every 30 s by default: a 6 s AI window would often see no search at all
     if (AiAssist) AiGateFind(_ai);   // (AI Assist off: the AI blocks stay as they came, "AI Behavior" off - switching it on lets the AI Flight block fly the ship away on its own)
 }
 bool AiStep()
