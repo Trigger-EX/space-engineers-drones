@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.4  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.5  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -47,8 +47,12 @@
 //
 //  v2.4 ARMOUR: in the game GetCubeBlock returns null for plain armour (Sprue Test 2026-10-14), so the FINISH scan never saw the drone's
 //  armour and timed out. Cells that CubeExists sees but GetCubeBlock does not are counted as present; their integrity cannot be read, so a
-//  complete pass then keeps the welders on for "Armour Settle Seconds" (30) before CHARGE. Merge-pair release CONFIRMED in the game
+//  complete pass then keeps the welders on for "Armour Settle Seconds" (5 since v2.5) before CHARGE. Merge-pair release CONFIRMED in the game
 //  (Sprue Test Merge, 2026-10-14): the welded drone splits off at once when its merge block goes off.
+//
+//  v2.5 RELEASE ON FINISH: no PB recompile (ApplyAction("Recompile") threw NullReferenceException every tick in the game and stalled CHARGE;
+//  a welded PB compiles by itself), Armour Settle Seconds 30 -> 5, CHARGE releases as soon as the drone's
+//  batteries are at 95 % (the welded battery keeps the blueprint's charge).
 //
 //  COMMANDS: start | stop | max <n> | release [bay] | hold <bay> | unhold <bay> |
 //            reload | relay on|off
@@ -57,7 +61,7 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.4";
+const string VER = "2.5";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
@@ -65,11 +69,11 @@ bool RackMode = false;
 string LaunchTag = "STINGER";
 double ChargeSeconds = 25, CooldownSeconds = 6, StallSeconds = 45, BuildTimeout = 600, FaultSeconds = 60;
 double NudgeSeconds = 1.5, NudgePower = 0.25, GapSeconds = 1.0, RecompileWait = 3, MatchRadius = 12;
-double ArmourSettle = 30, FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
+double ArmourSettle = 5, FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
 string FleetCh = "FLEET";
 const int ScanBudget = 150;
 int ParallelBuilds = 2;
-bool Printing = true, DoRecompile = true, Relay = false;
+bool Printing = true, DoRecompile = false, Relay = false;
 int _peakIns = 0;
 
 MyIni _ini = new MyIni();
@@ -509,10 +513,10 @@ void StepBay(Bay b, ref int building, ref int docked)
             _where = "bay " + b.N + " CHARGE find drone";
             FindDrone(b);
             _where = "bay " + b.N + " CHARGE recompile drone PB";
-            if (DoRecompile && !b.Recompiled && b.DPb != null) { try { b.DPb.Enabled = true; b.DPb.ApplyAction("Recompile");   /* a terminal button, not an action: probably a no-op, the welded PB compiles itself; ARM's TryRun is the real test */ } catch (Exception ex) { Err(ex, b); b.Msg = "drone PB recompile failed: " + ex.GetType().FullName; } b.Recompiled = true; b.T = _now; t = 0; }
+            if (DoRecompile && !b.Recompiled && b.DPb != null) { b.Recompiled = true; try { b.DPb.Enabled = true; b.DPb.ApplyAction("Recompile");   /* a terminal button, not an action: probably a no-op, the welded PB compiles itself; ARM's TryRun is the real test */ } catch (Exception ex) { Err(ex, b); b.Msg = "drone PB recompile failed: " + ex.GetType().FullName; } b.Recompiled = true; b.T = _now; t = 0; }
             if (b.DMerge == null && t > 8) { Fault(b, "no drone merge block found (prefix " + b.Prefix + ")"); break; }
             _where = "bay " + b.N + " CHARGE batteries";
-            bool ready = t > (b.Recompiled ? RecompileWait : 0) && DroneCharged(b);
+            bool ready = t > (b.Recompiled ? RecompileWait : 0) && DroneCharged(b);   // the welded battery keeps the blueprint's charge: usually ready at once
             if (ready || t > ChargeSeconds + RecompileWait)
             {
                 if (RackMode) { b.State = "DOCKED"; docked++; }

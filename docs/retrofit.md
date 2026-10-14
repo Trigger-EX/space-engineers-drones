@@ -35,6 +35,7 @@ Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95
 | Full FRIENDLY AVOIDANCE steering (older improvement the Mantis never got: no room before its split, and the split left its beacon block unhooked, so it neither dodged nor beaconed) | Mantis Flight (81.7 k minified) | - |
 
 ## Role-specific (checked, not retrofitted)
+- HiveMotherAI v2.4/v2.5 (printers only): FINISH scan counts armour seen only by `CubeExists`, 5 s armour settle, no drone-PB recompile (threw NRE in the game), release on finish. Printer-controller logic, no drone uses it. (`CradleBayAI`'s lane check has the same armour blind spot: separate fix.)
 
 * **Tube ram drones**: `Start Mode (WAIT/HUNT)=HUNT` (owner request: a launched tube is a munition and hunts by itself; a gun drone's start mode stays the owner's per-model choice); `[AI Gate]` 20 s / 5 s windows (the AI Offensive block is its only detector, as on the Ballista); recessed side thrusters driven by the terminal guidance (ram geometry); warhead layer with impact / contact fuse (W variants).
 
