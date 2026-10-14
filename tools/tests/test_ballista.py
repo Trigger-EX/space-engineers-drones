@@ -43,7 +43,7 @@ def src(name):
 class ShipTests(unittest.TestCase):
     def test_module_contract(self):
         self.assertEqual(list(B.MODELS), ['Ballista'])
-        self.assertEqual(B.SCRIPTS, ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs'])
+        self.assertEqual(B.SCRIPTS, ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'TurretAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs'])
 
     def test_27_large_railguns_pre_loaded(self):
         bp = full_no_foundry()
@@ -58,7 +58,13 @@ class ShipTests(unittest.TestCase):
         names = [b['name'] for b in bp.blocks if b['sub'] == 'LargeRailgun']
         self.assertEqual(sum('[B1]' in n for n in names), 27 - len(B.PD_RAILS))
         tur = [b for b in bp.blocks if b['xtype'].endswith('LargeGatlingTurret')]
-        self.assertEqual(len(tur), 4)
+        self.assertEqual(len(tur), len(B.PD_TURRETS) - len(B.CUSTOM_PD) - len(B.DROP_PD))      # one vanilla gatling turret (a designator) ...
+        tm = bp.ship.tmounts
+        self.assertEqual(len(tm), len(B.CUSTOM_PD))                       # ... and two PD4L rotor + hinge AI turrets on the opposite corners (top port, belly starboard)
+        self.assertEqual(sorted(m.out for m in tm), ['Down', 'Up'])
+        self.assertTrue(all(m.model == 'PD4L' and len(m.guns) == 4 for m in tm))
+        self.assertTrue(all(b['name'].startswith('[TU]') for m in tm for b in (m.stator, m.hinge, m.cam)), '[TU] names: the Helm (Block Prefix [SH]) must not adopt the turret guns')
+        self.assertEqual([b['name'] for b in bp.blocks if b['sub'] == 'LargeProgrammableBlock' and b['name'].startswith('[TU]')], ['[TU] Turret PB'])
         for b in tur:
             self.assertTrue(b['name'].startswith('[SH] [PD]'), b['name'])           # the Helm's Link prefix; "[PD]" is the repo's point-defence tag
             self.assertGreater(sum(it.amount for it in bp.items_of(b)), 0)           # loaded
@@ -75,11 +81,11 @@ class ShipTests(unittest.TestCase):
 
     def test_pcu_under_the_limit_with_foundry_and_one_probe(self):
         n = B.numbers(lite_docked())
-        ship = pcu(full_no_foundry())
-        foundry_full = n['pcu_foundry'] + 400          # the Full foundry is ~270 PCU above the Lite one (sensor-free shell, same welders)
+        ship = B.numbers(full_no_foundry())['pcu_ship']          # host blocks + the two AI turrets' top and head grids
+        foundry_full = B.numbers(B.ballista(False))['pcu_foundry']
         probe = pcu(P.peeper(False)) + len(P.peeper(False).blocks)      # a live probe + its projection (1 PCU per projected block)
         self.assertLess(ship + foundry_full + probe, PCU_LIMIT)
-        self.assertLess(ship, 5600)        # 4,349 + 4 PD gatling turrets + the thrust PB + 2 reactors, 2 tanks, 6 thrusters, 1 gyro, minus 8 batteries and the 4 small generators (the sum with the foundry and a probe is within 10 PCU of the limit)
+        self.assertLess(ship, 6000)        # 4,349 + 2 PD gatling turrets + 2 rotor/hinge AI turrets (PD4L, 568 each) + the turret PB + the thrust PB + the thrust PB + 2 reactors, 2 tanks, 6 thrusters, 1 gyro, minus 8 batteries and the 4 small generators (the sum with the foundry and a probe is within 10 PCU of the limit)
 
     def test_agility(self):
         acc = B.numbers(lite_docked())['accel_loaded_m_s2']
@@ -117,7 +123,7 @@ class ShipTests(unittest.TestCase):
     def test_names_the_scripts_rely_on(self):
         bp = full_no_foundry()
         names = [b['name'] for b in bp.blocks if b['name']]
-        self.assertTrue(all(n.startswith('[SH]') or n.startswith('[Helm][SH]') or n.startswith('[Spotter][SH]') or n.startswith('[Staff][SH]') for n in names), 'every block carries the [SH] prefix')
+        self.assertTrue(all(n.startswith('[SH]') or n.startswith('[Helm][SH]') or n.startswith('[Spotter][SH]') or n.startswith('[Staff][SH]') or n.startswith('[TU]') for n in names), 'every block carries the [SH] prefix')
         self.assertEqual(sum(1 for n in names if n.startswith('[Helm]')), 1)
         self.assertEqual(sum(1 for n in names if n.startswith('[Spotter]')), 1)
         self.assertEqual(sum(1 for n in names if 'Foundry Connector' in n), 2)
@@ -126,7 +132,7 @@ class ShipTests(unittest.TestCase):
         for lite in (False, True):
             bp = B.ballista(lite, with_foundry=False)
             pbs = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
-            self.assertEqual(len(pbs), 3)
+            self.assertEqual(len(pbs), 4)          # Helm, Spotter, Staff and the turret PB
             staff = [b for b in pbs if b['name'].lower().startswith('[staff]')]
             self.assertEqual(len(staff), 1)
             self.assertIn('Mothership=false', staff[0]['custom_data'])      # the Ballista carries no drones: no <Type>_HOME / FLEET_HOME
@@ -141,7 +147,7 @@ def sebp_dirs():
 class FoundryTests(unittest.TestCase):
     def test_foundry_docked_on_two_connector_pairs(self):
         bp = lite_docked()
-        self.assertEqual(len(bp.subgrids), 1)
+        self.assertEqual(len([g for g, _pose in bp.subgrids if 'Foundry' in (g.name or '')]), 1)       # (the AI turrets' tops are subgrids too)
         fb = bp.foundry
         self.assertEqual(len([b for b in fb.blocks if b['sub'] == 'ConnectorMedium']), 2)
         self.assertEqual(len(fb.bays), 1)
@@ -236,7 +242,7 @@ class ScriptWiringTests(unittest.TestCase):
     def test_scripts_are_embedded(self):
         bp = full_no_foundry()
         progs = [b['extra'] for b in bp.blocks if '<Program>' in (b.get('extra') or '')]
-        self.assertEqual(len(progs), 3)        # Helm, Spotter, Staff
+        self.assertEqual(len(progs), 4)        # Helm, Spotter, Staff, Turret PB
         fb = lite_docked().foundry
         self.assertTrue(any('<Program>' in (b.get('extra') or '') for b in fb.blocks))
         pee = P.peeper(True)

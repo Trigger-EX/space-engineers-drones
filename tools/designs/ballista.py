@@ -26,6 +26,7 @@ from pods import orient_attached
 import pods
 import sebp_multi as MU
 import printers as PR
+import turrets as TU
 import printer_lib as PL
 from types import SimpleNamespace
 
@@ -35,6 +36,11 @@ TAG = 'BALLISTA'
 PD_RAILS = set()      # {(x, r) for x in (-1, 0, 1) for r in (0, 2)} would tag six rails [B2]; with Point Defence=B2 they shoot small tracks alone.  Off: sim A/B (docs 3e) showed no gain over the turrets + full salvo
 # vanilla gatling turrets (3x3x3, base on the breech wall's armour cubes beside the mast): min corner, up, place
 PD_TURRETS = (((-4, 6, 7), 'Up', 'Top P'), ((2, 6, 7), 'Up', 'Top S'), ((-4, -3, 7), 'Down', 'Belly P'), ((2, -3, 7), 'Down', 'Belly S'))
+# two of the four sites are rotor + hinge AI turrets (TurretAI.cs, docs/design/turrets.md PD4L: 4 small gatlings, own lead solver, fast slew) on opposite corners (top port, belly starboard): they see both hemispheres,
+# (PD4L 568 PCU, 4 x 1,050 dps; a vanilla LargeGatlingTurret 225 PCU, 792 dps).  The 10,000 PCU brief pays for the two and for the turret PB only if one vanilla site is dropped (Belly P);
+# the one vanilla turret left (Top S) stays a designator for the Helm and a fallback if the turret script dies
+CUSTOM_PD = ('Top P', 'Belly S')
+DROP_PD = ('Belly P',)
 COLS = tuple(range(-4, 5))        # 9 columns of railguns
 ROWS = 3                          # 3 rows (2 cells each) -> 27 guns
 N_GYRO = 13
@@ -188,6 +194,17 @@ def _core(S, full):
     # switches its link on for that) and carry the [SH] prefix (the Staff only adopts blocks with the Block Prefix).  Mothership=false: the Ballista carries no drones, so no <Type>_HOME / FLEET_HOME.
     S.spare = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (1, 4, 11), 'Forward', 'Up', '[Staff][SH] Ballista Staff', toward='Down', kind='ctrl',
                     custom_data=f'[Ship]\nTag={TAG}\n\n[Staff]\nBlock Prefix=[SH]\nMothership=false\n', extra=pb_extra(_script('StaffAI.cs')) if _script('StaffAI.cs') else '')
+    # the turret PB (TurretAI.cs; Custom Data with the masks is filled in by ballista() once the hull is final): first free battery-deck cell where a large PB seats (Bottom mount only, on a battery)
+    S.tpb = None
+    for c in ((-1, 4, 11), (-1, 4, 10), (-1, 4, 9), (1, 4, 9), (1, 4, 10), (-2, 4, 9), (2, 4, 9), (-3, 4, 10), (3, 4, 10), (-2, 4, 11), (2, 4, 11), (-3, 4, 9), (3, 4, 9), (-3, 4, 11), (3, 4, 11)):
+        if c in S.occ or c in bp.reserve: continue
+        try:
+            S.tpb = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', c, 'Forward', 'Up', f'{TU.PREFIX} Turret PB', toward='Down', kind='ctrl',
+                          custom_data=f'[Ship]\nTag={TAG}\n', extra=pb_extra(_script('TurretAI.cs')) if _script('TurretAI.cs') else '')
+            break
+        except AssertionError:
+            continue
+    assert S.tpb is not None, 'no cell for the turret PB'
     # the two large connectors on the rear face of the battery deck: the probe foundry docks here
     S.conns = [S.add('conn', 'MyObjectBuilder_ShipConnector', 'Connector', (x, 3, 12), 'Backward', 'Up', nm(f'Foundry Connector {"AB"[i]}'), toward='Forward', kind='conn')
                for i, x in enumerate((0, 1))]
@@ -212,7 +229,19 @@ def _sensing(S, full):
 
 def _defence(S, full):
     """four vanilla gatling turrets (autonomous point defence against whatever gets inside 800 m; they are also designators for the Helm)"""
+    S.tmounts = []
     for n, (mn, up, where) in enumerate(PD_TURRETS, 1):
+        if where in DROP_PD: continue
+        if where in CUSTOM_PD:
+            # the vanilla turret's 3x3x3 footprint holds one PD4L: stator on the base-centre cell (the lower cell of its 2-cell box), swing sphere r 1.9 m
+            base_y = mn[1] if up == 'Up' else mn[1] + 2
+            m = TU.add_turret(S.bp, len(S.tmounts) + 1, (mn[0] + 1, base_y, mn[2] + 1), up, fwd='Forward', model='PD4L', lite=not full, color=GUNC)
+            S.put('tu', m.stator)
+            for x in range(mn[0], mn[0] + 3):
+                for y in range(mn[1], mn[1] + 3):
+                    for z in range(mn[2], mn[2] + 3): S.occ.setdefault((x, y, z), m.stator)
+            S.tmounts.append(m)
+            continue
         b = S.fixed('pdturret', 'MyObjectBuilder_LargeGatlingTurret', '', mn, 'Forward', up, nm(f'[PD] Gatling Turret {n} {where}'), GUNC, kind='turret')
         S.bp.fill_ammo(b)
 
@@ -334,6 +363,8 @@ def ballista(lite=False, with_foundry=True):
     _sensing(S, full)
     _defence(S, full)
     _groups(S)
+    S.tu_check = TU.check_mounts(bp, S.tmounts, min_cover=0.4)       # swing envelopes clear the hull, parked pose free, each turret sees 40 % of its bins
+    S.tpb['custom_data'] = TU.turret_custom_data(bp, S.tmounts, TAG)
     bp.ship = S
     if with_foundry:
         errs = []
@@ -356,7 +387,7 @@ DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 
         'The Helm keeps the stand-off and turns the ship onto the target. A small probe foundry docked on its rear connectors prints a Peeper probe when a big target is engaged; the probe circles the target and its turret finds the '
         'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 8,200 PCU with the foundry, 9,300 with a live probe. Three large reactors (900 MW) and 13 batteries cover the 1,026 MW the 27 rails draw to recharge together. Nothing has run in the game.'}
 MODEL_NOTES = {'Ballista': 'Needs a world PCU limit of 10,000 or more. The foundry connectors are written locked (the Spotter presses Connect if they ever come up unlocked). Lite has no sensor / AI blocks and prints Lite probes (no turret, so they find nothing): use Full.'}
-SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
+SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'TurretAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
 
 # ---------------------------------------------------------------------------------------------
 def numbers(bp):
@@ -369,7 +400,8 @@ def numbers(bp):
     n = dict(blocks=len(blocks), dims_m=bp.stats()['dims'], mass_t_blocks=round(hull_kg / 1000, 1), mass_t_loaded=round(loaded / 1000, 1))
     n['accel_loaded_m_s2'] = {d: round(f / loaded, 1) for d, f in C.thrust_by_dir(bp).items()}
     n['thrust_MN'] = {d: round(f / 1e6, 1) for d, f in C.thrust_by_dir(bp).items()}
-    n['pcu_ship'] = sum(stat(b).get('pcu') or 0 for b in blocks)
+    tm = getattr(getattr(bp, 'ship', None), 'tmounts', [])
+    n['pcu_ship'] = sum(stat(b).get('pcu') or 0 for b in blocks) + sum(stat(b).get('pcu') or 0 for b in TU.all_blocks(tm))     # the AI turrets' tops and heads are their own grids (their stators are host blocks)
     fb = getattr(bp, 'foundry', None)
     n['pcu_foundry'] = sum(stat(b).get('pcu') or 0 for b in fb.blocks) if fb else 0
     n['pcu'] = n['pcu_ship'] + n['pcu_foundry']

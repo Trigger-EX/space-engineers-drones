@@ -352,7 +352,7 @@ PACKAGES = [   # (zip base name, kinds, variants, template, intro)
      'Every drone, every warship and every printer, Full design, in one zip.'),
 ]
 
-SHIP_PB = {'ShrikeAI.cs': 'Helm (every ship)', 'TurretAI.cs': 'Turret PB (Shrike, Corsair, Warden, Leviathan)', 'StaffAI.cs': 'Staff (Corsair, Warden, Leviathan)', 'CradleBayAI.cs': 'Bay / Pod PB (Corsair, each pod)',
+SHIP_PB = {'ShrikeAI.cs': 'Helm (every ship)', 'TurretAI.cs': 'Turret PB (Shrike, Corsair, Warden, Leviathan, Ballista)', 'StaffAI.cs': 'Staff (Corsair, Warden, Leviathan)', 'CradleBayAI.cs': 'Bay / Pod PB (Corsair, each pod)',
            'HornetDroneAI.cs': 'the Hornets of the Wing ships'}
 
 def script_sizes_md(scripts):

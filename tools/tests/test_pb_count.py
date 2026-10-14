@@ -68,7 +68,7 @@ class PbCount(unittest.TestCase):
         import pods
         self.assertEqual(len(names(pods.cradle_pod(n_slots=4, lite=False))), 1)
         self.assertEqual(names(build('support', 'Midge')), [])
-        self.assertEqual(len(names(build('ballista', 'Ballista', False))), 3)
+        self.assertEqual(len(names(build('ballista', 'Ballista', False))), 4)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
