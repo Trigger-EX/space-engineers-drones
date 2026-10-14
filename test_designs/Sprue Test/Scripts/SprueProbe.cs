@@ -42,13 +42,13 @@ public Program()
         int li = Me.CustomData.IndexOf("[Log]");
         if (li >= 0) foreach (var ol in Me.CustomData.Substring(li + 5).Split('\n')) if (ol.Trim().Length > 0) _log.Add(ol.Trim());
         while (_log.Count > 59) _log.RemoveAt(0);
+        foreach (var ol in _log) { int pj = ol.IndexOf("] P:"); if (pj >= 0) _pLast = ol.Substring(pj + 4); }
         if (_pay) { var ppb = GridTerminalSystem.GetBlockWithName(S("Printer PB", "Sprue PB")); _onPr = ppb != null && Same(ppb); _seen = _onPr; }
         _g0 = Me.CubeGrid.EntityId;
         _lp = Me.GetPosition();
-        _lcd = Me.GetSurface(0);
-        _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.Font = "Monospace"; _lcd.FontSize = 0.42f;
         Log("COMPILED boot " + _boots + " role " + Role() + " grid " + Id(_g0) + " owner " + Me.OwnerId + (Me.IsFunctional ? "" : " (not functional yet)"));
         if (_cdLost) Log("Custom Data LOST on weld: running on the built-in payload config -> Q3 custom data NO (C4)");
+        try { _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.Font = "Monospace"; _lcd.FontSize = 0.42f; } catch (Exception) { _lcd = null; }
     }
     catch (Exception e) { Log("ERROR in constructor: " + e.Message); }
 }
@@ -66,9 +66,9 @@ public void Main(string arg, UpdateType u)
         var p = Me.GetPosition(); if (dt > 0) _spd = Vector3D.Distance(p, _lp) / dt; _lp = p;
         if (_pr) Printer(arg, dt); else if (_pay) Payload(arg); else if (arg.Length > 0) Log("NO CONFIG: Custom Data has no Role= line");
     }
-    catch (Exception e) { Log("ERROR " + e.Message); }
-    try { Show(); } catch (Exception e) { _sb.Clear(); _sb.Append("SHOW ERROR " + e.Message + "\n"); Log("SHOW ERROR " + e.Message); }
-    try { if (_lcd != null) _lcd.WriteText(_sb); Echo(_sb.ToString()); } catch (Exception) { }
+    catch (Exception e) { LogErr("ERROR " + e.Message); }
+    try { Show(); } catch (Exception e) { _sb.Clear(); _sb.Append("SHOW ERROR " + e.Message + "\n"); LogErr("SHOW ERROR " + e.Message); }
+    try { string txt = _sb.ToString(); if (_lcd != null) _lcd.WriteText(txt); Echo(txt); } catch (Exception) { }
 }
 
 // ---------------- configuration and helpers ----------------
@@ -147,6 +147,9 @@ void Write()
     Me.CustomData = b.ToString();
 }
 bool Same(IMyCubeBlock b) { try { return b != null && b.CubeGrid.EntityId == Me.CubeGrid.EntityId; } catch (Exception) { return false; } }
+HashSet<string> _errs = new HashSet<string>();
+void LogErr(string s) { if (_errs.Count < 30 && _errs.Add(s)) Log(s); }
+IMyTerminalBlock Mine(string n) { var l = new List<IMyTerminalBlock>(); GridTerminalSystem.SearchBlocksOfName(n, l, b => b.CustomName == n && Same(b)); return l.Count > 0 ? l[0] : null; }
 string Q(bool v) { return v ? "yes" : "NO"; }
 string Fld(string st, string k) { foreach (var w in st.Split(' ')) if (w.StartsWith(k + "=")) return w.Substring(k.Length + 1); return "?"; }
 
@@ -200,12 +203,18 @@ void CopyPay()                                    // the payload's [Log] lines i
         var ls = new List<string>();
         foreach (var l in cd.Substring(i + 5).Split('\n')) if (l.Trim().Length > 0) ls.Add(l.Trim());
         int k = _pLast == null ? -1 : ls.LastIndexOf(_pLast);
-        for (int j = k + 1; j < ls.Count; j++) Log("P:" + ls[j]);
+        for (int j = k + 1; j < ls.Count; j++) { Log("P:" + ls[j]); if (ls[j].Contains("] PUSH ")) { _pushMode = "pushed"; _stuck = false; if (_st == "FREE") _ts = 0; } }
         if (ls.Count > 0) _pLast = ls[ls.Count - 1];
     }
     catch (Exception) { }
 }
-double PayMoved() { try { return _pp == null || _pp.Closed ? -1 : Vector3D.Distance(_pp.GetPosition(), Me.GetPosition()) - _dist0; } catch (Exception) { return -1; } }
+bool Gone(IMyCubeBlock b) { try { return b == null || b.CubeGrid == null || b.CubeGrid.GetCubeBlock(b.Position) == null; } catch (Exception) { return true; } }
+double PayMoved() { try { return Gone(_pp) ? -1 : Vector3D.Distance(_pp.GetPosition(), Me.GetPosition()) - _dist0; } catch (Exception) { return -1; } }
+string PayNeck()
+{
+    try { if (Gone(_pp)) return "?"; var m = new StringBuilder(); foreach (var c in _neck) { var s = _pp.CubeGrid.GetCubeBlock(c + _d); m.Append(s == null ? '.' : (Pct(s) >= 0.999f ? 'O' : 'o')); } return m.ToString(); }
+    catch (Exception) { return "?"; }
+}
 string PayBat() { try { return _pb == null ? "-" : F(_pb.CurrentStoredPower, 4) + "/" + F(_pb.MaxStoredPower, 4) + " " + _pb.ChargeMode; } catch (Exception) { _pb = null; return "lost"; } }
 string Own(long o)
 {
@@ -214,7 +223,7 @@ string Own(long o)
     return o.ToString() + (o.ToString() == S("Blueprint Owner", "") ? " (=BP)" : "");
 }
 void Go(string s) { _st = s; _ts = 0; if (s == "FREE") _stuck = false; }
-bool PayInBay(double mv) { return _split && _pp != null && !_pp.Closed && mv < N("Clear Metres", 6); }
+bool PayInBay(double mv) { return _split && !Gone(_pp) && mv < N("Clear Metres", 6); }
 void StartWeld()
 {
     Bats(ChargeMode.Auto);
@@ -222,7 +231,8 @@ void StartWeld()
     _tw = _t; _tPl = -1; _tBu = -1; _tSp = -1; _q1 = "?"; _lastQ = -1; _lastProg = _t;
     var p = Blk(S("Projector", "Sprue Projector")) as IMyProjector; if (p != null) p.Enabled = true;
     Tools(true, false); Go("WELD");
-    Log("WELD start, cycle " + _cyc + ": proj " + (p == null ? "MISSING" : (p.IsProjecting ? "on" : "OFF") + " tot " + p.TotalBlocks + " rem " + p.RemainingBlocks));
+    string ps = "MISSING"; try { if (p != null) ps = (p.IsProjecting ? "on" : "OFF") + " tot " + p.TotalBlocks + " rem " + p.RemainingBlocks; } catch (Exception) { ps = "unreadable"; }
+    Log("WELD start, cycle " + _cyc + ": proj " + ps);
 }
 int GuardFull() { int ok = 0; foreach (var c in _guard) { var s = Me.CubeGrid.GetCubeBlock(c + _d); if (s != null && Pct(s) >= 0.999f) ok++; } return ok; }
 string Guards()
@@ -238,14 +248,14 @@ void StartCut(bool force)
     string pos = GPos(gr);
     if (pos.Length > 0 && !force) { _auto = false; Log("cut refused: grinder" + pos + " (x+ = toward the welders, y+ = projector side, z+ = toward the printer). Fix it, or: cut force"); return; }
     int f; string map; Cells(_neck, out f, out _nmin0, out map, out _nsum0);
-    if (!_split && f < _neck.Count && !force) { _auto = false; Log("cut refused: neck not fully welded (" + map + "): finish weld (BUILT) first, or: cut force"); return; }
+    if (!_split && _tBu < 0 && f < _neck.Count && !force) { _auto = false; Log("cut refused: neck not fully welded (" + map + "): finish weld (BUILT) first, or: cut force"); return; }
     Bats(ChargeMode.Auto);
     if (_pb != null && _pb.CurrentStoredPower < 0.001f)
     {
         Log("payload battery EMPTY (" + F(_pb.CurrentStoredPower, 4) + " MWh): it will be dead after the split. Run charge longer first");
         if (_auto) { _auto = false; Go("IDLE"); return; }
     }
-    _n0 = _split ? Fld(PayStatus(), "neck") : map;
+    _n0 = _split ? PayNeck() : map;
     SetPush(_split ? "hold" : "auto");
     _gok0 = GuardFull(); _gT = 0; _gW = 0; _gPosOk = pos.Length == 0;
     Tools(false, true); _tCut = _t; Go(_split ? "CUT2" : "CUT");
@@ -273,10 +283,10 @@ string GPos(IMyFunctionalBlock g)                 // "" when the grinder sits wh
 }
 void Watch()
 {
-    var p = GridTerminalSystem.GetBlockWithName(S("Payload PB", "Sprue Payload PB")) as IMyProgrammableBlock;
-    if (p != null && Same(p)) _pp = p;
-    var b = GridTerminalSystem.GetBlockWithName(S("Payload Battery", "Sprue Payload Battery")) as IMyBatteryBlock;
-    if (b != null && Same(b)) _pb = b;
+    var p = Mine(S("Payload PB", "Sprue Payload PB")) as IMyProgrammableBlock;
+    if (p != null) _pp = p;
+    var b = Mine(S("Payload Battery", "Sprue Payload Battery")) as IMyBatteryBlock;
+    if (b != null) _pb = b;
     int f; float m; string map; double s; int nc = Cells(_clus, out f, out m, out map, out s);
     if (nc > 0) _seen = true;
     if (_seen && !_split && (nc == 0 || (_pp != null && !Same(_pp))))
@@ -301,7 +311,7 @@ void Printer(string a, double dt)
     {
         double mv = PayMoved();
         if (PayInBay(mv) && a != "weld force") Log("weld refused: the cut payload is still in the bay (moved " + F(mv, 1) + " m): push it away first, delete it, or: weld force");
-        else if (!_split && _tBu >= 0 && a != "weld force") Log("weld refused: this payload is already BUILT (Q1/Q3 recorded); next: charge, cut or hand, or: weld force");
+        else if (!_split && _tBu >= 0 && a != "weld force") Log("weld refused: already BUILT (Q1/Q3 recorded for this payload); next: charge, cut or hand, or: weld force");
         else { if (_split) _cyc++; StartWeld(); }
     }
     else if (a == "cut" || a == "cut force") StartCut(a == "cut force");
@@ -311,8 +321,8 @@ void Printer(string a, double dt)
     else if (a == "auto")
     {
         if (PayInBay(PayMoved())) Log("auto refused: the cut payload is still in the bay: push it away or delete it first");
-        else if (!_split && _tBu >= 0) { _auto = true; _cyc = 1; Log("auto: payload already BUILT, continuing with charge"); StartCharge(); }
-        else { _auto = true; _cyc = 1; StartWeld(); }
+        else if (!_split && _tBu >= 0) { _auto = true; Log("auto: payload already BUILT, continuing with charge"); StartCharge(); }
+        else { _auto = true; if (_split) _cyc++; StartWeld(); }
     }
     else if (a == "stop") { _auto = false; Tools(false, false); Bats(ChargeMode.Auto); Go("IDLE"); }
     else if (a == "snap") Snap();
@@ -336,9 +346,10 @@ void Printer(string a, double dt)
     int have = Cells(all, out full, out mn, out map, out sum);
     if (_st == "WELD")
     {
-        int rem = proj == null ? -1 : proj.RemainingBlocks, tot = proj == null ? 0 : proj.TotalBlocks, bld = proj == null ? 0 : proj.BuildableBlocksCount;
-        if (!_projMsg && _ts > 5 && (proj == null || !proj.IsProjecting || tot == 0))
-        { _projMsg = true; _q1 = "no projection"; Log("PROJECTION MISSING (proj " + (proj == null ? "not found" : (proj.IsProjecting ? "on" : "OFF") + " tot " + tot) + "): projector ON? blueprint loaded? No Q1 verdict"); }
+        int rem = -1, tot = 0, bld = 0; bool pon = false;
+        try { if (proj != null) { pon = proj.IsProjecting; rem = proj.RemainingBlocks; tot = proj.TotalBlocks; bld = proj.BuildableBlocksCount; } } catch (Exception) { }
+        if (!_projMsg && _ts > 5 && (proj == null || !pon || tot == 0))
+        { _projMsg = true; _q1 = "no projection"; Log("PROJECTION MISSING (proj " + (proj == null ? "not found" : (pon ? "on" : "OFF") + " tot " + tot) + "): projector ON? blueprint loaded? No Q1 verdict"); }
         else if (!_projMsg && _ts > 5 && tot != all.Count) { _projMsg = true; Log("projection has " + tot + " blocks, expected " + all.Count); }
         if (_tPl < 0 && tot > 0 && rem == 0 && _ts > 5) { _tPl = _t; Log("PLACED: projector Remaining 0 after " + F(_t - _tw, 0) + "s, payload cells on printer grid " + have + "/" + all.Count); }
         double q = have + sum;
@@ -387,17 +398,17 @@ void Printer(string a, double dt)
             {
                 int f; float m; string mp; double s; Cells(_neck, out f, out m, out mp, out s);
                 bool untouched = s >= _nsum0 - 0.001 && m >= _nmin0 - 0.001f;
-                string v = untouched ? (valid ? "UNTOUCHED (valid, D3): the grinder does not grind its own grid. Next: type hand, then grind N2 (2nd red cell from the yellow stub)"
-                                               : "INVALID (D4): grinder not working or wrongly placed. Fix and repeat cut")
+                string v = !valid ? "INVALID (D4): grinder not working or wrongly placed. Fix and repeat cut"
+                         : untouched ? "UNTOUCHED (valid, D3): the grinder does not grind its own grid. Next: type hand, then grind N2 (2nd red cell from the yellow stub)"
                                      : "ground, not through (D5): run cut again";
                 SetPush("hold");
                 Log("NO SPLIT after " + F(_ts, 0) + "s: neck " + _n0 + " -> " + mp + ", min " + F(_nmin0 * 100, 0) + "% -> " + F(m * 100, 0) + "%, " + gw + " -> " + v + ". Payload set to HOLD");
-                _r["Q2"] = "Q2 cut " + (untouched ? (valid ? "UNTOUCHED" : "INVALID") : "ground") + " grind " + F(_gW, 0) + "/" + F(_gT, 0) + "s";
+                _r["Q2"] = "Q2 cut " + (!valid ? "INVALID" : (untouched ? "UNTOUCHED" : "ground")) + " grind " + F(_gW, 0) + "/" + F(_gT, 0) + "s";
                 _auto = false; Go("IDLE");
             }
             else
             {
-                string now = Fld(PayStatus(), "neck");
+                string now = PayNeck();
                 Log("CUT2 end: " + gw + (valid ? "" : " (INVALID, D4)") + "; payload neck before/now " + _n0 + " / " + now + " (N1 N2 '.' = left with the hand cut). Next: push");
                 _r["Q2h"] = "Q2 hand SPLIT, CUT2 " + _n0 + ">" + now + (valid ? "" : " INVALID"); Go("FREE");
             }
@@ -436,7 +447,7 @@ void Bats(ChargeMode m)
 }
 
 // ---------------- payload ----------------
-IMyBatteryBlock MyBat() { var b = GridTerminalSystem.GetBlockWithName(S("Battery", "Sprue Payload Battery")) as IMyBatteryBlock; return Same(b) ? b : null; }
+IMyBatteryBlock MyBat() { return Mine(S("Battery", "Sprue Payload Battery")) as IMyBatteryBlock; }
 string MyBatTxt() { var b = MyBat(); return b == null ? "none" : F(b.CurrentStoredPower, 4) + "/" + F(b.MaxStoredPower, 4); }
 void Payload(string a)
 {
@@ -499,7 +510,8 @@ void Show()
         var gr = Grinder(); var ws = Welders();
         Ln("SPRUE c" + _cyc + "/" + _cycles + " " + _st + " " + F(_ts, 0) + "s t" + F(_t, 0) + i1 + (_mov > 5 ? " MOVING" : ""));
         Ln("grid " + Id(Me.CubeGrid.EntityId) + (Me.CubeGrid.EntityId == _g0 ? " (start)" : " (CHANGED)") + " own " + Me.OwnerId);
-        Ln("proj " + (proj == null ? "MISSING" : (proj.IsProjecting ? "on" : "OFF") + " rem " + proj.RemainingBlocks + " bld " + proj.BuildableBlocksCount + " tot " + proj.TotalBlocks));
+        string pj = "MISSING"; try { if (proj != null) pj = (proj.IsProjecting ? "on" : "OFF") + " rem " + proj.RemainingBlocks + " bld " + proj.BuildableBlocksCount + " tot " + proj.TotalBlocks; } catch (Exception) { pj = "unreadable"; }
+        Ln("proj " + pj);
         var w = new StringBuilder("weld"); foreach (var x in ws) w.Append(x.Enabled ? (x.IsWorking ? " ON" : " on!") : " off");
         Ln(w + "  grind " + (gr == null ? "NONE" : (gr.Enabled ? "ON" : "off") + (gr.IsWorking ? " wrk" : "")));
         string gp = GPos(gr); Ln("grinder" + (gp.Length == 0 ? " pos OK" : gp));

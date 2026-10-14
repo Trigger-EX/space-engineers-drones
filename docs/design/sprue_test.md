@@ -56,7 +56,7 @@ Welder coverage: tier A (`FAMILY[:4]`) reaches all 11 payload blocks (N4 under t
 
 ## 5. SprueProbe.cs
 
-Update10, C# 6, ASCII (23.8k characters minified), stubs API only (no `IMyShipGrinder` in the stubs: the grinder is found as `IMyFunctionalBlock` by name "Grinder" on its own grid). Every screen line is cut to 46 characters (Monospace 0.42); the same text is Echoed every run (K menu), and the full log is in Custom Data `[Log]` (printer: last 60 lines, with the payload's lines copied as `P:`; read back after a Recompile or reload, the RESULTS block is not, the log lines keep the answers).
+Update10, C# 6, ASCII (24.6k characters minified), stubs API only (no `IMyShipGrinder` in the stubs: the grinder is found as `IMyFunctionalBlock` by name "Grinder" on its own grid). Every screen line is cut to 46 characters (Monospace 0.42); the same text is Echoed every run (K menu), and the full log is in Custom Data `[Log]` (printer: last 60 lines, with the payload's lines copied as `P:`; read back after a Recompile or reload, the RESULTS block is not, the log lines keep the answers).
 
 Printer commands (terminal, select `Sprue PB`, type into Argument, Run):
 
