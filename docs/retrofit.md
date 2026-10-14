@@ -35,6 +35,7 @@ Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95
 | Improvement | Applied to | Notes |
 |---|---|---|
 | Harasser defence (Ballista Lookout) | Warden, Leviathan, Corsair: the LOOKOUT block now also lives in StaffAI.cs, switched on in their Staff PB Custom Data | sim: Warden -10 to -13 % damage, Corsair hit rate 91 -> 74 % (damage unchanged), Leviathan no measurable gain; docs/design/ballista_harasser_defence.md section 12 |
+| Railgun power (Ballista: power for a full rail recharge, thrust to pay for it) | Longbow S, Longbow L (+ Seeker), Mantis: reactors >= rail draw; reactors + batteries >= rail + larger thruster group per axis; acceleration and turn rates >= before | docs/design/railgun_power.md; Warden, Corsair, Leviathan already covered by their reactors |
 
 ## Role-specific (checked, not retrofitted)
 - HiveMotherAI v2.4-v2.6 (printers only, v2.6: release 2 s after the last block, welders stay on, 1 s cooldown; printers.py: single-type cap = Max Drones): FINISH scan counts armour seen only by `CubeExists`, 5 s armour settle, no drone-PB recompile (threw NRE in the game), release on finish. Printer-controller logic, no drone uses it. (`CradleBayAI`'s lane check has the same armour blind spot: separate fix.)

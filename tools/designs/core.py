@@ -12,6 +12,10 @@ DOCKING FACES (printers): the clamp face of the small merge block is its local U
   _common.check_docking() asserts the merge block is the only block reaching the outer layer along its clamp axis, so
   nothing else of the drone can touch a flat printer surface.
 
+RAILGUN POWER (docs/design/railgun_power.md): the Longbows carry small reactors that alone cover the railgun recharge and, with the batteries, cover it on a
+  full diagonal manoeuvre (C.power_budget); thrusters and a second gyro were added until acceleration (every axis) and turn rates were back at or above the
+  original figures (small_rail_power / large_rail_power, small_rail_power also used by extra.mantis).  tools/tests/test_rail_power.py checks it.
+
 LITE variants: only block types whose XML was seen in Starburst plus the merge block (LITE_KEEPS_MERGE in _common.py; its
   shape is from the Keen source, not seen).  Lite drops Sensor, AI Offensive and AI Flight blocks.  Everything else is shared.
 """
@@ -201,7 +205,56 @@ def longbow_frame(grid, script, lite=False, seeker=False):
         bp.add("MyObjectBuilder_SensorBlock", sub("SmallBlockSensor", "LargeBlockSensor"), (-1, -3, -3), "Down", "Forward", f"{tag} Sensor", kind="sensor")
         bp.add("MyObjectBuilder_OffensiveCombatBlock", sub("SmallOffensiveCombat", "LargeOffensiveCombat"), (1, -3, -3), name=f"{tag} AI Offensive [AI]", kind="ai")
         bp.add("MyObjectBuilder_FlightMovementBlock", sub("SmallFlightMovement", "LargeFlightMovement"), (1, -3, -1) if L else (1, -3, -2), name=f"{tag} AI Flight [AI]", kind="ai")
+    if L: large_rail_power(bp, tag)
+    else: small_rail_power(bp, tag, mains=(((-1, -2, 1), "L2"), ((1, -2, 1), "R2")))
     return finalize(bp)
+
+# ---------------------------------------------------------------------------------------------
+# power for the railgun recharge (docs/design/railgun_power.md): reactors that alone cover the capacitor's draw and, with the batteries, cover it on a full
+# diagonal manoeuvre (C.power_budget); thrusters / gyros that pay for the extra mass (acceleration on every axis and turn rates not below the original ones)
+SMALL_RAIL_REACTORS = [(x, y, z) for z in (-2, -1) for y in (-1, -2) for x in (-1, 1)]     # 8 hull armour cells beside the gyro, on the centre of mass
+
+def small_rail_power(bp, tag, mains=()):
+    """Longbow S / Mantis spine (railgun on the centre line, hull x -1..1, y -2..-1, z -3..0, 1 MWh battery under it).
+    8 SmallBlockSmallGenerator (4 MW >= the 3.6 MW recharge) in place of hull armour: a reactor mounts on all six faces like the armour it replaces.
+    The reactors' 2.2 t cost turn rate, so Gyroscope 2 replaces the armour behind the first gyro (it stands on the battery); with it every axis needs a
+    second thruster pair beside the old one (the Longbow L pattern; one more per axis is not enough for the gyro's 614 kg) + `mains` ((cell, label) of the
+    extra main engines, which differ: the Mantis has 4 already)."""
+    for i, c in enumerate(SMALL_RAIL_REACTORS):
+        C.swap_armour(bp, c)
+        C.reactor(bp, c, f"{tag} Reactor {i + 1}")
+    C.swap_armour(bp, (0, -2, 0))
+    bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro", (0, -2, 0), "Forward", "Up", f"{tag} Gyroscope 2", kind="gyro")
+    for c, s in mains: thr(bp, c, "Backward", "Up", f"{tag} Ion Main {s}")
+    thr(bp, (-2, -2, -3), "Forward", "Up", f"{tag} Ion Brake L2"); thr(bp, (2, -2, -3), "Forward", "Up", f"{tag} Ion Brake R2")
+    thr(bp, (-3, -3, -1), "Left", "Up", f"{tag} Ion Strafe R3"); thr(bp, (-3, -3, 0), "Left", "Up", f"{tag} Ion Strafe R4")
+    thr(bp, (2, -3, -1), "Right", "Up", f"{tag} Ion Strafe L3"); thr(bp, (2, -3, 0), "Right", "Up", f"{tag} Ion Strafe L4")
+    thr(bp, (-2, -5, -1), "Down", "Forward", f"{tag} Ion Lift L2"); thr(bp, (2, -5, -1), "Down", "Forward", f"{tag} Ion Lift R2")
+    thr(bp, (-2, 0, -1), "Up", "Backward", f"{tag} Ion Dive L2"); thr(bp, (2, 0, -1), "Up", "Backward", f"{tag} Ion Dive R2")
+    return bp
+
+LARGE_RAIL_REACTORS = [(-1, -2, -1), (1, -2, -1), (0, -2, -1), (-1, -2, 0), (1, -2, 0)]    # bottom layer of the hull behind the batteries
+LARGE_RAIL_THRUSTERS = [   # (cell, exhaust, up, label): three more per direction (four to seven; lift three to six)
+    ((-1, -3, 1), "Backward", "Up", "Main L3"), ((1, -3, 1), "Backward", "Up", "Main R3"), ((-2, -2, 1), "Backward", "Up", "Main L4"),
+    ((-2, -3, -3), "Forward", "Up", "Brake L3"), ((2, -3, -3), "Forward", "Up", "Brake R3"), ((-3, -2, -3), "Forward", "Up", "Brake L4"),
+    ((0, -4, 0), "Down", "Forward", "Lift M2"), ((-1, -4, 0), "Down", "Forward", "Lift L2"), ((1, -4, 0), "Down", "Forward", "Lift R2"),
+    ((-1, 0, -1), "Up", "Backward", "Dive L3"), ((1, 0, -1), "Up", "Backward", "Dive R3"), ((-1, 0, 0), "Up", "Backward", "Dive L4"),
+    ((-3, -1, -1), "Left", "Up", "Strafe R5"), ((-3, -4, -1), "Left", "Up", "Strafe R6"), ((-3, -4, 0), "Left", "Up", "Strafe R7"),
+    ((2, -1, -1), "Right", "Up", "Strafe L5"), ((2, -4, -1), "Right", "Up", "Strafe L6"), ((2, -4, 0), "Right", "Up", "Strafe L7"),
+]
+
+def large_rail_power(bp, tag):
+    """Longbow L (and its Seeker).  5 LargeBlockSmallGenerator (75 MW; 3 would cover the 38 MW recharge, the other 2 the thrusters added below) in place of
+    hull armour at y -2, z -1..0.  Gyroscope 2 replaces the armour above the port reactor (it stands on it): without it pitch / yaw / roll fell to 68-76 %.
+    Three more ion thrusters per direction (LARGE_RAIL_THRUSTERS): with the gyro the ship is 1.7 x heavier, so each 4-thruster group needs 7 and the lifts 6.
+    Found by trying 2 / 3 / 4 more per direction x 3..6 reactors x 0 / 1 gyro and keeping the lightest that meets every rule (docs/design/railgun_power.md)."""
+    for i, c in enumerate(LARGE_RAIL_REACTORS):
+        C.swap_armour(bp, c)
+        C.reactor(bp, c, f"{tag} Reactor {i + 1}")
+    C.swap_armour(bp, (-1, -1, -1))
+    bp.add("MyObjectBuilder_Gyro", "LargeBlockGyro", (-1, -1, -1), "Forward", "Up", f"{tag} Gyroscope 2", kind="gyro")
+    for c, ex, up, s in LARGE_RAIL_THRUSTERS: thr(bp, c, ex, up, f"{tag} Ion {s}")
+    return bp
 
 def longbow_s(lite=False): return C.add_support_pbs(longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Longbow S printed by a Foundry carries its Staff PB
 def longbow_l(lite=False): return longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite)

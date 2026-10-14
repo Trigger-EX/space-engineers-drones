@@ -530,3 +530,74 @@ def add_support_pbs(bp):
         assert spot, f'{bp.name}: no free cell for the Thrust PB'
         bp.add('MyObjectBuilder_MyProgrammableBlock', sub, spot[0], spot[1], spot[2], f'[Thrust] {base(b0)} PB', extra=pb_extra(script_text('ThrustVectorAI.cs')), kind='ctrl')
     return bp
+
+
+# ---- railgun power (docs/design/railgun_power.md): the capacitor recharge must never starve ----
+RAIL_RECHARGE_MW = {'SmallRailgun': 3.6, 'LargeRailgun': 38.0}     # capacitor RechargeDraw (docs/sim-design.md; not in defs_stats.json)
+SMALL_LOAD_ALLOWANCE_MW = {'Small': 0.05, 'Large': 0.5}            # PBs, antenna, sensor, turret: blocks with no power figure in defs_stats.json
+POWER_MARGIN = 1.05                                                # peak supply / peak demand
+REACTOR_URANIUM_KG = {'Small': 5, 'Large': 20}                     # pre-loaded per small reactor (as shrike.py / corsair.py): 10 h / 1.3 h at full output
+
+def reactor(bp, mn, name, fwd="Forward", up="Up", uranium_kg=None, color=DARK):
+    """the grid's small reactor (SmallBlockSmallGenerator 0.5 MW / LargeBlockSmallGenerator 15 MW, 1x1x1, mounts on every face) with uranium pre-loaded"""
+    from sebp_inv import Item
+    sub = "SmallBlockSmallGenerator" if bp.grid == "Small" else "LargeBlockSmallGenerator"
+    kg = REACTOR_URANIUM_KG[bp.grid] if uranium_kg is None else uranium_kg
+    b = bp.add("MyObjectBuilder_Reactor", sub, mn, fwd, up, name, color, kind="reactor")
+    b['sample_shape'] = True            # the game-written reactor shape (inventory + fuel Capacity); a legacy-shape blueprint has none to put the uranium in
+    if kg: bp.preload(b, items=[Item.ingot("Uranium", kg)])
+    return b
+
+def swap_armour(bp, cell):
+    """remove the 1-cell armour block at `cell` (its place is about to be taken by a block that mounts on every face it did, e.g. a reactor)"""
+    occ = bp.occupancy()
+    b = occ.get(tuple(cell))
+    assert b is not None and b['sub'].endswith('ArmorBlock') and len(bp.cells(b)) == 1, f'{bp.name}: no 1-cell armour block at {cell} ({b and b["sub"]})'
+    bp.blocks.remove(b)
+    return b
+
+def loaded_mass(bp):
+    """block masses + pre-loaded items (uranium, magazines), kg"""
+    return total_mass(bp) + sum(it.kg() for b in bp.blocks for it in bp.items_of(b))
+
+def loaded_accel(bp):
+    """per-direction acceleration with the pre-loaded items aboard, m/s^2"""
+    m = loaded_mass(bp)
+    return {d: f / m for d, f in thrust_by_dir(bp).items()}
+
+def power_budget(bp):
+    """peak electrical demand against the peak supply (reactors + batteries) and the sustained supply (reactors alone), MW.
+    Demand = every railgun recharging + on each of the three axes the LARGER of its two opposite thruster groups at full (forward or back, up or down, left or
+    right: opposite thrusters do not fire together; a diagonal manoeuvre fires one group per axis) + gyros, AI blocks, cameras, remote control + an allowance for
+    the blocks without a figure.  thrust_all_MW is every thruster at once (for reference); battery_MWh is the stored energy."""
+    rail = loads = gen = bat = mwh = 0.0
+    grp = {d: 0.0 for d in AXIS_DIRS}
+    for b in bp.blocks:
+        st = _stat(b).get('stats', {})
+        if b['sub'] in RAIL_RECHARGE_MW: rail += RAIL_RECHARGE_MW[b['sub']]
+        elif b['xtype'] == 'MyObjectBuilder_Thrust': grp[OPP[b['fwd']]] += st.get('max_power_mw') or 0
+        elif b['xtype'] == 'MyObjectBuilder_Reactor': gen += st.get('max_output_mw') or 0
+        elif b['xtype'] == 'MyObjectBuilder_BatteryBlock': bat += st.get('max_output_mw') or 0; mwh += st.get('max_stored_mwh') or 0
+        else: loads += st.get('required_power_mw') or st.get('power_mw') or 0
+    loads += SMALL_LOAD_ALLOWANCE_MW[bp.grid]
+    thr = max(grp['Forward'], grp['Backward']) + max(grp['Up'], grp['Down']) + max(grp['Left'], grp['Right'])
+    need = rail + thr + loads
+    return dict(rail_MW=rail, thrust_MW=round(thr, 3), thrust_all_MW=round(sum(grp.values()), 3), other_MW=round(loads, 3), peak_need_MW=round(need, 3),
+                reactor_MW=gen, battery_MW=bat, battery_MWh=mwh, peak_supply_MW=gen + bat, margin=round((gen + bat) / need, 3) if need else None)
+
+def turn_rates(bp):
+    """moment of inertia about the centre of mass (point masses at the cell centres, items included) and the gyro angular acceleration, rad/s^2, about
+    pitch (x), yaw (y) and roll (z).  Gyro torque = the GyroForce in defs_stats (N m)."""
+    cs = 0.5 if bp.grid == 'Small' else 2.5
+    pts = []
+    for b in bp.blocks:
+        m = block_mass(b) + sum(it.kg() for it in bp.items_of(b)); cells = bp.cells(b)
+        for c in cells: pts.append((m / len(cells), (c[0] + .5) * cs, (c[1] + .5) * cs, (c[2] + .5) * cs))
+    M = sum(p[0] for p in pts)
+    com = [sum(p[0] * p[i] for p in pts) / M for i in (1, 2, 3)]
+    I = [sum(p[0] * ((p[2] - com[1]) ** 2 + (p[3] - com[2]) ** 2) for p in pts),
+         sum(p[0] * ((p[1] - com[0]) ** 2 + (p[3] - com[2]) ** 2) for p in pts),
+         sum(p[0] * ((p[1] - com[0]) ** 2 + (p[2] - com[1]) ** 2) for p in pts)]
+    tq = sum(_stat(b).get('stats', {}).get('force_n') or 0 for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_Gyro')
+    return dict(com_m=[round(c, 2) for c in com], inertia_kgm2=[round(i) for i in I], gyro_torque_Nm=tq,
+                pitch_yaw_roll_rad_s2=[round(tq / i, 2) for i in I])
