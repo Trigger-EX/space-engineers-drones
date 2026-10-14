@@ -1316,3 +1316,17 @@ stops, patrol without AI blocks.
 Regression check (all 91 1v1 pairs x 20 seeds, working AI blocks, measured before v2.2/v2.3 were merged): without the Watcher
 77.6 % -> 77.4 % decisive (1,560 fights). Watcher fights 60.0 % -> 24.2 %: the Watcher (Hornet script, no guns, no AI blocks) used to
 sit at home in `hunt` because the patrol needed AI blocks; now it patrols and an attacker rarely catches it in 300 s.
+
+## Detection-improvement test round (2026-10-14)
+
+Question: which extra detection methods are worth putting into the blueprints. Sim runs only, 20 seeds per cell, same seeds baseline vs variant.
+Modes: A = default stand-in AI (start 1500:2400 m, an upper bound), B = AI blocks inert (`--script-ai-blocks-inert true`, start 600:1200 m, camera-only), C = `--ai-behavior-needs-switch true`.
+
+| Variant | Result | Decision |
+|---|---|---|
+| V4 close scan over the whole +-45 deg square (covers the 8 cube-corner gaps) instead of a 40 deg circle, 10 scripts | mode B, 8 1v1/pirate scenarios + 2 kamikaze: detection identical (1v1 0/20 in every cell, pirate 0.05-0.10), kamikaze win 0.40 -> 0.35 (noise). Camera detection is limited by ray sampling, not by cone gaps | not kept, reverted |
+| V1/V2 faster AI blocks (stand-in `--vanilla-speed-limit 100 --vanilla-search-interval-s 5`, what typed `SpeedLimit` / `UpdateTargetInterval` would give) | mode A: Hornet-vs-Midge detection 1.00 -> 0.40, Gnat-vs-Pirate 1.00 -> 0.00, Longbow-vs-Midge win 0.65 -> 0.25; mode C similar. Worse, not better | not implemented (the typed API is also unverified in game: a missing member breaks compilation) |
+| V5 AI Offensive + Flight pair on `Watcher` Full (`tools/designs/support.py`) | mode A, `mixed/Watcher+3xGnat` team win vs Hornet 0.80 -> 1.00, vs Midge 0.05 -> 1.00, vs Wasp 0.40 -> 1.00; mode B unchanged (the blocks are inert there) | kept |
+
+Not tested: V3 (cue cameras from `LookAtPosition`: needs a game answer first), V6 (unarmed turret as designator), V7 (stagger IGC sends). `Corsair` Full already carries the AI pair, so it needed nothing.
+Mode A is an upper bound (docs/audit/sensors_igc_ai.md F-02): the Watcher gain holds only if the AI blocks fly it in game. Zips not rebuilt.

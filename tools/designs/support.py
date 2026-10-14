@@ -55,7 +55,7 @@ Accept Commands=true
 Accept Home=true
 """
 
-def watcher_frame(name, sensor, tag="HORNET"):
+def watcher_frame(name, sensor, tag="HORNET", ai=False):
     """Hornet-class 6-axis frame without weapons: 6 nose cameras, 5000 m antenna, optional sensor, rear merge latch."""
     bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     HULL = (0.58, -0.78, -0.25); ACC = (0.07, 0.55, 0.10)
@@ -92,10 +92,13 @@ def watcher_frame(name, sensor, tag="HORNET"):
     merge_small(bp, (0, 0, 3), "Backward", f"{name} Merge")
     if sensor:
         bp.add("MyObjectBuilder_SensorBlock", "SmallBlockSensor", (0, -1, -2), "Down", "Forward", f"{name} Sensor", kind="sensor")
+    if ai:
+        bp.add("MyObjectBuilder_OffensiveCombatBlock", "SmallOffensiveCombat", (0, -1, -1), name=f"{name} AI Offensive [AI]", kind="ai")
+        bp.add("MyObjectBuilder_FlightMovementBlock", "SmallFlightMovement", (0, -1, 0), name=f"{name} AI Flight [AI]", kind="ai")
     return finalize(bp)
 
 def watcher(lite=False):
-    return watcher_frame("Watcher Lite" if lite else "Watcher", sensor=not lite)
+    return watcher_frame("Watcher Lite" if lite else "Watcher", sensor=not lite, ai=not lite)
 
 # ---------------------------------------------------------------------------------------------
 def midge_frame(name):
