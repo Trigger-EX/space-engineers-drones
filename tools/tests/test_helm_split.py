@@ -56,7 +56,7 @@ class Designs(unittest.TestCase):
         return [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
 
     def test_ballista_has_a_staff_with_mothership_off(self):
-        bp = B.ballista(False, with_foundry=False)
+        bp = B.ballista(False)
         st = [b for b in self.pbs(bp) if b['name'].lower().startswith('[staff]')]
         self.assertEqual(len(st), 1)
         self.assertIn('<Program>', st[0]['extra']); self.assertIn('SplitStart', st[0]['extra'])

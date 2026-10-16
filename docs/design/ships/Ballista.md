@@ -1,4 +1,8 @@
-# Ballista (railgun drone) with probe foundry, Peeper probe, Spotter
+# Ballista (railgun drone)
+
+**2026-10-16 redesign (section 10, read it first):** no probe foundry, no Peeper, no rotor turrets; four vanilla gatling turrets set for drones and rockets with a clear view forward;
+the belly thrusters that burned the pods moved, and every large hydrogen thruster now keeps its whole nozzle face clear for 7 cells. Sections 4 to 8 describe the probe system as it was
+(the Peeper, the Probe Foundry and `SpotterAI.cs` still exist in the repo; the Ballista no longer carries a foundry).
 
 Key `ship_ballista`. Modules `tools/designs/ballista.py` (`MODELS = {"Ballista": fn(lite)}`), `tools/designs/peeper.py` (the probe), printer `Probe Foundry` in `tools/designs/printers.py`.
 Scripts: `ShrikeAI.cs` (Helm, +1 hook), `SpotterAI.cs` (new), `PeeperAI.cs` (new), `HiveMotherAI.cs` (the foundry, unchanged). Tests: `tools/tests/test_ballista.py`.
@@ -15,11 +19,11 @@ remembers where every targetable block is, power first because it is railguns.
 | railguns | 27 `LargeRailgun`, fixed forward, 9 wide x 3 high, 6 slugs each pre-loaded, capacitors full; salvo = 27 x 50,000 slug pool = 1.35 M [data] |
 | frame | 52.5 x 45 x 37.5 m, 168 blocks, only the breech wall (54 light-armour cubes) and a mast are armour |
 | thrust | 22 `LargeBlockLargeHydrogenThrust` on six tanks (each thruster touches its tank: no conveyor net). Forward / back 36 MN, other four axes 21.6 MN (section 9) |
-| mass | 1,081 t blocks, 1,095 t loaded; with foundry and one probe 1,113.5 t |
-| acceleration (loaded) | 32.9 m/s2 forward and back, 19.7 up / down / left / right [calc] |
+| mass | 1,074 t blocks, 1,088 t loaded (section 10) |
+| acceleration (loaded) | 33.1 m/s2 forward and back, 19.9 up / down / left / right [calc] |
 | turning | 13 `LargeBlockGyro` = 437 MN m; 3.8 / 3.0 / 3.4 rad/s2 pitch / yaw / roll [calc, point-mass inertia] (was 12 gyros, 5.0 / 3.1 / 4.6 before section 9) |
 | power | 3 large reactors = 900 MW, 13 large batteries = 156 MW / 39 MWh: **1,056 MW against the 1,026 MW the 27 rails draw to recharge together** (27 x 38 MW). A full re-arm is gun-bound (59 s per gun), no longer supply-bound (57 s) [calc]. Section 9 |
-| PCU | ship 5,358; foundry about 2,860; one live probe about 1,080 with its projection. **About 8,200 idle, 9,300 with a probe alive** [calc, sum of block PCU]; the test (`test_ballista.py`) adds 400 for the Full foundry and passes at 9,990 of 10,000 |
+| PCU | **5,108** (5,208 with the thrust-vector PB `build_all` adds) [calc, sum of block PCU]; was about 9,860 with the foundry, a live probe and the rotor turrets (section 10) |
 
 Before section 9, PCU was not what limited the design (mass, power and the volume of the gun block were); with the extra reactors it is close (10 PCU of the 10,000 left, which is why the gyros stopped at 13 and the belly tank has no brake). 10,000 PCU could hold about 60 railguns, but they would weigh 870 t on their own and re-arm for ten minutes.
 `COLS` / `ROWS` in `ballista.py` scale the battery (the tests pin 27).
@@ -163,3 +167,53 @@ Changes (`ballista.py` `_aux`, `_core`, `_sensing`):
 * **Checks** (`test_ballista.py`): peak supply >= 1.03 x 1,026 MW, reactors alone >= 85 % of it, supply-bound re-arm no longer than the per-gun 59 s, acceleration not below the old 31.2 / 15.6, no block inside an exhaust or muzzle lane, PCU under the limit. The full build (`build_all.py --no-zip --only Ballista`) validates the grid in one piece.
 
 [unverified] in the game: the reactors' seat on the rails (the tool checks the mount patches, the game decides), the thrusters' torque (the new thrusters sit 4 to 5 cells above and below the centre of mass, the old ones are symmetric about it; the gyros have 437 MN m against about 160 MN m for all new thrusters at full fire, so they should hold), and that the game really feeds the recharge in the order assumed (script-fix-notes 1151). No sim run: the sim has no Mono in this session and its power model already treats the rails as above.
+
+## 10. Redesign 2026-10-16: thruster burns, turret view, vanilla PD turrets, no probe
+
+Owner: "some of the thrusters on ballista burn other thrusters, and the turrets are blocked from seeing the front. redesign, and use vanilla turrets set specifically for drones and rockets",
+then "we can remove the probe too, the inbuilt 2.5km is well close enough for detection".
+
+**Burns.** The two belly lateral thrusters (belly tank at x -1..1, y -3..-1, z 4..6; laterals at x -4..-2 and 2..4) fired sideways straight into the pods' lower vertical thrusters
+(x +-5..7, y -3..-1, z 5..7), one cell away. The check missed it: `Blueprint.keep_clear` reserved one 1-cell lane, 3 cells deep, from a single cell of the nozzle face, and that lane (z 4)
+passed beside the pod thruster (z 5..7). A large-grid large hydrogen thruster's flame covers its whole 3 x 3 face and damages blocks about 6 to 7 large blocks out (Space Engineers wiki:
+6 on the Large Hydrogen Thruster page, 7 in the Thruster page's damage table).
+* `keep_clear(b, n, why, face=True)` (tools/sebp.py) reserves every cell of the front face, n deep; `sebp.LARGE_H2_LANE = 7`. The default (`face=False`) is the old single lane, so the other
+  designs build as before. Every Ballista thruster uses the full face, 7 deep; `test_no_block_in_an_exhaust_or_muzzle_lane` now catches a burn, and `test_the_lane_check_catches_the_old_belly_burn`
+  is the negative control (the old check sees nothing, the new one sees the burn).
+* The same check run on the Warden (1), Leviathan (14) and Corsair (0) large hydrogen thrusters finds nothing in their lanes (report only, docs/retrofit.md).
+
+**New aux thrust** (same six thrusters, one more per direction; 22 in all):
+| block | cells (x, y, z) | exhaust | lane (7 cells, whole face) |
+|---|---|---|---|
+| `Hydrogen Tank Aux Belly` | -1..1, -3..-1, 8..10 (under the breech wall and the core reactor) | - | - |
+| `Thruster Aux Belly Brake` | -1..1, -3..-1, 5..7 | Forward | z -2..4 along the keel, between the belly turrets |
+| `Thruster Aux Belly Main` | -1..1, -3..-1, 11..13 | Backward | z 14..20 |
+| `Thruster Aux Belly Lateral P / S` | -4..-2 / 2..4, -3..-1, 8..10 | Left / Right | x -5..-11 / 5..11 at z 8..10: behind the pods' lower verticals (z 5..7), under their mains (y 0..2) |
+| `Thruster Aux Belly Vertical` | -1..1, -6..-4, 8..10 | Down | y -7..-13 |
+| `Hydrogen Tank Aux Aft` | -1..1, 0..2, 12..14 (on the core reactor's back face, where the foundry connectors were) | - | - |
+| `Thruster Aux Aft Vertical` | -1..1, 3..5, 12..14 | Up | y 6..12, behind the mast |
+The old top tank (x -4..-2, y 6..8, z 1..3) with its brake and vertical is gone: it stood in front of the port top turret.
+
+**Turrets.** Four vanilla `LargeGatlingTurret`s, loaded, `[SH] [PD] Gatling Turret n Top P | Top S | Belly P | Belly S` (Helm prefix, in the `Weapons` group). A gatling turret seats only
+by the 1 x 1 centre of its base, so the sites follow the mount patches:
+* **Top P / Top S** at x -4..-2 / 2..4, y 9..11, z 4..6, base on the top centre patch of the two top-deck reactors: the highest blocks forward of the mast, nothing ahead, beside or behind at their height.
+* **Belly P / Belly S** at x -4..-2 / 2..4, y -3..-1, z 4..6, base under the outer rails (x +-3), whose bottom patch is z 4.9..6.5; ahead of every belly block.
+* `test_turrets_see_forward`: from each gun head, rays at azimuth 0, +-20, +-45 degrees and 10 below to 30 above the turret's horizon leave the ship without crossing a block. Straight sideways at
+  the horizon each turret sees its partner (top) or a thruster (belly), so the sides are covered from above and below. The old sites (z 7..9 on the breech wall) had a reactor or a belly
+  thruster in front of them at the same height.
+* **Targeting written into the blueprint**: small grids and missiles on; large grids, stations, characters and meteors off (the railguns take large grids). The game writes only the
+  non-default switches inside `<Flags>` (the owner's Tech Hunter: `<Flags><TargetMeteors>false</TargetMeteors><TargetCharacters>false</TargetCharacters></Flags>`), so the turrets carry
+  `<TargetCharacters>false</TargetCharacters>` and `<Flags><TargetMeteors>false</TargetMeteors><TargetLargeGrids>false</TargetLargeGrids><TargetCharacters>false</TargetCharacters><TargetStations>false</TargetStations></Flags>`.
+  [unverified] `TargetLargeGrids` / `TargetStations` are the legacy object-builder names; no game-written file in the repo shows them inside `<Flags>`. If the terminal still shows
+  large ships / stations ticked after pasting, untick them by hand and send me the turret's XML from a saved blueprint.
+* The PD4L rotor + hinge turrets, the `[TU] Turret PB` and `TurretAI.cs` left the Ballista (they stay on the Warden, Leviathan, Corsair and Shrike). The Helm and the Lookout (Spotter PB)
+  still read the vanilla turrets as designators; with large grids off they designate small craft only, and the AI Offensive block (2.5 km) stays the large-target detector.
+
+**Probe removed.** No Probe Foundry, no docked Peeper, no `Foundry Connector A/B`. The Spotter PB stays for its Lookout (harasser defence) with `[Spotter] Bay Control=0` (its screen
+reads `bay manual`); its `BALLISTA_AIM` feed has no probe to learn from, so the Helm aims BREACH at the hull centre as any Helm ship does. `ballista()` takes no `with_foundry` argument any more.
+
+**Numbers** (`python3 -I tools/designs/ballista.py --numbers`): 166 blocks, 1,088 t loaded, 5,108 PCU (5,208 with the thrust-vector PB), 36 MN forward / back = 33.1 m/s2, 21.6 MN on the
+other axes = 19.9 m/s2, turn 3.83 / 3.01 / 3.45 rad/s2 pitch / yaw / roll (13 gyros), power unchanged (900 + 156 MW against 1,026 MW). About 4,800 PCU of the 10,000 brief is free now:
+more gyros (yaw is at the 3.0 floor) or more turrets would fit; not added without the owner's say.
+
+[unverified] Nothing of this has run in the game. In-game checks: `packages/tests.md` 46.

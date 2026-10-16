@@ -55,7 +55,7 @@ class LinkTests(unittest.TestCase):
         self.assertIn('"[Spotter]"', HELM)                            # the Helm sends only when a [Spotter] PB is on the construct
         import ballista as B
         import _common as C
-        bp = B.ballista(False, with_foundry=False)
+        bp = B.ballista(False)
         names = [b['name'] for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
         self.assertEqual(sum(n.startswith('[Helm]') for n in names), 1)
         self.assertEqual(sum(n.startswith('[Spotter]') for n in names), 1)
