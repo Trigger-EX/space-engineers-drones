@@ -25,6 +25,7 @@ namespace SeSim.Api
                 var u = Unit;
                 float v = float.IsNaN(value) ? 0f : value;
                 u.OverrideN = v < 0f ? 0f : (v > u.MaxForce ? u.MaxForce : v);
+                SeSim.Run.WriterAudit.Note(World, Inst.Body, 1);
             }
         }
 
@@ -36,6 +37,7 @@ namespace SeSim.Api
                 var u = Unit;
                 float v = float.IsNaN(value) ? 0f : value;
                 u.OverrideN = (v < 0f ? 0f : (v > 1f ? 1f : v)) * u.MaxForce;
+                SeSim.Run.WriterAudit.Note(World, Inst.Body, 1);
             }
         }
 

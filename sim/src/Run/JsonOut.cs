@@ -61,6 +61,7 @@ namespace SeSim.Run
             KS(sb, "settings_hash", r.SettingsHash);
             if (r.Error != null) KS(sb, "error", r.Error);
             if (r.CaughtExceptions > 0) { KN(sb, "caught_exceptions", r.CaughtExceptions); KS(sb, "first_caught", r.FirstCaught); }
+            KN(sb, "writer_audit_gyro", r.WriterAuditGyro); KN(sb, "writer_audit_thrust", r.WriterAuditThrust);
             Key(sb, "ships"); sb.Append('[');
             for (int i = 0; i < r.Ships.Count; i++)
             {
@@ -132,6 +133,7 @@ namespace SeSim.Run
             r.WallMs = SeSim.Core.MiniJson.Num(o, "wall_ms", 0); r.CpuMs = SeSim.Core.MiniJson.Num(o, "cpu_ms", 0);
             r.SettingsHash = SeSim.Core.MiniJson.Str(o, "settings_hash", ""); r.Error = SeSim.Core.MiniJson.Str(o, "error", null);
             r.CaughtExceptions = (int)SeSim.Core.MiniJson.Num(o, "caught_exceptions", 0); r.FirstCaught = SeSim.Core.MiniJson.Str(o, "first_caught", null);
+            r.WriterAuditGyro = (long)SeSim.Core.MiniJson.Num(o, "writer_audit_gyro", 0); r.WriterAuditThrust = (long)SeSim.Core.MiniJson.Num(o, "writer_audit_thrust", 0);
             var arr = SeSim.Core.MiniJson.Arr(o, "ships");
             if (arr != null)
                 for (int i = 0; i < arr.Count; i++)

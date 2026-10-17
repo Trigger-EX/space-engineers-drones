@@ -62,6 +62,7 @@ namespace SeSim.Run
         public string Error;              // engine exception (run counted as "error", never silently dropped)
         public int CaughtExceptions;      // exceptions the runner caught and carried on from (final metrics sample); written only when > 0
         public string FirstCaught;
+        public long WriterAuditGyro, WriterAuditThrust;   // ticks where two different PBs wrote gyro / thruster overrides on one grid (SimEvents.cs WriterAudit)
     }
 
     /// <summary>Pure termination rule: a side is beaten while none of its ships is combat capable. A run ends when at most one
@@ -281,6 +282,7 @@ namespace SeSim.Run
         /// DecisiveHoldSeconds -> Finished.</summary>
         public void EndTick(World w)
         {
+            SimEvents.TickHook(w);
             if (Finished) return;
             if (_ffPending.Count > 0) ResolveFriendlyFire();
             if (w.Tick % SampleTicks != 0) return;
@@ -592,6 +594,7 @@ namespace SeSim.Run
             }
             for (int i = 0; i < _n; i++)
                 if (_st[i].TimeAliveS <= 0 || !Ships[i].Destroyed) _st[i].TimeAliveS = now;
+            var wa = WriterAudit.Of(w); Result.WriterAuditGyro = wa.Gyro; Result.WriterAuditThrust = wa.Thrust;
             Finished = true;
         }
     }

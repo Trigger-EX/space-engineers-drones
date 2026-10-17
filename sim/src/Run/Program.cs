@@ -413,6 +413,7 @@ namespace SeSim.Run
             sb.Append(r.Scenario).Append(" #").Append(r.SeedIndex).Append(": ").Append(r.Outcome);
             if (r.Outcome == "win") sb.Append(" team ").Append(r.WinnerTeam);
             sb.Append(" at ").Append(r.DurationS.ToString("F1", Inv)).Append(" s, wall ").Append(r.WallMs.ToString("F0", Inv)).Append(" ms");
+            sb.Append(", writer audit gyro ").Append(r.WriterAuditGyro).Append(" thrust ").Append(r.WriterAuditThrust);
             if (r.Error != null) sb.Append("\n  ERROR: ").Append(r.Error);
             foreach (var s in r.Ships)
                 sb.Append("\n  ship ").Append(s.Ship).Append(' ').Append(s.Model).Append(" t").Append(s.Team).Append(" blocks ").Append(s.BlocksEnd).Append('/').Append(s.BlocksStart)
