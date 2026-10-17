@@ -17,7 +17,3 @@ Why the 4-Ballista cluster did not lock on while the pilot was in the line (frie
 
 ## Next step
 Owner rebuilds and tests the Ballista wing; or sends the charge-test report, then set each design's standoff from it. Older items (Sprue Test, rotor turrets in-game tests) are in git history of this file and `docs/design/sprue_test.md`, `turrets.md`.
-
-## Chat
-Base name: ultracode drone audit ships
-Run: 3
