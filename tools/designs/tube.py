@@ -291,7 +291,8 @@ def build(name):
     return bp
 
 BASE = ("Tube 2x2", "Tube 2x4", "Tube 3x3", "Tube 4x4", "Tube L 1x1", "Tube L 2x2")
-DECOY = ("Tube 4x4 D", "Tube 4x4 DR", "Tube 4x4 F")      # decoy variants (docs/design/tube_decoys.md)
+DECOY = ("Tube 4x4 F",)                                   # flare-pod variant (docs/design/tube_decoys.md)
+DECOY_EXPERIMENTS = ("Tube 4x4 D", "Tube 4x4 DR")         # fixed-decoy experiment builds: no gain in the sim, not packaged (tube.build(name) still builds them)
 MODELS = {n: (lambda lite=False, n=n: build(n)) for n in BASE + tuple(b + " W" for b in BASE) + DECOY}
 NO_LITE = set(MODELS)
 REQUIRED_AXES = {m: ("Forward", "Up", "Down", "Left", "Right") for m in MODELS}   # no reverse thrust: it brakes by flipping
@@ -309,11 +310,9 @@ DOCS['Tube L 2x2'] = ('LARGE-grid ram drone: 5 x 5 m section, 27.5 m long, about
                       'compact antenna. Re-rams while it can fly. No merge latch.')
 DOCS['Tube L 1x1 W'] = 'Tube L 1x1 with its second nose block a large warhead (22 m blast): fired on impact or by the contact fuse, armed only at the last moment; if the tube survives its blast it comes back as a kinetic ram.'
 DOCS['Tube L 2x2 W'] = 'Tube L 2x2 with its second nose layer 4 large warheads (22 m blast): fired on impact or by the contact fuse, armed only at the last moment; if the tube survives its blast it comes back as a kinetic ram.'
-DOCS['Tube 4x4 D'] = 'Tube 4x4 with four decoys in its second nose layer, under the front heavy armour: enemy turrets and AI blocks aim at the nose (decoy-armoured nose), not at the systems at the rear. Experimental (docs/design/tube_decoys.md).'
-DOCS['Tube 4x4 DR'] = 'Experiment control: Tube 4x4 with four decoys in the filler right in front of its rear systems (turret aim pulled onto the systems). Not for use (docs/design/tube_decoys.md).'
 DOCS['Tube 4x4 F'] = ('Tube 4x4 with a flare bay: four corner pods (heavy plate, decoy, small battery, merge block) held only by merge pairs inside the 2 x 2 m section. '
                       'In the fight it drops them one by one like flares: each pod flies on as its own grid with its decoy switched on, and enemy turrets and AI blocks switch to it. '
-                      '8 m long, about 16.5 t. Experimental (docs/design/tube_decoys.md).')
+                      '8 m long, about 17.8 t, 13 m/s2 forward. Experimental (docs/design/tube_decoys.md).')
 _WN = {'Tube 2x2 W': 4, 'Tube 2x4 W': 8, 'Tube 3x3 W': 9, 'Tube 4x4 W': 16}
 for _m, _n in _WN.items():
     DOCS[_m] = (f'{_m[:-2]} with its second nose layer replaced by {_n} small warheads, right under the front heavy armour (same size and mass): it fires them on its first impact '
@@ -321,8 +320,7 @@ for _m, _n in _WN.items():
                 'if it survives its own blast (systems at the rear) it comes round for a second, kinetic ram.')
 _NOTE = ('Main thrust forward, recessed side thrusters up/down/left/right, no reverse: it brakes by flipping. Hunts by itself once off its rack (Start Mode HUNT). Finds targets with its AI Offensive block, rescanning every 5 s, confirmed by nose-camera rays (AI Behavior must be on; the in-game behaviour of an unarmed grid\'s AI blocks is unverified) or takes them from the fleet / hive / carrier channels or a player\'s `lock`. Ram damage is not verified in the game.')
 MODEL_NOTES = {m: _NOTE for m in MODELS}
-MODEL_NOTES['Tube 4x4 F'] = _NOTE + ' Flare pods: `[Tube] Flare Triggers` in Custom Data says when they go (FIRE = when hit, RANGE, TERM, EXTEND, ALL); `flare` drops one by hand. Unverified in the game: that a decoy needs no more than its pod battery, and how strongly real turrets prefer a decoy grid.'
-MODEL_NOTES['Tube 4x4 D'] = _NOTE + ' Decoys in the nose: unverified in the game how far real turrets follow a decoy inside armour.' 
+MODEL_NOTES['Tube 4x4 F'] = _NOTE + ' Flare pods: `[Tube] Flare Triggers` in Custom Data says when they go (default FIRE = one pod each time the hull is hit, at most one per 1.5 s; also RANGE, TERM, EXTEND, ALL); `flare` drops one by hand. Unverified in the game: that a decoy needs no more than its pod battery, and how strongly real turrets prefer a decoy grid.'
 for _m in list(_WN) + ['Tube L 1x1 W', 'Tube L 2x2 W']: MODEL_NOTES[_m] = _NOTE + ' The warheads go off on the first ram; a tube that survives its blast re-rams as a kinetic ram. The warheads are armed only by the script; keep the tube off friendly ships while it is in its final run.'
 SCRIPTS = ['TubeRamAI.cs']
 
