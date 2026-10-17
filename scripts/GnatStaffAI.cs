@@ -530,6 +530,18 @@ string WpStatus()
 }
 // <<< WEAKPOINT RELAY v1.0 <<<
 
+// >>> STAFF SEARCH v1.0 (patrol, sensor setup, target feeds, seeker moved from the Flight PB, docs/design/survivability.md) >>>
+// (skeleton: filled by the survivability work packages)
+// <<< STAFF SEARCH v1.0 <<<
+
+// >>> SURVIVAL STAFF v1.0 (damage RTB, limp, failover, threat memory, gather, docs/design/survivability.md) >>>
+// (skeleton: filled by the survivability work packages)
+// <<< SURVIVAL STAFF v1.0 <<<
+
+// >>> REPAIR CLIENT v1.0 (self-projector, repair bay and medic patient side, docs/design/survivability.md) >>>
+// (skeleton: filled by the survivability work packages)
+// <<< REPAIR CLIENT v1.0 <<<
+
 public Program()
 {
     try { GetBlocks(); } catch (Exception ex) { CtorErr("blocks", ex); }

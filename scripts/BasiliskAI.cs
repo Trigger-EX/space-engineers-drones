@@ -846,6 +846,14 @@ void FleetSend(MyTuple<long, Vector3D, Vector3D, double, long> tup) { if (LkAliv
 int LkAmmo() { return _rockets; }   // ammo for the Staff screen (0-254)
 string LkGate() { return _gateWhy; }
 
+// >>> PATROL LINK v1.0 (search patrol leg/waypoint from the Staff PB (.PAT), docs/design/survivability.md) >>>
+// (skeleton: filled by the survivability work packages)
+// <<< PATROL LINK v1.0 <<<
+
+// >>> SURVIVAL LINK v1.0 (evade, jinks, survival advice from the Staff PB, docs/design/survivability.md) >>>
+// (skeleton: filled by the survivability work packages)
+// <<< SURVIVAL LINK v1.0 <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();

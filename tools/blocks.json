@@ -98,6 +98,73 @@
     "MantisStaffAI",
     "WaspStaffAI"
    ]
+  },
+  "PATROL LINK": {
+   "file": "tools/pl_block.cs",
+   "scripts": [
+    "HornetDroneAI",
+    "HarrierAI",
+    "LancerAI",
+    "AegisAI",
+    "WaspFlightAI",
+    "BasiliskAI"
+   ]
+  },
+  "SURVIVAL LINK": {
+   "file": "tools/sv_block.cs",
+   "scripts": [
+    "HornetDroneAI",
+    "HarrierAI",
+    "LancerAI",
+    "AegisAI",
+    "GnatSwarmAI",
+    "LongbowSniperAI",
+    "WaspFlightAI",
+    "MantisAI",
+    "BasiliskAI"
+   ]
+  },
+  "STAFF SEARCH": {
+   "file": "tools/ss_block.cs",
+   "scripts": [
+    "HornetStaffAI",
+    "HarrierStaffAI",
+    "LancerStaffAI",
+    "AegisStaffAI",
+    "GnatStaffAI",
+    "LongbowStaffAI",
+    "WaspStaffAI",
+    "MantisStaffAI",
+    "BasiliskStaffAI"
+   ]
+  },
+  "SURVIVAL STAFF": {
+   "file": "tools/svs_block.cs",
+   "scripts": [
+    "HornetStaffAI",
+    "HarrierStaffAI",
+    "LancerStaffAI",
+    "AegisStaffAI",
+    "GnatStaffAI",
+    "LongbowStaffAI",
+    "WaspStaffAI",
+    "MantisStaffAI",
+    "BasiliskStaffAI"
+   ]
+  },
+  "REPAIR CLIENT": {
+   "file": "tools/rc_block.cs",
+   "scripts": [
+    "HornetStaffAI",
+    "HarrierStaffAI",
+    "LancerStaffAI",
+    "AegisStaffAI",
+    "GnatStaffAI",
+    "LongbowStaffAI",
+    "WaspStaffAI",
+    "MantisStaffAI",
+    "BasiliskStaffAI"
+   ]
   }
  }
 }
