@@ -56,6 +56,7 @@ DRONES = {
     'Mantis':     ('extra',   'Mantis',    'MANTIS',   True),
     'Stinger':    ('stinger', 'Stinger',   'STINGER',  False),
     'Peeper':     ('peeper',  'Peeper',    'PEEPER',   False),
+    'Pathfinder': ('peeper',  'Pathfinder', 'PATHFINDER', True),     # PathfinderAI v1.0: no merge of its own -> flush latch set into the hull
     'Midge':      ('support', 'Midge',     'MIDGE',    False),       # scriptless (AI blocks): Hive Mother switches its AI behaviour on at release
     # tube rams (TubeRamAI v1.1: held while welded to the printer, _SWARM heartbeat): no merge block of their own -> latch stalk
     **{f'Tube {s}{w}': ('tube', f'Tube {s}{w}', 'TUBE', True) for s in ('2x2', '2x4', '3x3', '4x4') for w in ('', ' W')},
@@ -132,6 +133,8 @@ SPECS = [
          doc='6 Gnat bays, no thrusters: a stationary hive (still a DYNAMIC grid; never convert it to a station).'),
     dict(name='Probe Foundry',   groups=[('Peeper', 1, (1, 1))], max=1, per_dir=0,
          doc='1 bay, prints Peeper vitals probes (a stationary foundry: the Ballista carries one docked on connectors).'),
+    dict(name='Pathfinder Nest', groups=[('Pathfinder', 2, (2, 1))], max=2, per_dir=2,
+         doc='2 bays, prints Pathfinder weakpoint finders: they wait by the nest until the fleet has a target within 5 km, then find its power blocks for the whole wing (FLEET <ch>_WP).'),
     dict(name='Midge Nest',      groups=[('Midge', 2, (2, 1))], max=6, per_dir=2,
          doc='2 bays, prints scriptless Midges (AI blocks, EXPERIMENTAL) and switches their AI behaviour on as they leave; 3 prints per bay (it cannot report in), then \'reload\'.'),
     dict(name='Tube Foundry',    groups=[('Tube 2x2', 1, (1, 1)), ('Tube 2x4', 1, (1, 1)), ('Tube 3x3', 1, (1, 1)), ('Tube 4x4', 1, (1, 1))], max=8, per_dir=3,
