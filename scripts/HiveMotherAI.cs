@@ -1,5 +1,5 @@
 // =====================================================================
-//  HIVE MOTHER  v2.9  - drone printer controller (projector + welders + merge block bays)
+//  HIVE MOTHER  v2.10  - drone printer controller (projector + welders + merge block bays)
 // ---------------------------------------------------------------------
 //  A bay is the blocks whose names contain "[Bay 1]", "[Bay 2]", ...:
 //  ONE projector (holding the drone blueprint, Keep Projection ON), its
@@ -68,6 +68,18 @@
 //  v2.9 CONVEYOR CHECK: printers carry conveyor junctions from every welder to the [Stock] cargo (survival); each bay line shows
 //  "PIPES n/m" when only n of its m welders are joined to the stock (a welder port or a junction the game does not connect).
 //
+//  v2.10 REPAIR BAY (docs/design/survivability.md item 17, s4.3): a bay with "Dock Forward" / "Dock Up" keys (the docked drone RC's axes in printer
+//  grid axes, written by printer_lib) advertises itself on "<Tag>_RBAY" every 2 s while IDLE: MyTuple<long bayPbId, int bay | flags << 8,
+//  Vector3D clampPos, Vector3D axis, Vector3D dockFwd, Vector3D dockUp> (flags: 1 free, 2 can repair = "Repair" key and welders, 4 stock ok;
+//  clampPos = merge block + axis x half a cell, axis = merge WorldMatrix.Up, the clamp face the printers assume, UNVERIFIED in the game).
+//  "<Tag>_RREQ" MyTuple<long bayPbId, int bay, long droneGrid> reserves a free bay for 90 s ("Reserve Seconds"; a new request from the same drone
+//  renews it): no print starts there meanwhile. Answer "<Tag>_RACK" MyTuple<long droneGrid, long bayPbId, int bay, int ok>.
+//  REPAIR: in IDLE, the merge block locking (after it was seen open, or while reserved) with a drone of the bay's prefix on it starts the normal
+//  BUILD -> FINISH -> CHARGE -> ARM -> RELEASE cycle for that drone (the projection overlays it: missing blocks are placed, damaged ones welded),
+//  skipping Max Drones / Parallel Builds; the drone's own "Projector [Self]" is switched off; a build or finish timeout releases the drone
+//  unrepaired instead of FAULTing; "Repair=false" or no welders: dock, charge, release. LCD: "REPAIR", "dock free" / "dock reserved".
+//  Not counted as prints (Max Prints). Bays without the dock keys behave exactly as v2.9.
+//
 //  COMMANDS: start | stop | max <n> | release [bay] | hold <bay> | unhold <bay> |
 //            reload | relay on|off
 //  CONFIG: Custom Data ([Hive Mother] and [Bay N] sections, created on first run).
@@ -75,7 +87,7 @@
 //   Drone Cell Count, Drone Cell Tolerance, Ignore Cells ("x,y,z;x,y,z"),
 //   Skip Finish Check (escape hatch), Launch Burst Seconds.
 // =====================================================================
-const string VER = "2.9";
+const string VER = "2.10";
 const int MaxBays = 12;
 
 int MaxDrones = 8;
@@ -83,7 +95,7 @@ bool RackMode = false;
 string LaunchTag = "STINGER";
 double ChargeSeconds = 25, CooldownSeconds = 1, StallSeconds = 45, BuildTimeout = 600, FaultSeconds = 60;
 double NudgeSeconds = 1.5, NudgePower = 0.25, GapSeconds = 1.0, RecompileWait = 3, MatchRadius = 12;
-double ArmourSettle = 2, FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
+double ResSecs = 90, ArmourSettle = 2, FinishTimeout = 360, FinishFallback = 90, ArmSeconds = 3, JoinSeconds = 40, FusedGrace = 8, LaunchBurst = 4;
 string FleetCh = "FLEET";
 const int ScanBudget = 150;
 int ParallelBuilds = 2;
@@ -114,10 +126,12 @@ class Bay
     public string ProjErr = "";
     // timer chain (Timer Build / Release / Reclamp [Bay N]): while one counts down the script does not touch the bay
     public List<IMyTimerBlock> Timers = new List<IMyTimerBlock>(); public double TimerSeen = -999;
+    // repair bay (v2.10): dock axes in printer grid axes, reservation, the current cycle is a repair
+    public bool HasDock, CanRep, Repair, Open; public Vector3D DockF, DockU; public long ResGrid; public double ResUntil; public int Repaired, AdFl = -1;
 }
 class ErrRec { public string Text; public double T, Last; public int N = 1; }
 List<Bay> _bays = new List<Bay>();
-Dictionary<string, IMyBroadcastListener> _lSwarm = new Dictionary<string, IMyBroadcastListener>();
+Dictionary<string, IMyBroadcastListener> _lSwarm = new Dictionary<string, IMyBroadcastListener>(), _lReq = new Dictionary<string, IMyBroadcastListener>();
 Dictionary<string, Dictionary<long, double>> _alive = new Dictionary<string, Dictionary<long, double>>();
 Dictionary<string, int> _cap = new Dictionary<string, int>();
 List<IMyBroadcastListener> _lTgt = new List<IMyBroadcastListener>();
@@ -245,6 +259,7 @@ void LoadConfig()
     ArmSeconds = C(S, "Arm Max Seconds", ArmSeconds);
     JoinSeconds = Math.Max(30, C(S, "Join Seconds", JoinSeconds));
     FusedGrace = C(S, "Fused Grace Seconds", FusedGrace);
+    ResSecs = C(S, "Reserve Seconds", ResSecs);
     LaunchBurst = C(S, "Launch Burst Seconds", LaunchBurst);
     string fch = C(S, "Fleet Channel", FleetCh).Trim();
     string fsec = C(S, "Fleet Secret", "").Trim();
@@ -304,6 +319,11 @@ void GetBlocks()
             bay.Tol = (int)C(sec, "Drone Cell Tolerance", 2.0);
             string bmin = C(sec, "Drone Box Min", "").Trim(), bmax = C(sec, "Drone Box Max", "").Trim(), ign = C(sec, "Ignore Cells", "").Trim();
             ParseBox(bay, bmin, bmax, ign);
+            int fx, fy, fz, ux, uy, uz;      // read only (never written back): a printer without them stays as it was
+            bool dk = ParseV3(_ini.Get(sec, "Dock Forward").ToString(""), out fx, out fy, out fz) & ParseV3(_ini.Get(sec, "Dock Up").ToString(""), out ux, out uy, out uz);
+            bay.DockF = new Vector3D(fx, fy, fz); bay.DockU = new Vector3D(ux, uy, uz);
+            bay.HasDock = dk && !RackMode && bay.DockF.LengthSquared() > 0.5 && bay.DockU.LengthSquared() > 0.5;
+            bay.CanRep = _ini.Get(sec, "Repair").ToBoolean(true) && bay.Welders.Count > 0;
         }
         catch (Exception ex) { Err(ex, bay); bay.CfgWarn = "config error: " + ex.Message; }
         nb.Add(bay);
@@ -314,6 +334,7 @@ void GetBlocks()
             _alive[bay.Tag] = new Dictionary<long, double>();
             _joinUntil[bay.Tag] = 0; _joinNext[bay.Tag] = 0;
         }
+        if (bay.HasDock && !_lReq.ContainsKey(bay.Tag)) _lReq[bay.Tag] = IGC.RegisterBroadcastListener(bay.Tag + "_RREQ");
     }
     _bays = nb;
     _where = "GetBlocks save config";
@@ -400,6 +421,7 @@ void Tick(string arg, UpdateType src)
     Sect("IGC home broadcast", () => { if (_tick % 6 == 0) { foreach (var tag in _lSwarm.Keys) IGC.SendBroadcastMessage(tag + "_HOME", Me.CubeGrid.WorldVolume.Center); } });
     if (Relay && _tick % 2 == 0) Sect("relay targets", RelayTargets);
     Sect("send joins", SendJoins);
+    if (_lReq.Count > 0) Sect("repair bays", RepairIgc);
     int building = 0, docked = 0;
     foreach (var b in _bays) { if (b.State == "BUILD" || b.State == "FINISH" || b.State == "CHARGE") building++; if (b.State == "DOCKED") docked++; }
     var bays = _bays;       // (GetBlocks may replace the list; this tick works on the one it started with)
@@ -506,12 +528,13 @@ void StepBay(Bay b, ref int building, ref int docked)
     }
     if (b.Msg.StartsWith("timer cycle running"))
     {   // handed back: whatever the timers left behind (welders, merge block) is re-evaluated from scratch; a finished drone still in the bay is recognised by BUILD -> FINISH
-        b.Msg = ""; if (b.State != "FAULT") { b.State = "IDLE"; b.T = _now; b.DPb = null; b.DMerge = null; b.DBats.Clear(); b.KickW = null; }
+        b.Msg = ""; b.Open = false; if (b.State != "FAULT") { b.State = "IDLE"; b.T = _now; b.DPb = null; b.DMerge = null; b.DBats.Clear(); b.KickW = null; }
     }
     switch (b.State)
     {
         case "IDLE":
-            if (building < ParallelBuilds && Wants(b, docked)) { StartBuild(b); building++; Power(b, true); }
+            if (b.HasDock && RepairEntry(b, ref building)) break;
+            if (!Reserved(b) && building < ParallelBuilds && Wants(b, docked)) { StartBuild(b); building++; Power(b, true); }
             else Power(b, false);
             break;
         case "BUILD":
@@ -527,6 +550,7 @@ void StepBay(Bay b, ref int building, ref int docked)
             _where = "bay " + b.N + " BUILD stall";
             Stall(b);
             if (b.Starved) b.T += _dt;
+            else if (t > BuildTimeout && b.Repair) GiveUp(b, "build timeout, " + rem + " blocks not placed");
             else if (t > BuildTimeout) Fault(b, "build timeout: " + (rem >= 0 ? rem + " of " + TotalOf(b) + " blocks not placed" : "no projection") + (b.Msg != "" ? " (" + b.Msg + ")" : ""));
             break;
         case "FINISH":
@@ -601,7 +625,7 @@ bool TimerChainRunning(Bay b)
 void StartBuild(Bay b)
 {
     b.State = "BUILD"; b.T = _now; b.Rem = -1; b.LastProgress = _now; b.SawWork = false; SetOn(b.Merge, true); b.Msg = "";
-    b.Nudged = false; b.DPb = null; b.DMerge = null; b.DBats.Clear(); b.KickW = null; b.Starved = false; b.Armed = false; b.LaunchWritten = false; b.Recompiled = false; b.ProjErr = "";
+    b.Nudged = false; b.Open = false; b.DPb = null; b.DMerge = null; b.DBats.Clear(); b.KickW = null; b.Starved = false; b.Armed = false; b.LaunchWritten = false; b.Recompiled = false; b.ProjErr = "";
     KeepProjection(b);
 }
 
@@ -641,6 +665,7 @@ void StepFinish(Bay b, double t)
     b.Msg = (d != "" ? d + "\n   " : "") + (b.LBadText != "" ? b.LBadText + "\n   " : "") + note;
     Stall(b);
     if (b.Starved) b.T += _dt;
+    else if (t > FinishTimeout && b.Repair) GiveUp(b, "finish timeout, " + b.LBad + " unfinished");
     else if (t > FinishTimeout)
         Fault(b, "finish timeout: " + (b.HavePass ? b.LBad + " unfinished, " + b.LBlocks + "/" + b.Cells + " blocks. " + b.LBadText : "scan never completed") + (rem > 0 ? " " + rem + " blocks never placed (unsupported?)" : ""));
 }
@@ -955,7 +980,7 @@ void Separate(Bay b)
     SetOn(b.DMerge, false);
     foreach (var x in b.Ai) { try { x.ApplyAction("OnOff_On"); x.ApplyAction("ActivateBehavior_On"); } catch (Exception ex) { Err(ex, b); } }
     b.Ai.Clear();
-    b.State = "RELEASE"; b.T = _now; b.Nudged = false; b.Printed++;
+    b.State = "RELEASE"; b.T = _now; b.Nudged = false; if (b.Repair) b.Repaired++; else b.Printed++;
 }
 
 // the thrust gap: the printer pushes itself away from the drone for a moment
@@ -975,6 +1000,72 @@ void Nudge(Bay b, double t)
     }
     b.Nudged = on;
 }
+
+// ---- repair bay (v2.10, survivability item 17): advertise, reserve, accept a docked drone ----
+bool Reserved(Bay b) { return b.ResGrid != 0 && _now < b.ResUntil; }
+
+// free for drone g (0 = for anyone): IDLE, not held, merge on and open, no complete drone in the projection, not reserved by another drone
+bool Free(Bay b, long g)
+{
+    if (!b.HasDock || b.State != "IDLE" || b.Held || (Reserved(b) && b.ResGrid != g)) return false;
+    try { return b.Merge.Enabled && !b.Merge.IsConnected && RemNow(b) != 0; } catch (Exception ex) { Err(ex, b); return false; }
+}
+
+void RepairIgc()
+{
+    foreach (var kv in _lReq)
+        while (kv.Value != null && kv.Value.HasPendingMessage)
+        {
+            var m = kv.Value.AcceptMessage();
+            if (!(m.Data is MyTuple<long, int, long>)) continue;
+            var q = (MyTuple<long, int, long>)m.Data;
+            if (q.Item1 != Me.EntityId) continue;
+            int ok = 0;
+            foreach (var b in _bays) if (b.N == q.Item2 && b.Tag == kv.Key && q.Item3 != 0 && Free(b, q.Item3)) { ok = 1; b.ResGrid = q.Item3; b.ResUntil = _now + ResSecs; }
+            IGC.SendBroadcastMessage(kv.Key + "_RACK", new MyTuple<long, long, int, int>(q.Item3, Me.EntityId, q.Item2, ok));
+        }
+    if (_tick % 12 != 0) return;
+    bool stock = !StockEmpty();
+    foreach (var b in _bays)
+    {
+        if (!b.HasDock || b.State != "IDLE") { b.AdFl = -1; continue; }
+        _where = "bay " + b.N + " RBAY advert";
+        try
+        {
+            b.AdFl = (Free(b, 0) ? 1 : 0) | (b.CanRep ? 2 : 0) | (stock ? 4 : 0);
+            MatrixD gm = b.Merge.CubeGrid.WorldMatrix; Vector3D ax = b.Merge.WorldMatrix.Up;
+            IGC.SendBroadcastMessage(b.Tag + "_RBAY", new MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>(Me.EntityId, b.N | b.AdFl << 8,
+                b.Merge.GetPosition() + ax * (b.Merge.CubeGrid.GridSize * 0.5), ax, Vector3D.Normalize(Vector3D.TransformNormal(b.DockF, gm)), Vector3D.Normalize(Vector3D.TransformNormal(b.DockU, gm))));
+        }
+        catch (Exception ex) { Err(ex, b); b.AdFl = -1; }
+    }
+}
+
+// IDLE with dock keys: true while the bay is held for a docked drone (the normal IDLE is skipped this tick)
+bool RepairEntry(Bay b, ref int building)
+{
+    bool c;
+    try { c = b.Merge.IsConnected; } catch (Exception ex) { Err(ex, b); return false; }
+    if (!c) { b.Open = true; b.Repair = false; return false; }
+    if (!b.Open && !b.Repair && !Reserved(b)) return false;      // locked since IDLE began (e.g. handed back by the timers): the v2.9 path
+    Power(b, false);
+    if (_tick % 6 != 3) return true;
+    _where = "bay " + b.N + " IDLE find docked drone";
+    b.DPb = null; b.DMerge = null; FindDrone(b);
+    if (b.DMerge == null) { b.Open = false; b.Repair = false; b.Msg = "merge locked, no " + b.Prefix + " drone found on it"; return false; }
+    _where = "bay " + b.N + " IDLE drone projector off";
+    var l = new List<IMyProjector>();
+    GridTerminalSystem.GetBlocksOfType(l, x => x != null && x.CustomName.StartsWith(b.Prefix) && x.CustomName.Contains("Projector [Self]"));
+    foreach (var p in l) { try { if (Nearest(p.GetPosition()) == b) SetOn(p, false); } catch (Exception) { } }       // the bay's projection covers the drone
+    b.ResGrid = 0; building++;
+    if (b.CanRep) { StartBuild(b); Power(b, true); }
+    else { b.State = "CHARGE"; b.T = _now; b.Recompiled = false; b.Msg = ""; }
+    b.Repair = true;
+    return true;
+}
+
+// a repair that cannot finish (out of reach, parts missing) releases the drone as it is instead of holding it in FAULT
+void GiveUp(Bay b, string why) { b.State = "CHARGE"; b.T = _now; b.Recompiled = false; b.Msg = "REPAIR incomplete (" + why + "): releasing the drone as it is"; }
 
 void RelayTargets()
 {
@@ -1022,7 +1113,10 @@ void Show()
         try
         {
             _sb.Append("Bay ").Append(b.N).Append(' ').Append(b.Tag).Append(": ").Append(b.State);
+            if (b.Repair && b.State != "IDLE") _sb.Append(" REPAIR");
             if (b.Printed > 0) _sb.Append(" #").Append(b.Printed);
+            if (b.Repaired > 0) _sb.Append(" +").Append(b.Repaired).Append(" repaired");
+            if (b.HasDock && b.State == "IDLE") _sb.Append(Reserved(b) ? "  dock reserved " + (int)(b.ResUntil - _now) + " s" : b.AdFl < 0 ? "" : (b.AdFl & 1) != 0 ? "  dock free" : "  dock busy");
             if (b.Held) _sb.Append(" (held)");
             if (b.Piped >= 0 && b.Piped < b.Welders.Count) _sb.Append("  PIPES ").Append(b.Piped).Append('/').Append(b.Welders.Count);   // survival: welders not on the conveyor to [Stock]
             if (b.State == "BUILD") _sb.Append("  ").Append(b.Rem >= 0 ? b.Rem + " left" : "no projection");

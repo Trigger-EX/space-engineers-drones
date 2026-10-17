@@ -1,4 +1,38 @@
-# Foundry notes (HiveMotherAI v2.2)
+# Foundry notes (HiveMotherAI v2.2, repair bays v2.10 / CradleBayAI v1.1)
+
+## v2.10 (HiveMotherAI) and v1.1 (CradleBayAI): repair bays (docs/design/survivability.md item 17, s4.3)
+* Keys, per `[Bay N]` (written by printer_lib / pods.py, READ ONLY in the scripts, never written back): `Dock Forward=x,y,z`, `Dock Up=x,y,z` (the docked drone
+  RC's axes in host grid axes), `Repair=true|false` (default true). A bay without both dock keys behaves exactly as before (no advert, no reservation, no repair
+  entry). HiveMother rack mode never advertises. New script keys: `[Hive Mother] Reserve Seconds` (90), `[Pod] Reserve Seconds` (90), `[Pod] Repair Max` (600).
+* Advert `<DTag>_RBAY` every 2 s (default antenna range), per bay with dock keys that is IDLE (HiveMother) / EMPTY (CradleBay):
+  `MyTuple<long bayPbId, int bay | flags << 8, Vector3D clampPos, Vector3D axis, Vector3D dockFwd, Vector3D dockUp>`; bayPbId = the bay PB's EntityId, bay = the
+  bay number (CradleBay: the global number, First Bay + n - 1); flags 1 free (not held, merge on and open, no reservation by another drone; HiveMother: no
+  complete drone in the projection, CradleBay: no drone found in the box), 2 can repair (`Repair` and the bay has welders), 4 stock ok (HiveMother: not
+  "stock empty"; CradleBay: no `[Stock]` cargo or one holds items). clampPos = merge position + axis x half a cell; axis = `Merge.WorldMatrix.Up` (the
+  `MERGE_CLAMP_FACE_SMALL` convention, UNVERIFIED in the game); dockFwd / dockUp = the keys in world axes. DTag: HiveMother the bay's `Tag`, CradleBay
+  the bay's `Drone Tag` key (default HORNET; the first word of a docked plain drone PB's name).
+* `<DTag>_RREQ` `MyTuple<long bayPbId, int bay, long droneGrid>` addressed to this PB and a free bay reserves it for `Reserve Seconds`; the same drone asking
+  again renews it. Answer `<DTag>_RACK` `MyTuple<long droneGrid, long bayPbId, int bay, int ok>` (ok 1/0) to every request for this PB. A reserved
+  HiveMother bay starts no print. A reserved bay is still advertised, with the free bit 0.
+* HiveMother REPAIR: in IDLE, the bay's merge block locking (after IDLE saw it open, or while reserved) with a drone of the bay's prefix found on it runs the
+  normal BUILD -> FINISH -> CHARGE -> ARM -> RELEASE -> COOLDOWN cycle on that drone (the projection overlays it: missing blocks placed, damaged ones welded;
+  FINISH accepts the already-placed drone after 15 s of rem == 0). Max Drones and Parallel Builds are skipped, it does not count against Max Prints, the
+  drone's own `Projector [Self]` is switched off (the bay projection covers it), a build or finish timeout releases the drone unrepaired instead of FAULT,
+  and a FAULT during a repair re-enters the repair. Without welders or with `Repair=false`: CHARGE -> release. LCD: `REPAIR`, `+n repaired`, `dock free` /
+  `dock busy` / `dock reserved n s`. A drone locked on the merge since IDLE began (the timer chain handed the bay back) takes the v2.9 path.
+* CradleBay REPAIR: a drone whose merge locks while its bay is reserved is a PATIENT (also `repair n` on a DOCKED bay). With welders named `[Bay n]` (local
+  slot number, like the default merge name) and `Repair=true`: state REPAIR (welders on, the drone's `Projector [Self]` on, its thrusters off) until the
+  projector has no block left to place (or has no projection: a printed drone's self-projector is empty, then only damaged blocks are welded) and every
+  drone terminal block found by the box is functional and full integrity (3 s minimum, `Repair Max` s maximum), then welders and projector off and the
+  normal release (CHARGING -> READY -> ARMING -> RELEASED, all gates). Without welders: straight to the release. Charging does not count against Wait
+  Max for a patient, and a release dropped by the gates is asked again after 10 s (`recall` / `hold n` stop that). A drone clamped by hand without a
+  reservation stays DOCKED (manual recovery unchanged).
+* PRINTER GUARD (drone side) is not fooled: a docked drone sees the bay's `[Bay` blocks (and the `[Hive Mother]` marker) on its grid only while the merge
+  pair holds it; the bay releases it through ARM / Separate, the grid splits and the guard lets go (the same path as a printed drone). A drone that never
+  splits (FUSED) stays held, as for a print.
+* Sim: `sim/printer_test.sh` and `sim/dock_launch_test.sh --cradle` unchanged. The sim builds no projected blocks and welds nothing, so the repair itself
+  (placing, welding, the self-projection) is in-game only. In-game tests: survivability.md s8 item 7.
+
 
 ## v2.2: crash proofing and breadcrumbs (after "ERROR Object reference not set to an instance of an object" in the game)
 The real game showed that text on the Hive Mother PB of the v2.0 'Mobile Hive' release. It is `Main()`'s catch block (`Echo("ERROR " + ex.Message)`): a
