@@ -63,6 +63,7 @@ Sim check: 27 drone-vs-Pirate scenarios x 10 seeds, old vs new scripts: 92 vs 95
 | Railgun power (Ballista: power for a full rail recharge, thrust to pay for it) | Longbow S, Longbow L (+ Seeker), Mantis: reactors >= rail draw; reactors + batteries >= rail + larger thruster group per axis; acceleration and turn rates >= before | docs/design/railgun_power.md; Warden, Corsair, Leviathan already covered by their reactors |
 
 ## Role-specific (checked, not retrofitted)
+- `[Aux]` PB (`scripts/AuxAI.cs`, docs/design/staff_split.md) for the 7 split Staffs (Hornet/Watcher, Harrier, Lancer, Aegis, Wasp, Longbow, Mantis): a PB budget measure, not a feature (REPAIR CLIENT and the SEEKER moved out of Staff PBs at 83k). Basilisk may join when its Staff grows (switch to AUX LINK, add BASILISK to `SUPPORT_AUX`); the Gnat has no free cell in its 2 x 2 section.
 - Survivability (docs/design/survivability.md): Gnat gets no jinks (axial thrust only) and no bay docking (belly merge); Basilisk and Longbow L no bay docking (no merge block); the railgun power guard only on railgun drones.
 - GnatSwarmAI v1.15 side-thruster support (rolls a side thruster onto the sideways need; `docs/design/gnat_side.md`, test ships Gnat Side / Gnat Side NoRev): point-and-burn only; every other drone already has thrusters on all six axes.
 - Tube drones (2026-10-14): critical systems at the rear, side thrusters right behind the nose; W tubes come back for a kinetic second ram after the blast. Ram drones only: their nose is the weapon and takes the impact.

@@ -9,6 +9,13 @@
 //   --recompile-at T   terminal action "Recompile" on the drone PB at T s (Custom Data survives, the script state does not). Switches
 //        SimSettings.AllowRecompileAction on; the sim recompile is instant and cannot fail, so the result is labelled OPTIMISTIC
 //   --arm-at T    run the argument "armed" on the drone PB at T s (what HiveMotherAI does through DPb.TryRun)
+//   --return-at S the harness plays a repair bay from S s on (docs/design/staff_split.md s10): "<TAG>_RBAY" for the dummy printer's merge every 2 s
+//        (clamp face, axis = its Up, dockFwd / dockUp = the drone RC's printed pose, both carried with the printer body), "<TAG>_RACK ok" every 0.5 s
+//        from S + 3 s (the REPAIR CLIENT takes it only while it asks), and the word "dock" to the drone PB at S + 0.1 s. TAG: --tag, else the model's
+//        first word. PASS = CONTACT (the drone's merge within 0.35 m of the printer's clamp cell, aligned, < 1 m/s) and writer audit 0 from S on. The sim has no
+//        merge re-lock in flight, so the test ends 2 s after contact (it cannot see "docked").
+//   --events "T:!disable-pb Aux;T2:!enable-pb Aux"   switch PBs whose name contains the text off / on at T s (as SimEvents)
+//   every run prints the override writer audit (ticks where two PBs wrote gyro / thruster overrides of one grid, SimEvents.WriterAudit)
 //
 // The dummy printer is code-built: the blueprint's own merge block gets a partner (opposite face, centres one cell apart), a one-cell stalk of
 // armor and a 9x9x9 armor box behind it. The box is heavier than the drone, so the drone becomes the split-off body when the merge opens.
@@ -126,6 +133,9 @@ namespace SeSim.Run
             ulong seed = (ulong)Dbl(args, "--seed", 1);
             string cd = Arg(args, "--custom-data", null);
             string tracePath = Arg(args, "--trace", null);
+            double retAt = Dbl(args, "--return-at", -1);
+            string rtag = Arg(args, "--tag", model.Split(new[] { (char)32 }, 2)[0].ToUpperInvariant());
+            var events = SimEvents.Parse(Arg(args, "--events", null)); int evI = 0;
             var settings = new SimSettings(); settings.CountInstructions = Has(args, "--count-instructions"); settings.InstructionCountMode = Arg(args, "--instruction-count-mode", "blocks"); settings.EnforceInstructionLimit = Has(args, "--enforce-instruction-limit");
             if (recAt >= 0) settings.AllowRecompileAction = true;
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
@@ -146,11 +156,12 @@ namespace SeSim.Run
                 foreach (var b in bodies) foreach (var bi in b.Blocks) { var pbx = bi.Api as SimProgrammableBlock; if (pbx != null) pbx.CustomData = text; }
             }
             BlockApiFactory.FlushPending(w);
-            SimProgrammableBlock pb = null; BlockInst printerMerge = null, droneMerge = null;
+            SimProgrammableBlock pb = null; BlockInst printerMerge = null, droneMerge = null, droneRc = null; var allPbs = new List<SimProgrammableBlock>();
             foreach (var b in bodies)
                 foreach (var bi in b.Blocks)
                 {
-                    if (bi.Api is SimProgrammableBlock) { var cand = (SimProgrammableBlock)bi.Api; if (pb == null || PbRank(cand) > PbRank(pb)) pb = cand; }   // the [Staff] PB of a split drone (launch, 'armed', the Mode line), else the Flight / only PB, never the [Thrust] one
+                    if (bi.Api is SimProgrammableBlock) { var cand = (SimProgrammableBlock)bi.Api; allPbs.Add(cand); if (pb == null || PbRank(cand) > PbRank(pb)) pb = cand; }   // the [Staff] PB of a split drone (launch, 'armed', the Mode line), else the Flight / only PB, never [Thrust] / [Aux]
+                    if (droneRc == null && bi.Src.TypeId == "RemoteControl") droneRc = bi;   // the [Staff] PB of a split drone (launch, 'armed', the Mode line), else the Flight / only PB, never the [Thrust] one
                     if (bi.Merge != null) { if (bi.Src.EntityId == dummyId) printerMerge = bi; else droneMerge = bi; }
                 }
             if (pb == null || printerMerge == null || droneMerge == null) { Console.Error.WriteLine("test setup failed: pb/merge blocks not found"); return 2; }
@@ -164,6 +175,10 @@ namespace SeSim.Run
             bool released = false, joinSent = false, armSent = false, recSent = false;
             double firstMove = -1, leftAt = -1, splitAt = -1, maxDist = 0, maxSpeed = 0; string modeNow = "?", modeFirst = null; double modeAt = -1;
             Vector3D pm0 = printerMerge.WorldCenter;
+            // repair-bay play (--return-at): the drone RC's printed pose in the printer body's frame
+            MatrixD inv0 = printerBody.InvWorldRot; Vector3D bayF = Vector3D.Zero, bayU = Vector3D.Zero;
+            if (droneRc != null) { var rm = droneRc.WorldMatrix; bayF = Vector3D.TransformNormal(rm.Forward, inv0); bayU = Vector3D.TransformNormal(rm.Up, inv0); }
+            bool dockSent = false; double contactAt = -1, minGap = 1e9; long bayN = 0, waG0 = -1, waT0 = -1;
             var sb = new StringBuilder();
             for (long t = 0; t < ticks; t++)
             {
@@ -181,6 +196,35 @@ namespace SeSim.Run
                     joinSent = true;
                     string tag = model.Split(new[] { (char)32 }, 2)[0].ToUpperInvariant();   // WASP, LANCER, HORNET, HARRIER ...
                     SendJoin(w, pb, tag);
+                }
+                while (evI < events.Count && now >= events[evI].Key)
+                {
+                    string[] ep = events[evI].Value.TrimStart('!').Split(new[] { (char)32 }, 2); evI++;
+                    if (ep.Length == 2 && (ep[0] == "disable-pb" || ep[0] == "enable-pb"))
+                    {
+                        int n = 0; foreach (var p in allPbs) if ((p.CustomNameValue ?? "").IndexOf(ep[1], StringComparison.OrdinalIgnoreCase) >= 0) { p.Enabled = ep[0] == "enable-pb"; n++; }
+                        sb.Append(string.Format(Inv, "  t={0,5:F1}s event {1} {2}: {3} PBs\n", now, ep[0], ep[1], n));
+                    }
+                    else throw new ArgumentException("dock-launch --events: only !disable-pb / !enable-pb <name part>: " + events[evI - 1].Value);
+                }
+                if (retAt >= 0 && now >= retAt)
+                {
+                    Vector3D ax = printerMerge.WorldMatrix.Up, clamp = printerMerge.WorldCenter + ax * (printerBody.CellSize * 0.5);
+                    if ((t - (long)(retAt * SimSettings.TicksPerSecond)) % 120 == 0)
+                    {
+                        bayN++;
+                        w.Igc.InjectBroadcast(rtag + "_RBAY", new VRage.MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>(BayPb, 1 | 7 << 8, clamp, ax,
+                            Vector3D.Normalize(Vector3D.TransformNormal(bayF, printerBody.RotMatrix)), Vector3D.Normalize(Vector3D.TransformNormal(bayU, printerBody.RotMatrix))));
+                    }
+                    if (waG0 < 0) { var a0 = WriterAudit.Of(w); waG0 = a0.Gyro; waT0 = a0.Thrust; }   // the return is judged on its own (the take-off hand-over counts before)
+                    if (!dockSent && now >= retAt + 0.1) { dockSent = true; host.RunArgument(pb, "dock", UpdateType.Terminal); sb.Append(string.Format(Inv, "  t={0,5:F1}s bay: word 'dock' to {1}\n", now, pb.CustomNameValue)); }
+                    if (now >= retAt + 3 && t % 30 == 0) w.Igc.InjectBroadcast(rtag + "_RACK", new VRage.MyTuple<long, long, int, int>(pb.Inst.Body.EntityId, BayPb, 1, 1));
+                    Vector3D want = printerMerge.WorldCenter + ax * printerBody.CellSize;
+                    double gap = (droneMerge.WorldCenter - want).Length();
+                    if (gap < minGap) minGap = gap;
+                    if (contactAt < 0 && gap < 0.35 && Vector3D.Dot(droneMerge.WorldMatrix.Up, -ax) > 0.99 && (pb.Inst.Body.LinearVelocity - printerBody.LinearVelocity).Length() < 1)
+                    { contactAt = now; sb.Append(string.Format(Inv, "  t={0,5:F1}s bay: CONTACT, merge gap {1:F2} m\n", now, gap)); }
+                    if (contactAt >= 0 && now > contactAt + 2) break;
                 }
                 w.Step();
                 Body db = pb.Inst.Body;
@@ -211,14 +255,30 @@ namespace SeSim.Run
             string last = runner != null ? runner.EchoText : "";
             if (Has(args, "--echo")) Console.WriteLine("--- PB echo ---\n" + last);
             if (tw != null) tw.Dispose();
+            var wa = WriterAudit.Of(w);
+            Console.WriteLine("writer audit gyro " + wa.Gyro + " thrust " + wa.Thrust);
             bool ok = leftAt >= 0 && modeNow != "IDLE" && modeNow != "?";
+            if (retAt >= 0)
+            {
+                long rg = wa.Gyro - Math.Max(0, waG0), rt = wa.Thrust - Math.Max(0, waT0);
+                Console.WriteLine("RETURN " + model + ": " + bayN + " bay adverts, min merge gap " + minGap.ToString("F2", Inv) + " m, contact " + (contactAt >= 0 ? contactAt.ToString("F1", Inv) + " s" : "never")
+                    + ", writer audit from " + retAt.ToString("F0", Inv) + " s: gyro " + rg + " thrust " + rt);
+                bool rok = contactAt >= 0 && rg == 0 && rt == 0;
+                Console.WriteLine(rok ? "RETURN OK (contact; the sim has no merge re-lock)" : "RETURN FAILED");
+                return rok ? 0 : 1;
+            }
             if (settings.CountInstructions) IlReport.Dump(host, "dock-launch " + model + " " + string.Join(" ", args), args);
             string optimistic = recAt >= 0 ? " (optimistic: sim Recompile is instant)" : "";
             Console.WriteLine(ok ? "LAUNCH OK" + optimistic : "LAUNCH FAILED (drone did not leave and start working)" + optimistic);
             return ok ? 0 : 1;
         }
 
-        static int PbRank(SimProgrammableBlock p) { string n = p.CustomNameValue ?? ""; return n.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase) ? 3 : n.StartsWith("[Thrust]", StringComparison.OrdinalIgnoreCase) ? 0 : 1; }
+        const long BayPb = 777000002L;   // the harness bay's "PB" id (--return-at)
+        static int PbRank(SimProgrammableBlock p)
+        {   // [Staff] first; [Thrust] and [Aux] (docs/design/staff_split.md) never: they have no Mode line and take no launch words
+            string n = p.CustomNameValue ?? "";
+            return n.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase) ? 3 : n.StartsWith("[Thrust]", StringComparison.OrdinalIgnoreCase) || n.StartsWith("[Aux]", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+        }
 
         static int printerBlockCount(Body b, long dummyId)
         {

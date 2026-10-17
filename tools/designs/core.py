@@ -306,7 +306,10 @@ def large_rail_power(bp, tag):
     return bp
 
 def longbow_s(lite=False):
-    bp = C.add_support_pbs(longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite))
+    bp = longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite)
+    # the [Aux] PB (docs/design/staff_split.md) sits in the belly at LONGBOW_S_AUX_CELL: the free choice (-1,-3,-2) took the self-projector's cell, the kit moved
+    # and the Foundry's welders lost the gyro and the up camera (reach.py); this cell leaves every kit block where it was and the Foundry passes
+    C.add_support_pbs(bp, avoid=LONGBOW_S_WELD_CELLS + spine_weld_cells(bp), aux_cell=LONGBOW_S_AUX_CELL)
     # PRINTABLE: free_pb_spot would put the [Thrust] PB into one of the two cells emptied for the printer (out of welder reach); (1,0,-2) is reached
     t = [b for b in bp.blocks if (b['name'] or '').startswith('[Thrust]')]
     if t and tuple(t[0]['min']) in ((-1, -1, -2), (0, -1, -2)):
@@ -317,6 +320,7 @@ def longbow_s(lite=False):
     C.add_survival_kit(bp, model=bp.name, avoid=LONGBOW_S_WELD_CELLS + spine_weld_cells(bp), panels=False)
     return finalize(bp)      # [Flight] + [Staff] (+ [Thrust]) here too, so a Longbow S printed by a Foundry carries its Staff PB
 LONGBOW_S_WELD_CELLS = ((-1, -1, -2), (0, -1, -2))       # emptied so the Foundry's welders reach the railgun's flank (longbow_frame, PRINTABLE)
+LONGBOW_S_AUX_CELL = (1, -5, -1)                          # [Aux] PB: 3 cells from the Flight PB, kit unchanged, Longbow Foundry reach PASS (2026-10-17)
 
 def spine_weld_cells(bp):
     """Longbow S / Mantis (printed by a Foundry): cells the survival kit leaves empty: everything above the hull floor (y >= -1: the welders for the gyro,

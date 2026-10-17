@@ -1,4 +1,4 @@
-// >>> REPAIR CLIENT v1.0 (self-projector, repair bay and medic patient side, docs/design/survivability.md) >>>
+// >>> REPAIR CLIENT v1.1 (self-projector, repair bay and medic patient side, docs/design/survivability.md, docs/design/staff_split.md) >>>
 // Patient side of the repair work (docs/design/survivability.md items 15, 17, 18; channels s4.3, antenna range):
 //  * REPAIR BAY (item 17): damaged (SURVIVAL STAFF latch, or the words "repair" / "dock"), Flight in RTB or IDLE, not under fire, an own merge block (RpDockOk):
 //    the nearest free, stationary bay advertised on <Tag>_RBAY MyTuple<long bayPb, int bay | flags << 8 (bit0 free, bit1 repair, bit2 stock), Vector3D clampPos,
@@ -15,17 +15,21 @@
 //    Missing cells: an own-grid cell scan (200 cells a tick) when the grid is new (printed / released / repaired), re-checked every 2 s while serviced.
 //  * SELF-PROJECTOR (item 15): the block named "... Projector [Self]": on while a medic works or docked at a bay without a projector (no Hive Mother on the
 //    grid), off at a printer bay and on return to duty. Written only on those changes (a cradle bay switches it itself in its REPAIR state).
-// Keys ([Survival]): Repair At Bay, Dock Speed (m/s), Dock Final Speed (m/s), Call Medic, Medic Channel. Per-script: readonly bool RpDockOk.
-// Uses: SURVIVAL STAFF (_svRtb, _svDock, _svAmin, _svPrevVerb, _svI, SvSteer(), SvRel(), SvCapV(), SvDn/SvBn/SvT), _rc, _mode (IDLE/RTB), _fl, _down, Tag, MaxSpeed, Fwd().
+// Keys ([Survival]): Repair At Bay, Dock Speed (m/s), Dock Final Speed (m/s), Call Medic, Medic Channel. Per-script: bool RpDockOk.
+// Hosts (v1.1, docs/design/staff_split.md): GnatStaffAI and BasiliskStaffAI, and AuxAI (the [Aux] PB of the other 7 drones, which reach it through AUX LINK).
+// The block never writes a thruster / gyro override or DampenersOverride itself: it calls the host's actuator hooks DkGo() (take the actuators), DkSteer(vel, nose,
+// roof) (fly that setpoint), DkRel() (let go) and SvRepaired() (clear the damage latch). SURVIVAL STAFF implements them (the Staff flies, FOL bit 2); AuxAI turns
+// them into .DKS setpoints for its Staff. SvFly (FOL bit 2) = flying or the 2 ticks after the release write (DkHold).
+// Uses: _svRtb, _svDock, _svAmin, _svPrevVerb, SvCapV(), SvB/SvD/SvT, DkGo/DkSteer/DkRel/DkHold/SvRepaired, _rc, _now, _tick, _mode (IDLE/RTB), _fl, _down, Tag,
+//   MaxSpeed, Fwd(), FleetV().
 bool RpBayOn = true, RpMedic = true, _rpFly, _rpRetry; double RpDockV = 2, RpDockV0 = 0.3, _rpT, _rpT2, _rpStart, _rpNext, _rpScanT = -99; string RpMedCh = "MEDIC", _rpMsg = "";
-int _rpS, _rpReq, _rpTry, _rpScanI, _rpChkI = -1, _rpBadN; long _rpFlyTk, _rpKey, _rpMed;
+int _rpS, _rpReq, _rpTry, _rpScanI, _rpChkI = -1, _rpBadN; long _rpKey, _rpMed;
 IMyBroadcastListener _rpLb, _rpLa, _rpLm, _rpLk; IMyShipMergeBlock _rpMerge; IMyProjector _rpProj; IMyCubeGrid _rpScanG;
 Vector3D _rpO; class RpB { public long Pb; public int Bay, F; public Vector3D P, P0, Ax, Fw, Up; public double T, Bad = -999; public bool Two; }
 Dictionary<long, RpB> _rpBays = new Dictionary<long, RpB>(); Dictionary<long, MyTuple<Vector3D, int, double>> _rpMeds = new Dictionary<long, MyTuple<Vector3D, int, double>>();
 Dictionary<long, double> _rpMedBad = new Dictionary<long, double>();
-List<IMyThrust> _rpThr = new List<IMyThrust>(); List<IMyGyro> _rpGy = new List<IMyGyro>();
 List<Vector3I> _rpCells = new List<Vector3I>(), _rpBad = new List<Vector3I>(), _rpBadDone = new List<Vector3I>();
-bool SvFly { get { return _rpFly; } }
+bool SvFly { get { return _rpFly || DkHold; } }
 
 void RpCfg(MyIni i)
 {
@@ -71,8 +75,8 @@ void RpRead()
         if (d.Item1 != me || _rpS != 1 || _rc == null || d.Item2 * 97 + d.Item3 != _rpKey || !_rpBays.TryGetValue(_rpKey, out b)) continue;
         if (d.Item4 == 0) { b.Bad = _now; _rpS = 0; _rpNext = _now + 10; _rpMsg = "bay refused"; continue; }
         _rpO = Vector3D.TransformNormal(_rpMerge.GetPosition() - _rc.GetPosition(), MatrixD.Transpose(_rc.WorldMatrix));   // merge offset in the RC frame, taken once
-        _rpThr.Clear(); _rpThr.AddRange(_thr); _rpGy.Clear(); _rpGy.AddRange(_gyros);   // our own blocks: once merged the lists hold the host's too
-        _rpS = 2; _rpFly = true; _rpFlyTk = _tick; _rpStart = _rpT2 = _now; _rpTry = 0; _rpMsg = "";
+        DkGo();                                             // the host takes the actuators (FOL bit 2)
+        _rpS = 2; _rpFly = true; _rpStart = _rpT2 = _now; _rpTry = 0; _rpMsg = "";
     }
     while (_rpLm != null && _rpLm.HasPendingMessage)
     {
@@ -92,16 +96,10 @@ void RpRead()
     }
 }
 
-void RpRel()
-{
-    foreach (var y in _rpGy) { y.GyroOverride = false; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }
-    foreach (var th in _rpThr) th.ThrustOverridePercentage = 0;
-    if (_rc != null) _rc.DampenersOverride = true;
-}
 void RpWant(int k) { _rpReq = k; _rpNext = 0; }
 void RpStop(string why)
 {
-    if (_rpS >= 2 && _rpS <= 4) RpRel();
+    if (_rpS >= 2 && _rpS <= 4) DkRel();
     if (_rpS >= 6) { if (_rpS == 7) RpWork(true); RpProj(false); }
     if (_rpS != 5) { _rpS = 0; }
     _rpFly = false; _rpReq = 0; if (why != "") _rpMsg = why;
@@ -109,7 +107,7 @@ void RpStop(string why)
 void RpAbort(string why, double bad)
 {
     RpB b; if (_rpBays.TryGetValue(_rpKey, out b)) b.Bad = _now + bad;
-    RpRel(); _rpFly = false; _rpS = 0; _rpNext = _now + 10; _rpMsg = why;
+    DkRel(); _rpFly = false; _rpS = 0; _rpNext = _now + 10; _rpMsg = why;
 }
 
 void RpStep()
@@ -153,7 +151,7 @@ void RpStep()
     }
     if (_rpS == 5)
     {   // docked: the bay repairs and releases (LAUNCH flies the take-off); back to duty when the merge pair has opened
-        if (_rpMerge == null || !_rpMerge.IsConnected) { if (_svDock) return; RpProj(false); _rpS = 0; _svRtb = false; _rpReq = 0; _rpMsg = "repaired, released"; }
+        if (_rpMerge == null || !_rpMerge.IsConnected) { if (_svDock) return; RpProj(false); _rpS = 0; SvRepaired(); _rpReq = 0; _rpMsg = "repaired, released"; }
         return;
     }
     if (_rpS >= 6) { RpMedicStep(uf); return; }
@@ -166,13 +164,12 @@ void RpStep()
     if (_now - _rpStart > 180) { RpAbort("dock timeout", 600); return; }
     if (_rpMerge.IsConnected)
     {
-        RpRel(); _rpFly = false; _rpS = 5; _rpMsg = "docked";
+        DkRel(); _rpFly = false; _rpS = 5; _rpMsg = "docked";
         var hm = new List<IMyProgrammableBlock>(); GridTerminalSystem.GetBlocksOfType(hm, b => b.CubeGrid == Me.CubeGrid && b.CustomData.Contains("[Hive Mother]"));
         RpProj(hm.Count == 0);                               // a printer bay projects the drone itself (and keeps ours off); a cradle bay works through ours
         return;
     }
     if (_now - _rpT2 > 30) { _rpT2 = _now; IGC.SendBroadcastMessage(Tag + "_RREQ", new MyTuple<long, int, long>(y.Pb, y.Bay, Me.CubeGrid.EntityId)); }   // the bay holds us 90 s: renew
-    if (_tick - _rpFlyTk < 3) return;                         // FOL bit 2 reaches the Flight first: one writer
     MatrixD R = MatrixD.CreateWorld(Vector3D.Zero, y.Fw, Vector3D.Normalize(y.Up - y.Fw * Vector3D.Dot(y.Up, y.Fw)));
     Vector3D G = y.P + y.Ax * (Me.CubeGrid.GridSize * 0.5) - Vector3D.TransformNormal(_rpO, R), L = G + y.Ax * (20 + Me.CubeGrid.WorldVolume.Radius);
     Vector3D M = _rc.GetPosition(), v; var mw = _rc.WorldMatrix;
@@ -181,7 +178,7 @@ void RpStep()
         Vector3D d = L - M; double dist = d.Length(), sp = Math.Min(Math.Min(40, MaxSpeed), Math.Min(dist * 0.5, Math.Sqrt(2 * _svAmin * dist))), cap = SvCapV();
         if (cap > 0) sp = Math.Min(sp, cap);
         if (dist < 2) { _rpS = 3; _rpT = _now; }
-        SvSteer(dist > 0.1 ? d / dist * sp : Vector3D.Zero, dist > 100 ? d : R.Forward, dist > 100 ? Vector3D.Zero : R.Up);
+        DkSteer(dist > 0.1 ? d / dist * sp : Vector3D.Zero, dist > 100 ? d : R.Forward, dist > 100 ? Vector3D.Zero : R.Up);
         return;
     }
     if (_rpS == 3)
@@ -189,7 +186,7 @@ void RpStep()
         v = (L - M) * 0.5; if (v.LengthSquared() > 4) v = Vector3D.Normalize(v) * 2;
         bool al = Vector3D.Dot(mw.Forward, R.Forward) > 0.9994 && Vector3D.Dot(mw.Up, R.Up) > 0.9994 && _rc.GetShipVelocities().LinearVelocity.LengthSquared() < 0.09;
         if (al || _now - _rpT > 15) { _rpS = 4; _rpMerge.Enabled = true; }   // (LAUNCH switched it off after the last take-off)
-        SvSteer(v, R.Forward, R.Up);
+        DkSteer(v, R.Forward, R.Up);
         return;
     }
     Vector3D rel = M - G, lat; double along = Vector3D.Dot(rel, y.Ax); lat = rel - y.Ax * along;
@@ -198,7 +195,7 @@ void RpStep()
         if (++_rpTry > 3) { RpAbort("dock failed", 600); return; }
         _rpS = 3; _rpT = _now; return;                      // back out to the line-up point and try again
     }
-    SvSteer(-y.Ax * MathHelper.Clamp(0.5 * along, RpDockV0, RpDockV) - lat, R.Forward, R.Up);
+    DkSteer(-y.Ax * MathHelper.Clamp(0.5 * along, RpDockV0, RpDockV) - lat, R.Forward, R.Up);
 }
 
 void RpReq()
@@ -223,7 +220,7 @@ void RpMedicStep(bool uf)
     bool done = _rpScanT > 0 && _rpBadDone.Count == 0 && (_rpProj == null || !_rpProj.IsProjecting || _rpProj.RemainingBlocks == 0);
     RpWork(done);
     if (!done) return;
-    RpProj(false); _rpS = 0; _svRtb = false; _rpReq = 0; _rpMsg = "repaired by medic";
+    RpProj(false); _rpS = 0; SvRepaired(); _rpReq = 0; _rpMsg = "repaired by medic";
     if (_svPrevVerb != "") Fwd(_svPrevVerb);
 }
 void RpWork(bool done)
@@ -271,4 +268,4 @@ string RpStatus()
     if (_rpProj != null && _rpProj.Enabled && _rpProj.IsProjecting) s += "Project: " + _rpProj.RemainingBlocks + " blocks to build\n";
     return s;
 }
-// <<< REPAIR CLIENT v1.0 <<<
+// <<< REPAIR CLIENT v1.1 <<<

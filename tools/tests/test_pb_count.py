@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Extra Programmable Blocks are added where a ship needs one (docs/design/pb_headroom.md), not as a blanket three.   python3 -I tools/tests/test_pb_count.py
 
-  * the drones that print from a Foundry/Shipyard/Pad carry their [Flight] + [Staff] + [Thrust] PBs in the model function itself (a printer projects the model
+  * the drones that print from a Foundry/Shipyard/Pad carry their [Flight] + [Staff] + [Thrust] (+ [Aux], docs/design/staff_split.md) PBs in the model function itself (a printer projects the model
     function's grid, build_all only adds support PBs to the top-level blueprint): Wasp, Aegis, Mantis, Longbow S; the Peeper carries its [Thrust] PB;
   * Gnat carries `[Flight]` + `[Staff]` (docs/design/gnat_split.md), Shrike its `[Staff]` (docs/design/helm_split.md);
   * the cradle pod's PB count (warship pod subgrids) and the Midge (scriptless) are untouched."""
@@ -29,7 +29,7 @@ class PbCount(unittest.TestCase):
     def test_printed_drones_carry_their_support_pbs(self):
         for mod, model in (('wasp', 'Wasp'), ('extra', 'Aegis'), ('extra', 'Mantis'), ('core', 'Longbow S')):
             n = names(build(mod, model))
-            for tag in ('[Flight]', '[Staff]', '[Thrust]'):
+            for tag in ('[Flight]', '[Staff]', '[Thrust]', '[Aux]'):      # [Aux]: docs/design/staff_split.md
                 self.assertEqual(sum(x.startswith(tag) for x in n), 1, f'{model}: {n}')
         n = names(build('peeper', 'Peeper'))
         self.assertEqual(sum(x.startswith('[Thrust]') for x in n), 1, n)

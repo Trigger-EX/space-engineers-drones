@@ -106,11 +106,13 @@ Other scripts in scope:
 - missile tracking, dodge and flares;
 - docking and medic calls.
 
+**The 7 split drones over budget get a fourth PB, `[Aux] <Model> PB` (docs/design/staff_split.md).** Hornet/Watcher, Harrier, Lancer, Aegis, Wasp, Longbow and Mantis run REPAIR CLIENT (bay dock controller, medic patient side, self-projector) and the SEEKER turret reader in one shared script, `scripts/AuxAI.cs`; their Staff carries the thin AUX LINK block in their place. The Aux PB writes no override: during a dock approach it sends setpoints on `.DKS` and the Staff flies them (SURVIVAL STAFF dock actuator, FOL bit 2). Gnat and Basilisk keep both blocks in their Staff PB (under 75k; the Gnat has no free cell for a fourth PB).
+
 **Phase 1 also moves four existing off-hot-path modules from Flight to Staff to make room.** Section 5 has the sizes.
 - **SEARCH PATROL:** HUNT with no target. Not combat.
 - **SENSOR SETUP:** writes the sensor terminal properties once.
 - **TARGET FEEDS:** other fleets' `<TAG>_TGT`. The Staff relays them over the existing `.TGT` path.
-- **SEEKER:** reads the `[Seeker]` turret twice a second. Its finding reaches the Flight through the existing WEAKPOINT RELAY `.WPT` slot.
+- **SEEKER:** reads the `[Seeker]` turret twice a second. Its finding reaches the Flight through the existing WEAKPOINT RELAY `.WPT` slot. (Since staff_split: the SEEKER block, local in Gnat/Basilisk, in the `[Aux]` PB for the other 7, which sends its finding to the Staff on `.SKW`.)
 
 **How the Flight/Staff split is maintained.**
 - `tools/split_flight.py` and `tools/make_staff.py` are one-off generators: they assert "already split". Never re-run them; they would drop the new code.
@@ -128,9 +130,11 @@ All are registered in `tools/blocks.json` with the default anchor `^public Progr
 |---|---|---|---|
 | `PATROL LINK v1.0` | `tools/pl_block.cs` | HornetDroneAI, HarrierAI, LancerAI, AegisAI, WaspFlightAI, BasiliskAI | A1 |
 | `SURVIVAL LINK v1.0` | `tools/sv_block.cs` | the 9 Flight scripts | A1 |
-| `STAFF SEARCH v1.0` | `tools/ss_block.cs` | the 9 Staff scripts | B1 |
-| `SURVIVAL STAFF v1.0` | `tools/svs_block.cs` | the 9 Staff scripts | B1 |
-| `REPAIR CLIENT v1.0` | `tools/rc_block.cs` | the 9 Staff scripts | B1 |
+| `STAFF SEARCH v1.1` | `tools/ss_block.cs` | the 9 Staff scripts | B1; v1.1 seeker cut out into SEEKER (staff_split) |
+| `SURVIVAL STAFF v1.1` | `tools/svs_block.cs` | the 9 Staff scripts | B1; v1.1 dock actuator `DkGo/DkSteer/DkRel/DkHold/SvRepaired` (staff_split) |
+| `REPAIR CLIENT v1.1` | `tools/rc_block.cs` | GnatStaffAI, BasiliskStaffAI, AuxAI | B1; v1.1 actuator writes become host hooks (staff_split) |
+| `SEEKER v1.0` | `tools/sk_block.cs` | GnatStaffAI, BasiliskStaffAI, AuxAI | staff_split |
+| `AUX LINK v1.0` | `tools/al_block.cs` | the 7 split Staff scripts (Hornet, Harrier, Lancer, Aegis, Wasp, Longbow, Mantis) | staff_split: IGC proxies for REPAIR CLIENT and SEEKER |
 
 Existing shared blocks that get edited:
 
@@ -148,14 +152,15 @@ Existing shared blocks that get edited:
 
 | Output | Normal | Take-off burn (LAUNCH) | Dock approach (item 17) | Flight PB down (item 5) | Docked or welded |
 |---|---|---|---|---|---|
-| Gyro and thruster overrides, `DampenersOverride` | Flight | Staff (FOL bit 2, `LkBurn`) | Staff (same FOL bit 2 `LkBurn`; Flight lets go, no Flight change needed) | Staff limp-home, then nobody (released, dampeners on) | nobody (PRINTER GUARD, Staff `SvDocked()`) |
+| Gyro and thruster overrides, `DampenersOverride` | Flight | Staff (FOL bit 2, `LkBurn`) | Staff (same FOL bit 2 `LkBurn`; `DkSteer` flies the setpoints from the `[Aux]` PB's `.DKS`; Gnat/Basilisk: local REPAIR CLIENT, same `DkSteer`). **The Aux PB never writes.** | Staff limp-home, then nobody (released, dampeners on) | nobody (PRINTER GUARD, Staff `SvDocked()`) |
 | Gun `Shoot_On`/`Shoot_Off` | Flight | Flight | Flight (holds fire, no target) | Staff (off, once) | Flight (off) |
 | AI blocks `Enabled` | Flight | Flight | Flight | Staff (off, once) | Flight |
 | Flare launchers (`ShootOnce`) | Staff | Staff | Staff | Staff | nobody |
 | Railgun `Enabled` (power guard) | Flight | Flight | Flight | nobody (Flight re-enables on start and in `Release()`) | Flight |
 | Sensor properties | Staff (moved) | Staff | Staff | Staff | Staff |
-| `[Seeker]` turret targeting group | Staff (moved) | Staff | Staff | Staff | Staff |
-| Own projector `Enabled` | Staff (REPAIR CLIENT) | Staff | Staff | Staff | bay script in its REPAIR state, else Staff |
+| `[Seeker]` turret targeting group, seeker cameras `EnableRaycast` | Aux PB (SEEKER); Gnat/Basilisk Staff | same | same | same | same |
+| Own projector `Enabled` | Aux PB (REPAIR CLIENT); Gnat/Basilisk Staff | same | same | same | bay script in its REPAIR state, else Aux / Staff |
+| Own merge `Enabled` | LAUNCH (Staff) switches it off after a take-off | LAUNCH | REPAIR CLIENT (Aux PB; Gnat/Basilisk Staff) switches it on at ALIGN -> INSERT | n/a | n/a |
 | Bay welders and projector | bay script | | | | bay script |
 | Medic welders | MedicAI | | | | |
 
@@ -177,7 +182,9 @@ Existing shared blocks that get edited:
   - docking, medic calls.
 
   Today a Flight without its Staff already loses FOLLOW, LAUNCH and FLEET. This is documented, not hidden.
-- **Flight dead (Staff alive).** Item 5.
+- **Flight dead (Staff alive).** Item 5. The Aux PB sees SDK bit 2 and aborts a dock (every write is the Staff's).
+- **Aux PB missing or dead (the 7 split drones).** Lost: bay docking, medic calls, self-projector control and the seeker. Everything else works. The Staff screen says `! Aux PB silent` or, when none ever spoke, `! no [Aux] PB (repair, medic, seeker off)` after 5 s. A dock flight in progress: the Staff flies the last setpoint at most 15 ticks, releases, and the Flight resumes 2 ticks later. An in-game drone whose Staff script is updated without adding the PB loses exactly these, so paste `AuxAI.cs` into a PB named `[Aux] ...`.
+- **Staff dead, Aux alive.** The Aux shows `STAFF PB SILENT`, sends no requests and aborts a bay session in states 1-4 (`staff silent`); a medic session keeps broadcasting WORK. The seeker stops (no target).
 
 ---
 
@@ -766,6 +773,7 @@ The `Target Small/Large Grids` and `Target Neutral/Unowned` keys stay Flight key
 - All channels use `TransmissionDistance.CurrentConstruct`.
 - Key `K = "WSPL" + <Flight PB EntityId>`. Both PBs run Update1.
 - Existing channels (`.F2S .FOL .S2F .CMD .TGT .FLT .WPF .WPT`) are unchanged, except that `.WPT` gets flag bit 4096.
+- The `[Aux]` PB link (`.SDK .DKS .SKW .D2S`, plus `.S2F` from the Aux after a medic repair) is specified in docs/design/staff_split.md section 4.
 
 | Tag | Direction | Tuple | Rate |
 |---|---|---|---|
@@ -883,7 +891,16 @@ Moved out to that drone's Staff PB:
 | MedicAI (new) | n/a | n/a | ≈ 26k |
 | ThrustVectorAI | 7.3k | none | 7.3k |
 
-No new PB on any drone.
+Measured after staff_split (2026-10-17, `tools/minify_cs.py`):
+
+| Script | Minified |
+|---|---|
+| Hornet / Harrier / Lancer / Aegis / Wasp Staff | 72,652 / 72,660 / 72,652 / 72,644 / 72,639 |
+| Longbow / Mantis Staff | 72,705 / 72,697 |
+| GnatStaffAI / BasiliskStaffAI | 73,805 / 73,548 |
+| AuxAI (new, the `[Aux]` PB of the 7) | 19,449 |
+
+Before the split the 7 were at 82.9-83.0k. The 7 split drones carry a fourth PB, `[Aux]` (docs/design/staff_split.md); no other drone gets one.
 
 ---
 

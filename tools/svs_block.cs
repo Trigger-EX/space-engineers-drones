@@ -1,4 +1,4 @@
-// >>> SURVIVAL STAFF v1.0 (damage RTB, limp, failover, threat memory, gather, docs/design/survivability.md) >>>
+// >>> SURVIVAL STAFF v1.1 (damage RTB, limp, failover, threat memory, gather, dock actuator, docs/design/survivability.md) >>>
 // The Staff side of the survivability work (docs/design/survivability.md s2 items 3, 4, 5, 7, 8, 9, 10, 19, 20; contract s3 keys, s4 IGC). Decisions only:
 // the Flight PB (SURVIVAL LINK) flies them. Link (CurrentConstruct, key _fk = "WSPL" + Flight PB id):
 //   .SVF  Flight -> Staff  MyTuple<int flags, long attackerId, Vector3D hitDir, Vector3D attackerPos, Vector3D aux, Vector3D home>
@@ -11,14 +11,18 @@
 //         7 GATHERING, 8 LIMP (+ cap m/s in bits 16-23), 9 STAFF HOLDS THE OVERRIDES (Flight yields), 10 FIGHT BACK in RTB, 11 standoff advice, 24-27 threat class.
 // Wing (antenna): <Tag>_THREAT (+ <ch>_THREAT) MyTuple<long enemy, Vector3D pos, Vector3D bearing, Vector3D (hit range, dps/s, integrity), long reporter, int flags
 //   (bits 0-1 class 1 bullet 2 explosive 3 long, bit2 LAST GASP, bit3 bearing in the target frame)>; <Tag>_MSL MyTuple<long id, Vector3D pos, Vector3D vel, long sender>.
-// One writer: the gyro / thruster overrides are written here only while the Flight PB is down (limp-home, _svHold, SVS bit 9) and by REPAIR CLIENT's dock
-// approach (FOL bit 2), never while docked or welded (SvDocked) and never during the take-off burn.
+// One writer: the gyro / thruster overrides are written here only while the Flight PB is down (limp-home, _svHold, SVS bit 9) and by the dock actuator
+// (FOL bit 2), never while docked or welded (SvDocked) and never during the take-off burn. v1.1 dock actuator (docs/design/staff_split.md s3.2): DkGo() takes
+// the actuators (snapshot of the own thrusters / gyros), DkSteer(vel, nose, roof) flies a setpoint with SvSteer from the 3rd tick on (FOL bit 2 reaches the
+// Flight first), DkRel() lets go (zero, dampeners on; skipped while the Flight is down: SvWatch / limp-home own the actuators then), DkHold keeps FOL bit 2
+// for 2 ticks after that write, SvRepaired() clears the damage latch. Callers: the local REPAIR CLIENT (Gnat, Basilisk) or AUX LINK (setpoints from the [Aux] PB).
 // Keys: [Survival] in the Flight PB's Custom Data (SvCfg reads them; SvDef writes the missing defaults once per Flight key, after its first F2S, re-parsing first).
 // Per-script hooks (readonly FS, SvOrbK, SvOrbD): bool SvFightMode() (a fight mode: GUARD/HUNT, Gnat ATTACK), string SvVerb() (the mode's command word), const string FS.
 // Hooks: SvsRead() after ReadF2S(); SvWatch(burn || _lnS == 2) at the end of the tick and in the no-RC path (replaces Watch); SendFol(burn || SvFly);
 //   SvListen() first in Listen(); SvBlocks() in GetBlocks; SvCfg(ini) in LoadFlightCfg; SvStatus() in Display; SvWord(w) first in Local(); FoDist + SvFoX() in SendFol.
 // Uses: _rc, _fpb, _fk, _now, _tick, _mode (IDLE/RTB), _fl, _tgtId, _tgtPos, _f2sN, _f2sTick, _down, _gyros, _thr, _guns, _ai, _mates, Tag, _flChan, MaxSpeed,
-//   _dynHome, _dynHomeT, _wpMap, Fwd(), FleetV(); REPAIR CLIENT (Rp*), STAFF SEARCH (Ss*).
+//   _dynHome, _dynHomeT, _wpMap, Fwd(), FleetV(); REPAIR CLIENT or AUX LINK (RpCfg RpListen RpBlocks RpRead RpStep RpStatus RpStop RpWant SvFly RpMedCh),
+//   STAFF SEARCH (Ss*).
 List<MyTuple<string, string, string, double>> _svDefs = new List<MyTuple<string, string, string, double>>();
 bool SvRtbOn = true, SvLostAx = true, SvLostCam = true, SvFightOn = true, SvLimpHome = true, SvBlind = true, SvStandOn = true, SvDodge = true, SvFlare = true,
     SvHand = true, SvShare = true, SvTogether = true;
@@ -506,6 +510,21 @@ void SvLimpStep()
     double v = Math.Min(SvLimpV, Math.Sqrt(2 * _svAmin * dist)), cap = SvCapV(); if (cap > 0) v = Math.Min(v, cap);
     SvSteer(dist > 0.5 ? d / dist * v : Vector3D.Zero, dist > 5 ? d : Vector3D.Zero, Vector3D.Zero);
 }
+// ---- dock actuator (v1.1): the one place a dock approach writes the overrides
+List<IMyThrust> _dkThr = new List<IMyThrust>(); List<IMyGyro> _dkGy = new List<IMyGyro>(); long _dkTk, _dkRelTk = -9; bool _dkOn;
+bool DkHold { get { return _tick - _dkRelTk < 2; } }
+void DkGo() { _dkThr.Clear(); _dkThr.AddRange(_thr); _dkGy.Clear(); _dkGy.AddRange(_gyros); _dkTk = _tick; _dkOn = true; }   // own blocks: once merged the lists hold the host's too
+void DkSteer(Vector3D v, Vector3D f, Vector3D u) { if (_dkOn && _tick - _dkTk >= 3) SvSteer(v, f, u); }
+void DkRel()
+{
+    if (!_dkOn) return;                                       // nothing taken: nothing to give back (no stray DampenersOverride write)
+    _dkOn = false; _dkRelTk = _tick;
+    if (_down) return;                                        // the Flight is down: SvWatch released already, limp-home may own the actuators
+    foreach (var y in _dkGy) { y.GyroOverride = false; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }
+    foreach (var th in _dkThr) th.ThrustOverridePercentage = 0;
+    if (_rc != null) _rc.DampenersOverride = true;
+}
+void SvRepaired() { _svRtb = false; }
 double SvCapV() { return _svLimp ? MaxSpeed * MathHelper.Clamp(Math.Sqrt(_svF), SvLimpMin, 1) : 0; }
 // the Staff's own flying (limp home, dock approach): velocity command vw (world), nose along fw and roof along up (zero = free); thrust split like Flight's ApplyThrust
 double[] _svMx = new double[6];
@@ -598,4 +617,4 @@ string SvStatus()
     s.Append(RpStatus());
     return s.ToString();
 }
-// <<< SURVIVAL STAFF v1.0 <<<
+// <<< SURVIVAL STAFF v1.1 <<<

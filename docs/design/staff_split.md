@@ -1,6 +1,12 @@
 # Staff split: a fourth PB, `[Aux]`, for the repair client and the seeker
 
-`docs/design/staff_split.md`. Planned 2026-10-17 on the uncommitted survivability working tree. This is a read-only plan: nothing is implemented and the release zips are not rebuilt.
+`docs/design/staff_split.md`. Planned 2026-10-17 on the uncommitted survivability working tree. **Implemented 2026-10-17** (blocks, scripts, designs, tests, sim harness; release zips not rebuilt). Implementation notes:
+- Measured sizes: the 7 Staff PBs 72.64-72.71k, Gnat 73.8k, Basilisk 73.5k, AuxAI 19.4k (section 8 estimated 72.0k / 17k).
+- SURVIVAL STAFF `DkRel()` also guards on `_dkOn` (set by `DkGo`): a release with nothing taken writes nothing (no stray `DampenersOverride` and no 2-tick FOL bit 2 on an abort from state 1, "bay did not answer"). AUX LINK's run-gap path clears `_dkOn` without a write.
+- REPAIR CLIENT v1.1 calls `DkRel()` directly instead of keeping an `RpRel()` wrapper.
+- AuxAI ignores SDK bit 0 for the 2 s it holds DKS bit 3 (REPAIRED), so a DAMAGED bit in flight cannot restart a request; the seeker runs only while the link is up.
+- Placement: Mantis's Aux PB lands at (-2,-3,-2) (the dry run's (0,-2,1) lies behind the spine, which the Foundry welders now need: `extra.mantis` passes `avoid=core.spine_weld_cells(bp)`); Longbow S is pinned at `core.LONGBOW_S_AUX_CELL` = (1,-5,-1) (`add_support_pbs(..., aux_cell=)`): the free choice (-1,-3,-2) took the self-projector's cell, the survival kit moved and the Longbow Foundry lost reach to the gyro and the up camera; (1,-5,-1) leaves the kit unchanged and the Foundry passes. Welder reach checked (reach.verify_printer): Hornet Forge, Wasp / Lancer / Longbow Foundry, Harrier Forge, Aegis Shipyard, Watcher Pad, Fleet Forge, Escort Carrier PASS; Mantis Foundry fails with the same three blocks as before the Aux.
+- `dock-launch --return-at S` ends at CONTACT: the sim has no merge re-lock in flight, so "docked" cannot be seen there; `--events` takes `!disable-pb` / `!enable-pb` only.
 
 ## 0. Decision in one paragraph
 

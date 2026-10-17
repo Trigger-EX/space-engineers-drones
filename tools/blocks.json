@@ -156,15 +156,29 @@
   "REPAIR CLIENT": {
    "file": "tools/rc_block.cs",
    "scripts": [
+    "GnatStaffAI",
+    "BasiliskStaffAI",
+    "AuxAI"
+   ]
+  },
+  "SEEKER": {
+   "file": "tools/sk_block.cs",
+   "scripts": [
+    "GnatStaffAI",
+    "BasiliskStaffAI",
+    "AuxAI"
+   ]
+  },
+  "AUX LINK": {
+   "file": "tools/al_block.cs",
+   "scripts": [
     "HornetStaffAI",
     "HarrierStaffAI",
     "LancerStaffAI",
     "AegisStaffAI",
-    "GnatStaffAI",
     "LongbowStaffAI",
     "WaspStaffAI",
-    "MantisStaffAI",
-    "BasiliskStaffAI"
+    "MantisStaffAI"
    ]
   }
  }

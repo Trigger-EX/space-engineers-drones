@@ -180,7 +180,7 @@ def mantis(lite=False):
     # power for the railgun recharge (docs/design/railgun_power.md): the Longbow S pack + three more mains on the battery's back face (7 in all keep 8.7 m/s2 forward)
     import core
     core.small_rail_power(bp, name, mains=(((-1, -3, 2), "L3"), ((1, -3, 2), "R3"), ((0, -3, 2), "C")))
-    C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Mantis printed by a Foundry carries its support PBs
+    C.add_support_pbs(finalize(bp), avoid=core.spine_weld_cells(bp))      # [Flight] + [Staff] (+ [Thrust] + [Aux]) here too, so a printed Mantis carries them; the Aux PB clear of the Foundry's welders
     # no bury_swap (as the Longbow S): the reactors keep the cells the Foundry's welders were solved for
     return finalize(C.add_survival_kit(bp, model=name, avoid=core.spine_weld_cells(bp), panels=False))      # survival kit (docs/design/survivability.md items 11-15), clear of the Foundry's welders
 

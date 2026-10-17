@@ -7,7 +7,9 @@
 //   * LAUNCH       take-off after the release from a printer - same [Launch] section; Staff flies the burn, Flight lets go of the ship
 //   * DISPLAY      the full status screen (mode, target, aim, rockets, battery, hive, follow, launch, link state)
 //   * WATCHDOG     the Flight PB silent for 1.5 s (or switched off / destroyed): overrides released once, dampeners on, "FLIGHT PB DOWN"; then limp home (SURVIVAL STAFF)
-//   * SURVIVAL     STAFF SEARCH (patrol, sensors, feeds, seeker), SURVIVAL STAFF (damage RTB, limp, threats, missiles, gather), REPAIR CLIENT (bay, medic) - docs/design/survivability.md
+//   * SURVIVAL     STAFF SEARCH (patrol, sensors, feeds, seeker), SURVIVAL STAFF (damage RTB, limp, threats, missiles, gather), AUX LINK - docs/design/survivability.md
+//   * [Aux] PB     REPAIR CLIENT (bay, medic, self-projector) and the seeker run in the [Aux] PB: paste scripts/AuxAI.cs into a PB named "[Aux] ..." on this grid
+//                  (docs/design/staff_split.md). Without it the drone loses bay docking, medic calls, the self-projector and the seeker; the screen says so.
 //  Link (TransmissionDistance.CurrentConstruct, key "WSPL" + the Flight PB's EntityId; both PBs run Update1) - see the header of HornetDroneAI.cs (the Flight half).
 //  The Staff finds the nearest "[Flight]" PB of its construct (re-checked every 10 s and when the grid changes).
 //  CUSTOM DATA (this PB): [Launch], [Follow], [Fleet] (written on first run). IGC Tag, Start Mode, Combat Speed and Wingmate Separation Range
@@ -851,7 +853,7 @@ string WpStatus()
 }
 // <<< WEAKPOINT RELAY v1.1 <<<
 
-// >>> STAFF SEARCH v1.0 (patrol, sensor setup, target feeds, seeker moved from the Flight PB, docs/design/survivability.md) >>>
+// >>> STAFF SEARCH v1.1 (patrol, sensor setup, target feeds, seeker keys; moved from the Flight PB, docs/design/survivability.md) >>>
 // The four search modules that left the Flight PB (off the hot path, docs/design/survivability.md s1.1). Keys keep their names in the Flight PB's [<FS>] section;
 // the Staff reads them there and writes missing defaults (SvDef, after the first F2S). The Flight's Target Small/Large Grids, Target Neutral/Unowned and Target
 // Characters keys are read for the sensors.
@@ -862,22 +864,19 @@ string WpStatus()
 //  * SENSOR SETUP: every sensor of the construct is set up in GetBlocks (50 m all round, enemies, neutral / small / large by the Flight's keys, owner on foot
 //    when SsFoot (FOLLOW), players when SsFoot or Target Characters).
 //  * TARGET FEEDS (SsFeed): other fleets' "<TAG>_TGT" ("Listen To IGC Tags (target feeds)", own Tag skipped) join the coalesced .TGT relay to the Flight.
-//  * SEEKER: a turret named [Seeker] on this grid is set to "Seeker Group" (PowerSystems / Weapons / Propulsion). Twice a second, when it holds the Flight's
-//    target and is aimed, the point it shows (the game's block position, else its line with the lead taken off) is raycast by a camera holding twice the ray
-//    length (the camera charge is shared with the Flight PB). The hull point hit (target frame) becomes an own-seeker entry of the WEAKPOINT RELAY: ranked
-//    first, sent to the Flight on .WPT with flag 4096, shared with the wing on <ch>_WP. "seeker on" / "seeker off" (Staff word) switch it; Seek: line on screen.
+//  * SEEKER KEYS: "Seeker Group" and "Seeker Turret Guides Aim" (SeekerGroup, SeekerOn; "seeker on" / "seeker off" Staff word). v1.1: the turret reader is the
+//    SEEKER block (tools/sk_block.cs: local in Gnat / Basilisk, in the [Aux] PB for the other 7, reached through AUX LINK's SkBlocks/SkStep/SkStatus proxies).
 // Per-script: readonly string FS; readonly bool SsPatrol, SsFeed, SsFoot; bool SsHunt() (the mode is HUNT).
 // Hooks: SsBlocks() in GetBlocks after LoadFlightCfg(); SsCfg(ini) after SvCfg(ini) in LoadFlightCfg; SsFeeds() first in Relay(); SsStep() (called by SvWatch).
-// Uses: _rc, _fk, _now, _tick, _mode, _fl, _tgtId, _sensors, _mates, _rel, _flChan, Tag, Me, FleetOk, SvT/SvBn/SvDn (key reader), SvHomeKnown(), _svHomeP, WpSeek().
+// Uses: _rc, _fk, _now, _tick, _mode, _fl, _tgtId, _sensors, _mates, _rel, _flChan, Tag, Me, FleetOk, SvT/SvBn/SvDn (key reader), SvHomeKnown(), _svHomeP,
+//   SEEKER or AUX LINK (SkBlocks, SkStep, SkStatus).
 bool PatrolOn = true, PatrolRandom = true, SeekerOn = true, _ssTS = true, _ssTL = true, _ssTN, _ssTC;
 double PatrolRadius = 1200, PatrolAfter = 15, PatrolAfterFight = 90, PatrolListen = 6, PatrolMaxLeg = 40, PatrolSpeed = 60, PatrolHold = 90;
 bool _patrolLeg, _patrolFrame, _patrolStopSet; double _patrolPhaseT = -99, _noTgtSince, _listenT = -1, _aiMoveT = -99, _ssLastT = -1, _patrolRadF = 1;
 int _patrolK, _patrolDir = 1, _ssMd = -1, _ssPatF = -1, _ssMiss; long _ssPatTk = -99;
 Vector3D _listenV, _patrolWp, _patrolC, _patrolE1, _patrolE2, _patrolStop, _ssPatSent;
-string ListenTags = "HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER", _ssFeedKey = "", SeekerGroup = "PowerSystems", _skLog = "";
+string ListenTags = "HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER", _ssFeedKey = "", SeekerGroup = "PowerSystems";
 List<IMyBroadcastListener> _ssFeed = new List<IMyBroadcastListener>();
-List<IMyLargeTurretBase> _skT = new List<IMyLargeTurretBase>(); List<IMyCameraBlock> _ssCams = new List<IMyCameraBlock>();
-double _skT0 = -99;
 
 void SsCfg(MyIni i)
 {
@@ -913,17 +912,7 @@ void SsBlocks()
         SsB(s, false, "Detect Asteroids", "DetectAsteroids"); SsB(s, false, "Detect Floating Objects", "DetectFloatingObjects");
         SsB(s, false, "Detect Subgrids", "DetectSubgrids");
     }
-    var g = Me.CubeGrid;
-    GridTerminalSystem.GetBlocksOfType(_ssCams, b => b.CubeGrid == g);
-    foreach (var c in _ssCams) c.EnableRaycast = true;
-    _skT.Clear();
-    if (SeekerOn) GridTerminalSystem.GetBlocksOfType(_skT, b => b.CubeGrid == g && b.CustomName.Contains("[Seeker]"));
-    if (_skT.Count == 0) _skLog = ""; else if (_skLog == "") _skLog = "ready, group " + SeekerGroup;   // (re-scans keep the last report)
-    foreach (var tu in _skT)
-    {
-        try { if (SeekerGroup.Length > 0 && tu.GetTargetingGroup() != SeekerGroup) tu.SetTargetingGroup(SeekerGroup); }
-        catch (Exception x) { _skLog = "group not set: " + x.Message; }
-    }
+    SkBlocks();
     string k = SsFeed ? ListenTags + "|" + Tag : "";
     if (k == _ssFeedKey) return;
     _ssFeedKey = k;
@@ -957,7 +946,7 @@ void SsFeeds()
 void SsStep()
 {
     if (_tick % 5 == 2) SsPat();
-    SsSeek();
+    SkStep();
 }
 
 // SEARCH PATROL (was the Flight's PatrolStep; the Flight's AI-move detection is done here from the RC's motion while the AI blocks are on)
@@ -1003,65 +992,17 @@ void SsPat()
     IGC.SendBroadcastMessage(_fk + ".PAT", new MyTuple<Vector3D, double, int>(p, PatrolSpeed, f), TransmissionDistance.CurrentConstruct);
 }
 
-// SEEKER: the turret's view of the Flight's target -> a hull point in the target frame -> the WEAKPOINT RELAY (own-seeker entry)
-void SsSeek()
-{
-    if (!SeekerOn || _skT.Count == 0 || _tgtId == 0 || _now - _skT0 < 0.5) return;
-    _skT0 = _now;
-    foreach (var tu in _skT)
-    {
-        if (!tu.IsFunctional) { _skLog = "turret damaged"; continue; }
-        if (!tu.HasTarget) { _skLog = "turret has no target (group " + tu.GetTargetingGroup() + ")"; continue; }
-        var te = tu.GetTargetedEntity();
-        if (te.EntityId != _tgtId) { _skLog = "turret on another target"; continue; }
-        if (!tu.IsAimed) { _skLog = "turret turning"; continue; }
-        Vector3D o = tu.GetPosition(), q;
-        bool hp = te.HitPosition.HasValue && (te.HitPosition.Value - te.Position).LengthSquared() > 1;
-        if (hp) q = te.HitPosition.Value;                  // the game told us the block itself
-        else
-        {
-            Vector3D d; Vector3D.CreateFromAzimuthAndElevation(tu.Azimuth, tu.Elevation, out d);
-            d = Vector3D.TransformNormal(d, tu.WorldMatrix);
-            double D = Vector3D.Dot(te.Position - o, d);
-            if (D < 5) { _skLog = "turret points away"; continue; }
-            // turrets lead their target; take the lead off again (bullets inherit our velocity)
-            Vector3D rv = new Vector3D(te.Velocity) - _rc.GetShipVelocities().LinearVelocity;
-            string st = tu.BlockDefinition.SubtypeName;
-            q = o + d * D - rv * (D / (st.Contains("Calibre") ? 500 : tu is IMyLargeMissileTurret ? 200 : 800));
-        }
-        IMyCameraBlock cam = null; double best = 0;
-        foreach (var c in _ssCams)
-        {
-            if (!c.IsWorking) continue;
-            Vector3D cd0 = q - c.GetPosition(); double l0 = cd0.Length();
-            if (l0 < 1 || Vector3D.Dot(cd0 / l0, c.WorldMatrix.Forward) < 0.72 || c.AvailableScanRange < 2 * (l0 + 30)) continue;   // the Flight PB shares the charge: twice the ray
-            if (c.AvailableScanRange > best) { best = c.AvailableScanRange; cam = c; }
-        }
-        if (cam == null) { _skLog = "no camera charge/angle"; continue; }
-        Vector3D cd = q - cam.GetPosition(); double cl = cd.Length(); cd /= cl;
-        var e = cam.Raycast(q + cd * 30);
-        if (e.IsEmpty() || e.EntityId != _tgtId || !e.HitPosition.HasValue) { _skLog = (hp ? "block pos given, " : "aim ray, ") + "ray missed hull"; continue; }
-        MatrixD inv = MatrixD.Transpose(e.Orientation);
-        double hint = hp ? (q - e.HitPosition.Value).Length() : -1;
-        int k = SeekerGroup == "PowerSystems" ? 1 : SeekerGroup == "Weapons" ? 2 : SeekerGroup == "Propulsion" ? 3 : 4;
-        WpSeek(new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(_tgtId, Vector3D.TransformNormal(e.HitPosition.Value - e.Position, inv),
-            Vector3D.TransformNormal(cd, inv), new Vector3D(0, hint, 0), Me.CubeGrid.EntityId, k | 8 | (hp ? 16 : 0)));
-        _skLog = (hp ? "block pos given" : "aim ray") + ", " + (q - e.HitPosition.Value).Length().ToString("0") + " m under hull";
-        return;
-    }
-}
-
 string SsStatus()
 {
-    string s = _skT.Count > 0 ? "Seek   : " + _skLog + "\n" : "";
+    string s = SkStatus();
     if (_patrolLeg) s += "Patrol : leg " + _patrolK + ", " + Vector3D.Distance(_rc.GetPosition(), _patrolWp).ToString("0") + " m to go\n";
     else if (_patrolStopSet && SsHunt()) s += "Patrol : listening stop\n";
     if (_ssMiss > 0) s += "! sensor setup: " + _ssMiss + " properties not found\n";
     return s;
 }
-// <<< STAFF SEARCH v1.0 <<<
+// <<< STAFF SEARCH v1.1 <<<
 
-// >>> SURVIVAL STAFF v1.0 (damage RTB, limp, failover, threat memory, gather, docs/design/survivability.md) >>>
+// >>> SURVIVAL STAFF v1.1 (damage RTB, limp, failover, threat memory, gather, dock actuator, docs/design/survivability.md) >>>
 // The Staff side of the survivability work (docs/design/survivability.md s2 items 3, 4, 5, 7, 8, 9, 10, 19, 20; contract s3 keys, s4 IGC). Decisions only:
 // the Flight PB (SURVIVAL LINK) flies them. Link (CurrentConstruct, key _fk = "WSPL" + Flight PB id):
 //   .SVF  Flight -> Staff  MyTuple<int flags, long attackerId, Vector3D hitDir, Vector3D attackerPos, Vector3D aux, Vector3D home>
@@ -1074,14 +1015,18 @@ string SsStatus()
 //         7 GATHERING, 8 LIMP (+ cap m/s in bits 16-23), 9 STAFF HOLDS THE OVERRIDES (Flight yields), 10 FIGHT BACK in RTB, 11 standoff advice, 24-27 threat class.
 // Wing (antenna): <Tag>_THREAT (+ <ch>_THREAT) MyTuple<long enemy, Vector3D pos, Vector3D bearing, Vector3D (hit range, dps/s, integrity), long reporter, int flags
 //   (bits 0-1 class 1 bullet 2 explosive 3 long, bit2 LAST GASP, bit3 bearing in the target frame)>; <Tag>_MSL MyTuple<long id, Vector3D pos, Vector3D vel, long sender>.
-// One writer: the gyro / thruster overrides are written here only while the Flight PB is down (limp-home, _svHold, SVS bit 9) and by REPAIR CLIENT's dock
-// approach (FOL bit 2), never while docked or welded (SvDocked) and never during the take-off burn.
+// One writer: the gyro / thruster overrides are written here only while the Flight PB is down (limp-home, _svHold, SVS bit 9) and by the dock actuator
+// (FOL bit 2), never while docked or welded (SvDocked) and never during the take-off burn. v1.1 dock actuator (docs/design/staff_split.md s3.2): DkGo() takes
+// the actuators (snapshot of the own thrusters / gyros), DkSteer(vel, nose, roof) flies a setpoint with SvSteer from the 3rd tick on (FOL bit 2 reaches the
+// Flight first), DkRel() lets go (zero, dampeners on; skipped while the Flight is down: SvWatch / limp-home own the actuators then), DkHold keeps FOL bit 2
+// for 2 ticks after that write, SvRepaired() clears the damage latch. Callers: the local REPAIR CLIENT (Gnat, Basilisk) or AUX LINK (setpoints from the [Aux] PB).
 // Keys: [Survival] in the Flight PB's Custom Data (SvCfg reads them; SvDef writes the missing defaults once per Flight key, after its first F2S, re-parsing first).
 // Per-script hooks (readonly FS, SvOrbK, SvOrbD): bool SvFightMode() (a fight mode: GUARD/HUNT, Gnat ATTACK), string SvVerb() (the mode's command word), const string FS.
 // Hooks: SvsRead() after ReadF2S(); SvWatch(burn || _lnS == 2) at the end of the tick and in the no-RC path (replaces Watch); SendFol(burn || SvFly);
 //   SvListen() first in Listen(); SvBlocks() in GetBlocks; SvCfg(ini) in LoadFlightCfg; SvStatus() in Display; SvWord(w) first in Local(); FoDist + SvFoX() in SendFol.
 // Uses: _rc, _fpb, _fk, _now, _tick, _mode (IDLE/RTB), _fl, _tgtId, _tgtPos, _f2sN, _f2sTick, _down, _gyros, _thr, _guns, _ai, _mates, Tag, _flChan, MaxSpeed,
-//   _dynHome, _dynHomeT, _wpMap, Fwd(), FleetV(); REPAIR CLIENT (Rp*), STAFF SEARCH (Ss*).
+//   _dynHome, _dynHomeT, _wpMap, Fwd(), FleetV(); REPAIR CLIENT or AUX LINK (RpCfg RpListen RpBlocks RpRead RpStep RpStatus RpStop RpWant SvFly RpMedCh),
+//   STAFF SEARCH (Ss*).
 List<MyTuple<string, string, string, double>> _svDefs = new List<MyTuple<string, string, string, double>>();
 bool SvRtbOn = true, SvLostAx = true, SvLostCam = true, SvFightOn = true, SvLimpHome = true, SvBlind = true, SvStandOn = true, SvDodge = true, SvFlare = true,
     SvHand = true, SvShare = true, SvTogether = true;
@@ -1569,6 +1514,21 @@ void SvLimpStep()
     double v = Math.Min(SvLimpV, Math.Sqrt(2 * _svAmin * dist)), cap = SvCapV(); if (cap > 0) v = Math.Min(v, cap);
     SvSteer(dist > 0.5 ? d / dist * v : Vector3D.Zero, dist > 5 ? d : Vector3D.Zero, Vector3D.Zero);
 }
+// ---- dock actuator (v1.1): the one place a dock approach writes the overrides
+List<IMyThrust> _dkThr = new List<IMyThrust>(); List<IMyGyro> _dkGy = new List<IMyGyro>(); long _dkTk, _dkRelTk = -9; bool _dkOn;
+bool DkHold { get { return _tick - _dkRelTk < 2; } }
+void DkGo() { _dkThr.Clear(); _dkThr.AddRange(_thr); _dkGy.Clear(); _dkGy.AddRange(_gyros); _dkTk = _tick; _dkOn = true; }   // own blocks: once merged the lists hold the host's too
+void DkSteer(Vector3D v, Vector3D f, Vector3D u) { if (_dkOn && _tick - _dkTk >= 3) SvSteer(v, f, u); }
+void DkRel()
+{
+    if (!_dkOn) return;                                       // nothing taken: nothing to give back (no stray DampenersOverride write)
+    _dkOn = false; _dkRelTk = _tick;
+    if (_down) return;                                        // the Flight is down: SvWatch released already, limp-home may own the actuators
+    foreach (var y in _dkGy) { y.GyroOverride = false; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }
+    foreach (var th in _dkThr) th.ThrustOverridePercentage = 0;
+    if (_rc != null) _rc.DampenersOverride = true;
+}
+void SvRepaired() { _svRtb = false; }
 double SvCapV() { return _svLimp ? MaxSpeed * MathHelper.Clamp(Math.Sqrt(_svF), SvLimpMin, 1) : 0; }
 // the Staff's own flying (limp home, dock approach): velocity command vw (world), nose along fw and roof along up (zero = free); thrust split like Flight's ApplyThrust
 double[] _svMx = new double[6];
@@ -1661,282 +1621,89 @@ string SvStatus()
     s.Append(RpStatus());
     return s.ToString();
 }
-// <<< SURVIVAL STAFF v1.0 <<<
+// <<< SURVIVAL STAFF v1.1 <<<
 
-// >>> REPAIR CLIENT v1.0 (self-projector, repair bay and medic patient side, docs/design/survivability.md) >>>
-// Patient side of the repair work (docs/design/survivability.md items 15, 17, 18; channels s4.3, antenna range):
-//  * REPAIR BAY (item 17): damaged (SURVIVAL STAFF latch, or the words "repair" / "dock"), Flight in RTB or IDLE, not under fire, an own merge block (RpDockOk):
-//    the nearest free, stationary bay advertised on <Tag>_RBAY MyTuple<long bayPb, int bay | flags << 8 (bit0 free, bit1 repair, bit2 stock), Vector3D clampPos,
-//    Vector3D axis, Vector3D dockFwd, Vector3D dockUp> within 4 km is asked on <Tag>_RREQ MyTuple<long bayPb, int bay, long droneGrid> (resent once after 5 s) and
-//    answers on <Tag>_RACK MyTuple<long droneGrid, long bayPb, int bay, int ok>. Then the Staff flies (FOL bit 2: the Flight lets go): TRANSIT to 20 m + radius
-//    out along the axis (the RREQ is renewed every 30 s: the bay holds a reservation 90 s), ALIGN (2 deg, 0.3 m/s, 15 s max), INSERT along -axis at "Dock Speed" .. "Dock Final Speed" with a lateral PD (off by 0.8 m within 3 m:
-//    back out, 3 retries, then the bay is dropped and a medic may be called), CONTACT = own merge locked: overrides released, dampeners on; the bay repairs and
-//    releases and the LAUNCH block flies the take-off. Aborts (overrides released) on fire, a mode word, "fight", the bay's silence or the Flight PB going down.
-//  * MEDIC (item 18): no bay, the Flight IDLE (home) and a free <M>_AD MyTuple<long medic, Vector3D pos, int flags> within 3 km: <M>_REQ MyTuple<long medic,
-//    long patient, Vector3D pos, int missing>; on <M>_ACK MyTuple<long patient, long medic, int ok> ok = 1 the self-projector goes on and <M>_WORK
-//    MyTuple<long patient, Vector3D centre, Vector3D vel, Vector3D p0, Vector3D p1, int packed (remaining | radius dm << 12 | done << 24 | under fire << 25)>
-//    is sent at 1 Hz with the two missing / damaged cells nearest the medic (zero = no point). An ACK ok = 0 while serviced = the medic gave up.
-//    Done (nothing missing or damaged, projector RemainingBlocks 0): WORK with the done bit, projector off, the mode from before the damage RTB is sent again.
-//    Missing cells: an own-grid cell scan (200 cells a tick) when the grid is new (printed / released / repaired), re-checked every 2 s while serviced.
-//  * SELF-PROJECTOR (item 15): the block named "... Projector [Self]": on while a medic works or docked at a bay without a projector (no Hive Mother on the
-//    grid), off at a printer bay and on return to duty. Written only on those changes (a cradle bay switches it itself in its REPAIR state).
-// Keys ([Survival]): Repair At Bay, Dock Speed (m/s), Dock Final Speed (m/s), Call Medic, Medic Channel. Per-script: readonly bool RpDockOk.
-// Uses: SURVIVAL STAFF (_svRtb, _svDock, _svAmin, _svPrevVerb, _svI, SvSteer(), SvRel(), SvCapV(), SvDn/SvBn/SvT), _rc, _mode (IDLE/RTB), _fl, _down, Tag, MaxSpeed, Fwd().
-bool RpBayOn = true, RpMedic = true, _rpFly, _rpRetry; double RpDockV = 2, RpDockV0 = 0.3, _rpT, _rpT2, _rpStart, _rpNext, _rpScanT = -99; string RpMedCh = "MEDIC", _rpMsg = "";
-int _rpS, _rpReq, _rpTry, _rpScanI, _rpChkI = -1, _rpBadN; long _rpFlyTk, _rpKey, _rpMed;
-IMyBroadcastListener _rpLb, _rpLa, _rpLm, _rpLk; IMyShipMergeBlock _rpMerge; IMyProjector _rpProj; IMyCubeGrid _rpScanG;
-Vector3D _rpO; class RpB { public long Pb; public int Bay, F; public Vector3D P, P0, Ax, Fw, Up; public double T, Bad = -999; public bool Two; }
-Dictionary<long, RpB> _rpBays = new Dictionary<long, RpB>(); Dictionary<long, MyTuple<Vector3D, int, double>> _rpMeds = new Dictionary<long, MyTuple<Vector3D, int, double>>();
-Dictionary<long, double> _rpMedBad = new Dictionary<long, double>();
-List<IMyThrust> _rpThr = new List<IMyThrust>(); List<IMyGyro> _rpGy = new List<IMyGyro>();
-List<Vector3I> _rpCells = new List<Vector3I>(), _rpBad = new List<Vector3I>(), _rpBadDone = new List<Vector3I>();
-bool SvFly { get { return _rpFly; } }
+// >>> AUX LINK v1.0 (the Staff side of the [Aux] PB: REPAIR CLIENT and SEEKER run there, docs/design/staff_split.md) >>>
+// REPAIR CLIENT (bay dock, medic, self-projector) and the SEEKER turret reader run in a fourth PB, "[Aux] <Model> PB" (scripts/AuxAI.cs, one script for every
+// model). This block gives SURVIVAL STAFF and STAFF SEARCH the same function names as proxies. The Aux PB never writes an override: during a dock approach it
+// sends setpoints and the Staff flies them with the SURVIVAL STAFF dock actuator (DkGo / DkSteer / DkRel, FOL bit 2). Link (CurrentConstruct, key _fk):
+//   .SDK  Staff -> Aux    MyTuple<int flags, long tgtId, Vector3D aux, string cfg, string prevVerb, string ops>: flags bit0 DAMAGED (_svRtb), bit1 docked / welded,
+//         bit2 FLIGHT DOWN, bit3 Staff steers a dock, bit4 under fire, bit5 mode IDLE, bit6 mode RTB, bit7 SeekerOn, bit8 RpDockOk; aux = (_svAmin, SvCapV(),
+//         MaxSpeed); cfg = Tag + "\n" + SeekerGroup; ops = queued repair words, one a line ("w<k>" RpWant(k), "s<why>" RpStop(why)). Every 10 ticks, at once on
+//         a change or with ops; at once on a new Aux (DKS source), a new key, a Staff run gap and SkBlocks() (the "seeker" word).
+//   .DKS  Aux -> Staff    MyTuple<int flags, Vector3D vel, Vector3D fwd, Vector3D up, string status>: bit0 FLY (DkSteer(vel, fwd, up)), bit1 repair session,
+//         bit3 REPAIRED (SvRepaired()); status = the Aux's Repair / Project / Seek lines for this screen.
+//   .SKW  Aux -> Staff    MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> = the WpSeek() argument (own seeker finding) -> WpSeek().
+//   .D2S  Aux -> Staff    string: a PB argument given to the Aux PB -> Command().
+// FLY counts while the last DKS is at most 15 ticks old and the Flight is up: its rise calls DkGo(), its fall DkRel(); a Staff run gap drops it without a write.
+// Without an [Aux] PB: no bay dock, medic, self-projector or seeker (the screen says so after 5 s); everything else works.
+// Hooks: the REPAIR CLIENT / SEEKER call sites of SURVIVAL STAFF and STAFF SEARCH (RpRead in SvsRead, RpStep in SvWatch, SkBlocks in SsBlocks, ...).
+// Uses: _fk, _now, _tick, _mode (IDLE/RTB), _fl, _tgtId, _down, Tag, MaxSpeed, RpDockOk, SeekerOn, SeekerGroup, _svRtb, _svDock, _svAmin, _svPrevVerb, SvCapV(),
+//   SvB/SvD/SvT, DkGo/DkRel/DkSteer/DkHold/SvRepaired, _dkOn, _dkRelTk, WpSeek(), Command().
+string RpMedCh = "MEDIC", _alSt = "", _alOps = "", _alCfg = "", _alPv = "";
+IMyBroadcastListener _alLd, _alLa, _alLs; long _alSrc, _alTgt, _alTk = -99, _alDkTk = -99; int _alF = -1, _alDf; double _alDkT = -99;
+bool _dkFly, _alFull = true; Vector3D _alV, _alW, _alU;
+bool SvFly { get { return _dkFly || DkHold; } }
 
 void RpCfg(MyIni i)
-{
-    RpBayOn = SvB(i, "Repair At Bay", true); RpDockV = Math.Max(0.2, SvD(i, "Dock Speed (m/s)", 2)); RpDockV0 = Math.Max(0.05, SvD(i, "Dock Final Speed (m/s)", 0.3));
-    RpMedic = SvB(i, "Call Medic", true); RpMedCh = SvT(i, "Survival", "Medic Channel", "MEDIC").Trim().ToUpperInvariant();
+{   // the Aux reads these itself (Flight PB [Survival]); listed here so that the Staff writes their defaults
+    SvB(i, "Repair At Bay", true); SvD(i, "Dock Speed (m/s)", 2); SvD(i, "Dock Final Speed (m/s)", 0.3); SvB(i, "Call Medic", true);
+    RpMedCh = SvT(i, "Survival", "Medic Channel", "MEDIC").Trim().ToUpperInvariant();
     if (RpMedCh == "") RpMedCh = "MEDIC";
 }
 void RpListen()
 {
-    foreach (var l in new[] { _rpLb, _rpLa, _rpLm, _rpLk }) if (l != null) IGC.DisableBroadcastListener(l);
-    _rpLb = IGC.RegisterBroadcastListener(Tag + "_RBAY"); _rpLa = IGC.RegisterBroadcastListener(Tag + "_RACK");
-    _rpLm = IGC.RegisterBroadcastListener(RpMedCh + "_AD"); _rpLk = IGC.RegisterBroadcastListener(RpMedCh + "_ACK");
+    foreach (var l in new[] { _alLd, _alLa, _alLs }) if (l != null) IGC.DisableBroadcastListener(l);
+    _alLd = _alLa = _alLs = null;
+    if (_fk != "") { _alLd = IGC.RegisterBroadcastListener(_fk + ".DKS"); _alLa = IGC.RegisterBroadcastListener(_fk + ".D2S"); _alLs = IGC.RegisterBroadcastListener(_fk + ".SKW"); }
+    _alFull = true;
 }
-void RpBlocks()
-{
-    var g = Me.CubeGrid; _rpMerge = null; _rpProj = null;
-    var ml = new List<IMyShipMergeBlock>(); GridTerminalSystem.GetBlocksOfType(ml, b => b.CubeGrid == g && !b.CustomName.Contains("Flare"));
-    if (ml.Count > 0) _rpMerge = ml[0];
-    var pl = new List<IMyProjector>(); GridTerminalSystem.GetBlocksOfType(pl, b => b.CubeGrid == g && b.CustomName.Contains("Projector [Self]"));
-    if (pl.Count > 0) _rpProj = pl[0];
-}
-void RpProj(bool on) { if (_rpProj != null && _rpProj.IsFunctional && _rpProj.Enabled != on) _rpProj.Enabled = on; }
-
+void RpBlocks() { }
 void RpRead()
 {
-    long me = Me.CubeGrid.EntityId;
-    while (_rpLb != null && _rpLb.HasPendingMessage)
+    while (_alLd != null && _alLd.HasPendingMessage)
     {
-        var m = _rpLb.AcceptMessage();
-        if (!(m.Data is MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>)) continue;
-        var d = (MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>)m.Data;
-        if (!FleetV(d.Item3) || d.Item4.LengthSquared() < 0.5 || d.Item5.LengthSquared() < 0.5 || d.Item6.LengthSquared() < 0.5) continue;
-        long k = d.Item1 * 97 + (d.Item2 & 255); RpB b;
-        if (!_rpBays.TryGetValue(k, out b)) { if (_rpBays.Count >= 16) continue; b = new RpB { Pb = d.Item1, Bay = d.Item2 & 255 }; _rpBays[k] = b; }
-        else { b.P0 = b.P; b.Two = _now - b.T < 6; }
-        b.F = d.Item2 >> 8; b.P = d.Item3; b.Ax = Vector3D.Normalize(d.Item4); b.Fw = Vector3D.Normalize(d.Item5); b.Up = Vector3D.Normalize(d.Item6); b.T = _now;
+        var m = _alLd.AcceptMessage();
+        if (!(m.Data is MyTuple<int, Vector3D, Vector3D, Vector3D, string>)) continue;
+        var d = (MyTuple<int, Vector3D, Vector3D, Vector3D, string>)m.Data;
+        if (m.Source != _alSrc) { _alSrc = m.Source; _alFull = true; }   // a new (or rebuilt) Aux PB: tell it everything at once
+        _alDf = d.Item1; _alV = d.Item2; _alW = d.Item3; _alU = d.Item4; _alSt = d.Item5; _alDkT = _now; _alDkTk = _tick;
+        if ((d.Item1 & 8) != 0) SvRepaired();
     }
-    while (_rpLa != null && _rpLa.HasPendingMessage)
+    while (_alLa != null && _alLa.HasPendingMessage) { var m = _alLa.AcceptMessage(); if (m.Data is string) Command((string)m.Data); }
+    while (_alLs != null && _alLs.HasPendingMessage)
     {
-        var m = _rpLa.AcceptMessage();
-        if (!(m.Data is MyTuple<long, long, int, int>)) continue;
-        var d = (MyTuple<long, long, int, int>)m.Data; RpB b;
-        if (d.Item1 != me || _rpS != 1 || _rc == null || d.Item2 * 97 + d.Item3 != _rpKey || !_rpBays.TryGetValue(_rpKey, out b)) continue;
-        if (d.Item4 == 0) { b.Bad = _now; _rpS = 0; _rpNext = _now + 10; _rpMsg = "bay refused"; continue; }
-        _rpO = Vector3D.TransformNormal(_rpMerge.GetPosition() - _rc.GetPosition(), MatrixD.Transpose(_rc.WorldMatrix));   // merge offset in the RC frame, taken once
-        _rpThr.Clear(); _rpThr.AddRange(_thr); _rpGy.Clear(); _rpGy.AddRange(_gyros);   // our own blocks: once merged the lists hold the host's too
-        _rpS = 2; _rpFly = true; _rpFlyTk = _tick; _rpStart = _rpT2 = _now; _rpTry = 0; _rpMsg = "";
+        var m = _alLs.AcceptMessage();
+        if (m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>) WpSeek((MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data);
     }
-    while (_rpLm != null && _rpLm.HasPendingMessage)
-    {
-        var m = _rpLm.AcceptMessage();
-        if (!(m.Data is MyTuple<long, Vector3D, int>)) continue;
-        var d = (MyTuple<long, Vector3D, int>)m.Data;
-        if (FleetV(d.Item2) && (_rpMeds.Count < 8 || _rpMeds.ContainsKey(d.Item1))) _rpMeds[d.Item1] = new MyTuple<Vector3D, int, double>(d.Item2, d.Item3, _now);
+    bool f = (_alDf & 1) != 0 && _tick - _alDkTk <= 15 && !_down;
+    if (Runtime.TimeSinceLastRun.TotalSeconds > 0.5)
+    {   // run gap: let go without a write (the Flight may fly already); a FLY still coming re-takes with the 3-tick gate
+        if (_dkFly) { _dkOn = false; _dkRelTk = _tick; }
+        _dkFly = false; _alFull = true;
     }
-    while (_rpLk != null && _rpLk.HasPendingMessage)
-    {
-        var m = _rpLk.AcceptMessage();
-        if (!(m.Data is MyTuple<long, long, int>)) continue;
-        var d = (MyTuple<long, long, int>)m.Data;
-        if (d.Item1 != me || d.Item2 != _rpMed) continue;
-        if (d.Item3 != 0 && _rpS == 6) { _rpS = 7; _rpT = _now; _rpStart = _now; RpProj(true); _rpScanT = -99; _rpMsg = ""; }
-        else if (d.Item3 == 0 && _rpS >= 6) { _rpMedBad[_rpMed] = _now; RpProj(false); _rpS = 0; _rpNext = _now + 10; _rpMsg = "medic gave up"; }
-    }
+    else if (f != _dkFly) { if (f) DkGo(); else DkRel(); _dkFly = f; }
+    if (_fk == "") { _alOps = ""; return; }
+    int fl = (_svRtb ? 1 : 0) | (_svDock ? 2 : 0) | (_down ? 4 : 0) | (_dkFly ? 8 : 0) | ((_fl & 16) != 0 ? 16 : 0) | (_mode == Mode.IDLE ? 32 : 0)
+        | (_mode == Mode.RTB ? 64 : 0) | (SeekerOn ? 128 : 0) | (RpDockOk ? 256 : 0);
+    string c = Tag + "\n" + SeekerGroup;
+    if (!_alFull && _alOps == "" && fl == _alF && _tgtId == _alTgt && c == _alCfg && _svPrevVerb == _alPv && _tick - _alTk < 10) return;
+    IGC.SendBroadcastMessage(_fk + ".SDK", new MyTuple<int, long, Vector3D, string, string, string>(fl, _tgtId, new Vector3D(_svAmin, SvCapV(), MaxSpeed), c, _svPrevVerb, _alOps),
+        TransmissionDistance.CurrentConstruct);
+    _alF = fl; _alTgt = _tgtId; _alCfg = c; _alPv = _svPrevVerb; _alTk = _tick; _alOps = ""; _alFull = false;
 }
-
-void RpRel()
-{
-    foreach (var y in _rpGy) { y.GyroOverride = false; y.Pitch = 0; y.Yaw = 0; y.Roll = 0; }
-    foreach (var th in _rpThr) th.ThrustOverridePercentage = 0;
-    if (_rc != null) _rc.DampenersOverride = true;
-}
-void RpWant(int k) { _rpReq = k; _rpNext = 0; }
-void RpStop(string why)
-{
-    if (_rpS >= 2 && _rpS <= 4) RpRel();
-    if (_rpS >= 6) { if (_rpS == 7) RpWork(true); RpProj(false); }
-    if (_rpS != 5) { _rpS = 0; }
-    _rpFly = false; _rpReq = 0; if (why != "") _rpMsg = why;
-}
-void RpAbort(string why, double bad)
-{
-    RpB b; if (_rpBays.TryGetValue(_rpKey, out b)) b.Bad = _now + bad;
-    RpRel(); _rpFly = false; _rpS = 0; _rpNext = _now + 10; _rpMsg = why;
-}
-
-void RpStep()
-{
-    RpScan();
-    bool uf = (_fl & 16) != 0, home = _mode == Mode.RTB || _mode == Mode.IDLE;
-    if (_rpS == 0)
-    {
-        if (_tick % 30 != 21 || _now < _rpNext || !(_svRtb || _rpReq > 0) || _svDock || uf || _down || !(home || _rpReq > 0)) return;
-        Vector3D me = _rc.GetPosition(); RpB best = null; double bd = 1.6e7; bool any = false;
-        foreach (var kv in _rpBays)
-        {
-            var b = kv.Value; double q = Vector3D.DistanceSquared(b.P, me);
-            if (_now - b.T > 5 || (b.F & 1) == 0 || q > 1.6e7) continue;
-            if (_now - b.Bad < 60) continue;
-            any = true;
-            if (b.Two && (b.P - b.P0).LengthSquared() < 4 && q < bd) { bd = q; best = b; _rpKey = kv.Key; }
-        }
-        if (RpBayOn && RpDockOk && _rpMerge != null && _rpReq != 3 && best != null)
-        {
-            IGC.SendBroadcastMessage(Tag + "_RREQ", new MyTuple<long, int, long>(best.Pb, best.Bay, Me.CubeGrid.EntityId));
-            _rpS = 1; _rpT = _now; _rpRetry = false; _rpMsg = "asking bay " + best.Bay; return;
-        }
-        if (!RpMedic || _rpReq == 2 || (any && RpDockOk && _rpMerge != null && RpBayOn) || !(_mode == Mode.IDLE || _rpReq > 0)) return;
-        long mb = 0; double md = 9e6;
-        foreach (var kv in _rpMeds)
-        {
-            double bt; if (_now - kv.Value.Item3 > 6 || (kv.Value.Item2 & 1) == 0 || (_rpMedBad.TryGetValue(kv.Key, out bt) && _now - bt < 60)) continue;
-            double q = Vector3D.DistanceSquared(kv.Value.Item1, me); if (q < md) { md = q; mb = kv.Key; }
-        }
-        if (mb == 0) return;
-        _rpMed = mb; _rpTry = 0; RpReq(); _rpS = 6; _rpMsg = "calling medic";
-        return;
-    }
-    if (_rpS == 1)
-    {
-        if (_now - _rpT < 5) return;
-        RpB b;
-        if (!_rpRetry && _rpBays.TryGetValue(_rpKey, out b)) { _rpRetry = true; _rpT = _now; IGC.SendBroadcastMessage(Tag + "_RREQ", new MyTuple<long, int, long>(b.Pb, b.Bay, Me.CubeGrid.EntityId)); return; }
-        RpAbort("bay did not answer", 0); return;
-    }
-    if (_rpS == 5)
-    {   // docked: the bay repairs and releases (LAUNCH flies the take-off); back to duty when the merge pair has opened
-        if (_rpMerge == null || !_rpMerge.IsConnected) { if (_svDock) return; RpProj(false); _rpS = 0; _svRtb = false; _rpReq = 0; _rpMsg = "repaired, released"; }
-        return;
-    }
-    if (_rpS >= 6) { RpMedicStep(uf); return; }
-    // dock approach (2 transit, 3 align, 4 insert)
-    RpB y;
-    if (!_rpBays.TryGetValue(_rpKey, out y) || _now - y.T > 10) { RpAbort("bay silent", 60); return; }
-    if (uf) { RpAbort("under fire", 30); return; }
-    if (_down || _rpMerge == null || !_rpMerge.IsFunctional) { RpAbort("aborted", 0); return; }
-    if (!home && _rpReq == 0) { RpAbort("mode changed", 0); return; }
-    if (_now - _rpStart > 180) { RpAbort("dock timeout", 600); return; }
-    if (_rpMerge.IsConnected)
-    {
-        RpRel(); _rpFly = false; _rpS = 5; _rpMsg = "docked";
-        var hm = new List<IMyProgrammableBlock>(); GridTerminalSystem.GetBlocksOfType(hm, b => b.CubeGrid == Me.CubeGrid && b.CustomData.Contains("[Hive Mother]"));
-        RpProj(hm.Count == 0);                               // a printer bay projects the drone itself (and keeps ours off); a cradle bay works through ours
-        return;
-    }
-    if (_now - _rpT2 > 30) { _rpT2 = _now; IGC.SendBroadcastMessage(Tag + "_RREQ", new MyTuple<long, int, long>(y.Pb, y.Bay, Me.CubeGrid.EntityId)); }   // the bay holds us 90 s: renew
-    if (_tick - _rpFlyTk < 3) return;                         // FOL bit 2 reaches the Flight first: one writer
-    MatrixD R = MatrixD.CreateWorld(Vector3D.Zero, y.Fw, Vector3D.Normalize(y.Up - y.Fw * Vector3D.Dot(y.Up, y.Fw)));
-    Vector3D G = y.P + y.Ax * (Me.CubeGrid.GridSize * 0.5) - Vector3D.TransformNormal(_rpO, R), L = G + y.Ax * (20 + Me.CubeGrid.WorldVolume.Radius);
-    Vector3D M = _rc.GetPosition(), v; var mw = _rc.WorldMatrix;
-    if (_rpS == 2)
-    {
-        Vector3D d = L - M; double dist = d.Length(), sp = Math.Min(Math.Min(40, MaxSpeed), Math.Min(dist * 0.5, Math.Sqrt(2 * _svAmin * dist))), cap = SvCapV();
-        if (cap > 0) sp = Math.Min(sp, cap);
-        if (dist < 2) { _rpS = 3; _rpT = _now; }
-        SvSteer(dist > 0.1 ? d / dist * sp : Vector3D.Zero, dist > 100 ? d : R.Forward, dist > 100 ? Vector3D.Zero : R.Up);
-        return;
-    }
-    if (_rpS == 3)
-    {
-        v = (L - M) * 0.5; if (v.LengthSquared() > 4) v = Vector3D.Normalize(v) * 2;
-        bool al = Vector3D.Dot(mw.Forward, R.Forward) > 0.9994 && Vector3D.Dot(mw.Up, R.Up) > 0.9994 && _rc.GetShipVelocities().LinearVelocity.LengthSquared() < 0.09;
-        if (al || _now - _rpT > 15) { _rpS = 4; _rpMerge.Enabled = true; }   // (LAUNCH switched it off after the last take-off)
-        SvSteer(v, R.Forward, R.Up);
-        return;
-    }
-    Vector3D rel = M - G, lat; double along = Vector3D.Dot(rel, y.Ax); lat = rel - y.Ax * along;
-    if ((lat.LengthSquared() > 0.64 && along < 3) || along < -1)
-    {
-        if (++_rpTry > 3) { RpAbort("dock failed", 600); return; }
-        _rpS = 3; _rpT = _now; return;                      // back out to the line-up point and try again
-    }
-    SvSteer(-y.Ax * MathHelper.Clamp(0.5 * along, RpDockV0, RpDockV) - lat, R.Forward, R.Up);
-}
-
-void RpReq()
-{
-    IGC.SendBroadcastMessage(RpMedCh + "_REQ", new MyTuple<long, long, Vector3D, int>(_rpMed, Me.CubeGrid.EntityId, _rc.GetPosition(), Math.Max(_rpBadDone.Count, _rpProj != null ? _rpProj.RemainingBlocks : 0)));
-    _rpT = _now; _rpTry++;
-}
-void RpMedicStep(bool uf)
-{
-    MyTuple<Vector3D, int, double> md;
-    bool seen = _rpMeds.TryGetValue(_rpMed, out md) && _now - md.Item3 < 10;
-    if (!seen || _now - _rpStart > 900) { _rpMedBad[_rpMed] = _now; RpStop("medic lost"); _rpNext = _now + 10; return; }
-    if (_rpS == 6)
-    {
-        if (_now - _rpT < 5) return;
-        if (_rpTry < 3) RpReq(); else { _rpMedBad[_rpMed] = _now; _rpS = 0; _rpNext = _now + 10; _rpMsg = "medic did not answer"; }
-        return;
-    }
-    if (_now - _rpT < 1) return;
-    _rpT = _now;
-    if (_rpChkI < 0 && _now - _rpScanT > 2) { _rpChkI = 0; _rpBad.Clear(); }
-    bool done = _rpScanT > 0 && _rpBadDone.Count == 0 && (_rpProj == null || !_rpProj.IsProjecting || _rpProj.RemainingBlocks == 0);
-    RpWork(done);
-    if (!done) return;
-    RpProj(false); _rpS = 0; _svRtb = false; _rpReq = 0; _rpMsg = "repaired by medic";
-    if (_svPrevVerb != "") Fwd(_svPrevVerb);
-}
-void RpWork(bool done)
-{
-    if (_rc == null) return;
-    var g = Me.CubeGrid; MyTuple<Vector3D, int, double> md; Vector3D mp = _rpMeds.TryGetValue(_rpMed, out md) ? md.Item1 : _rc.GetPosition(), p0 = Vector3D.Zero, p1 = Vector3D.Zero;
-    double d0 = 1e18, d1 = 1e18;
-    foreach (var c in _rpBadDone)
-    {
-        Vector3D w = g.GridIntegerToWorld(c); double q = Vector3D.DistanceSquared(w, mp);
-        if (q < d0) { p1 = p0; d1 = d0; p0 = w; d0 = q; } else if (q < d1) { p1 = w; d1 = q; }
-    }
-    var v = g.WorldVolume;
-    int pk = Math.Min(4095, _rpBadDone.Count) | (Math.Min(4095, (int)(v.Radius * 10)) << 12) | (done ? 1 << 24 : 0) | ((_fl & 16) != 0 ? 1 << 25 : 0);
-    IGC.SendBroadcastMessage(RpMedCh + "_WORK", new MyTuple<long, Vector3D, Vector3D, Vector3D, Vector3D, int>(g.EntityId, v.Center, _rc.GetShipVelocities().LinearVelocity, p0, p1, pk));
-}
-// own-grid cells: a full scan when the grid is new (the intact drone), and while a medic works a re-check of those cells (missing, or damaged)
-void RpScan()
-{
-    var g = Me.CubeGrid;
-    if (_svDock) return;
-    if (g != _rpScanG) { _rpScanG = g; _rpCells.Clear(); _rpScanI = 0; _rpChkI = -1; _rpBadDone.Clear(); _rpScanT = -99; }
-    Vector3I a = g.Min, s = g.Max - g.Min + Vector3I.One; int n = s.X * s.Y * s.Z;
-    if (_rpScanI < n && n < 200000)
-    {
-        for (int k = 0; k < 200 && _rpScanI < n; k++, _rpScanI++)
-        {
-            int i = _rpScanI; var c = new Vector3I(a.X + i % s.X, a.Y + (i / s.X) % s.Y, a.Z + i / (s.X * s.Y));
-            if (g.CubeExists(c) && _rpCells.Count < 4000) _rpCells.Add(c);
-        }
-        return;
-    }
-    if (_rpChkI < 0) return;
-    for (int k = 0; k < 200 && _rpChkI < _rpCells.Count; k++, _rpChkI++)
-    {
-        var c = _rpCells[_rpChkI]; var b = g.CubeExists(c) ? g.GetCubeBlock(c) : null;
-        if (b == null || b.CurrentDamage > 0 || b.BuildIntegrity < b.MaxIntegrity) _rpBad.Add(c);
-    }
-    if (_rpChkI >= _rpCells.Count) { _rpBadDone.Clear(); _rpBadDone.AddRange(_rpBad); _rpChkI = -1; _rpScanT = _now; }
-}
+void RpStep() { if (_dkFly) DkSteer(_alV, _alW, _alU); }
+void RpWant(int k) { _alOps += "w" + k + "\n"; }
+void RpStop(string why) { _alOps += "s" + why + "\n"; }
 string RpStatus()
 {
-    string[] sn = { "", "asking bay", "dock transit", "dock align", "dock insert", "docked", "calling medic", "medic working" };
-    string s = _rpS > 0 ? "Repair : " + sn[_rpS] + (_rpS == 7 ? ", " + _rpBadDone.Count + " cells" : "") + (_rpS == 4 && _rpTry > 0 ? ", retry " + _rpTry : "") + "\n" : _rpMsg != "" && _svRtb ? "Repair : " + _rpMsg + "\n" : "";
-    if (_rpProj != null && _rpProj.Enabled && _rpProj.IsProjecting) s += "Project: " + _rpProj.RemainingBlocks + " blocks to build\n";
-    return s;
+    if (_now - _alDkT < 3) return _alSt;
+    return _alSrc != 0 ? "! Aux PB silent\n" : _now > 5 ? "! no [Aux] PB (repair, medic, seeker off)\n" : "";
 }
-// <<< REPAIR CLIENT v1.0 <<<
+void SkBlocks() { _alFull = true; }
+void SkStep() { }
+string SkStatus() { return ""; }
+// <<< AUX LINK v1.0 <<<
 
 public Program()
 {

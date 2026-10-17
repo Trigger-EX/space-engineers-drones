@@ -460,6 +460,10 @@ def chamfer_room(S, res, env, box, name='room', max_blocks=None):
 SUPPORT_STAFF = {'AEGIS': 'AegisStaffAI.cs', 'MANTIS': 'MantisStaffAI.cs', 'LONGBOW': 'LongbowStaffAI.cs', 'WASP': 'WaspStaffAI.cs',
                  'HORNET': 'HornetStaffAI.cs', 'HARRIER': 'HarrierStaffAI.cs', 'LANCER': 'LancerStaffAI.cs', 'BASILISK': 'BasiliskStaffAI.cs', 'GNAT': 'GnatStaffAI.cs'}
 _SMALL_PB, _LARGE_PB = 'SmallProgrammableBlock', 'LargeProgrammableBlock'
+# the split drones whose Staff PB hands REPAIR CLIENT and the seeker to a fourth PB, `[Aux] ... PB` (scripts/AuxAI.cs, docs/design/staff_split.md), keyed by the
+# Flight script's default Tag like SUPPORT_STAFF (so the Watcher, HornetDroneAI, is included). Gnat: no free cell in its 2 x 2 section; Basilisk: under budget.
+SUPPORT_AUX = {'HORNET', 'HARRIER', 'LANCER', 'AEGIS', 'WASP', 'LONGBOW', 'MANTIS'}
+AUX_SCRIPT = 'AuxAI.cs'
 NO_SUPPORT_PBS = ('Twin PB Test', 'Hornet Pilot Test')   # sim probe ships with a pinned PB count (SelfTestM0): no support PBs
 
 def _orientations():
@@ -469,17 +473,32 @@ def _orientations():
             if sum(a * b for a, b in zip(DIR[f], DIR[u])) == 0: out.append((f, u))
     return out
 
-def free_pb_spot(bp, sub, near, name='[Support] PB'):
+def _dock_ok(bp, cell):
+    """False when `cell` is the clamp-side cell of a merge block (a printer / bay merge block meets the drone there)"""
+    for b in bp.blocks:
+        if b['kind'] != 'merge': continue
+        try: v = DIR[merge_clamp_dir(bp, b)]
+        except Exception: continue
+        m = bp.cells(b)[0]
+        if tuple(m[k] + v[k] for k in range(3)) == tuple(cell): return False
+    return True
+
+def free_pb_spot(bp, sub, near, name='[Support] PB', inside=None, avoid=()):
     """a free cell + orientation where a Programmable Block `sub` attaches to the hull, cell next to as many blocks as possible (inside the hull is safest) and near `near`
-    (a cell); never in a reserved cell (exhaust, muzzle, camera view). Returns (cell, fwd, up) or None."""
+    (a cell); never in a reserved cell (exhaust, muzzle, camera view). Returns (cell, fwd, up) or None.
+    inside: an outline (kit_outline box or a cell set): only cells in it (the owner's outline rule: nothing outside the set outline); avoid: cells to leave empty
+    (printer welder lanes); both also keep merge clamp-side cells clear (_dock_ok). The defaults keep the old search (existing placements do not move)."""
     from itertools import product
     occ = bp.occupancy()
     cells = [c for c in occ]
     lo = [min(c[i] for c in cells) - 1 for i in range(3)]; hi = [max(c[i] for c in cells) + 1 for i in range(3)]
     steps = [DIR[d] for d in ('Forward', 'Backward', 'Left', 'Right', 'Up', 'Down')]
+    avoid = set(tuple(c) for c in avoid); strict = inside is not None or bool(avoid)
     cand = []
     for cell in product(*[range(lo[i], hi[i] + 1) for i in range(3)]):
-        if cell in occ or cell in bp.reserve: continue
+        if cell in occ or cell in bp.reserve or cell in avoid: continue
+        if inside is not None and not in_outline(cell, inside): continue
+        if strict and not _dock_ok(bp, cell): continue
         nb = sum(1 for s in steps if (cell[0] + s[0], cell[1] + s[1], cell[2] + s[2]) in occ)
         if nb == 0: continue
         d = sum(abs(cell[i] - near[i]) for i in range(3))
@@ -500,9 +519,12 @@ def free_pb_spot(bp, sub, near, name='[Support] PB'):
             if ok: return cell, fwd, up
     return None
 
-def add_support_pbs(bp):
+def add_support_pbs(bp, avoid=(), aux_cell=None):
     """Every drone / ship whose flight script carries the THRUST VECTOR LINK gets a small `[Thrust] ... PB` (scripts/ThrustVectorAI.cs); a Flight half of a split drone
-    (SPLIT LINK) is renamed `[Flight] ...` and gets its `[Staff] ...` PB (scripts/<Drone>StaffAI.cs). Idempotent: a design that already carries them is left alone."""
+    (SPLIT LINK) is renamed `[Flight] ...` and gets its `[Staff] ...` PB (scripts/<Drone>StaffAI.cs); a Flight half whose Tag is in SUPPORT_AUX then gets its
+    `[Aux] ... PB` (scripts/AuxAI.cs, docs/design/staff_split.md) inside the bounding box taken before it is added, near its Flight PB, never in `avoid`
+    (aux_cell: that cell only, pinned by hand where the free choice would push the survival kit into a printer's welder lanes).
+    Idempotent: a design that already carries them is left alone."""
     import re
     from xml.sax.saxutils import unescape
     if bp.name.replace(' Lite', '') in NO_SUPPORT_PBS: return bp
@@ -529,6 +551,17 @@ def add_support_pbs(bp):
         spot = free_pb_spot(bp, sub, b0['min'])
         assert spot, f'{bp.name}: no free cell for the Thrust PB'
         bp.add('MyObjectBuilder_MyProgrammableBlock', sub, spot[0], spot[1], spot[2], f'[Thrust] {base(b0)} PB', extra=pb_extra(script_text('ThrustVectorAI.cs')), kind='ctrl')
+    if not any(n.startswith('[Aux]') for n in names):       # after [Thrust]: the cells of the existing PBs do not move
+        for b in pbs:
+            p = prog[id(b)]
+            m = re.search(r'string Tag\s*=\s*"([A-Z]+)"', p)
+            if 'LkInit(' not in p or not m or m.group(1) not in SUPPORT_AUX: continue
+            box = kit_outline(bp)
+            if aux_cell is not None: assert in_outline(aux_cell, box), f'{bp.name}: Aux PB cell {aux_cell} is outside the outline'
+            spot = free_pb_spot(bp, sub, b['min'], inside=box if aux_cell is None else {tuple(aux_cell)}, avoid=avoid)
+            assert spot, f'{bp.name}: no free cell inside the outline for the Aux PB'
+            bp.add('MyObjectBuilder_MyProgrammableBlock', sub, spot[0], spot[1], spot[2], f'[Aux] {base(b)} PB', extra=pb_extra(script_text(AUX_SCRIPT)), kind='ctrl')
+            break
     return bp
 
 
