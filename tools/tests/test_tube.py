@@ -123,7 +123,7 @@ class TubeTests(unittest.TestCase):
 class TubeDecoyTests(unittest.TestCase):
     """Decoy variants of the Tube 4x4 (docs/design/tube_decoys.md): D (decoys in the nose), DR (experiment control), F (flare pods)."""
     def setUp(self):
-        self.bps = {n: tube.MODELS[n](False) for n in tube.DECOY}
+        self.bps = {n: tube.build(n) for n in tube.DECOY + tube.DECOY_EXPERIMENTS}
 
     def test_validate_section_dlc(self):
         for n, bp in self.bps.items():

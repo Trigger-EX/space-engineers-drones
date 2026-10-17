@@ -42,7 +42,7 @@ Everything below is what you need to continue. Read sections 1–4 before touchi
 
 **Pathfinder (`PathfinderAI.cs`, printer `Pathfinder Nest`) is built and sim-tested (it works, but costs the Longbows power kills vs the Tech Hunter: doc section 6), not game-tested:** the Peeper hull as a stand-alone hive weakpoint finder: waits until the fleet has a target within 5 km, circles it, crosses its unarmed turret's PowerSystems aim lines to locate the power block and relays it on `<ch>_WP`. `docs/design/pathfinder.md`.
 
-**Tube ram drones (Tube 2x2 / 2x4 / 3x3 / 4x4, `TubeRamAI.cs`) are built and sim-smoke-tested, not game-tested:** `docs/design/tube_drones.md` section 8 lists what is left (the `ram` scenario kind, ram metrics, salvo spacing).
+**Tube decoys (2026-10-17):** `Tube 4x4 F` drops decoy flare pods when hit (TubeRamAI v1.4); sim results and the in-game questions in `docs/design/tube_decoys.md`. **Tube ram drones (Tube 2x2 / 2x4 / 3x3 / 4x4, `TubeRamAI.cs`) are built and sim-smoke-tested, not game-tested:** `docs/design/tube_drones.md` section 8 lists what is left (the `ram` scenario kind, ram metrics, salvo spacing).
 
 **Later work (after this handoff was written):** see `packages/changelog.md` (v2.0 to v2.4) and `docs/RESULTS.md`; v2.4 is the
 **kamikaze defence** against incoming swarms of small warhead drones (`docs/kamikaze-defence.md`, shared block `tools/kz_block.cs`
