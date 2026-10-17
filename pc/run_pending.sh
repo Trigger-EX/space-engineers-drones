@@ -30,7 +30,7 @@ while IFS= read -r line; do
     while IFS= read -r l2; do case "$l2" in ''|\#*) continue;; esac; LINES+=("$(echo "$l2" | sed -E "s/--seeds [0-9]+/--seeds $tok/")"); done < "$f"
   else LINES+=("$line"); fi
 done < "$PLAN"
-echo "${#LINES[@]} experiments in $PLAN"
+echo "${#LINES[@]} experiments in $PLAN:"; for l in "${LINES[@]}"; do echo "  [$(echo "${l%%|*}" | xargs)]"; done
 
 STOP=0
 finish() {
@@ -53,6 +53,7 @@ while [ "$N" -le "$MAXN" ]; do
   echo "##### round N=$N ($(date '+%F %H:%M:%S'))" | tee -a "$LOG"
   for line in "${LINES[@]}"; do
     [ "$STOP" = 1 ] && finish
+    [[ "$line" == *"|"* ]] || { echo "  skipping a malformed plan line (no |): [$line]" | tee -a "$LOG"; continue; }
     name="$(echo "${line%%|*}" | xargs)"; args="${line#*|}"
     if [ -n "$ONLY" ]; then ok=0; IFS=, read -ra sel <<< "$ONLY"; for s in "${sel[@]}"; do [[ "$name" == "$s" || ( "$s" == *- && "$name" == "$s"* ) ]] && ok=1; done; [ $ok = 0 ] && continue; fi
     out="results/$name"; mkdir -p "$out"

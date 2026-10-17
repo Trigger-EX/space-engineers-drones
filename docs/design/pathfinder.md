@@ -110,7 +110,15 @@ switching to a fresh seeker hole, or keep relayed holes past the finder's death.
 BREACH + SEEKER v1.2: `WpAdopt` no longer swaps a hole the drone is drilling (3 m deep, progress within `Weakpoint Hold (s)`=10) for a fresh
 seeker hole; a relayed hole still takes over when it is already 3 m deeper. `Weakpoint Hold (s)=0` restores the v1.1 rule. Retest plan
 `pc/plans/pathfinder.plan` (none / new / old, 1-2 Pathfinders with 2, 4, 8 Longbow L and 4 S + 4 L, 600 s cap, run in rounds, Enter stops).
-Smoke: 4 seeds Pathfinder + 2 Longbow L, 0 script exceptions. Results pending.
+Smoke: 4 seeds Pathfinder + 2 Longbow L, 0 script exceptions.
+
+Result (owner's PC, 2,560 seeds per fleet and line, Tech Hunter 90k, 800 m turret limit, 600 s cap, power blocks killed per fight, new / old):
+Pathfinder + 2 Longbow L 1.74 / 1.72; + 4 L 4.15 / 4.12; + 8 L 8.37 / 8.36; + 4 S + 4 L 6.06 / 6.01; 2 Pathfinders + 8 L 7.30 / 7.26. All differences
+are within +-0.07 (1 SE): **the Hold fix changes nothing measurable** (the Pathfinder now survives, 95 % alive at 10 minutes). The `pf-none` line was
+lost (a stray `40` experiment replaced the first plan line; run_pending.sh now lists and validates the lines). Against the old relay-off no-finder
+runs of `wp-game-off` (8 L 10.34, 4 S + 4 L 7.79) the fleets with a Pathfinder kill 19-29 % FEWER power blocks, while their turrets kill 22-35
+Tech Hunter turrets per fight (the sim gives the finder's turret ammunition, so it shoots). A proper no-finder baseline (`plans/pathfinder_base.plan`) is needed
+before concluding that the finder costs power kills.
 
 ## 7. Risks and in-game tests
 

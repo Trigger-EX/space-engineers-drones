@@ -1,0 +1,6 @@
+# The missing baseline of plans/pathfinder.plan: the Longbow wings WITHOUT a Pathfinder, receivers as shipped (relay on, Weakpoint Hold 10).
+# The first line is a harmless sentinel: in the first pathfinder run the first plan line of each plan was replaced by a bogus "40" experiment
+# (run_pending.sh now lists the experiments it read and skips malformed lines; look at that list at start-up).
+#   ./run_pending.sh plans/pathfinder_base.plan --start-n 20 --max-n 5120      (same seeds per round as pf-new / pf-old)
+sentinel | selftest api
+pf-none | run --kind enemy --enemies enemies_th90k --enemy-fleets "2xLongbow L;4xLongbow L;8xLongbow L;4xLongbow S+4xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N} --resume --out {OUT}
