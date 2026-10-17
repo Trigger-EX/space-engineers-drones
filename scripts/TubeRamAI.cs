@@ -34,9 +34,16 @@
 //         there, and rams anything that comes within Sentry Range (2,500 m = the AI Offensive block's search range), wherever it goes;
 //         with no target left it flies back to the spot and waits again. Kept across a world reload (Storage).
 //
-//  COMMANDS: launch (hunt) | sentry | abort | idle (stop) | rtb | lock | disarm | reload
+//  FLARES (v1.4, docs/design/tube_decoys.md; only when the blueprint carries flare pods, the Tube 4x4 F): pods held by a merge pair
+//         ("<Tag> Flare Latch n" on the tube, "<Tag> Flare Merge n", "<Tag> Flare Decoy n" on the pod). Dropping one switches its decoy on
+//         and the latch off: the pod flies on as its own grid and enemy turrets and AI blocks switch to it (a decoy grid comes first).
+//         [Tube] Flare Triggers (any of FIRE = the hull lost integrity, RANGE = target within Flare Range, TERM, EXTEND, ALL = every pod at
+//         once at Flare Range), Flare Interval (s) between drops, Flare Dodge (m/s) sideways away from the pod for Flare Dodge Time (s)
+//         (HUNT only). Released pods are never targets, friends in the way or obstacles.
+//
+//  COMMANDS: launch (hunt) | sentry | abort | idle (stop) | rtb | lock | disarm | reload | flare
 // =====================================================================
-const string VER = "1.3";
+const string VER = "1.4";
 
 string ListenTags = "GNAT,HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER,DRONE_CUE,TUBE";   // a tag that already contains "_" is used as is, others get "_TGT" appended
 string Tag = "TUBE", BlockTag = "";
@@ -403,6 +410,14 @@ void LoadConfig()
     TargetLarge = C(S, "Target Large Grids", TargetLarge);
     TargetSmall = C(S, "Target Small Grids", TargetSmall);
     TargetNeutral = C(S, "Target Neutral/Unowned", TargetNeutral);
+    if (_ini.ContainsKey(S, "Flare Triggers") || HasFlares())
+    {   // flare keys only on tubes that carry pods
+        FlareTrig = "," + C(S, "Flare Triggers", "FIRE").ToUpperInvariant().Replace(" ", "") + ",";
+        FlareRange = C(S, "Flare Range (m)", FlareRange);
+        FlareGap = C(S, "Flare Interval (s)", FlareGap);
+        FlareDodgeV = C(S, "Flare Dodge (m/s)", FlareDodgeV);
+        FlareDodgeS = C(S, "Flare Dodge Time (s)", FlareDodgeS);
+    }
     string o = _ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
 }
 string C(string s, string k, string d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToString(d); }
@@ -432,7 +447,8 @@ void GetBlocks()
     GridTerminalSystem.GetBlocksOfType(_heads, Mine);
     GridTerminalSystem.GetBlocksOfType(_cams, Mine);
     GridTerminalSystem.GetBlocksOfType(_sensors, Mine);
-    GridTerminalSystem.GetBlocksOfType(_merges, Mine);
+    GridTerminalSystem.GetBlocksOfType(_merges, b => Mine(b) && !b.CustomName.Contains("Flare"));   // flare pods are not a dock
+    FlareFind();
     foreach (var c in _cams) c.EnableRaycast = true;
     FindAi();
     _fwd.Clear();
@@ -463,6 +479,7 @@ bool Docked() { if (_onPr) return true; foreach (var m in _merges) if (m.IsConne
 
 bool Valid(MyDetectedEntityInfo e)
 {
+    if (_podIds.Contains(e.EntityId)) return false;   // my own released flare pods: no target, no obstacle
     FaSee(e);
     if (e.IsEmpty() || e.EntityId == Me.CubeGrid.EntityId) return false;
     if (e.Type == MyDetectedEntityType.LargeGrid ? !TargetLarge : e.Type == MyDetectedEntityType.SmallGrid ? !TargetSmall : true) return false;
@@ -547,6 +564,7 @@ void Tick(string arg, UpdateType src)
     // Start Mode HUNT (default): off the rack (or pasted free) it goes hunting by itself, with the AI blocks if nobody gave it a target;
     // WAIT: only `launch` or a target in range (Auto Launch When Released) starts it. Tried every 2 s, not every tick (Launch re-scans the blocks)
     if (_mode == Mode.WAIT && !docked && (((AutoLaunch || _sentry) && Nearest() != null) || (StartHunt && !_sentry && _now - _launchTry > 2))) { _launchTry = _now; Launch(); }
+    if (!docked) Flares();
     if (_mode == Mode.SEARCH) Search(dt);
     else if (_mode == Mode.HUNT || _mode == Mode.TERM) Hunt(dt);
     else if (_mode == Mode.EXTEND) Extend(dt);
@@ -568,6 +586,7 @@ void Command(string a)
     else if (a == "rtb") { if (!Docked()) { AiOff(); SetMode(Mode.RTB); } }
     else if (a == "lock") Lock();
     else if (a == "disarm") Disarm();
+    else if (a == "flare") Drop(1);
     else if (a == "reload") { LoadConfig(); FleetLoad(true); AiGateLoad(); GetBlocks(); }
 }
 
@@ -670,6 +689,7 @@ void Hunt(double dt)
         // only while closing fast (Corsair report: a tube that entered TERM at a walk, or flying away, sat in it until the 20 s timer)
         if ((tgo < TermTime || dist < TermRange) && closing > Math.Max(20, 0.5 * myVel.Length())) { SetMode(Mode.TERM); _guardT = 0; _missT = 0; }
         want = Vector3D.Normalize(pred - me) * MaxSpeed;
+        if (_now < _dodgeT) want = Vector3D.Normalize(want + _dodge * FlareDodgeV) * MaxSpeed;   // FLARES: step off the dropped pod's line
         bool launching = Vector3D.Distance(me, _launchPos) < SafeDistance;
         if (launching) want = Vector3D.Normalize(want) * Math.Min(MaxSpeed, 30);
         want = FaWant(want, me);   // FRIENDLY AVOIDANCE: keep clear of non-enemy grids
@@ -688,7 +708,7 @@ void Hunt(double dt)
                 {
                     if (!c.IsWorking || Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) < 0.97 || !c.CanScan(dist * 1.2 + 20)) continue;
                     var he = c.Raycast(dist * 1.2 + 20);
-                    if (!he.IsEmpty() && he.EntityId != _tgt.Id && he.Relationship != MyRelationsBetweenPlayerAndBlock.Enemies && (he.Type == MyDetectedEntityType.LargeGrid || he.Type == MyDetectedEntityType.SmallGrid)) { blocked = true; }
+                    if (!he.IsEmpty() && he.EntityId != _tgt.Id && !_podIds.Contains(he.EntityId) && he.Relationship != MyRelationsBetweenPlayerAndBlock.Enemies && (he.Type == MyDetectedEntityType.LargeGrid || he.Type == MyDetectedEntityType.SmallGrid)) { blocked = true; }
                     break;
                 }
             if (!blocked && _tgt.Radius > 0)
@@ -940,12 +960,84 @@ void Release()
     if (_rc != null) _rc.DampenersOverride = true;
 }
 
+// ---- FLARES: decoy pods dropped like flares (docs/design/tube_decoys.md) ----
+string FlareTrig = ",FIRE,"; double FlareRange = 900, FlareGap = 1.5, FlareDodgeV = 0, FlareDodgeS = 2;
+List<IMyShipMergeBlock> _latch = new List<IMyShipMergeBlock>();
+List<IMyFunctionalBlock> _dropped = new List<IMyFunctionalBlock>();   // decoys of released pods (their grid ids go to _podIds)
+HashSet<long> _podIds = new HashSet<long>();
+double _flT = -99, _dodgeT = -99, _hitT = -99, _integ = -1; Vector3D _dodge; int _flN;
+List<IMySlimBlock> _slims = new List<IMySlimBlock>(); bool _slimsDirty = true;
+bool HasFlares() { var l = new List<IMyShipMergeBlock>(); GridTerminalSystem.GetBlocksOfType(l, b => b.CubeGrid == Me.CubeGrid && b.CustomName.Contains("Flare Latch")); return l.Count > 0; }
+void FlareFind()
+{
+    GridTerminalSystem.GetBlocksOfType(_latch, b => Mine(b) && b.CustomName.Contains("Flare Latch"));
+    _slimsDirty = true;
+}
+int FlaresLeft() { int n = 0; foreach (var l in _latch) if (l.IsConnected) n++; return n; }
+IMyFunctionalBlock PodDecoy(IMyShipMergeBlock latch)
+{
+    string n = latch.CustomName.Replace("Flare Latch", "Flare Decoy");
+    return GridTerminalSystem.GetBlockWithName(n) as IMyFunctionalBlock;
+}
+// drop up to k pods: decoy on, latch off (the grid splits at the end of the tick); then step off the pod's line for Flare Dodge Time
+void Drop(int k)
+{
+    Vector3D me = _rc != null ? _rc.GetPosition() : Me.GetPosition(), off = Vector3D.Zero;
+    foreach (var l in _latch)
+    {
+        if (k <= 0) break;
+        if (!l.IsConnected) continue;
+        var d = PodDecoy(l);
+        if (d != null) { d.Enabled = true; _dropped.Add(d); }
+        l.Enabled = false; k--; _flN++; off += l.GetPosition() - me;
+    }
+    _flT = _now; _slimsDirty = true;
+    if (_rc != null && _tgt != null && FlareDodgeV > 0)
+    {   // sideways, perpendicular to the line of sight, away from the pods just dropped
+        Vector3D los = Vector3D.Normalize(_tgt.Pos - me), lat = off - Vector3D.Dot(off, los) * los;
+        if (lat.LengthSquared() < 1e-4) lat = _rc.WorldMatrix.Right;
+        _dodge = -Vector3D.Normalize(lat); _dodgeT = _now + FlareDodgeS;
+    }
+    _status = "FLARE " + _flN;
+}
+// the hull's integrity (every slim block of my grid, armour included where the game shows it); a drop = I am being hit
+void Integrity()
+{
+    var g = Me.CubeGrid;
+    if (_slimsDirty)
+    {
+        _slimsDirty = false; _slims.Clear(); _integ = -1;
+        Vector3I mn = g.Min, mx = g.Max;
+        if ((long)(mx.X - mn.X + 1) * (mx.Y - mn.Y + 1) * (mx.Z - mn.Z + 1) > 4000) return;
+        for (int x = mn.X; x <= mx.X; x++) for (int y = mn.Y; y <= mx.Y; y++) for (int z = mn.Z; z <= mx.Z; z++)
+        { var p = new Vector3I(x, y, z); if (g.CubeExists(p)) { var sb = g.GetCubeBlock(p); if (sb != null && sb.Position == p) _slims.Add(sb); } }
+        return;
+    }
+    double v = 0; foreach (var sb in _slims) v += g.CubeExists(sb.Position) ? sb.BuildIntegrity - sb.CurrentDamage : 0;
+    if (_integ >= 0 && v < _integ - 0.5) _hitT = _now;
+    _integ = v;
+}
+void Flares()
+{
+    for (int i = _dropped.Count - 1; i >= 0; i--) if (_dropped[i].CubeGrid != Me.CubeGrid) _podIds.Add(_dropped[i].CubeGrid.EntityId);
+    if (_latch.Count == 0 || _tick % 10 != 0) return;
+    if (FlareTrig.Contains(",FIRE,")) Integrity();
+    int left = FlaresLeft();
+    if (left == 0 || _tgt == null || _now - _flT < FlareGap) return;
+    if (_mode != Mode.HUNT && _mode != Mode.TERM && _mode != Mode.EXTEND) return;
+    double gap = Vector3D.Distance(_rc.GetPosition(), _tgt.Pos + _tgt.Vel * (_now - _tgt.Seen)) - _tgt.Radius;
+    bool inR = gap < FlareRange;
+    if (FlareTrig.Contains(",ALL,") && inR) { Drop(left); return; }
+    if ((FlareTrig.Contains(",FIRE,") && _now - _hitT < 0.5) || (FlareTrig.Contains(",RANGE,") && inR) ||
+        (FlareTrig.Contains(",TERM,") && _mode == Mode.TERM) || (FlareTrig.Contains(",EXTEND,") && _mode == Mode.EXTEND)) Drop(1);
+}
+
 void Show()
 {
     string tl = _tgt != null ? (_rangeNow.ToString("0") + " m  closing " + _closeNow.ToString("0") + " m/s  tgo " + _tgoNow.ToString("0.0") + " s") : "none";
     int w = 0; foreach (var t in _fwd) if (t.IsWorking) w++;
     string s = "TUBE RAM v" + VER + "\nMode: " + _mode + (_sentry ? "  SENTRY" : "") + (Docked() ? "  (docked)" : "") + "\nTarget : " + tl + "\nSpeed: " + (_rc != null ? _rc.GetShipVelocities().LinearVelocity.Length().ToString("0") : "-") + " m/s   Rams: " + _rams + Missed() +
-               "\nThrusters: " + w + " / " + _fwd.Count + "\nContacts: " + _contacts.Count + (_heads.Count > 0 ? "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") : "") +
+               "\nThrusters: " + w + " / " + _fwd.Count + "\nContacts: " + _contacts.Count + (_latch.Count + _dropped.Count > 0 ? "\nFlares: " + FlaresLeft() + " left, " + _dropped.Count + " out" : "") + (_heads.Count > 0 ? "\nWarheads: " + _heads.Count + (_armed ? " ARMED" : " safe") : "") +
                "\n" + (_fc != "" ? "1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago\n" : "") + AiGateStatus() + _status + "\nIns: " + Runtime.CurrentInstructionCount + " / " + Runtime.MaxInstructionCount + "  peak " + _peakIns;
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);

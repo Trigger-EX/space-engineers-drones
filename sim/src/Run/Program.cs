@@ -16,7 +16,7 @@
 //   wing-test [--model Ballista] [--count 3] [--spacing 120] [--enemy Hornet] [--cue]   N copies side by side running the real script: closest approach of every pair (sim/src/Run/WingTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
 //   M0 (docs/design/control_arch.md): --pilot "0:sit;5:move 0 0 -1;20:leave" [--pilot-team 0] puts a ScriptedPilot into the cockpit of our ships (verbs: ScriptedPilot.cs),
-//         --pb-custom-data "Helm=<ini>|Staff=<ini>" (CustomData per PB tag), --enemy-scripted (enemies from --enemies run their own PB scripts: "Helm:hunt",
+//         --pb-custom-data "Helm=<ini>|Staff=<ini>" (CustomData per PB tag; a key equal to a model name, "Tube 4x4 F=<ini>", sets every PB of that model), --enemy-scripted (enemies from --enemies run their own PB scripts: "Helm:hunt",
 //         "Staff:wing satellite"; implies --block-automation), --block-automation (Timer / Event Controller / Button Panel toolbars run), commands "Tag:arg"
 //         (e.g. --commands "0.5:Helm:hunt") go to the PBs whose name starts with [Tag] only.
 //   --seeds defaults to DefaultSeeds (a quick check). Pick the count the task needs (CLAUDE.md "Simulations"); the big matrices

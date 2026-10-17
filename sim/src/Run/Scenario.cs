@@ -345,8 +345,9 @@ namespace SeSim.Run
                         if (pb == null) continue;
                         if (sc.BlueprintCustomData && sh.Spec.CustomDataOverride == null && !string.IsNullOrEmpty(bl[q].Src.StoredCustomData) && (!ScenarioGen.IsEnemy(sh.Spec.Model) || ScenarioGen.EnemyScripted)) pb.CustomData = bl[q].Src.StoredCustomData.Replace("\r", "");
                         if (sh.Spec.CustomDataOverride != null) pb.CustomData = sh.Spec.CustomDataOverride;
-                        foreach (var kv in sh.Spec.PbCustomData)      // M0: per PB tag, wins over the all-PB override
-                            if (pb.CustomNameValue.StartsWith("[" + kv.Key + "]", StringComparison.OrdinalIgnoreCase)) pb.CustomData = kv.Value;
+                        foreach (var kv in sh.Spec.PbCustomData)      // M0: per PB tag, wins over the all-PB override; a key equal to the ship's model name
+                            if (pb.CustomNameValue.StartsWith("[" + kv.Key + "]", StringComparison.OrdinalIgnoreCase)      // (e.g. "Tube 4x4 F") reaches every PB of that model
+                                || string.Equals(kv.Key, sh.Spec.Model, StringComparison.Ordinal)) pb.CustomData = kv.Value;
                     }
                 }
             }

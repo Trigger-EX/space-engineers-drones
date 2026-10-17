@@ -45,6 +45,7 @@ def tube_frame(name, W, H, cap, body, spec, warheads=False):
         for y in range(H):
             for x in range(W):
                 if z == 0 and (x, y) in nose: continue
+                if (x, y, z) in spec.get("decoys", ()): continue
                 if warheads and z == 1:
                     nw += 1
                     bp.add("MyObjectBuilder_Warhead", "SmallWarhead", (x, y, z), "Forward", "Up", f"{name} Warhead {nw}", (0.98, 0.65, 0.05), kind="warhead")
@@ -78,12 +79,16 @@ def tube_frame(name, W, H, cap, body, spec, warheads=False):
         C.cam(bp, (x, y, z), d, "Up", f"{name} Camera {label}")
     (ax, ay, az), afwd, aup = spec["ant"]
     C.ant(bp, (ax, ay, az), afwd, aup, f"{name} Antenna", 2500)
-    # fill every empty body cell with light armour (closed box, nothing floats)
+    # decoys fixed in the hull (docs/design/tube_decoys.md): enemy turrets and AI blocks aim at the nearest working decoy, not the centre
+    for i, c in enumerate(spec.get("decoys", ())):
+        bp.add("MyObjectBuilder_Decoy", "SmallDecoy", c, "Forward", "Up", f"{name} Decoy {i+1}", DECOY_COL, kind="decoy")
+    gaps = _flare_pods(bp, name, spec["pods"]) if spec.get("pods") else set()
+    # fill every empty body cell with light armour (closed box, nothing floats; the flare bay's gaps stay open)
     occ = bp.occupancy()
     for z in range(body):
         for y in range(H):
             for x in range(W):
-                if (x, y, z) not in occ: bp.armor(x, y, z, HULL_COL)
+                if (x, y, z) not in occ and (x, y, z) not in gaps: bp.armor(x, y, z, HULL_COL)
     # thruster bank: one ion thruster per section cell, exhaust aft
     n = 0
     for y in range(H):
@@ -91,6 +96,45 @@ def tube_frame(name, W, H, cap, body, spec, warheads=False):
             n += 1
             C.thr(bp, (x, y, body), "Backward", "Up", f"{name} Ion Main {n}")
     return finalize(bp)
+
+DECOY_COL = (0.0, 0.9, 0.55)
+
+def _flare_pods(bp, name, pods):
+    """Flare bay (docs/design/tube_decoys.md): pods = dict(z0, corners, spine).  Each corner (x, y) holds a pod along z, front to back
+    heavy armour (z0), decoy (z0+1, switched OFF until it is released), small battery (z0+2), pod merge block (z0+3, clamp Backward), and
+    the tube's latch merge block behind it (z0+4, clamp Forward).  The bay's edge cells stay EMPTY, so a pod touches the tube only
+    through the merge pair (in front of it is the nozzle end of a side thruster, which has no mount there): switching the latch off
+    splits it off as its own grid.  The spine cells carry the hull through the bay.  Returns the set of cells that must stay empty."""
+    z0, corners = pods["z0"], pods["corners"]
+    for i, (x, y) in enumerate(corners):
+        n = i + 1
+        bp.armor(x, y, z0, CAP_COL, sub=HEAVY)
+        bp.add("MyObjectBuilder_Decoy", "SmallDecoy", (x, y, z0 + 1), "Forward", "Up", f"{name} Flare Decoy {n}", DECOY_COL, kind="decoy", enabled=False)
+        C.bat(bp, (x, y, z0 + 2), f"{name} Flare Battery {n}")
+        # kind "flare": an internal merge pair, not a docking latch (check_docking only looks at kind "merge")
+        C.merge_small(bp, (x, y, z0 + 3), "Backward", f"{name} Flare Merge {n}", color=DECOY_COL)['kind'] = "flare"
+        C.merge_small(bp, (x, y, z0 + 4), "Forward", f"{name} Flare Latch {n}", color=DECOY_COL)['kind'] = "flare"
+    for z in range(z0, z0 + 4):
+        for (x, y) in pods["spine"]: bp.armor(x, y, z, HULL_COL, sub=HEAVY)   # heavy: the spine alone carries the hull through the bay
+    W, H = pods["W"], pods["H"]
+    keep = set(corners) | set(pods["spine"])
+    return {(x, y, z) for z in range(z0, z0 + 4) for y in range(H) for x in range(W) if (x, y) not in keep}
+
+def flare_pod_parts(bp):
+    """Checks that every flare pod is held ONLY by its merge pair: the mount graph without the latch-merge edges must fall apart into the
+    tube and one 4-block piece per pod.  Returns the number of pods."""
+    adj = bp.attachment()
+    byid = {id(b): b for b in bp.blocks}
+    def cut(a, b):
+        na, nb = byid[a]['name'] or '', byid[b]['name'] or ''
+        return ('Flare Merge' in na and 'Flare Latch' in nb) or ('Flare Latch' in na and 'Flare Merge' in nb)
+    adj2 = {k: {v for v in vs if not cut(k, v)} for k, vs in adj.items()}
+    comps = bp.components(adj2)
+    pods = [c for c in comps if any('Flare Decoy' in (b['name'] or '') for b in c)]
+    main = [c for c in comps if c not in pods]
+    assert len(main) == 1, f'{bp.name}: the tube falls apart without its flare pods ({len(main)} pieces)'
+    for c in pods: assert len(c) == 4, f'{bp.name}: a flare pod holds {len(c)} blocks, expected 4 (it touches the tube outside its merge pair)'
+    return len(pods)
 
 # cells are final: nose z 0..cap-1, side thrusters z ins..ins+1 (ins = cap), filler, systems in the last layers before the bank (z = body)
 def _variant(name):
@@ -118,6 +162,21 @@ def _variant(name):
             bat_min=(0, 0, 6), bats=[(1, 1, 9)],
             pb=(0, 0, 9), rc=(1, 0, 9), gyros=[(2, 0, 9), (0, 2, 9)], ai=[(2, 1, 9), (1, 2, 9)], ant=((1, 3, 9), "Right", "Up"),
             cams=[((0, 1, 9), "Left", "Left"), ((3, 1, 9), "Right", "Right")]))
+    # Tube 4x4 D: four decoys in the second nose layer, behind the front heavy armour (aim point pulled onto the nose)
+    if name == "Tube 4x4 D":
+        v = _variant("Tube 4x4"); v["spec"] = dict(v["spec"], decoys=[(1, 1, 1), (2, 1, 1), (1, 2, 1), (2, 2, 1)]); return v
+    # Tube 4x4 DR (experiment control): four decoys at the rear, in the filler in front of the systems (aim point pulled onto the systems)
+    if name == "Tube 4x4 DR":
+        v = _variant("Tube 4x4"); v["spec"] = dict(v["spec"], decoys=[(3, 2, 8), (3, 3, 8), (0, 3, 8), (1, 3, 8)]); return v
+    # Tube 4x4 F: the 4x4 with a flare bay (4 corner pods, z 6..9) behind the side thrusters; latches, battery and filler in z 10..12,
+    # systems in z 13, bank z 14..15.  The 3x2x3 battery moves off the corners (x 1..3, y 1..2) so the latch corners are free.
+    if name == "Tube 4x4 F":
+        return dict(W=4, H=4, cap=4, body=14, spec=dict(
+            nose=[(1, 1), (2, 2)], ins=4, up=[0, 3], down=[0, 3], left=[0, 3], right=[0, 3],
+            pods=dict(z0=6, W=4, H=4, corners=[(0, 0), (3, 0), (0, 3), (3, 3)], spine=[(1, 1), (2, 1), (1, 2), (2, 2)]),
+            bat_min=(1, 1, 10), bats=[(1, 1, 13)],
+            pb=(0, 0, 13), rc=(1, 0, 13), gyros=[(2, 0, 13), (0, 2, 13)], ai=[(2, 1, 13), (1, 2, 13)], ant=((1, 3, 13), "Right", "Up"),
+            cams=[((0, 1, 13), "Left", "Left"), ((3, 1, 13), "Right", "Right")]))
     raise KeyError(name)
 
 # ---------------------------------------------------------------------------------------------
@@ -227,10 +286,13 @@ def build(name):
     if name.startswith("Tube L "): return tube_large(name)
     w = name.endswith(" W")                         # "Tube 3x3 W": the warhead variant of "Tube 3x3"
     v = _variant(name[:-2] if w else name)
-    return tube_frame(name, v["W"], v["H"], v["cap"], v["body"], v["spec"], warheads=w)
+    bp = tube_frame(name, v["W"], v["H"], v["cap"], v["body"], v["spec"], warheads=w)
+    if v["spec"].get("pods"): flare_pod_parts(bp)
+    return bp
 
 BASE = ("Tube 2x2", "Tube 2x4", "Tube 3x3", "Tube 4x4", "Tube L 1x1", "Tube L 2x2")
-MODELS = {n: (lambda lite=False, n=n: build(n)) for n in BASE + tuple(b + " W" for b in BASE)}
+DECOY = ("Tube 4x4 D", "Tube 4x4 DR", "Tube 4x4 F")      # decoy variants (docs/design/tube_decoys.md)
+MODELS = {n: (lambda lite=False, n=n: build(n)) for n in BASE + tuple(b + " W" for b in BASE) + DECOY}
 NO_LITE = set(MODELS)
 REQUIRED_AXES = {m: ("Forward", "Up", "Down", "Left", "Right") for m in MODELS}   # no reverse thrust: it brakes by flipping
 DOCS = {
@@ -247,6 +309,11 @@ DOCS['Tube L 2x2'] = ('LARGE-grid ram drone: 5 x 5 m section, 27.5 m long, about
                       'compact antenna. Re-rams while it can fly. No merge latch.')
 DOCS['Tube L 1x1 W'] = 'Tube L 1x1 with its second nose block a large warhead (22 m blast): fired on impact or by the contact fuse, armed only at the last moment; if the tube survives its blast it comes back as a kinetic ram.'
 DOCS['Tube L 2x2 W'] = 'Tube L 2x2 with its second nose layer 4 large warheads (22 m blast): fired on impact or by the contact fuse, armed only at the last moment; if the tube survives its blast it comes back as a kinetic ram.'
+DOCS['Tube 4x4 D'] = 'Tube 4x4 with four decoys in its second nose layer, under the front heavy armour: enemy turrets and AI blocks aim at the nose (decoy-armoured nose), not at the systems at the rear. Experimental (docs/design/tube_decoys.md).'
+DOCS['Tube 4x4 DR'] = 'Experiment control: Tube 4x4 with four decoys in the filler right in front of its rear systems (turret aim pulled onto the systems). Not for use (docs/design/tube_decoys.md).'
+DOCS['Tube 4x4 F'] = ('Tube 4x4 with a flare bay: four corner pods (heavy plate, decoy, small battery, merge block) held only by merge pairs inside the 2 x 2 m section. '
+                      'In the fight it drops them one by one like flares: each pod flies on as its own grid with its decoy switched on, and enemy turrets and AI blocks switch to it. '
+                      '8 m long, about 16.5 t. Experimental (docs/design/tube_decoys.md).')
 _WN = {'Tube 2x2 W': 4, 'Tube 2x4 W': 8, 'Tube 3x3 W': 9, 'Tube 4x4 W': 16}
 for _m, _n in _WN.items():
     DOCS[_m] = (f'{_m[:-2]} with its second nose layer replaced by {_n} small warheads, right under the front heavy armour (same size and mass): it fires them on its first impact '
@@ -254,6 +321,8 @@ for _m, _n in _WN.items():
                 'if it survives its own blast (systems at the rear) it comes round for a second, kinetic ram.')
 _NOTE = ('Main thrust forward, recessed side thrusters up/down/left/right, no reverse: it brakes by flipping. Hunts by itself once off its rack (Start Mode HUNT). Finds targets with its AI Offensive block, rescanning every 5 s, confirmed by nose-camera rays (AI Behavior must be on; the in-game behaviour of an unarmed grid\'s AI blocks is unverified) or takes them from the fleet / hive / carrier channels or a player\'s `lock`. Ram damage is not verified in the game.')
 MODEL_NOTES = {m: _NOTE for m in MODELS}
+MODEL_NOTES['Tube 4x4 F'] = _NOTE + ' Flare pods: `[Tube] Flare Triggers` in Custom Data says when they go (FIRE = when hit, RANGE, TERM, EXTEND, ALL); `flare` drops one by hand. Unverified in the game: that a decoy needs no more than its pod battery, and how strongly real turrets prefer a decoy grid.'
+MODEL_NOTES['Tube 4x4 D'] = _NOTE + ' Decoys in the nose: unverified in the game how far real turrets follow a decoy inside armour.' 
 for _m in list(_WN) + ['Tube L 1x1 W', 'Tube L 2x2 W']: MODEL_NOTES[_m] = _NOTE + ' The warheads go off on the first ram; a tube that survives its blast re-rams as a kinetic ram. The warheads are armed only by the script; keep the tube off friendly ships while it is in its final run.'
 SCRIPTS = ['TubeRamAI.cs']
 
