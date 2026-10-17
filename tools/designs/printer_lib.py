@@ -26,7 +26,7 @@ WELDING INTO THE PROJECTOR GRID: RemainingBlocks counts projected blocks that ha
   grid, so welded drone blocks join the PRINTER's grid.  Separation by switching the merge pair off therefore only works if the game
   splits the grid at the merge pair; this is UNVERIFIED (test P1 in docs/printers.md).  HiveMotherAI.cs checks it at run time.
 """
-import sys, os, copy, itertools, collections, zlib
+import sys, os, re, copy, itertools, collections, zlib
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import *            # noqa: F401,F403
@@ -589,10 +589,28 @@ GHOST_PCT = '1.52590219E-05'          # the value the game writes for an unbuilt
 
 def _is_plain_cube(b): return b['xtype'].endswith('_CubeBlock') and tuple(b['size']) == (1, 1, 1)
 
+PROJ_KEYS = ('ProjectedGrids', 'ProjectionOffset', 'ProjectionRotation', 'KeepProjection', 'ProjectionsRemaining')
+
+def strip_nested_projection(grid):
+    """remove the projection payload of EVERY projector of `grid` in place (settings and raw `extra` XML; survivability item 15): a ghost drone must not carry
+    a projection inside a projection, so a printed drone's own self-projector comes out empty.  Returns the number of projectors emptied."""
+    n = 0
+    for b in grid.blocks:
+        if not b['xtype'].endswith('_Projector'): continue
+        st = b.get('settings') or {}
+        hit = any(k in st for k in PROJ_KEYS)
+        for k in PROJ_KEYS: st.pop(k, None)
+        ex = b.get('extra') or ''
+        if 'ProjectedGrids' in ex:
+            ex = re.sub(r'<ProjectedGrids\b[^>]*?/>|<ProjectedGrids\b.*?</ProjectedGrids>', '', ex, flags=re.S); b['extra'] = ex; hit = True
+        n += bool(hit)
+    return n
+
 def projected_grid_xml(drone, seed_text=''):
     """<ProjectedGrids> element text holding `drone` as an unbuilt ghost grid.  The FIRST block is a plain 1x1x1 armour cube (it anchors the
     projection, see module docstring).  Returns (xml, first_block_min)."""
     d = copy.deepcopy(drone)
+    strip_nested_projection(d)           # item 15: no projection inside the projection
     for b in d.blocks: b['id'] = 0
     d.rng.seed(zlib.crc32((d.name + '|' + seed_text).encode()))
     d._assign_ids()
@@ -1300,6 +1318,26 @@ def with_latch(drone, prefer=("Down", "Up", "Backward", "Left", "Right", "Forwar
 # =============================================================================================
 # PB configuration
 # =============================================================================================
+# drones that can dock back into a bay (survivability item 17): own merge block + a Staff PB (REPAIR CLIENT).  Not the belly-latch Gnat / Stinger / Peeper /
+# Pathfinder, not the scriptless Midge, not the Tubes.
+DOCK_DRONES = ('Hornet', 'Wasp', 'Lancer', 'Watcher', 'Harrier', 'Aegis', 'Longbow S', 'Mantis')
+
+def dock_axes(drone, rot=None):
+    """(Dock Forward, Dock Up): the drone's Remote Control Forward and Up, in HOST grid axes, when the drone sits clamped to the host (rot = the drone-to-host
+    sebp_multi.Rot of the pose, None = identity, as for a printer bay where the drone is only translated by T).  Integer axis vectors, or None without an RC."""
+    rcs = [b for b in drone.blocks if b['xtype'].endswith('_RemoteControl')]
+    if not rcs: return None
+    f, u = DIR[rcs[0]['fwd']], DIR[rcs[0]['up']]
+    if rot is not None: f, u = rot.apply(f), rot.apply(u)
+    return tuple(int(round(v)) for v in f), tuple(int(round(v)) for v in u)
+
+def dock_lines(axes, repair):
+    """Custom Data lines of one bay: Dock Forward / Dock Up (omitted when axes is None: the bay then advertises no docking) and Repair"""
+    L = []
+    if axes: L += ['Dock Forward=' + ','.join(str(v) for v in axes[0]), 'Dock Up=' + ','.join(str(v) for v in axes[1])]
+    L.append('Repair=' + ('true' if repair and axes else 'false'))
+    return L
+
 def bay_geometry(printer, rec):
     """Custom Data facts of one bay for HiveMotherAI.cs: the drone's cell box in PRINTER grid coordinates (translation T included), its unique
     block count, and the printer cells that stand inside that box or next to the drone's merge block (the script must not count them)"""
@@ -1311,7 +1349,9 @@ def bay_geometry(printer, rec):
     mc = add3(drone.cells([b for b in drone.blocks if b['kind'] == 'merge'][0])[0], T)
     ign |= {n for n in (add3(mc, d) for d in DIR.values()) if n in printer.occ}
     ex = tuple(rec['design'].exit)
-    return dict(box_min=mn, box_max=mx, blocks=len(drone.blocks), cells=len(mine), ignore=sorted(ign), exit_dir=VEC2NAME[ex])
+    dockable = rec.get('dock_ok', True) and bool(rec['welders'])
+    return dict(box_min=mn, box_max=mx, blocks=len(drone.blocks), cells=len(mine), ignore=sorted(ign), exit_dir=VEC2NAME[ex],
+                dock=dock_axes(drone) if dockable else None, repair=dockable)
 
 def hive_ini(bays, max_drones, rack=False, relay=False, launch_tag='STINGER', target_tags='GNAT,HORNET,LONGBOW', extra=None, comments=(), launch=True):
     """Custom Data for HiveMotherAI.cs.  bays = [dict(n, tag, prefix, cap, max_prints, exit, geom)]  (geom = bay_geometry())"""
@@ -1330,4 +1370,5 @@ def hive_ini(bays, max_drones, rack=False, relay=False, launch_tag='STINGER', ta
         if g:
             L += [f'Exit Direction={g["exit_dir"]}', f'Drone Box Min={v3(g["box_min"])}', f'Drone Box Max={v3(g["box_max"])}',
                   f'Drone Cell Count={g["blocks"]}', f'Drone Occupied Cells={g["cells"]}', 'Ignore Cells=' + ';'.join(v3(c) for c in g['ignore'])]
+            L += dock_lines(g.get('dock'), g.get('repair'))
     return '\n'.join(L) + '\n'
