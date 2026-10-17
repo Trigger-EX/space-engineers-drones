@@ -15,7 +15,7 @@ drone draws a line to the target's power systems and the location of that block,
 | latch | none in the blueprint. The Peeper's merge block sits on a stalk under the tail, which the outline rule forbids for new work, so the Pathfinder's printer sets a **flush** merge block into the hull (`printers.DRONES` latch=True -> `printer_lib.with_flush_latch`, as the Tubes and Longbow S). |
 | PBs | `Pathfinder PB` (PathfinderAI.cs, ~52 k characters raw: one PB is plenty) and the `[Thrust]` PB every flight script gets (`C.add_support_pbs`). |
 | printer | `Pathfinder Nest`: 2 bays, Max Drones 2, 2 ion thrusters per direction, HiveMotherAI as every other printer (tag `PATHFINDER`, `_SWARM` heartbeat counts the live ones, reprints a lost one). |
-| Ballista | unchanged: it keeps its Probe Foundry and the Peeper/Spotter pair. |
+| Ballista | no longer carries a probe (its own 2026-10-16 redesign removed the Probe Foundry from the ship). The Peeper and the stand-alone `Probe Foundry` printer still exist; the Pathfinder is the hive version. |
 
 ## 2. Behaviour (PathfinderAI v1.0)
 

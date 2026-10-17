@@ -2,9 +2,10 @@
 """Tests for tools/designs/ballista.py (railgun drone), peeper.py (vitals probe) and the Spotter / Helm / Peeper wiring.
 python3 -I tools/tests/test_ballista.py   (unittest; no third-party packages)
 
-Checks the owner's brief (27 large railguns, PCU under 10,000 with the foundry and one printed probe, no DLC), the agility figures, the
-docked foundry (two connector pairs, bay exit clear), and that the three scripts agree on every IGC tag and message shape."""
-import os, re, sys, unittest
+Checks the owner's brief (27 large railguns, PCU under 10,000, no DLC), the agility figures, that no thruster flame (whole nozzle face, 7 cells) touches a block,
+that the four vanilla point-defence turrets see forward and are set for small grids and missiles only, and that the scripts agree on every IGC tag and message shape.
+The probe foundry left the Ballista on 2026-10-16 (docs/design/ships/Ballista.md section 10); the Peeper and the Probe Foundry stay as stand-alone models, tested here too."""
+import math, os, re, sys, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.normpath(os.path.join(HERE, '..'))
 ROOT = os.path.dirname(TOOLS)
@@ -20,13 +21,13 @@ _CACHE = {}
 PCU_LIMIT = 10000
 
 
-def full_no_foundry():
+def full():
     if 'f' not in _CACHE:
-        _CACHE['f'] = B.ballista(False, with_foundry=False)
+        _CACHE['f'] = B.ballista(False)
     return _CACHE['f']
 
 
-def lite_docked():
+def lite():
     if 'l' not in _CACHE:
         _CACHE['l'] = B.ballista(True)
     return _CACHE['l']
@@ -43,10 +44,10 @@ def src(name):
 class ShipTests(unittest.TestCase):
     def test_module_contract(self):
         self.assertEqual(list(B.MODELS), ['Ballista'])
-        self.assertEqual(B.SCRIPTS, ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'TurretAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs'])
+        self.assertEqual(B.SCRIPTS, ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs'])
 
     def test_27_large_railguns_pre_loaded(self):
-        bp = full_no_foundry()
+        bp = full()
         rails = [b for b in bp.blocks if b['sub'] == 'LargeRailgun']
         self.assertEqual(len(rails), 27)
         for b in rails:
@@ -54,21 +55,47 @@ class ShipTests(unittest.TestCase):
             self.assertTrue('[B1]' in b['name'] or '[B2] PD' in b['name'], b['name'])
 
     def test_point_defence_turrets(self):
-        bp = full_no_foundry()
+        bp = full()
         names = [b['name'] for b in bp.blocks if b['sub'] == 'LargeRailgun']
         self.assertEqual(sum('[B1]' in n for n in names), 27 - len(B.PD_RAILS))
         tur = [b for b in bp.blocks if b['xtype'].endswith('LargeGatlingTurret')]
-        self.assertEqual(len(tur), len(B.PD_TURRETS) - len(B.CUSTOM_PD) - len(B.DROP_PD))      # one vanilla gatling turret (a designator) ...
-        tm = bp.ship.tmounts
-        self.assertEqual(len(tm), len(B.CUSTOM_PD))                       # ... and two PD4L rotor + hinge AI turrets on the opposite corners (top port, belly starboard)
-        self.assertEqual(sorted(m.out for m in tm), ['Down', 'Up'])
-        self.assertTrue(all(m.model == 'PD4L' and len(m.guns) == 4 for m in tm))
-        self.assertTrue(all(b['name'].startswith('[TU]') for m in tm for b in (m.stator, m.hinge, m.cam)), '[TU] names: the Helm (Block Prefix [SH]) must not adopt the turret guns')
-        self.assertEqual([b['name'] for b in bp.blocks if b['sub'] == 'LargeProgrammableBlock' and b['name'].startswith('[TU]')], ['[TU] Turret PB'])
+        self.assertEqual(len(tur), 4)                                    # vanilla only (owner, 2026-10-16): two on top, two under the bow
+        self.assertEqual(sorted(b['up'] for b in tur), ['Down', 'Down', 'Up', 'Up'])
+        self.assertFalse([b for b in bp.blocks if b['name'] and b['name'].startswith('[TU]')], 'no rotor turrets and no turret PB any more')
+        self.assertEqual(bp.subgrids, [])
         for b in tur:
             self.assertTrue(b['name'].startswith('[SH] [PD]'), b['name'])           # the Helm's Link prefix; "[PD]" is the repo's point-defence tag
             self.assertGreater(sum(it.amount for it in bp.items_of(b)), 0)           # loaded
         self.assertIn('Point Defence (OFF/B1..B4)', B._script('ShrikeAI.cs'))
+
+    def test_turrets_target_drones_and_rockets_only(self):
+        xml = full().build_xml()
+        blocks = re.findall(r'<CustomName>\[SH\] \[PD\] Gatling Turret[^<]*</CustomName>(.*?)</MyObjectBuilder_CubeBlock>', xml, re.S)
+        self.assertEqual(len(blocks), 4)
+        for body in blocks:
+            flags = re.search(r'<Flags>(.*?)</Flags>', body, re.S).group(1)
+            off = re.findall(r'<(\w+)>false</\1>', flags)
+            self.assertEqual(off, ['TargetMeteors', 'TargetLargeGrids', 'TargetCharacters', 'TargetStations'])     # the game's field order; written only when not default
+            self.assertNotIn('TargetSmallGrids', flags); self.assertNotIn('TargetMissiles', flags)                # on (default)
+            self.assertEqual(body.count('<Flags>'), 1)
+            self.assertIn('<TargetCharacters>false</TargetCharacters>', body.split('<Flags>')[0])
+
+    def test_turrets_see_forward(self):
+        """owner (2026-10-16): the turrets were blocked from seeing the front.  From each turret's gun head, rays ahead (azimuth 0, +-20, +-45 deg) from 10 deg below to
+        30 deg above its own horizon must leave the ship without crossing another block"""
+        bp = full()
+        occ = bp.occupancy()
+        for b in [b for b in bp.blocks if b['kind'] == 'turret']:
+            cs = bp.cells(b); s = 1 if b['up'] == 'Up' else -1
+            ys = [c[1] for c in cs]
+            o = (sum(c[0] for c in cs) / len(cs) + .5, max(ys) + .8 if s > 0 else min(ys) + .2, sum(c[2] for c in cs) / len(cs) + .5)
+            for el in (-10, 0, 10, 30):
+                for az in (0, 20, -20, 45, -45):
+                    e, a = math.radians(el), math.radians(az)
+                    d = (math.sin(a) * math.cos(e), s * math.sin(e), -math.cos(a) * math.cos(e))
+                    for i in range(1, 400):
+                        c = tuple(math.floor(o[k] + d[k] * i * 0.1) for k in range(3))
+                        self.assertFalse(c in occ and occ[c] is not b, f'{b["name"]}: elevation {el}, azimuth {az} hits {c in occ and occ[c]["name"]}')
 
     def test_the_wing_spreads_out_and_clears_its_wingmates(self):
         for k in ('Kamikaze Rail Hold Range (m)', 'Wingmate Separation Range (m)', 'Wingmate Separation Speed (m/s)', 'Wingmate Fire Clearance (m)'):
@@ -76,43 +103,56 @@ class ShipTests(unittest.TestCase):
             self.assertIn(k, B._script('ShrikeAI.cs'))
 
     def test_no_dlc_no_prototech(self):
-        pods.assert_clean(full_no_foundry())
-        pods.assert_clean(lite_docked())
+        pods.assert_clean(full())
+        pods.assert_clean(lite())
 
-    def test_pcu_under_the_limit_with_foundry_and_one_probe(self):
-        n = B.numbers(lite_docked())
-        ship = B.numbers(full_no_foundry())['pcu_ship']          # host blocks + the two AI turrets' top and head grids
-        foundry_full = B.numbers(B.ballista(False))['pcu_foundry']
-        probe = pcu(P.peeper(False)) + len(P.peeper(False).blocks)      # a live probe + its projection (1 PCU per projected block)
-        self.assertLess(ship + foundry_full + probe, PCU_LIMIT)
-        self.assertLess(ship, 6000)        # 4,349 + 2 PD gatling turrets + 2 rotor/hinge AI turrets (PD4L, 568 each) + the turret PB + the thrust PB + the thrust PB + 2 reactors, 2 tanks, 6 thrusters, 1 gyro, minus 8 batteries and the 4 small generators (the sum with the foundry and a probe is within 10 PCU of the limit)
+    def test_pcu_under_the_limit(self):
+        self.assertLess(B.numbers(full())['pcu'], 6000)        # 5,108: no foundry, no probe, no rotor turrets (was about 9,860 of the 10,000 brief with a live probe)
 
     def test_agility(self):
-        acc = B.numbers(lite_docked())['accel_loaded_m_s2']
+        acc = B.numbers(lite())['accel_loaded_m_s2']
         for d in ('Up', 'Down', 'Left', 'Right'):
             self.assertGreaterEqual(acc[d], 15.0, d)
         self.assertGreaterEqual(acc['Forward'], 31.2)             # the figure before the extra reactors (mass +21 %) and the extra thrusters
         self.assertGreaterEqual(acc['Backward'], 31.2)
         for d in ('Up', 'Down', 'Left', 'Right'):
             self.assertGreaterEqual(acc[d], 15.6, d)
-        n = B.numbers(lite_docked())
+        n = B.numbers(lite())
         self.assertGreater(min(n['turn_rad_s2_pitch_yaw_roll']), 3.0)
 
     def test_power_recharges_all_27_rails_without_a_bottleneck(self):
-        pw = B.numbers(lite_docked())['power']
+        pw = B.numbers(lite())['power']
         need = 27 * 38                                            # RechargeDraw of a LargeRailgun, MW (defs_stats / sim settings)
         self.assertGreaterEqual(pw['generation_MW'] + pw['battery_MW'], need + 10)        # peak: reactors + batteries cover every gun at its full draw, plus 10 MW for the other loads (gyros, PBs, turrets: under 5 MW)
         self.assertGreaterEqual(pw['generation_MW'], need * 0.85)                         # sustained: the reactors alone carry the Helm's ~66 s salvo cadence (~922 MW average)
         self.assertLessEqual(pw['rearm_s_supply_bound'], pw['rearm_s_per_gun'])           # power is no longer what limits the re-arm: the capacitor's own 59 s is
 
     def test_no_block_in_an_exhaust_or_muzzle_lane(self):
-        bp = full_no_foundry()
-        occ = bp.occupancy()
-        bad = [(c, why, occ[c]['name']) for c, why in bp.reserve.items() if c in occ and not why.startswith('camera')]
-        self.assertEqual(bad, [])
+        for bp in (full(), lite()):
+            occ = bp.occupancy()
+            bad = [(c, why, occ[c]['name']) for c, why in bp.reserve.items() if c in occ and not why.startswith('camera')]
+            self.assertEqual(bad, [])
+
+    def test_exhaust_lanes_cover_the_whole_nozzle_7_deep(self):
+        bp = full()
+        for t in [b for b in bp.blocks if b['xtype'].endswith('_Thrust')]:
+            lane = [c for c, why in bp.reserve.items() if why == f'exhaust of {t["name"]}']
+            self.assertGreaterEqual(len(lane), 9 * B.H2_LANE - 9, t['name'])          # 3 x 3 face x 7 cells (a camera view may share a cell or two)
+        self.assertGreaterEqual(B.H2_LANE, 7)
+
+    def test_the_lane_check_catches_the_old_belly_burn(self):
+        # negative control: the 2026-10-14 belly lateral (x -4..-2, y -3..-1, z 4..6, exhaust Left) beside the port lower pod's vertical thruster (x -7..-5, z 5..7)
+        import sebp
+        bp = sebp.Blueprint('burn', 'Large', seed=1)
+        old = bp.add('MyObjectBuilder_Thrust', 'LargeBlockLargeHydrogenThrust', (-4, -3, 4), 'Left', 'Up', 'old lateral', kind='thr')
+        bp.add('MyObjectBuilder_Thrust', 'LargeBlockLargeHydrogenThrust', (-7, -3, 5), 'Down', 'Forward', 'pod vertical', kind='thr')
+        bp.keep_clear(old, 3, 'exhaust')
+        self.assertFalse([c for c in bp.reserve if c in bp.occupancy()], 'the old 1-lane check saw nothing')
+        bp.reserve.clear(); bp.keep_clear(old, B.H2_LANE, 'exhaust', face=True)
+        self.assertTrue([c for c in bp.reserve if c in bp.occupancy()], 'the full-face check sees the burn')
 
     def test_every_thruster_touches_a_tank(self):
-        bp = full_no_foundry()
+        bp = full()
         occ = bp.occupancy()
         tanks = {id(b) for b in bp.blocks if b['sub'] == 'LargeHydrogenTank'}
         for t in [b for b in bp.blocks if b['xtype'].endswith('_Thrust')]:
@@ -121,18 +161,20 @@ class ShipTests(unittest.TestCase):
             self.assertTrue(nb & tanks, t['name'])
 
     def test_names_the_scripts_rely_on(self):
-        bp = full_no_foundry()
+        bp = full()
         names = [b['name'] for b in bp.blocks if b['name']]
-        self.assertTrue(all(n.startswith('[SH]') or n.startswith('[Helm][SH]') or n.startswith('[Spotter][SH]') or n.startswith('[Staff][SH]') or n.startswith('[TU]') for n in names), 'every block carries the [SH] prefix')
+        self.assertTrue(all(n.startswith('[SH]') or n.startswith('[Helm][SH]') or n.startswith('[Spotter][SH]') or n.startswith('[Staff][SH]') for n in names), 'every block carries the [SH] prefix')
         self.assertEqual(sum(1 for n in names if n.startswith('[Helm]')), 1)
         self.assertEqual(sum(1 for n in names if n.startswith('[Spotter]')), 1)
-        self.assertEqual(sum(1 for n in names if 'Foundry Connector' in n), 2)
+        self.assertFalse([n for n in names if 'Connector' in n or 'Hive Mother' in n], 'no probe foundry and nothing for one to dock on')
+        spot = [b for b in bp.blocks if (b['name'] or '').startswith('[Spotter]')][0]
+        self.assertIn('Bay Control=0', spot['custom_data'])                # the Spotter keeps its Lookout and leaves the (absent) foundry alone
 
     def test_three_pbs_helm_spotter_and_staff(self):
         for lite in (False, True):
-            bp = B.ballista(lite, with_foundry=False)
+            bp = B.ballista(lite)
             pbs = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
-            self.assertEqual(len(pbs), 4)          # Helm, Spotter, Staff and the turret PB
+            self.assertEqual(len(pbs), 3)          # Helm, Spotter, Staff
             staff = [b for b in pbs if b['name'].lower().startswith('[staff]')]
             self.assertEqual(len(staff), 1)
             self.assertIn('Mothership=false', staff[0]['custom_data'])      # the Ballista carries no drones: no <Type>_HOME / FLEET_HOME
@@ -145,34 +187,12 @@ def sebp_dirs():
 
 
 class FoundryTests(unittest.TestCase):
-    def test_foundry_docked_on_two_connector_pairs(self):
-        bp = lite_docked()
-        self.assertEqual(len([g for g, _pose in bp.subgrids if 'Foundry' in (g.name or '')]), 1)       # (the AI turrets' tops are subgrids too)
-        fb = bp.foundry
-        self.assertEqual(len([b for b in fb.blocks if b['sub'] == 'ConnectorMedium']), 2)
+    """the Probe Foundry is a stand-alone printer now (printers.py); it still prints Peepers"""
+    def test_probe_foundry_still_builds(self):
+        import printers as PR
+        fb = PR.MODELS['Probe Foundry'](True)
         self.assertEqual(len(fb.bays), 1)
         self.assertEqual(fb.bays[0]['drone'].name, 'Peeper Lite')
-
-    def test_foundry_keeps_clear_and_the_probe_can_leave(self):
-        self.assertTrue(B.check_foundry(lite_docked()))
-
-    def test_foundry_does_not_start_by_itself(self):
-        fb = lite_docked().foundry
-        data = [b['custom_data'] for b in fb.blocks if b.get('custom_data') and '[Hive Mother]' in b['custom_data']][0]
-        self.assertIn('Auto Start=false', data)
-        self.assertIn('Max Drones (all tags)=1', data)
-        self.assertIn('Tag=PEEPER', data)
-
-    def test_the_ship_can_not_dock_a_foundry_whose_exit_is_blocked(self):
-        # negative control: ask for an exit direction the ship's own hull covers
-        bp = lite_docked()
-        fb = bp.foundry
-        saved = bp.subgrids[:]
-        try:
-            with self.assertRaises(AssertionError):
-                B.dock_foundry(B.ballista(True, with_foundry=False), fb, [b for b in B.ballista(True, with_foundry=False).blocks if b['kind'] == 'conn'], want='Forward')
-        finally:
-            bp.subgrids[:] = saved
 
 
 class ProbeTests(unittest.TestCase):
@@ -240,11 +260,9 @@ class ScriptWiringTests(unittest.TestCase):
             self.assertLessEqual(len(C.script_text(f)), lim, f)
 
     def test_scripts_are_embedded(self):
-        bp = full_no_foundry()
+        bp = full()
         progs = [b['extra'] for b in bp.blocks if '<Program>' in (b.get('extra') or '')]
-        self.assertEqual(len(progs), 4)        # Helm, Spotter, Staff, Turret PB
-        fb = lite_docked().foundry
-        self.assertTrue(any('<Program>' in (b.get('extra') or '') for b in fb.blocks))
+        self.assertEqual(len(progs), 3)        # Helm, Spotter, Staff
         pee = P.peeper(True)
         self.assertTrue(any('<Program>' in (b.get('extra') or '') for b in pee.blocks))
 
