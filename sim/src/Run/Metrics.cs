@@ -38,6 +38,16 @@ namespace SeSim.Run
         public string Script = "";
         public double BlockMassLostKg, InitialMassKg;
         public double WeaponRange;
+        // survival metrics (reporting only). Index = (int)SeSim.Combat.DamageKind: 0 bullet, 1 railgun, 2 explosion, 3 collision.
+        // HitsByClass counts unique impacts on this ship (a bullet, a slug, a rocket blast, a collision tick), DmgByClass the integrity absorbed.
+        public readonly long[] HitsByClass = new long[4];
+        public readonly double[] DmgByClass = new double[4];
+        /// <summary>Hit map of this ship: "construct:x:y:z:Type" -> {impacts, damage absorbed, destroyed(0/1)}; cells are blueprint grid cells. Null when empty.</summary>
+        public Dictionary<string, double[]> HitMap;
+        /// <summary>Lost = disabled (was combat capable, no longer) or destroyed. Time of the first of the two, -1 = still in the fight.</summary>
+        public double LostAtS { get { double a = DisabledAtS, b = DestroyedAtS; if (a < 0) return b; if (b < 0) return a; return Math.Min(a, b); } }
+        public bool Lost { get { return LostAtS >= 0; } }
+        public static readonly string[] ClassNames = { "bullet", "rail", "explosion", "collision" };
     }
 
     public sealed class RunResult
@@ -105,6 +115,7 @@ namespace SeSim.Run
         public ScriptHost Host;
         public Termination Term;
         ShipStats[] _st;
+        readonly HashSet<long>[] _classSeen = { new HashSet<long>(), new HashSet<long>(), new HashSet<long>(), new HashSet<long>() };   // unique impact keys per class and victim (key mixes the victim ship)
         readonly HashSet<long> _hitShots = new HashSet<long>();    // projectile ids already counted as a hit (membership only, never iterated)
         int _n, _teams;
         bool[] _teamCap, _teamEverArmed, _termFlags;
@@ -202,6 +213,9 @@ namespace SeSim.Run
                     }
                     else if (Valid(a)) { /* hit on debris / unowned: not counted */ }
                     break;
+                case EventKind.BlockDamage:
+                    if (Valid(b) && e.Block != null) OnBlockDamage(ref e);
+                    break;
                 case EventKind.FriendlyFire:
                     _ffPending.Add(e);
                     break;
@@ -226,6 +240,22 @@ namespace SeSim.Run
                     if (Valid(a)) { _st[a].ScriptExceptions++; if (_st[a].FirstException == null) _st[a].FirstException = e.Text; }
                     break;
             }
+        }
+
+        void OnBlockDamage(ref SimEvent e)
+        {
+            var st = _st[e.ShipB]; int k = e.Aux; if ((uint)k > 3u) k = 0;
+            st.DmgByClass[k] += e.Value;
+            // unique impact: projectile id when known, else the tick and attacker (rocket blast, warhead, collision all hit many blocks in one tick)
+            long key = e.Id != 0 ? e.Id : -(e.Tick * 64 + (e.ShipA & 63) + 1);
+            key = key * 4096 + e.ShipB * 4 + k;
+            if (_classSeen[k].Add(key)) st.HitsByClass[k]++;
+            var blk = e.Block; var p = blk.Position;
+            string cell = blk.ConstructId + ":" + p.X + ":" + p.Y + ":" + p.Z + ":" + (blk.Def == null ? "?" : (string.IsNullOrEmpty(blk.Def.Subtype) ? blk.Def.Key : blk.Def.Subtype));
+            if (st.HitMap == null) st.HitMap = new Dictionary<string, double[]>();
+            double[] v;
+            if (!st.HitMap.TryGetValue(cell, out v)) { v = new double[3]; st.HitMap[cell] = v; }
+            v[0]++; v[1] += e.Value; if (blk.Hp <= 0f) v[2] = 1;
         }
 
         public void FlushFriendlyFire() { ResolveFriendlyFire(); }

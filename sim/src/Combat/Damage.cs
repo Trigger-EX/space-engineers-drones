@@ -134,6 +134,11 @@ namespace SeSim.Combat
                 }
                 else EmitHit(w, attackerShip, friendly, body.ShipIndex, absorbed, at);
             }
+            if (absorbed > 0f)      // reporting only (Metrics hit map / damage classes); changes nothing in the fight
+            {
+                var be = new SimEvent { Kind = EventKind.BlockDamage, Tick = w.Tick, ShipA = attackerShip, ShipB = body.ShipIndex, Value = absorbed, Position = at, Id = w.CurrentShotId, Aux = (int)kind, Block = b };
+                w.Events.On(ref be);
+            }
             var wh0 = b.Warhead;
             if (wh0 != null && absorbed > 0f && w.Settings.WarheadWeaponDetonate && wh0.Armed && !wh0.Exploded && kind != DamageKind.Collision) wh0.DetonateQueued = true;   // weapon fire sets an armed warhead off
             if (b.Hp <= 0f)

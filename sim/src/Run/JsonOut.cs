@@ -93,7 +93,26 @@ namespace SeSim.Run
                 if (timing) { KN(sb, "script_cpu_ms", Math.Round(s.ScriptCpuMs, 1)); KN(sb, "script_max_tick_ms", Math.Round(s.ScriptMaxTickMs, 3)); }
                 if (s.IlJson != null) { Key(sb, "il"); sb.Append('[').Append(string.Join(",", s.IlJson)).Append("],"); }
                 KN(sb, "exceptions", s.ScriptExceptions); KS(sb, "first_exception", s.FirstException);
-                KB(sb, "stuck", s.StuckOrCircling); KS(sb, "stuck_kind", s.StuckKind, false);
+                KB(sb, "stuck", s.StuckOrCircling); KS(sb, "stuck_kind", s.StuckKind);
+                // survival fields (added after the original format; old consumers ignore them)
+                KB(sb, "lost", s.Lost); KN(sb, "lost_at_s", Math.Round(s.LostAtS, 3)); KN(sb, "hits_taken", s.HitsTaken);
+                Key(sb, "hits_by_class"); sb.Append('[');
+                for (int c = 0; c < 4; c++) { if (c > 0) sb.Append(','); Num(sb, s.HitsByClass[c]); }
+                sb.Append("],"); Key(sb, "dmg_by_class"); sb.Append('[');
+                for (int c = 0; c < 4; c++) { if (c > 0) sb.Append(','); Num(sb, Math.Round(s.DmgByClass[c], 1)); }
+                sb.Append(']');
+                if (s.HitMap != null && s.HitMap.Count > 0)
+                {
+                    var keys = new List<string>(s.HitMap.Keys); keys.Sort(string.CompareOrdinal);
+                    sb.Append(",\"hitmap\":[");
+                    for (int h = 0; h < keys.Count; h++)
+                    {
+                        var v = s.HitMap[keys[h]];
+                        if (h > 0) sb.Append(',');
+                        sb.Append('['); Str(sb, keys[h]); sb.Append(','); Num(sb, v[0]); sb.Append(','); Num(sb, Math.Round(v[1], 1)); sb.Append(','); Num(sb, v[2]); sb.Append(']');
+                    }
+                    sb.Append(']');
+                }
                 sb.Append('}');
             }
             sb.Append("]}");
@@ -143,12 +162,32 @@ namespace SeSim.Run
                     s.ScriptCpuMs = SeSim.Core.MiniJson.Num(so, "script_cpu_ms", 0); s.ScriptMaxTickMs = SeSim.Core.MiniJson.Num(so, "script_max_tick_ms", 0);
                     s.ScriptExceptions = (long)SeSim.Core.MiniJson.Num(so, "exceptions", 0); s.FirstException = SeSim.Core.MiniJson.Str(so, "first_exception", null);
                     s.StuckOrCircling = SeSim.Core.MiniJson.Bool(so, "stuck", false); s.StuckKind = SeSim.Core.MiniJson.Str(so, "stuck_kind", "");
+                    s.HitsTaken = (long)SeSim.Core.MiniJson.Num(so, "hits_taken", 0);
+                    var hc = SeSim.Core.MiniJson.Arr(so, "hits_by_class"); var dc = SeSim.Core.MiniJson.Arr(so, "dmg_by_class");
+                    for (int c = 0; c < 4; c++)
+                    {
+                        if (hc != null && c < hc.Count) s.HitsByClass[c] = (long)ToD(hc[c]);
+                        if (dc != null && c < dc.Count) s.DmgByClass[c] = ToD(dc[c]);
+                    }
+                    var hm = SeSim.Core.MiniJson.Arr(so, "hitmap");
+                    if (hm != null && hm.Count > 0)
+                    {
+                        s.HitMap = new Dictionary<string, double[]>();
+                        for (int h = 0; h < hm.Count; h++)
+                        {
+                            var row = hm[h] as System.Collections.IList;
+                            if (row == null || row.Count < 4) continue;
+                            s.HitMap[Convert.ToString(row[0], Inv)] = new[] { ToD(row[1]), ToD(row[2]), ToD(row[3]) };
+                        }
+                    }
                     r.Ships.Add(s);
                 }
             return r;
         }
 
         // ------------------------------------------------------------------------------------------------------
+        static double ToD(object o) { try { return Convert.ToDouble(o, Inv); } catch (Exception) { return 0; } }
+
         static string Csv(string s)
         {
             if (s == null) return "";
@@ -176,7 +215,8 @@ namespace SeSim.Run
             }
             groups.Sort(string.CompareOrdinal);
             var sb = new StringBuilder();
-            sb.Append("scenario,kind,runs,winsA,winsB,draws,timeouts,errors,avg_duration_s,p50_ttk_s,avg_hits_per_shot_A,avg_hits_per_shot_B,avg_dmg_taken_A,avg_dmg_taken_B,friendly_fire_runs,exceptions,avg_cpu_ms_per_run,mutual_kills,stuck_runs,avg_time_on_target_A,avg_time_on_target_B,ttk_p10_s,ttk_p90_s\n");
+            sb.Append("scenario,kind,runs,winsA,winsB,draws,timeouts,errors,avg_duration_s,p50_ttk_s,avg_hits_per_shot_A,avg_hits_per_shot_B,avg_dmg_taken_A,avg_dmg_taken_B,friendly_fire_runs,exceptions,avg_cpu_ms_per_run,mutual_kills,stuck_runs,avg_time_on_target_A,avg_time_on_target_B,ttk_p10_s,ttk_p90_s,"
+              + SurvHeader + "\n");
             foreach (string g in groups)
             {
                 var l = byName[g];
@@ -213,8 +253,102 @@ namespace SeSim.Run
                   .Append(shots[0] > 0 ? F(hits[0] / shots[0]) : "").Append(',').Append(shots[1] > 0 ? F(hits[1] / shots[1]) : "").Append(',')
                   .Append(F(dmg[0] / n)).Append(',').Append(F(dmg[1] / n)).Append(',').Append(ff).Append(',').Append(exc).Append(',').Append(F(cpu / n)).Append(',')
                   .Append(mk).Append(',').Append(stuck).Append(',').Append(F(tot[0] / n)).Append(',').Append(F(tot[1] / n)).Append(',')
-                  .Append(ttk.Count > 0 ? F(Pct(ttk, 0.1)) : "").Append(',').Append(ttk.Count > 0 ? F(Pct(ttk, 0.9)) : "").Append('\n');
+                  .Append(ttk.Count > 0 ? F(Pct(ttk, 0.1)) : "").Append(',').Append(ttk.Count > 0 ? F(Pct(ttk, 0.9)) : "").Append(',').Append(SurvCols(l)).Append('\n');
             }
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+        }
+
+        // ------------------------------------------------------------------------------------------------------
+        // Survival columns (appended after the original ones). Side A = team 0, side B = every other team. "lost" = a ship that was disabled
+        // (combat capable once, not any more) or destroyed. Per side X (A, B): ships and lost (both per run), surv_rate = 1 - lost/ships, lost_per_enemy_kill =
+        // lost of X / lost of the other side (blank when the other side lost none), dmg_dealt / dmg_taken per run (integrity points, enemy
+        // damage only for dealt), dmg_ratio = dealt/taken over all runs, first_loss_s = mean over runs where X lost a ship of the time
+        // of its first loss, lost_life_s = mean time at which lost ships were lost, hits_taken per ship, and hits per ship by class.
+        const string SurvHeader = "ships_A,ships_B,lost_A,lost_B,surv_rate_A,surv_rate_B,lost_per_kill_A,lost_per_kill_B,dmg_dealt_A,dmg_dealt_B,dmg_ratio_A,dmg_ratio_B,first_loss_A_s,first_loss_B_s,lost_life_A_s,lost_life_B_s,hits_taken_per_ship_A,hits_taken_per_ship_B,"
+            + "hits_bullet_A,hits_rail_A,hits_explosion_A,hits_collision_A,hits_bullet_B,hits_rail_B,hits_explosion_B,hits_collision_B,runs_all_A_lost,runs_all_B_lost";
+
+        static string Ratio(double a, double b) { return b > 0 ? F(a / b) : ""; }
+
+        static string SurvCols(List<RunResult> l)
+        {
+            var ships = new double[2]; var lost = new double[2]; var dealt = new double[2]; var taken = new double[2]; var hitsTaken = new double[2];
+            var cls = new double[2, 4]; var firstSum = new double[2]; var firstN = new double[2]; var lifeSum = new double[2]; var allLost = new int[2];
+            int ok = 0;
+            for (int i = 0; i < l.Count; i++)
+            {
+                var r = l[i]; if (r.Outcome == "error") continue;
+                ok++;
+                var first = new double[] { -1, -1 }; var sl = new int[2]; var sn = new int[2];
+                for (int k = 0; k < r.Ships.Count; k++)
+                {
+                    var s = r.Ships[k]; int t = s.Team == 0 ? 0 : 1;
+                    ships[t]++; sn[t]++; dealt[t] += s.DamageDealt; taken[t] += s.DamageTaken; hitsTaken[t] += s.HitsTaken;
+                    for (int c = 0; c < 4; c++) cls[t, c] += s.HitsByClass[c];
+                    if (s.Lost) { lost[t]++; sl[t]++; lifeSum[t] += s.LostAtS; if (first[t] < 0 || s.LostAtS < first[t]) first[t] = s.LostAtS; }
+                }
+                for (int t = 0; t < 2; t++)
+                {
+                    if (first[t] >= 0) { firstSum[t] += first[t]; firstN[t]++; }
+                    if (sn[t] > 0 && sl[t] == sn[t]) allLost[t]++;
+                }
+            }
+            var sb = new StringBuilder();
+            sb.Append(F(ships[0] / Math.Max(1, ok))).Append(',').Append(F(ships[1] / Math.Max(1, ok))).Append(',').Append(F(lost[0] / Math.Max(1, ok))).Append(',').Append(F(lost[1] / Math.Max(1, ok))).Append(',')
+              .Append(ships[0] > 0 ? F(1 - lost[0] / ships[0]) : "").Append(',').Append(ships[1] > 0 ? F(1 - lost[1] / ships[1]) : "").Append(',')
+              .Append(Ratio(lost[0], lost[1])).Append(',').Append(Ratio(lost[1], lost[0])).Append(',')
+              .Append(F(dealt[0] / Math.Max(1, ok))).Append(',').Append(F(dealt[1] / Math.Max(1, ok))).Append(',')
+              .Append(Ratio(dealt[0], taken[0])).Append(',').Append(Ratio(dealt[1], taken[1])).Append(',')
+              .Append(firstN[0] > 0 ? F(firstSum[0] / firstN[0]) : "").Append(',').Append(firstN[1] > 0 ? F(firstSum[1] / firstN[1]) : "").Append(',')
+              .Append(lost[0] > 0 ? F(lifeSum[0] / lost[0]) : "").Append(',').Append(lost[1] > 0 ? F(lifeSum[1] / lost[1]) : "").Append(',')
+              .Append(Ratio(hitsTaken[0], ships[0])).Append(',').Append(Ratio(hitsTaken[1], ships[1]));
+            for (int t = 0; t < 2; t++) for (int c = 0; c < 4; c++) sb.Append(',').Append(Ratio(cls[t, c], ships[t]));
+            sb.Append(',').Append(allLost[0]).Append(',').Append(allLost[1]);
+            return sb.ToString();
+        }
+
+        /// <summary>Hit map JSON: {"format":1,"runs":N,"cell":"construct:x:y:z:BlockSubtype", "designs":{"Model":{"ship_runs":n,"blocks":[{"cell":..,"hits":..,"damage":..,"destroyed":..},...]}}},
+        /// aggregated over every ship of that model in every run (any side), sorted by damage descending. hits = block damage events (a rocket
+        /// blast counts once per block), damage = integrity absorbed, destroyed = number of runs/ships in which the block died.
+        /// ship_runs = ships of that model seen, so hits/ship_runs is the per-drone figure. Blocks never hit are not listed.</summary>
+        public static void WriteHitMapJson(string path, IList<RunResult> results)
+        {
+            var designs = new SortedDictionary<string, Dictionary<string, double[]>>(StringComparer.Ordinal);
+            var counts = new Dictionary<string, int>(); int runs = 0;
+            for (int i = 0; i < results.Count; i++)
+            {
+                var r = results[i]; if (r.Outcome == "error") continue; runs++;
+                for (int k = 0; k < r.Ships.Count; k++)
+                {
+                    var s = r.Ships[k]; string m = s.Model ?? "?";
+                    int c; counts.TryGetValue(m, out c); counts[m] = c + 1;
+                    Dictionary<string, double[]> d;
+                    if (!designs.TryGetValue(m, out d)) { d = new Dictionary<string, double[]>(); designs[m] = d; }
+                    if (s.HitMap == null) continue;
+                    foreach (var kv in s.HitMap)
+                    {
+                        double[] v; if (!d.TryGetValue(kv.Key, out v)) { v = new double[3]; d[kv.Key] = v; }
+                        v[0] += kv.Value[0]; v[1] += kv.Value[1]; v[2] += kv.Value[2];
+                    }
+                }
+            }
+            var sb = new StringBuilder();
+            sb.Append("{\"format\":1,\"runs\":").Append(runs).Append(",\"cell\":\"construct:x:y:z:BlockSubtype\",\"designs\":{");
+            bool firstD = true;
+            foreach (var kv in designs)
+            {
+                if (!firstD) sb.Append(','); firstD = false;
+                Str(sb, kv.Key); sb.Append(":{\"ship_runs\":").Append(counts[kv.Key]).Append(",\"blocks\":[");
+                var rows = new List<KeyValuePair<string, double[]>>(kv.Value);
+                rows.Sort((a, b) => { int q = b.Value[1].CompareTo(a.Value[1]); return q != 0 ? q : string.CompareOrdinal(a.Key, b.Key); });
+                for (int h = 0; h < rows.Count; h++)
+                {
+                    if (h > 0) sb.Append(',');
+                    sb.Append("{\"cell\":"); Str(sb, rows[h].Key); sb.Append(",\"hits\":"); Num(sb, rows[h].Value[0]);
+                    sb.Append(",\"damage\":"); Num(sb, Math.Round(rows[h].Value[1], 1)); sb.Append(",\"destroyed\":"); Num(sb, rows[h].Value[2]); sb.Append('}');
+                }
+                sb.Append("]}");
+            }
+            sb.Append("}}\n");
             File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
         }
 

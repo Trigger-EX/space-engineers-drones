@@ -189,7 +189,7 @@ namespace SeSim.Run
                     if (inp == null) throw new ArgumentException("summarize needs --in runs.jsonl");
                     var rs = LoadRuns(inp);
                     string outp = o.Get("out", Path.Combine(Path.GetDirectoryName(Path.GetFullPath(inp)), "summary.csv"));
-                    JsonOut.WriteSummaryCsv(outp, rs);
+                    JsonOut.WriteSummaryCsv(outp, rs); JsonOut.WriteHitMapJson(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outp)), "hitmap.json"), rs);
                     Console.WriteLine(rs.Count + " runs -> " + outp);
                     return 0;
                 }
@@ -473,7 +473,7 @@ namespace SeSim.Run
             var sw = System.Diagnostics.Stopwatch.StartNew();
             ParallelRunner.Run(jobs, threads, baseSeed, settings, repo, outDir, skip, o.Has("quiet"));
             var all = LoadRuns(runsPath);
-            if (!o.Has("no-summary")) JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
+            if (!o.Has("no-summary")) { JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all); JsonOut.WriteHitMapJson(Path.Combine(outDir, "hitmap.json"), all); }
             int errors = 0, wins = 0, timeouts = 0, other = 0;
             foreach (var r in all) { if (r.Outcome == "error") errors++; else if (r.Outcome == "win") wins++; else if (r.Outcome == "timeout") timeouts++; else other++; }
             Console.WriteLine("done: " + all.Count + " runs in file (" + wins + " decisive, " + timeouts + " timeouts, " + other + " draws, " + errors + " errors), wall " + sw.Elapsed.TotalSeconds.ToString("F1", Inv) + " s");
@@ -496,7 +496,7 @@ namespace SeSim.Run
             Console.Error.WriteLine("Press Enter to stop: fights in progress finish and everything is saved. Press Enter twice to stop at once.");
             ParallelRunner.RunEndless(scenarios, seedStart, threads, baseSeed, settings, repo, outDir, skip);
             var all = LoadRuns(runsPath);
-            JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
+            JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all); JsonOut.WriteHitMapJson(Path.Combine(outDir, "hitmap.json"), all);
             Console.WriteLine("saved: " + all.Count + " fights in " + runsPath + " (summary.csv updated)");
             return 0;
         }
