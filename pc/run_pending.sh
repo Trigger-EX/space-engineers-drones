@@ -32,6 +32,9 @@ while IFS= read -r line; do
 done < "$PLAN"
 echo "${#LINES[@]} experiments in $PLAN:"; for l in "${LINES[@]}"; do echo "  [$(echo "${l%%|*}" | xargs)]"; done
 
+# a SimHost left over from an earlier run (stopped terminal, crash) would write the same results twice: stop here instead
+OLD=$(pgrep -f "SimHost.exe" 2>/dev/null | grep -vx "$$" | tr '\n' ' ')
+[ -n "$OLD" ] && { echo "A SimHost is still running (pid $OLD). Stop it first:  pkill -f SimHost.exe   then run this again."; exit 1; }
 STOP=0
 finish() {
   [ -n "${WATCH:-}" ] && kill "$WATCH" 2>/dev/null
@@ -43,7 +46,16 @@ finish() {
   exit 0
 }
 CHILD=""
-trap 'STOP=1; [ -n "$CHILD" ] && kill -TERM "$CHILD" 2>/dev/null' INT TERM
+# Stop the simulator for good: TERM, and KILL after 5 s (mono waits for its worker threads on TERM, so it can keep running for hours). Also on
+# SIGHUP (terminal closed) and on any exit of this script, so no SimHost is left behind.
+killsim() {
+  [ -n "$CHILD" ] || return 0
+  kill -TERM "$CHILD" 2>/dev/null
+  for _i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$CHILD" 2>/dev/null || return 0; sleep 0.5; done
+  kill -KILL "$CHILD" 2>/dev/null
+}
+trap 'STOP=1; killsim' INT TERM HUP
+trap 'killsim' EXIT
 # Enter = Ctrl+C (needs a terminal; with nohup / no tty only Ctrl+C or kill works)
 WATCH=""
 if [ -t 0 ]; then ( read -r _ < /dev/tty && kill -TERM $$ ) 2>/dev/null & WATCH=$!; fi
@@ -62,7 +74,7 @@ while [ "$N" -le "$MAXN" ]; do
     echo "$EXE $args" > "$out/command.txt"
     start=$(date +%s); tries=0
     while :; do
-      eval "mono $EXE $args" >> "$out/log.txt" 2>&1 < /dev/null &
+      eval "exec mono $EXE $args" >> "$out/log.txt" 2>&1 < /dev/null &      # exec: $! is the simulator itself, not a subshell
       CHILD=$!; wait $CHILD; rc=$?
       while kill -0 $CHILD 2>/dev/null; do wait $CHILD; rc=$?; done     # a stop signal interrupts wait, not the simulator: it is killed by the trap
       CHILD=
