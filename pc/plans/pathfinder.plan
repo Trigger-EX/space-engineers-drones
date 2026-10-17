@@ -1,0 +1,14 @@
+# Pathfinder A/B (docs/design/pathfinder.md section 6, retest with the receiver fix "Weakpoint Hold (s)" of aim block v1.2).
+# Question: does a Pathfinder (stand-alone finder, 1 or 2 of them) make a Longbow wing kill more of the Tech Hunter 90k's power blocks?
+# Run in rounds so any stop leaves every line with the same amount of data (each round only adds seeds, --resume):
+#   ./run_pending.sh plans/pathfinder.plan --start-n 20 --max-n 1280        (rounds 20, 40, 80, ...; --jobs N limits threads)
+# STOP: press Enter (or Ctrl+C). Finished fights are kept, SE_results.zip is written. Run it again to continue.
+# Report: python3 -I tools/th_report.py none=results/pf-none new=results/pf-new old=results/pf-old
+#
+# pf-none : the wing alone (relay on, no finder)                                   <- baseline
+# pf-new  : Pathfinder(s) + the same wings, receivers keep a hole they are drilling (Weakpoint Hold (s)=10, the default)
+# pf-old  : same fleets, "Weakpoint Hold (s)=0" = the first relay's rule (a seeker hole replaces a held hole at once)
+# All lines: the game's 800 m turret limit, 10-minute cap, Tech Hunter 90k flown like the pirate.
+pf-none | run --kind enemy --enemies enemies_th90k --enemy-fleets "2xLongbow L;4xLongbow L;8xLongbow L;4xLongbow S+4xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N} --resume --out {OUT}
+pf-new | run --kind enemy --enemies enemies_th90k --enemy-fleets "Pathfinder+2xLongbow L;Pathfinder+4xLongbow L;Pathfinder+8xLongbow L;Pathfinder+4xLongbow S+4xLongbow L;2xPathfinder+8xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N} --resume --out {OUT}
+pf-old | run --kind enemy --enemies enemies_th90k --enemy-fleets "Pathfinder+2xLongbow L;Pathfinder+4xLongbow L;Pathfinder+8xLongbow L;Pathfinder+4xLongbow S+4xLongbow L;2xPathfinder+8xLongbow L" --turret-ai-block-extends-range false --cap-seconds 600 --seeds {N} --resume --custom-data "[Longbow]\nWeakpoint Hold (s)=0" --out {OUT}

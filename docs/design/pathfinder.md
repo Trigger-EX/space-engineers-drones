@@ -105,6 +105,13 @@ rarely gets to drill. The wing-side circle and confirmed-only sends halved that 
 **not changed here** (the shared aim block in nine scripts, owner's call): keep a held hole that made progress in the last ~10 s instead of
 switching to a fresh seeker hole, or keep relayed holes past the finder's death. A faster-firing wing, or a finder that lives longer, also helps.
 
+### Receiver fix and retest (2026-10-17)
+
+BREACH + SEEKER v1.2: `WpAdopt` no longer swaps a hole the drone is drilling (3 m deep, progress within `Weakpoint Hold (s)`=10) for a fresh
+seeker hole; a relayed hole still takes over when it is already 3 m deeper. `Weakpoint Hold (s)=0` restores the v1.1 rule. Retest plan
+`pc/plans/pathfinder.plan` (none / new / old, 1-2 Pathfinders with 2, 4, 8 Longbow L and 4 S + 4 L, 600 s cap, run in rounds, Enter stops).
+Smoke: 4 seeds Pathfinder + 2 Longbow L, 0 script exceptions. Results pending.
+
 ## 7. Risks and in-game tests
 
 Same unknowns as the Peeper and the Seeker variants (`docs/design/hive_weakpoint.md` 10, `docs/design/ships/Ballista.md` 7):

@@ -1065,6 +1065,7 @@ void LoadConfig()
     WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);
     WpShare = Cfg(S, "Share Weakpoints", WpShare);
     WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);
+    WpHold = Cfg(S, "Weakpoint Hold (s)", WpHold);
     AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
     AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
     AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
@@ -2182,7 +2183,7 @@ void AimMissed(Track t)
     t.AimT = -99;
 }
 
-// >>> BREACH + SEEKER v1.1 (shared block: identical in every armed drone script, kept in sync by tools/aim_sync.py) >>>
+// >>> BREACH + SEEKER v1.2 (shared block: identical in every armed drone script, kept in sync by tools/aim_sync.py) >>>
 // BREACH (large ships): spreading hits over a big hull chips thousands of armour blocks and destroys none (sim vs a 13,666-block
 // warship). BREACH holds ONE hull point and keeps every round on it: the known hull point nearest the target's centre (on a long
 // ship that is mid-deck or mid-belly, where the armour over the core is thinnest). Probe rays at it that come back deeper show the
@@ -2200,8 +2201,9 @@ void AimMissed(Track t)
 // holes. This PB sends its own confirmed hole (and every seeker sample) to its Staff PB (.WPF), which relays it to the fleet channel
 // (<ch>_WP) and sends back the best hole of the whole wing for our target (.WPT, read by LkRead into _wp*). Points are in the TARGET frame,
 // so they stay true while the ships move. WpAdopt takes the relayed hole when it is within the cone of our own line of sight (or aims
-// through it at the vital part when its depth is known); our own probe rays confirm it or throw it out. Own turret beats the relay.
-bool WpOn = true, WpShare = true; double WpCone = 40;
+// through it at the vital part when its depth is known); our own probe rays confirm it or throw it out. Own turret beats the relay, and a hole that is being drilled
+// is kept (Weakpoint Hold) instead of being swapped for a fresh seeker hole.
+bool WpOn = true, WpShare = true; double WpCone = 40, WpHold = 10;
 long _wpId; Vector3D _wpS, _wpD, _wpI; int _wpF; double _wpT = -99, _wpSwT = -99, _wpSendT = -99;   // slot from the Staff PB: best fleet hole (I = depth, vital depth hint, age)
 bool _bOk, _wpAdopt; double _bHint = -1; int _wpKind; List<Vector3D> _wpRej = new List<Vector3D>();
 long _skSid, _wpEvId; Vector3D _skSs, _skSd, _wpEvS, _wpEvD; double _skSt = -99, _skSh = -1, _wpEvT = -99; int _skSk, _wpEvF; bool _skHp;
@@ -2284,7 +2286,10 @@ void WpAdopt(Track t)
     }
     if ((_bOn && _bSeek && !_wpAdopt) || BreachBad(_wpS) || WpRejected(_wpS) || _now - _wpSwT < 6) return;   // my own turret beats the relay
     if (_bOn && (_bS - _wpS).LengthSquared() < 16) return;                                              // already on it
-    bool better = !_bOn || ((_wpF & 8) != 0 && !_bSeek) || _wpI.X >= _bDepth + 3 || (_now - _bProgT > 6 && _wpI.X > _bDepth + 1);
+    // a hole that is being drilled (progress within "Weakpoint Hold (s)", 3 m deep) is not given up for a fresh seeker hole: the finder is often dead
+    // before the wing has drilled the new one (sim, Pathfinder A/B); only a relayed hole that is already 3 m deeper than mine takes over
+    bool prog = _bOn && _bDepth >= 3 && _now - _bProgT < WpHold;
+    bool better = !_bOn || _wpI.X >= _bDepth + 3 || (!prog && (((_wpF & 8) != 0 && !_bSeek) || (_now - _bProgT > 6 && _wpI.X > _bDepth + 1)));
     if (!better) return;
     Vector3D me = Vector3D.TransformNormal(Me.GetPosition() - t.P(_now), MatrixD.Transpose(t.O));   // me, in the target frame
     double ll = me.Length(); if (ll < 1) return;

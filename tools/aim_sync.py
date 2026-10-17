@@ -49,7 +49,8 @@ HOOKS = [
      '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
      '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
      '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
-     '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'),
+     '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'
+     '    WpHold = Cfg(S, "Weakpoint Hold (s)", WpHold);\n'),
     ('        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n',
      '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
      '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
@@ -61,6 +62,16 @@ PREVIOUS = {
     'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n': [
         'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'],
     '    AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n': [
+        # v1.1 (with the weakpoint keys, before Weakpoint Hold)
+        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
+        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
+        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
+        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
+        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
+        '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
+        '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
+        '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
+        '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n',
         # v1.0 (newest first: the shorter, older wirings below are prefixes of it)
         '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
         '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
