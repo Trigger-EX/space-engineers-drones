@@ -1,5 +1,5 @@
 // =====================================================================
-//  CRADLE BAY AI  v1.0  - the bay manager of merge-block cradles (Cradle Pod PB, the Corsair's pylon cradles). docs/design/control_arch.md s4.2, grids_bays.md s6.1.
+//  CRADLE BAY AI  v1.1  - the bay manager of merge-block cradles (Cradle Pod PB, the Corsair's pylon cradles). docs/design/control_arch.md s4.2, grids_bays.md s6.1.
 //  For Space Engineers (vanilla). Paste into a Programmable Block named "[Pod] ..." / "[Bay] ..." on the grid that carries the cradle merge blocks. Update10 + an IGC callback.
 //  A cut-down HiveMotherAI (FindDrone / Arm / Separate / StillAttached / FUSED check): no projector, welders, stock, FINISH or print cycle - the drones are pasted
 //  already built, clamped to a host merge block, and wait IDLE (their LAUNCH block, docs/launch-protocol.md) until the cradle lets go.
@@ -18,7 +18,7 @@
 //  WAVES: one drone is armed at a time and two merge-offs are at least "Wave Gap" (2 s) apart, bay order. A pod-to-pod gap (20 s) is the Staff's job (it sends 'release a-b delay').
 //
 //  COMMANDS  (PB argument = the same words, or IGC string on "<Tag>.S2P" broadcast / unicast, from the Staff: "release 1")
-//   release <n | a-b | all> [delay_s] [force]   recall   hold <n>   unhold <n>   status   reload
+//   release <n | a-b | all> [delay_s] [force]   recall   hold <n>   unhold <n>   repair <n>   status   reload
 //   n is the GLOBAL bay number: "First Bay" + local index - 1 (a second pod sets First Bay=5). 'recall' cancels requests that did not reach the merge-off and switches
 //   the host merge blocks of empty / cooling bays on at once.
 //  CUSTOM DATA
@@ -27,19 +27,28 @@
 //   [Bay n]  Merge (exact name of the host merge block; blank = the one named "...[Bay n]..."), Drone Box Min / Max (host cells x,y,z), Drone Prefix (name start of the drone's
 //            blocks, blank = any block not starting with "["), Drone Tag (<TAG>_JOIN, blank = first word of the drone PB's name), Away (x,y,z in the host grid's axes) or Away X / Y / Z,
 //            Timer (the hand-launch backup Timer R(n): stopped when the bay releases)
+//  REPAIR BAY (v1.1, docs/design/survivability.md item 17, s4.3). A bay with "Dock Forward" / "Dock Up" (the docked drone RC's axes in host grid axes, from pods.py)
+//   advertises on "<Drone Tag>_RBAY" every 2 s while EMPTY: MyTuple<long bayPbId, int bay | flags << 8, Vector3D clampPos, Vector3D axis, Vector3D dockFwd, Vector3D dockUp>
+//   (flags 1 free, 2 can repair = "Repair" key and welders named "[Bay n]", 4 stock ok = no "[Stock]" cargo or it holds items; clampPos = merge + axis x half a cell,
+//   axis = merge WorldMatrix.Up, UNVERIFIED in the game). "<Drone Tag>_RREQ" MyTuple<long bayPbId, int bay, long droneGrid> reserves a free bay for "Reserve Seconds"
+//   (90; the same drone asking again renews it), answered on "<Drone Tag>_RACK" MyTuple<long droneGrid, long bayPbId, int bay, int ok>.
+//   A drone whose merge locks while its bay is reserved (or after 'repair n' on a docked bay) is a PATIENT: with welders, state REPAIR (welders on, the drone's
+//   "Projector [Self]" on; done when the projector shows no block left to place, or has no projection, and every drone terminal block is functional and full
+//   integrity, at most "Repair Max" s), then it is released by itself (CHARGING -> READY -> ARMING -> RELEASED, the same gates; a dropped release is retried).
+//   Without welders: dock, charge, release. A drone clamped by hand without a reservation stays DOCKED as before (manual recovery).
 //  NOT MEASURED IN THE GAME: that the touching enabled merge blocks lock at paste (C1; the script switches the host merge off and on ONCE when it is not connected),
 //   which grid's lattice survives a merge (the Drone Box is host cells; if nothing is found in the box the drone is found by distance to the merge block),
 //   IGC across a connector (C4: the Staff retries with ConnectedConstructs, then AntennaRelay, then unicast), the grid split time and the real burn.
 // =====================================================================
 
-const string VER = "1.0";
+const string VER = "1.1";
 const int MaxBays = 8;
 
 MyIni _ini = new MyIni();
 string Tag = "SHIP", FleetCh = "FLEET", _note = "", _err = "", _tagKey = "";
 int First = 1, LaneCells = 24;
 bool LaneCheck = true;
-double ChargeFrac = 0.9, WaitMax = 60, WaveGap = 2, ArmMin = 0.5, ArmMax = 3, FusedGrace = 3, Cooldown = 30, MaxTurn = 0.1, MaxAccel = 1.0, JoinSecs = 8, MatchR = 8;
+double ResSecs = 90, RepMax = 600, ChargeFrac = 0.9, WaitMax = 60, WaveGap = 2, ArmMin = 0.5, ArmMax = 3, FusedGrace = 3, Cooldown = 30, MaxTurn = 0.1, MaxAccel = 1.0, JoinSecs = 8, MatchR = 8;
 double _now, _lastOff = -99, _acc, _kT = -1; long _tick; Vector3D _v0; bool _hasV;
 
 class Bay
@@ -50,6 +59,9 @@ class Bay
     public List<IMyThrust> DThr = new List<IMyThrust>();
     public bool HasBox, Req, Force, Held, Armed, Written, Relatched, Found; public Vector3I BMin, BMax; public Vector3D Away = new Vector3D(0, 0, -1);
     public double T, ReqAt, ReqT0, OffT, JoinUntil, JoinNext, LaneT; public string LaneWhy = "", Sent = ""; public double SentT; public long DroneId; public float Charge; public int Count;
+    // repair bay (v1.1)
+    public bool HasDock, RepKey, Patient; public Vector3D DockF, DockU; public long ResGrid; public double ResUntil; public int AdFl = -1;
+    public List<IMyShipWelder> Weld = new List<IMyShipWelder>(); public IMyProjector DProj;
 }
 List<Bay> _bays = new List<Bay>();
 List<IMyShipController> _ctl = new List<IMyShipController>();
@@ -57,6 +69,8 @@ List<IMyProgrammableBlock> _pbs = new List<IMyProgrammableBlock>();
 List<IMyShipMergeBlock> _mgs = new List<IMyShipMergeBlock>();
 List<IMyBatteryBlock> _bts = new List<IMyBatteryBlock>(); List<IMyThrust> _ths = new List<IMyThrust>();
 List<IMyTimerBlock> _tms = new List<IMyTimerBlock>();
+List<IMyShipWelder> _wds = new List<IMyShipWelder>(); List<IMyTerminalBlock> _stock = new List<IMyTerminalBlock>(), _tbs = new List<IMyTerminalBlock>(); List<IMyProjector> _prj = new List<IMyProjector>();
+Dictionary<string, IMyBroadcastListener> _req = new Dictionary<string, IMyBroadcastListener>();
 IMyBroadcastListener _s2p;
 StringBuilder _sb = new StringBuilder();
 
@@ -79,7 +93,7 @@ void LoadConfig()
     First = (int)C(S, "First Bay", (double)First); C(S, "Slots", 0.0);
     ChargeFrac = C(S, "Charge Fraction", ChargeFrac); WaveGap = C(S, "Wave Gap", WaveGap); ArmMax = C(S, "Arm Seconds", ArmMax); FusedGrace = C(S, "Fused Grace", FusedGrace);
     Cooldown = C(S, "Cooldown", Cooldown); WaitMax = C(S, "Wait Max", WaitMax); MaxTurn = C(S, "Max Turn", MaxTurn); MaxAccel = C(S, "Max Accel", MaxAccel);
-    JoinSecs = C(S, "Join Seconds", JoinSecs); LaneCheck = C(S, "Lane Check", LaneCheck); LaneCells = (int)C(S, "Lane Cells", (double)LaneCells); MatchR = C(S, "Match Radius", MatchR);
+    JoinSecs = C(S, "Join Seconds", JoinSecs); ResSecs = C(S, "Reserve Seconds", ResSecs); RepMax = C(S, "Repair Max", RepMax); LaneCheck = C(S, "Lane Check", LaneCheck); LaneCells = (int)C(S, "Lane Cells", (double)LaneCells); MatchR = C(S, "Match Radius", MatchR);
     string fc = C(S, "Fleet Channel", FleetCh).Trim().ToUpperInvariant(), fs = C(S, "Fleet Secret", "").Trim().ToUpperInvariant();
     FleetCh = fc == "" ? "" : (fs == "" ? fc : fc + "_" + fs);
     C("Hive Mother", "Note", "marker for the drones' LAUNCH block: a PB with this section on its grid means 'still fused to a bay', so a drone that failed to separate never burns the host's thrusters (launch-protocol s6)");
@@ -98,6 +112,10 @@ void LoadConfig()
         var av = new Vector3D(ax, ay, az); b.Away = av.LengthSquared() < 1e-6 ? new Vector3D(0, 0, -1) : Vector3D.Normalize(av);
         string bmin = C(sec, "Drone Box Min", "").Trim(), bmax = C(sec, "Drone Box Max", "").Trim();
         if (bmin + "|" + bmax != b.BoxRaw) { b.BoxRaw = bmin + "|" + bmax; b.HasBox = ParseBox(b, bmin, bmax); }
+        int fx, fy, fz, ux, uy, uz;      // read only (never written back)
+        bool dk = V3(_ini.Get(sec, "Dock Forward").ToString(""), out fx, out fy, out fz) & V3(_ini.Get(sec, "Dock Up").ToString(""), out ux, out uy, out uz);
+        b.DockF = new Vector3D(fx, fy, fz); b.DockU = new Vector3D(ux, uy, uz);
+        b.HasDock = dk && b.DockF.LengthSquared() > 0.5 && b.DockU.LengthSquared() > 0.5; b.RepKey = _ini.Get(sec, "Repair").ToBoolean(true);
         nb.Add(b);
     }
     _bays = nb;
@@ -122,6 +140,8 @@ void Blocks()
 {
     GridTerminalSystem.GetBlocksOfType(_mgs, b => b.CubeGrid == Me.CubeGrid);
     GridTerminalSystem.GetBlocksOfType(_tms, b => b.CubeGrid == Me.CubeGrid);
+    GridTerminalSystem.GetBlocksOfType(_wds, b => b.CubeGrid == Me.CubeGrid && b.CustomName.Contains("[Bay "));
+    GridTerminalSystem.GetBlocksOfType(_stock, b => b.IsSameConstructAs(Me) && b.CustomName.Contains("[Stock]"));
     GridTerminalSystem.GetBlocksOfType(_ctl, b => b.CubeGrid == Me.CubeGrid && b.CanControlShip);
     var own = _ctl.FindAll(c => c.CustomName.StartsWith("["));      // the host's own controllers ("[SH] ...", "[POD] ..."), never a clamped drone's
     if (own.Count > 0) _ctl = own;
@@ -131,6 +151,7 @@ void Blocks()
         foreach (var x in _mgs) if (b.MergeName != "" ? x.CustomName == b.MergeName : x.CustomName.Contains("[Bay " + b.Slots + "]")) { m = x; break; }
         if (m != b.Merge) { b.Merge = m; b.Relatched = false; }
         b.Timer = null; if (b.TimerName != "") foreach (var x in _tms) if (x.CustomName == b.TimerName) { b.Timer = x; break; }
+        b.Weld.Clear(); foreach (var x in _wds) if (x.CustomName.Contains("[Bay " + b.Slots + "]")) b.Weld.Add(x);
     }
 }
 
@@ -175,8 +196,9 @@ void Tick()
     foreach (var b in _bays)
     {
         try { Step(b); }
-        catch (Exception ex) { Go(b, "FAULT"); b.Msg = "EXCEPTION " + ex.GetType().Name + ": " + ex.Message; b.Req = false; }
+        catch (Exception ex) { Go(b, "FAULT"); b.Msg = "EXCEPTION " + ex.GetType().Name + ": " + ex.Message; b.Req = false; RepEnd(b); }
     }
+    try { RepairIgc(); } catch (Exception ex) { _err = "repair IGC: " + ex.Message; }
     Report(false);
     if (_tick % 3 == 0) Show();
 }
@@ -306,7 +328,12 @@ void Step(Bay b)
     {
         case "EMPTY":
             if (_tick % 6 == 1 || b.Req) FindDrone(b);
-            if (b.Found && b.Merge.IsConnected) { Go(b, "DOCKED"); b.Msg = ""; break; }
+            if (b.Found && b.Merge.IsConnected)
+            {
+                if (b.Patient || Res(b)) { Patient(b); break; }      // a drone that asked for this bay (or a patient back from FAULT)
+                Go(b, "DOCKED"); b.Msg = ""; break;
+            }
+            if (!b.Found && !b.Merge.IsConnected) b.Patient = false;
             if (!b.Merge.IsConnected && !b.Relatched && b.Merge.Enabled && _now > 2) { b.Relatched = true; b.Merge.Enabled = false; b.T = _now; b.Msg = "re-latching the merge block (C1)"; break; }
             if (b.Relatched && !b.Merge.Enabled && t > 0.5) { b.Merge.Enabled = true; b.T = _now; }
             if (b.Req) { b.Req = false; b.Msg = b.Found ? "merge block not connected: nothing to release" : "bay empty: nothing to release"; }
@@ -321,7 +348,9 @@ void Step(Bay b)
                 Drop(b, "EMPTY"); break;
             }
             b.Charge = Charge(b);
+            if (!b.Req && b.Patient && t > 10) Auto(b);      // a patient's release that was dropped (gates) is asked again
             if (!b.Req) { if (b.State != "DOCKED") Drop(b, "DOCKED"); break; }
+            if (b.Patient && b.Charge < ChargeFrac) b.ReqT0 = _now;      // charging does not count against Wait Max
             if (_now < b.ReqAt) { b.Msg = "release in " + (b.ReqAt - _now).ToString("0") + " s"; break; }
             if (_now - b.ReqT0 > WaitMax && !b.Force) { b.Msg = "release dropped after " + WaitMax + " s: " + (b.Msg.StartsWith("waiting") ? b.Msg.Substring(9) : b.Msg) + " ('release n force' skips the gates)"; Drop(b, "DOCKED"); break; }
             string why = Gate(b);
@@ -334,6 +363,18 @@ void Step(Bay b)
             Go(b, "READY"); b.Msg = "waiting for the wave";
             foreach (var o in _bays) if (o != b && o.State == "ARMING") return;      // one drone is armed at a time
             Go(b, "ARMING"); b.Armed = false; b.Written = false; b.JoinNext = 0; b.Msg = "";
+            break;
+        case "REPAIR":
+            if (_tick % 30 == 2) Thr(b, false);
+            if (_tick % 6 == 1) FindDrone(b);
+            if (!b.Found || !b.Merge.IsConnected) { RepEnd(b); Drop(b, "EMPTY"); break; }
+            if (_tick % 6 != 4) break;
+            Weld(b, true); Proj(b, true);
+            int rem = -1; try { if (b.DProj != null && b.DProj.IsProjecting) rem = b.DProj.RemainingBlocks; } catch (Exception) { rem = -1; }
+            string bad = Damaged(b);
+            if (t > 3 && rem <= 0 && bad == "") { RepEnd(b); Auto(b); b.Msg = "repaired"; break; }
+            b.Msg = "repair " + (int)t + " s: " + (rem > 0 ? rem + " blocks to place " : rem < 0 ? "(no self-projection: damaged blocks only) " : "") + bad;
+            if (t > RepMax) { RepEnd(b); Auto(b); b.Msg = "repair gave up after " + RepMax + " s: releasing it as it is"; }
             break;
         case "ARMING":
             if (!b.Armed) b.Armed = Arm(b);
@@ -414,8 +455,81 @@ void Separate(Bay b)
     Thr(b, true);
     if (b.Timer != null) { try { b.Timer.StopCountdown(); } catch (Exception) { } }
     b.Merge.Enabled = false; if (b.DMerge != null) b.DMerge.Enabled = false;
-    b.OffT = _now; _lastOff = _now; b.Req = false; b.Force = false; b.JoinNext = 0; b.Msg = "";
+    b.OffT = _now; _lastOff = _now; b.Req = false; b.Force = false; b.JoinNext = 0; b.Msg = ""; b.Patient = false;
     Go(b, "RELEASED");
+}
+
+// ---- repair bay (v1.1): advertise, reserve, repair a patient ----
+bool Res(Bay b) { return b.ResGrid != 0 && _now < b.ResUntil; }
+bool Free(Bay b, long g)
+{
+    try { return b.HasDock && b.State == "EMPTY" && !b.Held && !b.Found && b.Merge != null && b.Merge.Enabled && !b.Merge.IsConnected && (!Res(b) || b.ResGrid == g); }
+    catch (Exception) { return false; }
+}
+bool StockOk()
+{
+    if (_stock.Count == 0) return true;
+    foreach (var s in _stock) { try { var i = s.GetInventory(0); if (i == null || i.CurrentVolume.RawValue > 2000) return true; } catch (Exception) { return true; } }
+    return false;
+}
+
+void RepairIgc()
+{
+    foreach (var b in _bays) if (b.HasDock && !_req.ContainsKey(b.DTag)) _req[b.DTag] = IGC.RegisterBroadcastListener(b.DTag + "_RREQ");
+    foreach (var kv in _req)
+        while (kv.Value.HasPendingMessage)
+        {
+            var m = kv.Value.AcceptMessage();
+            if (!(m.Data is MyTuple<long, int, long>)) continue;
+            var q = (MyTuple<long, int, long>)m.Data;
+            if (q.Item1 != Me.EntityId) continue;
+            int ok = 0;
+            foreach (var b in _bays) if (b.N == q.Item2 && b.DTag == kv.Key && q.Item3 != 0 && Free(b, q.Item3)) { ok = 1; b.ResGrid = q.Item3; b.ResUntil = _now + ResSecs; }
+            IGC.SendBroadcastMessage(kv.Key + "_RACK", new MyTuple<long, long, int, int>(q.Item3, Me.EntityId, q.Item2, ok));
+        }
+    if (_tick % 12 != 5) return;
+    bool st = StockOk();
+    foreach (var b in _bays)
+    {
+        b.AdFl = -1;
+        if (!b.HasDock || b.State != "EMPTY" || b.Merge == null) continue;
+        try
+        {
+            b.AdFl = (Free(b, 0) ? 1 : 0) | (b.RepKey && b.Weld.Count > 0 ? 2 : 0) | (st ? 4 : 0);
+            MatrixD gm = b.Merge.CubeGrid.WorldMatrix; Vector3D ax = b.Merge.WorldMatrix.Up;
+            IGC.SendBroadcastMessage(b.DTag + "_RBAY", new MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>(Me.EntityId, b.N | b.AdFl << 8,
+                b.Merge.GetPosition() + ax * (b.Merge.CubeGrid.GridSize * 0.5), ax, Vector3D.Normalize(Vector3D.TransformNormal(b.DockF, gm)), Vector3D.Normalize(Vector3D.TransformNormal(b.DockU, gm))));
+        }
+        catch (Exception) { b.AdFl = -1; }
+    }
+}
+
+// a docked drone becomes a patient: REPAIR with welders, else straight to the release (charge first)
+void Patient(Bay b)
+{
+    b.Patient = true; b.ResGrid = 0; b.Msg = "";
+    b.DProj = null; GridTerminalSystem.GetBlocksOfType(_prj, x => Mine(b, x, b.HasBox) && x.CustomName.Contains("Projector [Self]"));
+    if (_prj.Count > 0) b.DProj = _prj[0];
+    if (b.RepKey && b.Weld.Count > 0) { Go(b, "REPAIR"); Thr(b, false); Weld(b, true); Proj(b, true); }
+    else Auto(b);
+}
+void Auto(Bay b) { Go(b, "DOCKED"); b.Req = true; b.Force = false; b.ReqAt = _now; b.ReqT0 = _now; }
+void Weld(Bay b, bool on) { foreach (var x in b.Weld) { try { if (x.Enabled != on) x.Enabled = on; } catch (Exception) { } } }
+void Proj(Bay b, bool on) { try { if (b.DProj != null && b.DProj.Enabled != on) b.DProj.Enabled = on; } catch (Exception) { b.DProj = null; } }
+void RepEnd(Bay b) { Weld(b, false); Proj(b, false); }
+
+// "" when every drone terminal block is functional and at full integrity (armour cannot be read: see HiveMotherAI v2.4), else the count and the first one
+string Damaged(Bay b)
+{
+    GridTerminalSystem.GetBlocksOfType(_tbs, x => Mine(b, x, b.HasBox));
+    int n = 0; string f = "";
+    foreach (var x in _tbs)
+    {
+        bool u;
+        try { var s = x.CubeGrid.GetCubeBlock(x.Position); u = !x.IsFunctional || (s != null && !s.IsFullIntegrity); } catch (Exception) { u = true; }
+        if (u) { n++; if (f == "") f = x.CustomName; }
+    }
+    return _tbs.Count == 0 ? "no drone blocks found" : n == 0 ? "" : n + " damaged (" + f + ")";
 }
 
 // ---- IGC out ----
@@ -466,11 +580,15 @@ void Command(string a, bool ig)
         case "recall":
             foreach (var b in _bays)
             {
-                if (b.State == "DOCKED" || b.State == "CHARGING" || b.State == "READY" || b.State == "ARMING") Drop(b, "DOCKED");
+                b.Patient = false; if (b.State == "REPAIR") RepEnd(b);
+                if (b.State == "DOCKED" || b.State == "CHARGING" || b.State == "READY" || b.State == "ARMING" || b.State == "REPAIR") Drop(b, "DOCKED");
                 else if (b.State == "COOLDOWN" || b.State == "EMPTY") { if (b.Merge != null) b.Merge.Enabled = true; Go(b, "EMPTY"); b.Found = false; }
                 b.Msg = "";
             }
             _hit = _bays.Count; _note = "recall: requests cancelled, host merge blocks on"; break;
+        case "repair":      // treat a docked drone as a patient: repair (with welders) or charge, then release it
+            if (w.Length > 1 && int.TryParse(w[1], out n)) foreach (var b in _bays) if (b.N == n && b.State == "DOCKED" && !b.Req) { _hit++; Patient(b); }
+            _note = a; break;
         case "reload": LoadConfig(); Blocks(); Listen(); _err = ""; break;
         case "status": _hit = _bays.Count; _note = "status"; break;
     }
@@ -493,6 +611,8 @@ void Show()
         b.Append("Bay ").Append(y.N).Append(' ').Append(y.State == "CHARGING" || y.State == "READY" || y.State == "ARMING" || y.State == "RELEASED" ? "RELEASING " : "").Append(y.State);
         if (y.Found) b.Append("  ").Append(y.DTag).Append(' ').Append((int)(y.Charge * 100)).Append('%');
         if (y.Held) b.Append(" (held)");
+        if (y.Patient) b.Append(" PATIENT");
+        if (y.HasDock && y.State == "EMPTY") b.Append(Res(y) ? "  dock reserved " + (int)(y.ResUntil - _now) + " s" : y.AdFl < 0 ? "" : (y.AdFl & 1) != 0 ? "  dock free" : "  dock busy");
         if (y.Count > 0) b.Append(" #").Append(y.Count);
         b.Append('\n');
         if (y.Msg != "") b.Append("   ").Append(y.Msg).Append('\n');

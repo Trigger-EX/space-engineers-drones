@@ -5,7 +5,7 @@ Design record: docs/design/ships/Pod.md (geometry, numbers, paste risks).  Conce
 
 PUBLIC API (stable; append-only)
 --------------------------------
-cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', script=None, uranium_kg=4.0, conn_spacing=None, first_bay=1) -> sebp.Blueprint
+cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', script=None, uranium_kg=4.0, conn_spacing=None, first_bay=1, repair=False) -> sebp.Blueprint
     (n_slots 2..8)  A SMALL-grid Blueprint named `name` (default 'Cradle Pod' / 'Cradle Pod Lite').  Pod frame: x = the row of slots (Right), y = Up, z = Backward,
     the drones' noses point to -z (Forward), which is the LAUNCH direction.  Cell size 0.5 m.  `bp.pod` is a PodInfo (below).
     Blocks: n merge blocks (host halves of the cradles), 2 ConnectorMedium (rear face, Forward = +z), the Pod PB (script CradleBayAI.cs when the
@@ -15,6 +15,8 @@ cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', scrip
 PodInfo  (bp.pod): .n, .tag, .pitch, .width, .depth, .height, .slots[k] -> SlotInfo(merge, merge_cell, drone_origin, box_min, box_max, away),
     .connectors (the two ConnectorMedium blocks), .conn_spacing (small cells between the two connector centres), .pb, .timers, .dims_m,
     .lane (box_min, box_max of the open lane in front of the nose, pod cells), .rear (z of the connectors' contact face edge)
+dock keys: every [Bay n] of the pod PB Custom Data gets Dock Forward / Dock Up (RC axes of a clamped Hornet-class drone in pod axes) and Repair=<repair> (true only
+    for a pod with welders per bay, the Repair Pod; the plain pod is dock-only: Repair=false).
 drone_pose(pod, k, drone_bp) -> sebp_multi.Pose            pose of a drone grid (merged to slot k) in the pod frame
 attach_drone(pod, k, drone_bp, check=True) -> Pose         pod.attach(drone) + clearance check: no pod block within one cell of a drone cell except the merge pair
 check_clearance(pod)                                       raises AssertionError listing the pod blocks that touch a docked drone
@@ -39,6 +41,7 @@ import sebp_multi as MU
 import sebp_toolbar as TB
 from sebp_inv import Item
 import hulls as H
+import printer_lib as PL
 
 ROOT = C.ROOT
 PITCH = 9                      # cells between slot centres (drone 7 wide + 2 clearance)
@@ -53,6 +56,15 @@ CHARCOAL = (0.60, -0.70, -0.42)
 STEEL = (0.60, -0.74, -0.30)
 ORANGE_ = (0.08, 0.15, 0.0)
 DARKM = (0.0, -0.81, -0.50)
+
+_DOCK = {}
+def _dock_axes_upright():
+    """Dock Forward / Dock Up of a drone clamped in a cradle slot: the Hornet-class drones' RC axes turned by drone_pose's rotation, which for the upright,
+    nose -z cradle is the identity (check_dock_pose asserts it against a real clamp).  Cached: one reference Hornet."""
+    if 'a' not in _DOCK:
+        from core import hornet
+        _DOCK['a'] = PL.dock_axes(hornet(False), MU.Rot.identity())
+    return _DOCK['a']
 
 def _script(name):
     return script_text(name) if os.path.exists(os.path.join(ROOT, 'scripts', name)) else ''
@@ -128,7 +140,7 @@ def _conn_spacing(n):
         if (s // 5) % 2 == (1 if n % 2 == 0 else 0) and s <= width - 11: best = max(best, s)
     return best
 
-def cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', script=None, uranium_kg=4.0, conn_spacing=None, first_bay=1):
+def cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', script=None, uranium_kg=4.0, conn_spacing=None, first_bay=1, repair=False):
     n = int(n_slots)
     assert 2 <= n <= 8, 'a pod holds 2..8 slots'
     name = name or ('Cradle Pod Lite' if lite else 'Cradle Pod')
@@ -218,9 +230,10 @@ def cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', s
                             prefer=(('Up', 'Backward'),), name=f'{P} Battery {i + 1}', extra=bat_extra(1), kind='bat', state={'stored_power': 'full'})
         for c in bp.cells(b): occ[c] = b
         bats.append(b)
+    dk = _dock_axes_upright()
     cd = ('[Pod]\n' f'Tag={ship_tag}\nSlots={n}\nFirst Bay={first_bay}\n'
           + ''.join(f'\n[Bay {k + 1}]\nMerge={P} Merge {k + 1}\nDrone Box Min={s.box_min[0]},{s.box_min[1]},{s.box_min[2]}\nDrone Box Max={s.box_max[0]},{s.box_max[1]},{s.box_max[2]}\n'
-                    f'Away=0,0,-1\nTimer={P} Timer R{k + 1}\n' for k, s in enumerate(slots)))
+                    f'Away=0,0,-1\nTimer={P} Timer R{k + 1}\n' + ''.join(l + '\n' for l in PL.dock_lines(dk, repair)) for k, s in enumerate(slots)))
     pb = dev('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', 'Pod PB', kind='ctrl', custom_data=cd,
              extra=(lambda t: pb_extra(t) if t else '')(script if script is not None else _script('CradleBayAI.cs')))
     pb['name'] = '[Pod] Pod PB'

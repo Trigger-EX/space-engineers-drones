@@ -31,7 +31,7 @@ merge pair is switched off (they are built INTO the projector's grid), projected
 projection offset sign (checked against the Starburst ship, it fits exactly).  The welder sphere centre is NOT known (the dummy position in
 Welder.mwm is unpublished), hence the hypothesis family.
 
-CUSTOM DATA for HiveMotherAI.cs, per [Bay N]: Exit Direction, Drone Box Min / Drone Box Max (printer grid cells, translation T included), Drone Cell
+CUSTOM DATA for HiveMotherAI.cs, per [Bay N]: Dock Forward / Dock Up / Repair (docking-capable drones, printer_lib.DOCK_DRONES), Exit Direction, Drone Box Min / Drone Box Max (printer grid cells, translation T included), Drone Cell
 Count (unique drone blocks), Drone Occupied Cells, Ignore Cells; and a [Launch] section (Auto=true, Burst Seconds=4).
 """
 import sys, os, time, math
@@ -158,7 +158,7 @@ def build(spec, lite):
         cap = (spec.get('caps') or {}).get(tag, spec['max'] if len(spec['groups']) == 1 else max(4, 3 * count))
         for n in nums:
             scriptless = not any('ProgrammableBlock' in b['xtype'] for b in drone.blocks)      # never reports in: cap the prints instead
-            cfg.append(dict(n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=max(1, cap // count) if scriptless else 0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
+            cfg.append(dict(key=key, n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=max(1, cap // count) if scriptless else 0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
 
     if spec.get('turret') and not lite: pr.add_turret()
     if spec.get('guns'): pr.add_guns(spec['guns'])
@@ -168,7 +168,10 @@ def build(spec, lite):
     if spec.get('per_dir'): pr.add_thrusters(int(math.ceil(spec['per_dir'] * m1 / m0 - 1e-9)))
     else: pr.tcount = {}
     pr.add_antenna(5000)
-    for cf in cfg: cf['geom'] = PL.bay_geometry(pr, next(r for r in pr.records if r['n'] == cf['n']))
+    for cf in cfg:
+        rec = next(r for r in pr.records if r['n'] == cf['n'])
+        rec['dock_ok'] = cf['key'] in PL.DOCK_DRONES          # survivability item 17: Dock Forward / Dock Up / Repair keys only for drones that can dock back
+        cf['geom'] = PL.bay_geometry(pr, rec)
     comps = {}
     for bay in pr.records:
         comps.setdefault(bay['drone'].name, cost_components_of(bay['drone']))

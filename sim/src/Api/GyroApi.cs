@@ -25,15 +25,15 @@ namespace SeSim.Api
             return v < -m ? -m : (v > m ? m : v);
         }
 
-        public bool GyroOverride { get { return Unit.Override; } set { Unit.Override = value; Inst.Body.GyroDirty = true; } }
+        public bool GyroOverride { get { return Unit.Override; } set { Unit.Override = value; Inst.Body.GyroDirty = true; SeSim.Run.WriterAudit.Note(World, Inst.Body, 0); } }
         public float GyroPower
         {
             get { return Unit.Power; }
             set { float v = float.IsNaN(value) ? 0f : value; Unit.Power = v < 0f ? 0f : (v > 1f ? 1f : v); Inst.Body.GyroDirty = true; }
         }
-        public float Pitch { get { return Unit.Pitch; } set { Unit.Pitch = Clamp(value); Inst.Body.GyroDirty = true; } }
-        public float Yaw { get { return Unit.Yaw; } set { Unit.Yaw = Clamp(value); Inst.Body.GyroDirty = true; } }
-        public float Roll { get { return Unit.Roll; } set { Unit.Roll = Clamp(value); Inst.Body.GyroDirty = true; } }
+        public float Pitch { get { return Unit.Pitch; } set { Unit.Pitch = Clamp(value); Inst.Body.GyroDirty = true; SeSim.Run.WriterAudit.Note(World, Inst.Body, 0); } }
+        public float Yaw { get { return Unit.Yaw; } set { Unit.Yaw = Clamp(value); Inst.Body.GyroDirty = true; SeSim.Run.WriterAudit.Note(World, Inst.Body, 0); } }
+        public float Roll { get { return Unit.Roll; } set { Unit.Roll = Clamp(value); Inst.Body.GyroDirty = true; SeSim.Run.WriterAudit.Note(World, Inst.Body, 0); } }
 
         protected override void Register(TerminalRegistry r)
         {

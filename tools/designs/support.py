@@ -98,7 +98,9 @@ def watcher_frame(name, sensor, tag="HORNET", ai=False):
     return finalize(bp)
 
 def watcher(lite=False):
-    return C.add_support_pbs(watcher_frame("Watcher Lite" if lite else "Watcher", sensor=not lite, ai=not lite))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Watcher printed by a Pad carries its Staff PB
+    import core
+    name = "Watcher Lite" if lite else "Watcher"
+    return core.hornet_survival(watcher_frame(name, sensor=not lite, ai=not lite), name)      # Gyroscope 2, [Flight] + [Staff] (+ [Thrust]) here too (a Watcher printed by a Pad carries its Staff PB), survival kit
 
 # ---------------------------------------------------------------------------------------------
 def midge_frame(name):
@@ -137,7 +139,8 @@ def midge(lite=False):
     if lite:
         # FALLBACK: the Gnat Lite frame (scripted), NOT scriptless. See scripts/MidgeNotes.md.
         return gnat_frame(script_text("GnatSwarmAI.cs"), merge=LITE_KEEPS_MERGE, sensor=False, name="Midge Lite")
-    return midge_frame("Midge")
+    # survivability item 11: decoys only (scriptless: no flare control, no repair client), inside the bounding box, far from the core
+    return C.add_survival_kit(midge_frame("Midge"), decoys=2, flares=0, projector=False, panels=False, model="Midge")
 
 MODELS = {"Watcher": watcher, "Midge": midge}
 

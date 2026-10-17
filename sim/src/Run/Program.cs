@@ -189,7 +189,7 @@ namespace SeSim.Run
                     if (inp == null) throw new ArgumentException("summarize needs --in runs.jsonl");
                     var rs = LoadRuns(inp);
                     string outp = o.Get("out", Path.Combine(Path.GetDirectoryName(Path.GetFullPath(inp)), "summary.csv"));
-                    JsonOut.WriteSummaryCsv(outp, rs);
+                    JsonOut.WriteSummaryCsv(outp, rs); JsonOut.WriteHitMapJson(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outp)), "hitmap.json"), rs);
                     Console.WriteLine(rs.Count + " runs -> " + outp);
                     return 0;
                 }
@@ -413,6 +413,7 @@ namespace SeSim.Run
             sb.Append(r.Scenario).Append(" #").Append(r.SeedIndex).Append(": ").Append(r.Outcome);
             if (r.Outcome == "win") sb.Append(" team ").Append(r.WinnerTeam);
             sb.Append(" at ").Append(r.DurationS.ToString("F1", Inv)).Append(" s, wall ").Append(r.WallMs.ToString("F0", Inv)).Append(" ms");
+            sb.Append(", writer audit gyro ").Append(r.WriterAuditGyro).Append(" thrust ").Append(r.WriterAuditThrust);
             if (r.Error != null) sb.Append("\n  ERROR: ").Append(r.Error);
             foreach (var s in r.Ships)
                 sb.Append("\n  ship ").Append(s.Ship).Append(' ').Append(s.Model).Append(" t").Append(s.Team).Append(" blocks ").Append(s.BlocksEnd).Append('/').Append(s.BlocksStart)
@@ -473,7 +474,7 @@ namespace SeSim.Run
             var sw = System.Diagnostics.Stopwatch.StartNew();
             ParallelRunner.Run(jobs, threads, baseSeed, settings, repo, outDir, skip, o.Has("quiet"));
             var all = LoadRuns(runsPath);
-            if (!o.Has("no-summary")) JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
+            if (!o.Has("no-summary")) { JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all); JsonOut.WriteHitMapJson(Path.Combine(outDir, "hitmap.json"), all); }
             int errors = 0, wins = 0, timeouts = 0, other = 0;
             foreach (var r in all) { if (r.Outcome == "error") errors++; else if (r.Outcome == "win") wins++; else if (r.Outcome == "timeout") timeouts++; else other++; }
             Console.WriteLine("done: " + all.Count + " runs in file (" + wins + " decisive, " + timeouts + " timeouts, " + other + " draws, " + errors + " errors), wall " + sw.Elapsed.TotalSeconds.ToString("F1", Inv) + " s");
@@ -496,7 +497,7 @@ namespace SeSim.Run
             Console.Error.WriteLine("Press Enter to stop: fights in progress finish and everything is saved. Press Enter twice to stop at once.");
             ParallelRunner.RunEndless(scenarios, seedStart, threads, baseSeed, settings, repo, outDir, skip);
             var all = LoadRuns(runsPath);
-            JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
+            JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all); JsonOut.WriteHitMapJson(Path.Combine(outDir, "hitmap.json"), all);
             Console.WriteLine("saved: " + all.Count + " fights in " + runsPath + " (summary.csv updated)");
             return 0;
         }

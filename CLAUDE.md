@@ -5,6 +5,9 @@
 - Push with `git push origin main`.
 - This instruction is durable: it applies to every future chat in this repo.
 
+## Session names and checkpoints (owner, durable)
+- `docs/handoff.md` is the project brief every session reads, not a record of one chat. It has **no `## Chat` section**: never add one when you write a checkpoint, and never rename a session from `docs/handoff.md` (no "Base name #N" titles). This overrides the cp skill's "Naming a resumed chat" and its Chat section. Why: a stale `Chat` section (Base name "ultracode drone audit ships", Run 3) made every new session call itself "ultracode drone audit ships #4".
+
 ## Project
 Space Engineers combat drones, printer ships, in-game C# scripts and a simulation engine. Read `HANDOFF.md` for the full project brief, status and lessons learned.
 - Never use DLC blocks in blueprints (the block index `defs.json` records each block's DLC).

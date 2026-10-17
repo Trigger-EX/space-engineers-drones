@@ -601,3 +601,297 @@ def turn_rates(bp):
     tq = sum(_stat(b).get('stats', {}).get('force_n') or 0 for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_Gyro')
     return dict(com_m=[round(c, 2) for c in com], inertia_kgm2=[round(i) for i in I], gyro_torque_Nm=tq,
                 pitch_yaw_roll_rad_s2=[round(tq / i, 2) for i in I])
+
+
+# ---- survival kit (docs/design/survivability.md items 11, 12, 13, 15): decoys, one flare launcher, a self-projector, skin panels ----
+# Every part goes into a free cell INSIDE the drone's outline (CLAUDE.md outline rule): `outline` = ((x0, y0, z0), (x1, y1, z1)) inclusive, or a set of cells;
+# default = the strict bounding box of the occupied cells (never +-1).  A part that finds no cell is skipped and recorded in bp.kit['skipped'] / bp.notes.
+KIT_SUBS = {'Small': dict(decoy=('MyObjectBuilder_Decoy', 'SmallDecoy'), flare=('MyObjectBuilder_SmallMissileLauncher', 'SmallFlareLauncher'),
+                          proj=('MyObjectBuilder_Projector', 'SmallProjector'), panel=('MyObjectBuilder_CubeBlock', 'SmallArmorPanelLight')),
+            'Large': dict(decoy=('MyObjectBuilder_Decoy', 'LargeDecoy'), flare=('MyObjectBuilder_SmallMissileLauncher', 'LargeFlareLauncher'),
+                          proj=('MyObjectBuilder_Projector', 'LargeProjector'), panel=('MyObjectBuilder_CubeBlock', 'LargeArmorPanelLight'))}
+KIT_FLARE_CLEAR = 3                  # cells kept free in front of the flare launcher's muzzle
+KIT_FLARE_CLIPS = 2                  # FlareClip magazines preloaded (4 flares each)
+KIT_COLOR = (0.08, -0.6, 0.05)       # olive: decoys / flare / projector stand out from the hull
+CRIT_X = ('RemoteControl', 'Cockpit', 'MyProgrammableBlock', 'Gyro', 'BatteryBlock', 'Reactor', 'HydrogenEngine')
+
+def kit_outline(bp):
+    """strict bounding box of the occupied cells: ((x0, y0, z0), (x1, y1, z1)), inclusive"""
+    cs = list(bp.occupancy())
+    return (tuple(min(c[i] for c in cs) for i in range(3)), tuple(max(c[i] for c in cs) for i in range(3)))
+
+def in_outline(c, outline):
+    if isinstance(outline, (set, frozenset)): return tuple(c) in outline
+    lo, hi = outline
+    return all(lo[i] <= c[i] <= hi[i] for i in range(3))
+
+def critical_blocks(bp):
+    """controller, programmable blocks, gyros, power: the blocks whose loss disables (or blinds) the drone"""
+    return [b for b in bp.blocks if b['xtype'].replace('MyObjectBuilder_', '') in CRIT_X]
+
+def _add3(a, b, k=1): return (a[0] + k * b[0], a[1] + k * b[1], a[2] + k * b[2])
+
+def open_faces(bp, occ=None, box=None, blocks=None):
+    """[(block, direction, ray cells)] for every critical block face with no occupied cell between it and the bounding box (the survivability audit's
+    cover 0; minimum over the block's cells: the ray is that of the first block cell that sees open space)"""
+    occ = occ if occ is not None else bp.occupancy()
+    box = box or kit_outline(bp)
+    out = []
+    for b in (blocks if blocks is not None else critical_blocks(bp)):
+        for d in AXIS_DIRS:
+            v = DIR[d]
+            for c in bp.cells(b):
+                ray = []; p = _add3(c, v); hit = False
+                while in_outline(p, box):
+                    if p in occ and occ[p] is not b: hit = True; break
+                    if p not in occ: ray.append(p)
+                    p = _add3(p, v)
+                if not hit:
+                    out.append((b, d, ray)); break
+    return out
+
+def _dock_ok(bp, cell):
+    """a new block at `cell` keeps every merge block's docking face clear (check_docking's rule)"""
+    for m in bp.blocks:
+        if m['kind'] != 'merge': continue
+        d = merge_clamp_dir(bp, m); v = DIR[d]
+        ax = [abs(c) for c in v].index(1); sg = v[ax]
+        reach = bp.cells(m)[0][ax] * sg
+        if (cell[ax] * sg > reach) if m.get('flush') else (cell[ax] * sg >= reach): return False
+    return True
+
+def _attached(bp, b):
+    """True if block b (already in bp.blocks) has at least one mount-point neighbour"""
+    rects = bp.mount_rects(b)
+    for nb in bp.blocks:
+        if nb is b: continue
+        for (axis, pc, ns, lo, hi, ex, pr) in rects:
+            for (a2, pc2, ns2, lo2, hi2, ex2, pr2) in bp.mount_rects(nb):
+                if a2 == axis and pc2 == pc and ns2 == -ns and lo[0] <= hi2[0] and lo2[0] <= hi[0] and lo[1] <= hi2[1] and lo2[1] <= hi[1]:
+                    if ((ex & pr2) or (pr & ex2)) and b['key'] != nb['key']: continue
+                    return True
+    return False
+
+def _try_place(bp, xtype, sub, cell, orients, name, kind, color=KIT_COLOR, **kw):
+    """add the block at the first orientation where it attaches; returns the block or None (nothing left behind)"""
+    for fwd, up in orients:
+        b = bp.add(xtype, sub, cell, fwd, up, name, color, kind=kind, **kw)
+        if _attached(bp, b): return b
+        bp.blocks.remove(b)
+    return None
+
+def kit_free_cells(bp, outline, avoid=()):
+    """free cells inside the outline that are not reserved (exhaust, muzzle, camera lanes), not in `avoid` and keep the docking faces clear"""
+    from itertools import product
+    occ = bp.occupancy()
+    if isinstance(outline, (set, frozenset)): cand = sorted(outline)
+    else: cand = list(product(*[range(outline[0][i], outline[1][i] + 1) for i in range(3)]))
+    avoid = {tuple(c) for c in avoid}
+    return [c for c in cand if c not in occ and c not in bp.reserve and c not in avoid and _dock_ok(bp, c)]
+
+def _crit_centroid(bp):
+    cr = critical_blocks(bp) or bp.blocks
+    pts = [c for b in cr for c in bp.cells(b)]
+    return tuple(sum(p[i] for p in pts) / len(pts) for i in range(3))
+
+def _d(a, b): return sum((a[i] - b[i]) ** 2 for i in range(3)) ** 0.5
+
+def _near_crit(bp, cell, occ):
+    """number of critical blocks among the 26 neighbours of `cell`"""
+    crit = {id(b) for b in critical_blocks(bp)}
+    seen = set()
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                o = occ.get((cell[0] + dx, cell[1] + dy, cell[2] + dz))
+                if o is not None and id(o) in crit: seen.add(id(o))
+    return len(seen)
+
+def _cover_gain(cell, opens):
+    return sum(1 for (b, d, ray) in opens if cell in ray)
+
+def _enclosure(cell, occ):
+    return sum(1 for v in DIR.values() if _add3(cell, v) in occ)
+
+def add_survival_kit(bp, outline=None, decoys=2, flares=1, projector=True, model=None, panels=True, avoid=(),
+                     decoy_cells=None, flare_at=None, projector_at=None):
+    """Survival kit (docs/design/survivability.md items 11, 12, 13, 15), every part inside `outline` (default: the strict bounding box, kit_outline):
+      projector  one Small/LargeProjector '<Model> Projector [Self]', Enabled off, holding the drone itself as a ghost (self_projection(), filled LAST so the
+                 ghost is the finished drone).  Cell: the attachable free cell that closes the most open critical faces, then the most enclosed one.
+      flare      `flares` (0/1) Small/LargeFlareLauncher '<Model> Flare [Flare]', muzzle outward with KIT_FLARE_CLEAR free cells, KIT_FLARE_CLIPS FlareClips loaded.
+      decoys     `decoys` Small/LargeDecoy '<Model> Decoy n' at the free attachable cells farthest from the critical blocks (RC, PBs, gyros, power), the pair
+                 as far apart as possible; cells next to a critical block are avoided.
+      panels     (item 13) a light armour panel in the first free cell outside each remaining open critical face, plate on the far face if it mounts there,
+                 else on the near face.
+    `avoid` = cells that must stay empty (e.g. welder lanes); decoy_cells / flare_at=(cell, fwd) / projector_at override the search.  Call it after
+    add_support_pbs (the projection must hold the support PBs).  Records what went where in bp.kit; validates."""
+    model = model or bp.name
+    S = KIT_SUBS[bp.grid]
+    outline = outline or kit_outline(bp)
+    kit = dict(outline=outline, decoys=[], flare=None, projector=None, panels=[], skipped=[])
+    bp.kit = kit
+    all_or = [(f, u) for f in AXIS_DIRS for u in AXIS_DIRS if sum(a * b for a, b in zip(DIR[f], DIR[u])) == 0]
+    box = kit_outline(bp)
+    def skip(what):
+        kit['skipped'].append(what); bp.notes.append(f'survival kit: {what}')
+    # 1. projector
+    if projector:
+        cells = [projector_at] if projector_at else kit_free_cells(bp, outline, avoid)
+        occ = bp.occupancy(); opens = open_faces(bp, occ, box)
+        cells.sort(key=lambda c: (-_cover_gain(c, opens), -_enclosure(c, occ), c))
+        pj = None
+        for c in cells:
+            pj = _try_place(bp, *S['proj'], c, [('Forward', 'Up')], f'{model} Projector [Self]', 'proj', enabled=False)
+            if pj: break
+        if pj: kit['projector'] = pj
+        else: skip('no cell for the self-projector')
+    # 2. flare launcher
+    if flares:
+        occ = bp.occupancy(); opens = open_faces(bp, occ, box)
+        if flare_at: tries = [flare_at]
+        else:
+            tries = []
+            for c in kit_free_cells(bp, outline, avoid):
+                for f in ('Up', 'Left', 'Right', 'Down', 'Forward', 'Backward'):
+                    lane = [_add3(c, DIR[f], i) for i in range(1, KIT_FLARE_CLEAR + 1)]
+                    if any(p in occ for p in lane): continue
+                    back = occ.get(_add3(c, DIR[OPP[f]]))
+                    tries.append((-_cover_gain(c, opens), back is None, -_enclosure(c, occ), ('Up', 'Left', 'Right', 'Down', 'Forward', 'Backward').index(f), c, f))
+            tries.sort()
+            tries = [(t[4], t[5]) for t in tries]
+        fl = None
+        for c, f in tries:
+            ors = [(f, u) for (ff, u) in all_or if ff == f]
+            fl = _try_place(bp, *S['flare'], c, ors, f'{model} Flare [Flare]', 'flare')
+            if fl:
+                bp.keep_clear(fl, KIT_FLARE_CLEAR, 'muzzle')
+                try:
+                    from sebp_inv import Item
+                    bp.preload(fl, items=[Item.ammo('FlareClip', KIT_FLARE_CLIPS)])
+                except Exception as e:       # an inventory shape the generator does not know: ship it empty, note it
+                    bp.notes.append(f'survival kit: flare clips not preloaded ({e})')
+                break
+        if fl: kit['flare'] = fl
+        else: skip('no cell for the flare launcher')
+    # 3. decoys
+    if decoys:
+        occ = bp.occupancy(); cen = _crit_centroid(bp)
+        if decoy_cells: pool = [tuple(c) for c in decoy_cells]
+        else:
+            pool = []
+            for c in kit_free_cells(bp, outline, avoid):
+                b = _try_place(bp, *S['decoy'], c, [('Forward', 'Up')], 'probe', 'decoy')
+                if b: bp.blocks.remove(b); pool.append(c)
+            pool.sort(key=lambda c: (_near_crit(bp, c, occ) > 0, -_d(c, cen), c))
+        placed = []
+        if not decoy_cells and len(pool) >= 2 and decoys >= 2:
+            top = [c for c in pool if _near_crit(bp, c, occ) == 0] or pool
+            far = _d(top[0], cen)
+            top = [c for c in top if _d(c, cen) >= 0.7 * far][:40] or top[:40]
+            best = max(((a, b) for i, a in enumerate(top) for b in top[i + 1:]), key=lambda p: (round(_d(p[0], p[1]), 3), _d(p[0], cen) + _d(p[1], cen)), default=None)
+            if best: pool = list(best) + [c for c in pool if c not in best]
+        for c in pool:
+            if len(placed) >= decoys: break
+            if c in bp.occupancy(): continue
+            b = _try_place(bp, *S['decoy'], c, [('Forward', 'Up')], f'{model} Decoy {len(placed) + 1}', 'decoy')
+            if b: placed.append(b)
+        kit['decoys'] = placed
+        if len(placed) < decoys: skip(f'{decoys - len(placed)} of {decoys} decoys found no cell')
+    # 4. skin panels on the faces still open (item 13)
+    if panels:
+        occ = bp.occupancy()
+        free = set(kit_free_cells(bp, outline, avoid))
+        n = 0
+        for (b, d, ray) in open_faces(bp, occ, box):
+            if not ray or ray[0] not in free or ray[0] in bp.occupancy(): continue
+            c = ray[0]
+            far = [(f, u) for (f, u) in all_or if sebp.cross(DIR[f], DIR[u]) == DIR[d]]
+            near = [(f, u) for (f, u) in all_or if sebp.cross(DIR[f], DIR[u]) == tuple(-x for x in DIR[d])]
+            p = _try_place(bp, *S['panel'], c, far + near, None, 'panel', color=(0.58, -0.78, -0.25))
+            if p is None:          # no panel orientation mounts: a light armour cube (same mass as the panel on small grid) where it does
+                p = _try_place(bp, 'MyObjectBuilder_CubeBlock', 'SmallBlockArmorBlock' if bp.grid == 'Small' else 'LargeBlockArmorBlock', c, [('Forward', 'Up')],
+                               None, 'armor', color=(0.58, -0.78, -0.25))
+            if p:
+                n += 1; kit['panels'].append(p)
+    bp.validate()
+    for m in bp.blocks:
+        if m['kind'] == 'merge': check_docking(bp, m)
+    for b in kit['decoys'] + [kit['flare'], kit['projector']] + kit['panels']:
+        if b is not None: assert all(in_outline(c, outline) for c in bp.cells(b)), f'{bp.name}: survival kit block {b["name"] or b["sub"]} outside the outline'
+    if kit['projector'] is not None: self_projection(bp, kit['projector'])
+    return bp
+
+def self_projection(bp, pj):
+    """fill projector `pj` with the drone itself (item 15): printer_lib.projector_settings with T = 0, so the ghost's first block lands on the real one
+    (ProjectionOffset = projector cell - first block min, printer_lib's verified rule).  The ghost is built from the drone with every projector emptied first
+    (no projection inside a projection)."""
+    import copy
+    import printer_lib as PL
+    d = copy.deepcopy(bp)
+    for b in d.blocks:
+        if b['xtype'] == 'MyObjectBuilder_Projector':
+            for k in ('ProjectedGrids', 'ProjectionOffset', 'ProjectionRotation', 'KeepProjection', 'ProjectionsRemaining'): b['settings'].pop(k, None)
+    sett, off = PL.projector_settings(d, (0, 0, 0), tuple(pj['min']), seed_text='self')
+    if bp.grid != 'Small': sett['ProjectedGrids'] = sett['ProjectedGrids'].replace('<GridSizeEnum>Small</GridSizeEnum>', f'<GridSizeEnum>{bp.grid}</GridSizeEnum>')
+    pj['settings'].update(sett)
+    pj['self_offset'] = off
+    return off
+
+def add_gyro(bp, cell, name, fwd='Forward', up='Up'):
+    """a second gyroscope (survivability item 14: no gyro single point of failure) in place of the 1-cell armour block at `cell` (or in a free cell).
+    The gyro mounts on its bottom only: the cell below must hold a block with a top mount."""
+    if tuple(cell) in bp.occupancy(): swap_armour(bp, cell)
+    return bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro" if bp.grid == "Small" else "LargeBlockGyro", cell, fwd, up, name, kind="gyro")
+
+def _cell_cover(occ, box, cell, own=()):
+    """{direction: occupied cells between `cell` and the bounding box} (cells in `own` not counted)"""
+    out = {}
+    for d in AXIS_DIRS:
+        v = DIR[d]; n = 0; p = _add3(cell, v)
+        while in_outline(p, box):
+            if p in occ and p not in own: n += 1
+            p = _add3(p, v)
+        out[d] = n
+    return out
+
+def bury_swap(bp, blocks=None, avoid=()):
+    """Survivability item 14, goal 3: a 1-cell critical block with an open face (cover 0) trades places with a 1-cell plain armour block whose cell is covered
+    on all six faces (the occupied cells do not change, so welder reach and the printers' clearances stay as they were).  The armour cube takes the block's
+    old cell.  The block gets the first orientation under which bp.validate() passes (mounts, one piece); candidates are tried best cover first.
+    Default blocks: programmable blocks and power blocks (batteries, reactors).  The remote control and the gyros keep their place and orientation (the
+    scripts read the ship axes from them).  Returns [(block name, old cell, new cell)]."""
+    occ = bp.occupancy(); box = kit_outline(bp)
+    if blocks is None:
+        blocks = [b for b in critical_blocks(bp) if b['xtype'].replace('MyObjectBuilder_', '') in ('MyProgrammableBlock', 'BatteryBlock', 'Reactor')]
+    blocks = [b for b in blocks if len(bp.cells(b)) == 1]
+    avoid = {tuple(c) for c in avoid}
+    all_or = [(f, u) for f in AXIS_DIRS for u in AXIS_DIRS if sum(a * b for a, b in zip(DIR[f], DIR[u])) == 0]
+    done = []
+    for b in blocks:
+        occ = bp.occupancy()
+        cb = tuple(b['min'])
+        if min(_cell_cover(occ, box, cb).values()) > 0: continue
+        cands = []
+        for a in bp.blocks:
+            if not (a['xtype'] == 'MyObjectBuilder_CubeBlock' and a['sub'].endswith('ArmorBlock') and len(bp.cells(a)) == 1): continue
+            ca = tuple(a['min'])
+            if ca in avoid: continue
+            cv = _cell_cover(occ, box, ca)
+            if min(cv.values()) < 1: continue
+            cands.append((-min(cv.values()), -sum(cv.values()), _d(ca, cb), ca, a))
+        cands.sort(key=lambda t: t[:4])
+        old = (b['min'], b['fwd'], b['up'])
+        for _, _, _, ca, a in cands:
+            a['min'] = cb; b['min'] = ca
+            ok = False
+            for f, u in [(b['fwd'], b['up'])] + all_or:
+                b['fwd'], b['up'] = f, u
+                try:
+                    bp.validate(); ok = True; break
+                except AssertionError:
+                    pass
+            if ok:
+                done.append((b['name'], cb, ca)); break
+            a['min'] = ca; b['min'], b['fwd'], b['up'] = old
+    bp.validate()
+    return done

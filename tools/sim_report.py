@@ -20,6 +20,9 @@ import os
 import sys
 from collections import Counter, defaultdict
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # python -I drops the script directory
+import sim_survival
+
 
 def load_runs(path):
     p = path
@@ -507,10 +510,12 @@ def main():
     if a.compare:
         before, _ = load_runs(a.compare)
         lines = compare(runs, before, a.title + " (before/after)")
+        lines += ["## Survival (side A)", "", sim_survival.compare(runs, before, "A", True), ""]
     else:
         lines = section_overview(runs, meta, a.title)
         lines += section_1v1(runs)
         lines += section_groups(runs)
+        lines += ["## Survival", "", "Side A = team 0, B = the others. See `tools/sim_survival.py` for the definitions, `--ships` and `--hitmap`.", "", "### Side A", "", sim_survival.report(runs, "A", False, True), "", "### Side B", "", sim_survival.report(runs, "B", False, True), ""]
         lines += section_problems(runs)
         lines += section_timing(runs)
     text = "\n".join(lines) + "\n"

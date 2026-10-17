@@ -38,9 +38,9 @@ class GnatSplit(unittest.TestCase):
     def test_what_moved(self):
         f, s = src('GnatSwarmAI.cs'), src('GnatStaffAI.cs')
         for gone in ('FleetLoad(', 'FleetPump(', 'FleetTgtL', '_flChan', 'LaunchStep(', 'LaunchCmd(', '_lnS'): self.assertNotIn(gone, f, gone)
-        self.assertIn('LkInit(', f); self.assertIn('LkSend();', f); self.assertIn('if (!LkBurn && !AiStep()) Control(dt);', f)
+        self.assertIn('LkInit(', f); self.assertIn('LkSend();', f); self.assertIn('if (!LkBurn && !SvYield && !AiStep()) Control(dt);', f)
         for need in ('FleetPump(', 'LaunchStep(', 'FleetLoad('): self.assertIn(need, s, need)
-        for gone in ('Follow', 'FoSat', '_mates', '_sensors', 'Mode.FOLLOW'): self.assertNotIn(gone, s, gone)
+        for gone in ('Follow', 'FoSat', 'Mode.FOLLOW'): self.assertNotIn(gone, s, gone)   # _mates and _sensors came back with the survivability STAFF SEARCH / HIVE MATES lite
         self.assertIn('enum Mode { IDLE, FORM, ATTACK, RTB }', s); self.assertIn('Math.Min(d.Item1 & 7, 3)', s)
 
     def test_link_tags_pair_up(self):
