@@ -64,6 +64,7 @@ def systems(bp):
         elif x == 'Gyro': s['gyro'].append(b)
         elif x == 'Thrust': s['thrust ' + C.OPP[b['fwd']]].append(b)
         elif x in POWER_X: s['power'].append(b)
+        elif 'Flare' in b.get('subtype', ''): continue        # a flare launcher is a SmallMissileLauncher but no gun (survivability item 12)
         elif b['kind'] in ('gun', 'rail', 'turret') or GUN_X.search(x): s['guns'].append(b)
     return {k: v for k, v in s.items() if v}
 
