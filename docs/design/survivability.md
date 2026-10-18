@@ -525,6 +525,10 @@ Per model, run `python3 -I tools/survivability_audit.py --only "<Model>"` before
 - Record a before/after audit score table in this doc (section 2, item 14 results).
 - Update `tools/tests/golden_hashes.json` with `run_all.py --update-golden`.
 
+**Gyro trade-off, decided 2026-10-18 (the owner left it to us).**
+- **Hornet family (Hornet, Watcher, Harrier, Lancer, Aegis, Wasp) and Basilisk: keep the second gyro.** It removes the only unwaived single-hit kill, nearly doubles the turn rates (Hornet 130/113/142 -> 231/203/256 rad/s2), and loaded acceleration stays 4.8-5.2 m/s2, far above the 1.0 floor. Hornet vs Pirate, 20 seeds: survival unchanged, lost drones live 122 -> 153 s, PB hits down. The kit's -17 % acceleration is mostly this gyro (614 kg); it buys aim and a missing failure mode, so it stays.
+- **Gnat: no second gyro.** The Gnat fights by acceleration (yo-yo runs along its nose axis), a second gyro costs about 21 % of it, and its single main and reverse thrusters stay one-hit kills anyway, so the gyro would not remove its weakest point. The free cell (1, 1, -1) stays empty.
+
 ### Item 15. Self-projector (generator C1 + C2, Staff REPAIR CLIENT)
 
 **Block.** One `SmallProjector` (or `LargeProjector` for large grid). Enclosed cell, but welder-reachable for printable models. Named `<Model> Projector [Self]`. `Enabled=false` at paste.
