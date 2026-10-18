@@ -24,9 +24,9 @@
 //   _dynHome, _dynHomeT, _wpMap, Fwd(), FleetV(); REPAIR CLIENT or AUX LINK (RpCfg RpListen RpBlocks RpRead RpStep RpStatus RpStop RpWant SvFly RpMedCh),
 //   STAFF SEARCH (Ss*).
 List<MyTuple<string, string, string, double>> _svDefs = new List<MyTuple<string, string, string, double>>();
-bool SvRtbOn = true, SvLostAx = true, SvLostCam = true, SvFightOn = true, SvLimpHome = true, SvBlind = true, SvStandOn = true, SvDodge = true, SvFlare = true,
+bool SvRtbOn = true, SvLostAx = false, SvLostCam = false, SvFightOn = true, SvLimpHome = true, SvBlind = true, SvStandOn = true, SvDodge = true, SvFlare = true,
     SvHand = true, SvShare = true, SvTogether = true;
-double SvRtbI = 0.55, SvGyroF = 0.5, SvMargin = 300, SvLimpMin = 0.4, SvLimpV = 30, SvBlindK = 2, SvStandM = 150, SvRB = 800, SvRR = 800, SvRL = 2000,
+double SvRtbI = 0.55, SvGyroF = 0, SvMargin = 300, SvLimpMin = 0.4, SvLimpV = 30, SvBlindK = 2, SvStandM = 150, SvRB = 800, SvRR = 800, SvRL = 2000,
     SvDodgeR = 25, SvFlareI = 1.5, SvFlareL = 2, SvHandI = 0.75, SvHandB = 200, SvHandIn = 100, SvFoXv = 40, SvMem = 120, SvGasp = 0.15, SvExpN = 3, SvExpD = 400,
     SvGMax = 6, SvGSpread = 50, SvGExtra = 150, SvGMate = 2000, SvOrb = 22;
 string _svWrote = "", _svLKey = "", _svPrevVerb = "", _svWhy = "", _svFk = "";
@@ -47,8 +47,10 @@ void SvCfg(MyIni i)
         SvD(i, "Jink Period Min (s)", 0.4); SvD(i, "Jink Period Max (s)", 3); SvD(i, "Jink Period Random", 0.3);
     }
     if (FS == "Longbow" || FS == "Mantis") { SvB(i, "Power Guard", true); SvD(i, "Power Guard Hold (s)", 2); }
-    SvRtbOn = SvB(i, "Damage RTB", true); SvRtbI = SvD(i, "RTB Integrity Below", 0.55); SvLostAx = SvB(i, "RTB On Lost Thrust Axis", true);
-    SvGyroF = SvD(i, "RTB Gyro Fraction", 0.5); SvLostCam = SvB(i, "RTB On Lost Forward Cameras", true); SvMargin = SvD(i, "Retreat Margin (m)", 300);
+    // AB2 (sim, survivability.md "Results (AB2)"): damage RTB on integrity only by default. Lost axis / one of two gyros / forward cameras fired on the first
+    // lost block, cost about 40 % of the wins vs the Pirate and made 1v1s stalemates; the [Thrust] PB and limp mode keep such a drone fighting.
+    SvRtbOn = SvB(i, "Damage RTB", true); SvRtbI = SvD(i, "RTB Integrity Below", 0.55); SvLostAx = SvB(i, "RTB On Lost Thrust Axis", false);
+    SvGyroF = SvD(i, "RTB Gyro Fraction", 0); SvLostCam = SvB(i, "RTB On Lost Forward Cameras", false); SvMargin = SvD(i, "Retreat Margin (m)", 300);
     SvFightOn = SvB(i, "Fight Back While Retreating", true); SvLimpMin = SvD(i, "Limp Min Speed Fraction", 0.4);
     SvLimpHome = SvB(i, "Limp Home On Flight Loss", true); SvLimpV = SvD(i, "Limp Home Speed", 30);
     SvBlind = SvB(i, "Blind Side Orbit", true); SvBlindK = SvD(i, "Blind Side Speed Factor", 2);

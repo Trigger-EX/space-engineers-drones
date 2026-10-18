@@ -802,13 +802,14 @@ namespace SeSim.Core
             var bodies = GridFactory.Spawn(w, bp, 0, 0, Place(new Vector3D(0, 0, 0)), null);
             var hb = bodies[0];
             Info("Hornet spawned in " + sw.Elapsed.TotalMilliseconds.ToString("F1") + " ms; mass " + hb.Mass.ToString("F1") + " kg, " + hb.Blocks.Count + " blocks, " + hb.Thrusters.Count + " thrusters, " + hb.Gyros.Count + " gyros, " + hb.Batteries.Count + " batteries");
-            // Hornet Full 4589 kg with the [Thrust] PB (4451 kg without), 6.3 m/s2 in each of the six directions (2 thrusters per axis side)
-            Check(Math.Abs(hb.Mass - 4589) < 1.0, "Hornet mass = 4589 kg (4451 kg + the [Thrust] PB of THRUST VECTORING)");
+            // Hornet Full 5842 kg since the survival kit (decoys, flare launcher, self-projector, second gyro) and the [Flight]/[Staff]/[Thrust]/[Aux] PBs
+            // (was 4589 kg), 4.93 m/s2 in each of the six directions (2 thrusters per axis side)
+            Check(Math.Abs(hb.Mass - 5842) < 1.0, "Hornet mass = 5842 kg (survival kit + [Flight]/[Staff]/[Thrust]/[Aux] PBs)");
             var sum = new double[6];
             foreach (var t in hb.Thrusters) sum[t.DirIndex] += t.MaxForce;
             bool accOk = true; string accs = "";
-            for (int i = 0; i < 6; i++) { double a = sum[i] / hb.Mass; accs += a.ToString("F2") + " "; accOk &= Math.Abs(a - 6.3) < 0.1; }
-            Check(accOk, "Hornet thrust-to-mass 6.3 m/s2 in all six directions (" + accs.Trim() + ")");
+            for (int i = 0; i < 6; i++) { double a = sum[i] / hb.Mass; accs += a.ToString("F2") + " "; accOk &= Math.Abs(a - 4.93) < 0.1; }
+            Check(accOk, "Hornet thrust-to-mass 4.93 m/s2 in all six directions (" + accs.Trim() + ")");
             // each Hornet thruster pushes opposite to its block Forward
             bool dirOk = true;
             foreach (var t in hb.Thrusters)

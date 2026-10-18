@@ -275,6 +275,8 @@ return _svJink
 - working gyros ≤ `RTB Gyro Fraction` × max, with max ≥ 2;
 - forward cameras 0, with max ≥ 1 (`RTB On Lost Forward Cameras`).
 
+**AB2 defaults:** only the integrity trigger is on. The axis, gyro and camera triggers are off by default (keys kept): in the sim they fired on the first lost block and cost about 40 % of the wins (section 11).
+
 **On a new cause** (rising edge; latched per cause):
 - Store the current mode verb in `_svPrevVerb` (per-script hook `SvVerb()`).
 - `Fwd("rtb")`.
@@ -706,9 +708,9 @@ All new keys live in one `[Survival]` section in the **Flight PB's** Custom Data
 | Power Guard Hold (s) | 2 | Flight | 6 |
 | Damage RTB | true | Staff | 3 |
 | RTB Integrity Below | 0.55 | Staff | 3 |
-| RTB On Lost Thrust Axis | true | Staff | 3 |
-| RTB Gyro Fraction | 0.5 | Staff | 3 |
-| RTB On Lost Forward Cameras | true | Staff | 3 |
+| RTB On Lost Thrust Axis | false (AB2; was true) | Staff | 3 |
+| RTB Gyro Fraction | 0 (AB2; was 0.5: all gyros gone) | Staff | 3 |
+| RTB On Lost Forward Cameras | false (AB2; was true) | Staff | 3 |
 | Retreat Margin (m) | 300 | Staff | 3 |
 | Fight Back While Retreating | true | Staff | 3 |
 | Limp Min Speed Fraction | 0.4 | Staff | 4 |
@@ -857,15 +859,15 @@ Moved out to that drone's Staff PB:
 
 | Script | Now | + SURVIVAL LINK (net of removed `Evade`/jink) | Moves out | After (estimate) |
 |---|---|---|---|---|
-| HornetDroneAI | 80.8k | +4.3k | patrol, sensors, feeds, seeker (−6.15k) | ≈ 79.0k |
-| HarrierAI | 81.9k | +4.3k | same (−6.15k) | ≈ 80.1k |
-| LancerAI | 82.3k | +4.3k | same (−6.15k) | ≈ 80.5k |
-| AegisAI | 84.8k | +4.3k | same (−6.15k) | ≈ 83.0k |
-| WaspFlightAI | 86.5k | +4.3k | same (−6.15k) | ≈ 84.7k |
-| BasiliskAI | 87.7k | +4.3k | same (−6.15k) | ≈ 85.9k |
-| GnatSwarmAI | 84.0k | +4.65k (no jink) | sensors, seeker (−3.9k) | ≈ 84.8k |
-| LongbowSniperAI | 84.1k | +4.45k (incl. power guard hook) | sensors, seeker (−3.9k) | ≈ 84.7k |
-| MantisAI | 87.1k | +4.45k | sensors, seeker (−3.9k) | ≈ 87.7k |
+| HornetDroneAI | 80.8k | +4.3k | patrol, sensors, feeds, seeker (−6.15k) | ≈ 79.0k (AB2 measured 79,645) |
+| HarrierAI | 81.9k | +4.3k | same (−6.15k) | ≈ 80.1k (80,703) |
+| LancerAI | 82.3k | +4.3k | same (−6.15k) | ≈ 80.5k (81,085) |
+| AegisAI | 84.8k | +4.3k | same (−6.15k) | ≈ 83.0k (83,633) |
+| WaspFlightAI | 86.5k | +4.3k | same (−6.15k) | ≈ 84.7k (85,587) |
+| BasiliskAI | 87.7k | +4.3k | same (−6.15k) | ≈ 85.9k (86,831) |
+| GnatSwarmAI | 84.0k | +4.65k (no jink) | sensors, seeker (−3.9k) | ≈ 84.8k (85,733) |
+| LongbowSniperAI | 84.1k | +4.45k (incl. power guard hook) | sensors, seeker (−3.9k) | ≈ 84.7k (85,628) |
+| MantisAI | 87.1k | +4.45k | sensors, seeker (−3.9k) | ≈ 87.7k (88,646) |
 
 **Why the moved modules are off the hot path.**
 - Patrol: only HUNT with no target.
@@ -877,7 +879,7 @@ Moved out to that drone's Staff PB:
 - No Flight PB grows by more than about 0.7k. Every one stays under the 100k cap; no `SCRIPT_LIMITS` change.
 - The six over 80k were above the budget before this work.
 - If a later feature needs room, the next documented cut is the search-phase camera auto-scan (`AutoScanStep`, about 1k) to the Staff, with a `.SCN` contact channel.
-- AB2 measures and fills in the real numbers.
+- AB2 measured the real numbers (in brackets, `tools/minify_cs.py`, 2026-10-17): every Flight PB is within its estimate + 1k (Basilisk 86.8k of 86.9k, Mantis 88.6k of 88.7k are the tightest).
 
 ### 5.2 Staff PBs and other scripts
 
@@ -1225,3 +1227,91 @@ D1 and E1 continue on their own files, driven by F2's results, 3 seeds per mode.
 - Gnat: no jinks (axial thrust only) and no bay docking (belly merge).
 - Basilisk and Longbow L: no bay docking (no merge block).
 - Power guard only on railgun drones.
+
+---
+
+## 11. Results (AB2)
+
+AB2 integration runs, 2026-10-17, simulator only. New = main at 693e880 plus the AB2 default change below. Base = bd7817a (before the survivability work), with its own blueprints and sim build. Seeds are per scenario; counts follow CLAUDE.md (5 for regression, 20 for an A/B direction, 3 for event checks, 10 for the charge and power-guard lines). "Lost" = disabled or destroyed (`tools/sim_survival.py`); "W" = fights the drones' side won. Release zips are not rebuilt.
+
+### 11.1 Default changed: damage RTB fires on integrity only
+
+| Key | Old default | New default |
+|---|---|---|
+| `RTB On Lost Thrust Axis` | true | false |
+| `RTB Gyro Fraction` | 0.5 | 0 (RTB only when every gyro is gone) |
+| `RTB On Lost Forward Cameras` | true | false |
+
+`RTB Integrity Below` stays 0.55. The keys stay, so an owner can switch each trigger back on.
+
+**Why.** The Hornet-class drones have 2 thrusters per axis side and now 2 gyros, so the axis, gyro and camera triggers fired on the first or second lost block. The drone then left a fight it could still fight: the `[Thrust]` PB turns a surviving group onto the lost axis, and limp mode caps the speed. A drone in the sim is disabled at about 70-80 % of its blocks, so the integrity trigger alone fires late enough not to cost kills.
+
+Team runs, `pirate/3xHornet-vs-Pirate` + `pirate/3xHarrier-vs-Pirate`, 20 seeds each (40 fights, 120 drones):
+
+| Variant | W / 40 | Drones lost / 120 | Lost per kill |
+|---|---|---|---|
+| Base (bd7817a) | 18 | 37 | 2.06 |
+| New, old defaults (all four triggers) | 18 | 24 | 1.33 |
+| New, `Damage RTB=false` | 31 | 28 | 0.90 |
+| **New, AB2 defaults (integrity 0.55 only)** | **30** | **25** | **0.83** |
+| integrity only, 0.65 | 28 | 22 | 0.79 |
+| integrity only, 0.75 | 25 | 27 | 1.08 |
+| integrity 0.55 + lost axis | 17 | 21 | 1.24 |
+| integrity 0.55 + cameras | 25 | 31 | 1.24 |
+| integrity 0.55 + gyros (0.5) | 25 | 31 | 1.24 |
+
+`pirate/3xAegis-vs-Pirate`: 20/20 wins and 0 losses in every variant (old and new).
+
+The 1v1 duels (`Aegis-vs-Hornet`, `Harrier-vs-Hornet`, `Hornet-vs-Lancer`, `Hornet-vs-Hornet`, 20 seeds, 80 fights) confirm it. With the old defaults, 29 of 80 ended as 300 s timeouts (both drones retreating), against 12 on the base. With the AB2 defaults: 12.
+
+Solo pirate (`pirate/{Hornet,Harrier,Aegis}-vs-Pirate`, 20 seeds): the old defaults lost 54/60 and dealt 37.5k per fight; the AB2 defaults lost 56/60 and dealt 51.7k (base: 52/60, 68.6k). A lone drone still loses to the Pirate either way.
+
+0.65 is within noise of 0.55, so the default stays 0.55.
+
+### 11.2 Per run
+
+| # | Run | Seeds | Base | New (AB2 defaults) | Writer audit / exceptions |
+|---|---|---|---|---|---|
+| 1 | 1v1 regression, 9 duels (Hornet-vs-Hornet, Aegis-, Gnat-vs-Gnat, Longbow S-vs-Wasp, Hornet-vs-Mantis, Basilisk-, Hornet-vs-Wasp, Harrier-, Hornet-vs-Lancer) | 5 | 17 side-A wins, 14 timeouts | 18 side-A wins, 16 timeouts (old defaults: 17, 19) | 0 / 0 |
+| 2 | Jinks, solo pirate ×3 models, `Lead-Breaking Jinks` on / off / `Jink Accel Fraction` 2 / 4 / Period Min 1 + 2 | 20 | lost 52/60, Pirate hit rate 6.7 % | on: lost 56/60, hit 7.9 %; off 56/60, 7.9 %; ×2 58/60, 8.3 %; ×4 59/60, 8.0 %; P1 55/60, 8.2 % | 0 / 0 |
+| 2b | Jinks drone vs drone (only the Hornet changed; vs Aegis, Harrier, Lancer) | 20 | n/a | on 22 W / 29 L, hit on Hornet 26.9 %; off 23 / 29, 28.7 %; ×4 21 / 30, 27.3 % | 0 / 0 |
+| 3 | Team 3xHornet + 3xHarrier, AB2 defaults, then one key off | 20 | 18 W, 37 lost | all on 30 W / 25 lost; `Attack Together=false` 28 / 35; `Blind Side Orbit=false` 24 / 41; `Wing Hand-off=false` 21 / 41; `Standoff By Enemy Weapons=false`: identical (no range advantage over the Pirate, never fires) | 0 / 0 |
+| 4 | Events, `pirate/Hornet-vs-Pirate` at t=40 s: `!kill-thrust B`, `!kill-block Gyroscope 1`, `!damage 0.5`, `!disable-pb Flight` / `!enable-pb Flight` at 55 s | 3 each | n/a | see 11.3 | 0 / 0 |
+| 5 | Charge, `charge-Hornet-default` (Tech Hunter rush at 100 m/s from 3 km) | 10 | Hornet lost 10/10 at 70.8 s mean, dealt 10.6k | lost 10/10 at 74.0 s, dealt 6.9k; `Damage RTB=false` 73.8 s / 7.3k; jinks off 73.2 s / 6.8k | 0 / 0 |
+| 6a | Power guard, `1v1/Hornet-vs-{Longbow S,Mantis}`, `Power Guard` on / off (railgun drones only) | 10 | Longbow S 5 W, Mantis 4 W | on and off identical (Longbow S 7 W, Mantis 5 W): the brown-out condition never occurs in these duels | 0 / 0 |
+| 6b | Missile, `!msl` at 20, 45 and 70 s (800 / 600 / 1000 m), `Missile Dodge` + `Flare On Missile` on / off | 3 | n/a | dodge bit (SVS bit 3) up for the whole flight of every rocket; 1 of 9 rockets hit with dodge on, 1 of 9 with it off | 0 / 0 |
+| 6c | Weakpoint, `wp-small-on` (3 small fleets vs Tech Hunter 90k, 600 s) | 5 | power / weapons / blocks killed: 3xLongbow L 7.0 / 0.2 / 211; 3xL Seeker 3.2 / 0.2 / 212; Basilisk S+2xL 1.8 / 25.6 / 477 | 3.8 / 1.4 / 203; 5.0 / 0.6 / 205; 1.8 / 42.6 / 775 | 0 / 0 |
+
+### 11.3 Damage RTB, limp and failover events (3 seeds each, AB2 defaults)
+
+- **`!kill-thrust B`:** LIMP (SVS bit 8) on, no RTB, and the drone keeps fighting. Seed 1 dealt 62k after losing its rear thrusters.
+- **`!kill-block Gyroscope 1`:** no RTB from one gyro of two. Seed 1 retreated later at integrity 51 % (via point); seed 2 when its second gyro was shot.
+- **`!damage 0.5`:** too harsh as a test. The random block removal takes PBs and guns, so the drone is disabled at once and RTB cannot be judged. Use 0.3 to 0.4 next time.
+- **RTB by integrity** fired at 43-54 % in the missile runs. That is the trigger at 0.55 plus the 10-tick scan.
+- **Failover** (`!disable-pb Flight` 40 s, `!enable-pb Flight` 55 s): the Staff shows `LIMP HOME: flying home` within the 1.5 s detection. The Flight takes over again when re-enabled ("link OK" at the next echo). Writer audit 0 in 3/3.
+
+### 11.4 Findings that were not tuned
+
+- **Jinks: no direction.** Lead-breaking jinks on, off, or 2 to 4 times the amplitude make no measurable difference, either against the Pirate's turrets or in drone duels. All are within noise at 20 seeds. The defaults stay (0.8, 800 m/s, 0.4-3 s); `Jink Speed` stays 12 (Harrier 35). The base's lower Pirate hit rate (6.7 % vs 7.9 %) is most likely the denser kit hull inside the same outline: the new drones get hit just as often with jinks off.
+- **Kills in duels.** The kit-hardened drones take more hits to disable. In `Longbow S-vs-Wasp`, the Longbow S now runs out of rail ammo (12 shots) before the Wasp is disabled: 3/5 timeouts against 0/5 on the base.
+- **Sim metric: the `[Aux]` PB counts as control.** `Metrics.BodyCapable` accepts any functional PB as control, so a drone whose Flight and Staff PBs were shot off keeps "capable" through its `[Aux]` PB. Its guns still exist but nobody steers them (seen in Longbow S-vs-Wasp seed 3: Wasp at 26/61 blocks, Flight and Staff detached, run ends as a timeout). Sim owner: control should need a PB that writes the overrides (the Flight, or the Staff while it holds).
+- **Explosive class thresholds** (`Explosive Hit Blocks` 3, `Explosive Drop Min` 400) are not calibrated. Sim turrets never fire rockets at drones; only `!msl` does, and those mostly miss.
+- **Power guard** never triggers in the sim duels. Left on: it only acts on a real brown-out.
+- **Gnat-vs-Gnat:** both Gnats never meet (5/5 timeouts, the same on the base).
+- **PB sizes (section 5.1):** every Flight PB is within its estimate + 1k.
+- **Sim metric: the flare launcher counts as a weapon.** The sim builds the kit's `SmallFlareLauncher` as a slug (railgun-mode) weapon with no power sink. `selftest` C fails with "missing 10", one per kit drone. Worse, `BodyCapable` counts it as a gun, so a drone whose guns are all shot off stays "capable" while its flare launcher lives. New-vs-base survival numbers (11.1, 11.2) are therefore biased toward the new builds. The variant-vs-variant comparisons on the new build, which set the defaults, carry the same bias on both sides. Sim owner: no weapon unit for flare launchers (or exclude them from capability), and make control need the Flight PB (above).
+
+### 11.5 Checks
+
+- `tools/compile_check.sh`: all PASS. `blocks_sync --check`: all blocks identical.
+- `selftest all` (new sim, a full `build_all --no-zip` blueprint set): 8 failures. Base bd7817a: 8, but a different set.
+  - New: SelfTestA Hornet mass/accel is fixed: the check now expects 5842 kg / 4.93 m/s2 (was 4589 / 6.3; it failed on the base too).
+  - New: SelfTestC flare-launcher units (sim, above).
+  - New: SelfTestD looks for a field `_rng` in HornetDroneAI. SURVIVAL LINK removed that field; the jinks now use `_evRng`. This is a test expectation, sim side.
+  - SelfTestM4 (2, wing satellite ring / wing lock timing) and SelfTestM5 (4, Warden hangar doors): fail on the base too.
+- `dock-launch` Hornet, Harrier, Aegis, Wasp, Gnat: LAUNCH OK.
+  - Writer audit gyro 1 / thrust 1 at the take-off: the Staff's burn hands over to the Flight on the next tick, which the audit counts. It disappears with the Staff PB off, and is not a survivability writer.
+  - `--return-at 10`: RETURN OK, writer audit 0 from the return on.
+  - Longbow S has no merge block (base as well).
+- `follow-test --count 3`: FOLLOW OK (slot about 60 m).
+- `Mantis Foundry` fails reach in `build_all` on both base and new (C3's re-solve).
