@@ -83,7 +83,7 @@ double RtbBattery = 0.15;    // fraction
 double SepRange = 70, SepSpeed = 25;   // wingmate separation: push away from hive mates closer than this (m) at up to this speed (m/s)
 bool TargetLarge = true, TargetSmall = true, TargetChars = false, TargetNeutral = false;
 bool AutoScan = true, ShareTargets = true, Jink = true, FriendCheck = true, InheritVel = true;
-string StartMode = "IDLE";   // safe default: drone waits for a command
+string StartMode = "SENTRY";   // default: hold the spot, wake on a target within Sentry Range (stands down to IDLE while docked)
 
 // ---------------- state ----------------------------------------------
 enum Mode { IDLE, GUARD, HUNT, ASSIST, RTB, FOLLOW }
@@ -93,7 +93,8 @@ double _now = 0;
 long _tick = 0;
 Vector3D _home;
 bool _homeSet = false, _ready = false, _sentry = false;
-double SentryRange = 2500;   // SENTRY: wake on a target this close (the AI Offensive block's search range). CustomData "Sentry Range (m)"
+double SentryRange = 2500, _sentryAt = -1;   // _sentryAt: Start Mode SENTRY waits IDLE until this time (a printer JOIN or arming can still launch it)
+// SENTRY: wake on a target this close (the AI Offensive block's search range). CustomData "Sentry Range (m)"
 Vector3D _dynHome; double _dynHomeT = -99;
 
 // blocks
@@ -1045,13 +1046,13 @@ public Program()
     catch (Exception ex) { CtorErr("modules", ex); }
     try
     {
-        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _sentry = StartMode.Trim().ToUpperInvariant() == "SENTRY"; _mode = _ready || _sentry ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
+        _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _sentryAt = StartMode.Trim().ToUpperInvariant() == "SENTRY" ? 5 : -1; _mode = _ready ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
         if (!string.IsNullOrEmpty(Storage))
         {
             var p = Storage.Split(';');
             if (p.Length >= 5)
             {
-                _mode = ParseMode(p[0], _mode); _ready = p.Length > 5 && p[5] == "1"; _sentry = p.Length > 6 && p[6] == "1";
+                _mode = ParseMode(p[0], _mode); _ready = p.Length > 5 && p[5] == "1"; _sentry = p.Length > 6 && p[6] == "1"; _sentryAt = -1;
                 double x, y, z;
                 if (double.TryParse(p[1], out x) && double.TryParse(p[2], out y) && double.TryParse(p[3], out z))
                 { _home = new Vector3D(x, y, z); _homeSet = p[4] == "1"; }
@@ -1128,6 +1129,9 @@ void Tick(string arg, UpdateType src)
     if (_tick % 6 == 3) BroadcastStatus();
     if (!Hot()) StepSlimScan();
     if (_tick % 20 == 7) CheckDamage();
+    if (_sentryAt > 0 && (LkBurn || _mode != Mode.IDLE)) _sentryAt = -1;   // launched or commanded first
+    else if (_sentryAt > 0 && _now >= _sentryAt) { _sentryAt = -1; if (!SentryDocked()) Command("sentry"); }   // Start Mode SENTRY, after the 5 s grace: hold this spot
+    if (_sentry && _tick % 30 == 11 && SentryDocked()) { SetMode(Mode.IDLE); _err = "Docked: SENTRY stands down (IDLE)"; }   // never fly a printer / carrier: its Staff PB hands over [Launch] Mode after take-off
     if (_tick % 6 == 0) PollDesignators();
     if (_tick % 10 == 5 && !Hot()) PollSensors();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
@@ -1176,9 +1180,20 @@ void Command(string a)
     }
 }
 
+// SENTRY (the default Start Mode) stands down while the drone is clamped: a merge block or connector of this grid is locked (printer bay, cradle,
+// carrier). Merged, the printer's thrusters are on this construct too.
+List<IMyShipMergeBlock> _sdMg = new List<IMyShipMergeBlock>(); List<IMyShipConnector> _sdCn = new List<IMyShipConnector>();
+bool SentryDocked()
+{
+    var g = Me.CubeGrid;
+    GridTerminalSystem.GetBlocksOfType(_sdMg, b => b.CubeGrid == g && b.IsConnected);
+    GridTerminalSystem.GetBlocksOfType(_sdCn, b => b.CubeGrid == g && b.Status == MyShipConnectorStatus.Connected);
+    return _sdMg.Count + _sdCn.Count > 0;
+}
+
 void SetMode(Mode m)
 {
-    _mode = m; _ready = false; _sentry = false; _patrolLeg = false; _patrolStopSet = false;
+    _mode = m; _ready = false; _sentry = false; _sentryAt = -1; _patrolLeg = false; _patrolStopSet = false;
     if (m == Mode.IDLE || m == Mode.ASSIST) Release();
 }
 

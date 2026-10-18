@@ -17,7 +17,7 @@
 const string VER = "1.0-basilisk-split";
 
 // ---------------- settings (read from the Flight PB's Custom Data) -----
-string Tag = "BASILISK", StartMode = "IDLE";
+string Tag = "BASILISK", StartMode = "SENTRY";
 double MaxSpeed = 60, SepRange = 160;
 
 // survivability (docs/design/survivability.md): the Flight PB's Custom Data section, which STAFF SEARCH modules this model has, its orbit speed key
