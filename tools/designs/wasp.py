@@ -17,7 +17,7 @@ DOCKING: merge block on a 2-cell stalk behind the rear camera, clamp face Backwa
 LITE variants: no Sensor, no AI Offensive / AI Flight blocks (their XML shape was never seen in Starburst).  The merge block is
 kept (LITE_KEEPS_MERGE in _common.py) so Lite drones can still be printed.  Both weapons are SmallMissileLauncher/* and
 SmallGatlingGun/* shapes seen in Starburst.  Ammo: the XML ships empty magazines (creative world: not needed; survival: load
-4 rockets per launcher / 3 clips per autocannon).  Custom data pre-sets the IGC tag and start mode IDLE (printed drones wait for the printer's JOIN).
+4 rockets per launcher / 3 clips per autocannon).  Custom data pre-sets the IGC tag and start mode SENTRY (a docked drone stands down to IDLE and waits for its launch).
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,7 +26,7 @@ import _common as C
 
 # PB custom data (MyIni).  The scripts add all other keys on first run.
 def _custom(section, tag):
-    return f"[{section}]\nIGC Tag={tag}\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=IDLE\n"
+    return f"[{section}]\nIGC Tag={tag}\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=SENTRY\n"
 
 def frame(name, wtype, wsub, wlabel, wlen, script, custom_data, ai=True, sensor=True, merge=True):
     """Hornet-class drone with two forward weapons `wlen` cells long (muzzles at z = -(wlen) .. nose line)."""

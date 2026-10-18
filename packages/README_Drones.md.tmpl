@@ -16,7 +16,9 @@ Package contents: {{COUNTS}}. All ships are small grid unless noted; **no DLC bl
 
 Every script keeps its settings in the Programmable Block's **Custom Data** (ini; written on first run, edit and run `reload`).
 Commands go in the PB's *argument* (run the PB with the text, or put it on a toolbar slot / button panel) or arrive over IGC on the channel `<IGC Tag>_CMD`.
-Printed drones start in IDLE and wait for the printer's `_JOIN`; a drone pasted by hand needs `guard`, `follow` or `hunt` (or set `Start Mode`).
+A drone pasted by hand starts in **SENTRY** (the default `Start Mode`; was IDLE): it waits 5 s, then holds that spot and attacks whatever comes within
+`Sentry Range` (below). Give it `guard`, `follow`, `hunt` or `idle` to change that, or set `Start Mode`. A drone that is clamped (merge block or connector:
+printer bay, cradle) never flies in SENTRY: it waits IDLE for its launch, and after the take-off its Staff PB gives it `[Launch] Mode` as before.
 
 - `guard` holds the spot where the drone was pasted (or where you last ran `home`) and attacks anything within `Guard Radius` (1.5 km) of it.
   With nothing in sight it stays put and turns in place to scan; it does not patrol. If a ship runs a Mothership link, its live position

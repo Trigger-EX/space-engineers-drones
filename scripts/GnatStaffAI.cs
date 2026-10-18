@@ -17,7 +17,7 @@
 const string VER = "1.0-gnat-split";
 
 // ---------------- settings (read from the Flight PB's Custom Data) -----
-string Tag = "GNAT", StartMode = "IDLE";
+string Tag = "GNAT", StartMode = "SENTRY";
 
 // ---------------- state ----------------------------------------------
 enum Mode { IDLE, FORM, ATTACK, RTB }
@@ -325,7 +325,7 @@ bool LnBurn(double dt, bool idle, string startMode, Action<string> cmd)
         if (_lnCtl != null) _lnCtl.DampenersOverride = true;
         _lnS = 3; _lnArmed = false; LnWrite(false);
         string m = startMode.Trim().ToUpperInvariant();
-        if (m == "" || m == "IDLE") m = _lnModeCfg.Trim().ToUpperInvariant();
+        if (m == "" || m == "IDLE" || m == "SENTRY") m = _lnModeCfg.Trim().ToUpperInvariant();   // (SENTRY, the default Start Mode, is for a pasted drone: a launched one takes [Launch] Mode)
         _lnMsg = "took off (" + _lnMsg + ", " + moved.ToString("0") + " m, " + _lnT.ToString("0.0") + " s), mode " + m;
         if (idle && m != "" && m != "IDLE") { cmd("home"); cmd(m.ToLowerInvariant()); }
         return false;

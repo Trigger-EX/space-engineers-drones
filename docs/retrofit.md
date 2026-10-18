@@ -27,6 +27,7 @@ Shared script blocks (`tools/blocks.json`, `tools/*_sync.py`) are the cheapest w
 
 | Improvement | Applied to | Not applied to (why) |
 |---|---|---|
+| SENTRY as the default Start Mode (was IDLE); 5 s IDLE grace for a printer JOIN; stands down to IDLE while docked; launched drones keep `[Launch] Mode` (2026-10-16) | Hornet, Lancer, Harrier, Aegis, Mantis, Basilisk, Longbow S/L, Wasp, Gnat (their Staff PBs and blueprints too) | Watcher, Ballista (HUNT on purpose), Shrike / Helms (REACT), Tubes (HUNT), Stinger (WAIT), WaspAI.cs (legacy) |
 | `sentry` command / `Start Mode` SENTRY + `Sentry Range (m)=2500`: still on the spot until a target is within range, then hunt it with no leash, then back to the spot (Storage keeps it) | Hornet, Watcher, Lancer, Harrier, Aegis, Mantis, Basilisk, Wasp (Flight), Longbow S/L, Gnat, Shrike + every warship Helm, Tube rams (all), Stinger (wait and launch only); FLEET block default `Allowed Commands` | Midge (scriptless), Peeper / Spotter (unarmed scouts), `WaspAI.cs` (legacy single-PB, no blueprint, would pass 100k) |
 
 ## Applied 2026-10-14 (from the Ballista work of the day)

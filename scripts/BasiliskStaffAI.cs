@@ -16,7 +16,7 @@
 const string VER = "1.0-basilisk-split";
 
 // ---------------- settings (read from the Flight PB's Custom Data) -----
-string Tag = "BASILISK", StartMode = "IDLE";
+string Tag = "BASILISK", StartMode = "SENTRY";
 double MaxSpeed = 60, SepRange = 160;
 
 // ---------------- state ----------------------------------------------

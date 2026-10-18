@@ -34,7 +34,7 @@ import spares
 
 HULL = (0.58, -0.78, -0.25); ACC = (0.07, 0.55, 0.10)
 
-def _custom(section, tag, mode="IDLE", extra=""):
+def _custom(section, tag, mode="SENTRY", extra=""):
     return f"[{section}]\nIGC Tag={tag}\nStart Mode (GUARD/HUNT/ASSIST/IDLE)={mode}\n{extra}"
 
 def _pb(bp, mn, name, script, custom, fwd="Forward", up="Up", large=False):
