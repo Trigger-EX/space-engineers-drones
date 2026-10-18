@@ -23,9 +23,10 @@ namespace SeSim.Run
             Type t = Assembly.LoadFrom(dll).GetType("Program");
             bool isGp = t != null && typeof(Sandbox.ModAPI.IMyGridProgram).IsAssignableFrom(t);
             Check(isGp, "Program implements Sandbox.ModAPI.IMyGridProgram");
-            var f = t == null ? null : t.GetField("_rng", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            FieldInfo f = null;     // any Random field of the script (SURVIVAL LINK's evade/jink rng is _evRng)
+            if (t != null) foreach (var fi in t.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)) if (fi.Name == "_rng" || fi.Name == "_evRng") { f = fi; break; }
             bool det = f != null && f.FieldType == typeof(SimShim.DetRandom);
-            Check(det, "script 'Random' resolves to SimShim.DetRandom (field _rng: " + (f == null ? "missing" : f.FieldType.FullName) + ")");
+            Check(det, "script 'Random' resolves to SimShim.DetRandom (field " + (f == null ? "_rng/_evRng" : f.Name) + ": " + (f == null ? "missing" : f.FieldType.FullName) + ")");
 
             TestScriptKeys(simDir);
             TestDetRandom();

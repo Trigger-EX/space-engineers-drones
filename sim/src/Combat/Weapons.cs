@@ -289,6 +289,7 @@ namespace SeSim.Combat
                 case "WeaponBlock":
                 case "LargeTurretBase":
                     if (d.Weapon == null) return;
+                    if (d.Subtype != null && d.Subtype.Contains("Flare")) return;   // flares are not modelled: the launcher keeps its gun API (ShootOnce is a no-op) but is no weapon
                     var u = MakeWeapon(b);
                     b.Weapon = u; Weapons.Add(u);
                     if (d.Kind == "LargeTurretBase")

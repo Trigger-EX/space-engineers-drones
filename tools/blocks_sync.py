@@ -4,7 +4,8 @@
   python3 -I tools/blocks_sync.py --check          exit 1 if any block is missing/different/unlisted; also runs the legacy tools/*_sync.py --check
   python3 -I tools/blocks_sync.py --apply          write the block into every listed script (replace, or insert before the anchor line)
   python3 -I tools/blocks_sync.py --list           print blocks and their scripts
-  options: --root DIR (repo root; tests use a temp tree), --no-legacy (skip the legacy sync scripts)
+  options: --root DIR (repo root; tests use a temp tree), --no-legacy (skip the legacy sync scripts),
+           --only "NAME[,NAME]" (only these blocks, no legacy scripts: parallel work on different blocks applies only its own)
 
 blocks.json entry:  "MANUAL": {"file": "tools/manual_block.cs", "scripts": ["ShrikeAI", "HelmAI"], "anchor": "^public Program\\\\(\\\\)"}
 The block text in `file` starts with a line containing '// >>> MANUAL v<version>' and ends with '// <<< MANUAL v<version>'.
@@ -77,9 +78,13 @@ def main(argv):
         print('legacy: ' + ', '.join(cfg.get('legacy', [])))
         return 0
     apply_ = '--apply' in argv
+    only = [s.strip() for s in argv[argv.index('--only') + 1].split(',')] if '--only' in argv else None
+    for n in only or []:
+        if n not in cfg['blocks']: print(f'--only: no block named {n}'); return 2
     bad = 0
-    for name, spec in cfg['blocks'].items(): bad += sync_one(root, name, spec, apply_)
-    if '--no-legacy' not in argv:
+    for name, spec in cfg['blocks'].items():
+        if only is None or name in only: bad += sync_one(root, name, spec, apply_)
+    if '--no-legacy' not in argv and only is None:
         for s in cfg.get('legacy', []):
             path = os.path.join(root, 'tools', s)
             if not os.path.exists(path): continue

@@ -5,7 +5,10 @@
   python3 -I tools/aim_sync.py --apply   insert/replace the block (after AimMissed) and add the hooks (idempotent)
 
 Hooks (one line each, same text in every script): AimLabel/AimOffset/ProbePoint/AimMissed switch to BREACH, the lock-ray result
-feeds BreachHit, the status line shows AimInfo(), SeekerSetup() runs after the camera scan, config keys and the "breach" command.
+feeds BreachHit, the status line shows AimInfo(), config keys and the "breach" / "wp" commands.
+v1.3 (docs/design/survivability.md): the SEEKER turret moved to the Staff PB (STAFF SEARCH); its finding comes back as the .WPT slot with flag
+4096. So the seeker hooks are gone, and --apply also strips them from scripts wired by an older version (SeekerTick -> WpTick, the two seeker
+keys, the "seeker" command, the SeekerSetup() line after the camera scan).
 """
 import os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +34,7 @@ HOOKS = [
     ('    if (!AimActive(t)) return "CENTER";\n',
      '    if (!AimActive(t)) return "CENTER";\n    if (BreachMode(t)) return "BREACH";\n'),
     ('Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n',
-     'Vector3D AimOffset(Track t)\n{\n    SeekerTick(t);\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'),
+     'Vector3D AimOffset(Track t)\n{\n    WpTick(t);\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'),
     ('return centre + AimOffset(t) + dir * 1.5; }',
      'return centre + AimOffset(t) + dir * (BreachMode(t) ? BreachProbe : 1.5); }'),
     ('void AimMissed(Track t)\n{\n',
@@ -45,22 +48,42 @@ HOOKS = [
      '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
      '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
      '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
-     '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
-     '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
      '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
      '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
-     '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'),
+     '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'
+     '    WpHold = Cfg(S, "Weakpoint Hold (s)", WpHold);\n'),
     ('        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n',
      '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
      '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
-     '        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;\n'
      '        case "wp": if (w.Length > 1) WpOn = WpShare = w[1] == "on"; break;\n'),
 ]
 # earlier wirings of a hook (anchor -> list of texts that a previous version of this tool put in its place)
 PREVIOUS = {
     'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n': [
+        'Vector3D AimOffset(Track t)\n{\n    SeekerTick(t);\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n',
         'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'],
     '    AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n': [
+        # v1.2 (seeker keys, before the seeker moved to the Staff PB)
+        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
+        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
+        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
+        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
+        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
+        '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
+        '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
+        '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
+        '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'
+        '    WpHold = Cfg(S, "Weakpoint Hold (s)", WpHold);\n',
+        # v1.1 (with the weakpoint keys, before Weakpoint Hold)
+        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
+        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
+        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
+        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
+        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
+        '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
+        '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
+        '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
+        '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n',
         # v1.0 (newest first: the shorter, older wirings below are prefixes of it)
         '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
         '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
@@ -74,6 +97,10 @@ PREVIOUS = {
         '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
         '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'],
     '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n': [
+        '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
+        '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
+        '        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;\n'
+        '        case "wp": if (w.Length > 1) WpOn = WpShare = w[1] == "on"; break;\n',
         '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
         '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
         '        case "seeker": if (w.Length > 1) { SeekerOn = w[1] == "on"; SeekerSetup(); } break;\n',
@@ -98,14 +125,15 @@ def wire(t, name):
         if prev: t = t.replace(prev[0], new); continue
         if t.count(old) != 1: probs.append("hook anchor %r found %d times" % (old.strip()[:50], t.count(old))); continue
         t = t.replace(old, new)
-    # SeekerSetup() right after the camera scan line
+    # v1.2 put SeekerSetup() right after the camera scan line: the seeker is the Staff PB's now (v1.3), take the line out
     i = t.find(CAM_SCAN)
     if i < 0: probs.append("no camera scan line")
     else:
         j = t.find("\n", i) + 1
-        if not t[j:].lstrip(" ").startswith("SeekerSetup();"):
-            indent = t[t.rfind("\n", 0, i) + 1:i]
-            t = t[:j] + indent + "SeekerSetup();\n" + t[j:]
+        k = t.find("\n", j) + 1
+        if t[j:k].strip() == "SeekerSetup();": t = t[:j] + t[k:]
+    for bad in ("SeekerSetup(", "SeekerTick(", "SeekerOn", "SeekerGroup"):
+        if bad in t: probs.append("seeker code left outside the block: " + bad)
     return t, probs
 
 

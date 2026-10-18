@@ -12,11 +12,12 @@
 //   printer-test [--model "Mobile Hive"] [--fault none|noproj|halfload|...] [--script-file F]   Hive Mother on the real printer blueprint with real-game-like faulty projectors (sim/src/Run/PrinterTest.cs)
 //   multipb-probe [--seeds 3] [--model "Warden Wing"]   several synthetic PBs + timers on one grid: IGC latency/throughput, TryRun, timer chains (sim/src/Run/MultiPbProbe.cs)
 //   follow-test [--model Hornet] [--count 3] [--path cruise|weave|lost|foot|fight] ...   FOLLOW mode vs a moving owner (sim/src/Run/FollowTest.cs)
+//   survival-test --mode medic [--bp DIR] [--seconds 150] [--gap 150] [--hold-min 8] [--weld-s 12]   parked damaged Hornet + Medic: REQ/ACK, GO, APPROACH, WORK, tip hold, done, RTB (sim/src/Run/SurvivalTest.cs)
 //   avoid-test [--model Hornet] [--count 3] [--bystander Hornet] [--beacon]   drones in HUNT with a parked friendly on their line: friendly avoidance (sim/src/Run/AvoidTest.cs)
 //   wing-test [--model Ballista] [--count 3] [--spacing 120] [--enemy Hornet] [--cue]   N copies side by side running the real script: closest approach of every pair (sim/src/Run/WingTest.cs)
 //   compile-scripts               (re)build out/sim/scripts/*.dll + manifest via ScriptCompiler (same result as build.sh)
 //   M0 (docs/design/control_arch.md): --pilot "0:sit;5:move 0 0 -1;20:leave" [--pilot-team 0] puts a ScriptedPilot into the cockpit of our ships (verbs: ScriptedPilot.cs),
-//         --pb-custom-data "Helm=<ini>|Staff=<ini>" (CustomData per PB tag), --enemy-scripted (enemies from --enemies run their own PB scripts: "Helm:hunt",
+//         --pb-custom-data "Helm=<ini>|Staff=<ini>" (CustomData per PB tag; a key equal to a model name, "Tube 4x4 F=<ini>", sets every PB of that model), --enemy-scripted (enemies from --enemies run their own PB scripts: "Helm:hunt",
 //         "Staff:wing satellite"; implies --block-automation), --block-automation (Timer / Event Controller / Button Panel toolbars run), commands "Tag:arg"
 //         (e.g. --commands "0.5:Helm:hunt") go to the PBs whose name starts with [Tag] only.
 //   --seeds defaults to DefaultSeeds (a quick check). Pick the count the task needs (CLAUDE.md "Simulations"); the big matrices
@@ -178,6 +179,8 @@ namespace SeSim.Run
                     return FollowTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "avoid-test":
                     return AvoidTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
+                case "survival-test":
+                    return SurvivalTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "wing-test":
                     return WingTest.Run(args, simDir, FindRepoRoot(DockLaunch.RepoArg(args)));
                 case "compile-scripts":
@@ -189,7 +192,7 @@ namespace SeSim.Run
                     if (inp == null) throw new ArgumentException("summarize needs --in runs.jsonl");
                     var rs = LoadRuns(inp);
                     string outp = o.Get("out", Path.Combine(Path.GetDirectoryName(Path.GetFullPath(inp)), "summary.csv"));
-                    JsonOut.WriteSummaryCsv(outp, rs);
+                    JsonOut.WriteSummaryCsv(outp, rs); JsonOut.WriteHitMapJson(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outp)), "hitmap.json"), rs);
                     Console.WriteLine(rs.Count + " runs -> " + outp);
                     return 0;
                 }
@@ -413,6 +416,7 @@ namespace SeSim.Run
             sb.Append(r.Scenario).Append(" #").Append(r.SeedIndex).Append(": ").Append(r.Outcome);
             if (r.Outcome == "win") sb.Append(" team ").Append(r.WinnerTeam);
             sb.Append(" at ").Append(r.DurationS.ToString("F1", Inv)).Append(" s, wall ").Append(r.WallMs.ToString("F0", Inv)).Append(" ms");
+            sb.Append(", writer audit gyro ").Append(r.WriterAuditGyro).Append(" thrust ").Append(r.WriterAuditThrust);
             if (r.Error != null) sb.Append("\n  ERROR: ").Append(r.Error);
             foreach (var s in r.Ships)
                 sb.Append("\n  ship ").Append(s.Ship).Append(' ').Append(s.Model).Append(" t").Append(s.Team).Append(" blocks ").Append(s.BlocksEnd).Append('/').Append(s.BlocksStart)
@@ -473,7 +477,7 @@ namespace SeSim.Run
             var sw = System.Diagnostics.Stopwatch.StartNew();
             ParallelRunner.Run(jobs, threads, baseSeed, settings, repo, outDir, skip, o.Has("quiet"));
             var all = LoadRuns(runsPath);
-            if (!o.Has("no-summary")) JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
+            if (!o.Has("no-summary")) { JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all); JsonOut.WriteHitMapJson(Path.Combine(outDir, "hitmap.json"), all); }
             int errors = 0, wins = 0, timeouts = 0, other = 0;
             foreach (var r in all) { if (r.Outcome == "error") errors++; else if (r.Outcome == "win") wins++; else if (r.Outcome == "timeout") timeouts++; else other++; }
             Console.WriteLine("done: " + all.Count + " runs in file (" + wins + " decisive, " + timeouts + " timeouts, " + other + " draws, " + errors + " errors), wall " + sw.Elapsed.TotalSeconds.ToString("F1", Inv) + " s");
@@ -496,7 +500,7 @@ namespace SeSim.Run
             Console.Error.WriteLine("Press Enter to stop: fights in progress finish and everything is saved. Press Enter twice to stop at once.");
             ParallelRunner.RunEndless(scenarios, seedStart, threads, baseSeed, settings, repo, outDir, skip);
             var all = LoadRuns(runsPath);
-            JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all);
+            JsonOut.WriteSummaryCsv(Path.Combine(outDir, "summary.csv"), all); JsonOut.WriteHitMapJson(Path.Combine(outDir, "hitmap.json"), all);
             Console.WriteLine("saved: " + all.Count + " fights in " + runsPath + " (summary.csv updated)");
             return 0;
         }

@@ -82,7 +82,19 @@ def hornet(lite=False):
     name = "Hornet Lite" if lite else "Hornet"
     bp = hornet_frame(name, "", "MyObjectBuilder_SmallGatlingGun", script_text("HornetDroneAI.cs"),
                       ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE)
-    return C.add_support_pbs(bp)      # [Flight] + [Staff] (+ [Thrust]) PBs here, so the Hornets clamped into the Wing ships / cradle pods (attached as sub-grids, which build_all does not visit) carry the Staff PB too
+    hornet_survival(bp, name)
+    return bp
+
+def hornet_survival(bp, name, decoys=2):
+    """Survivability items 11-15 on a Hornet-class core (Hornet, Watcher, Harrier, Aegis, Wasp, Lancer; docs/design/survivability.md):
+    Gyroscope 2 in place of the core armour at (1, 0, -1) (it stands on the Ion Lift R thruster's back; battery, armour, lift thruster and gun around it:
+    buried on all six faces), then the [Flight] + [Staff] (+ [Thrust]) PBs (here, so the Hornets clamped into the Wing ships / cradle pods, attached as
+    sub-grids which build_all does not visit, and the printed copies carry them), then the survival kit inside the bounding box."""
+    C.add_gyro(bp, (1, 0, -1), f"{name} Gyroscope 2")
+    C.add_support_pbs(bp)
+    C.bury_swap(bp)
+    C.add_survival_kit(bp, decoys=decoys, model=name)
+    return finalize(bp)
 
 # ---------------------------------------------------------------------------------------------
 def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True, side=None):
@@ -136,9 +148,39 @@ def gnat(lite=False, name=None, side=None):
     for b in bp.blocks:
         if b['xtype'] == spares.PB_X: b['name'] = f"[Flight] {name} PB"
     zs = 3
-    bp.armor(0, 0, 2, RED)
+    # survivability item 14: Battery 2 takes the Staff PB's seat (0, 0, 2) (was armour; a battery mounts on every face): no power single point of failure,
+    # three cells behind Battery 1
+    bat(bp, (0, 0, 2), f"{name} Battery 2")
     pods.orient_attached(bp, spares.PB_X, "SmallProgrammableBlock", (0, 0, zs), name=f"[Staff] {name} PB", kind="ctrl", color=RED, extra=pb_extra(script_text("GnatStaffAI.cs")))
+    gnat_survival(bp, name)
     bp.validate()
+    return bp
+
+GNAT_SECTION_X, GNAT_SECTION_Y = (0, 1), (0, 1)
+
+def gnat_section(bp):
+    """the Gnat's set outline: its 2 x 2 section (x 0..1, y 0..1) over the hull length (the two side cameras predate the rule and stand outside it)"""
+    lo, hi = C.kit_outline(bp)
+    return {(x, y, z) for x in GNAT_SECTION_X for y in GNAT_SECTION_Y for z in range(lo[2], hi[2] + 1)}
+
+def gnat_survival(bp, name):
+    """Survival kit inside the 2 x 2 section (docs/design/survivability.md items 11-15).  The section has two free cells that are not an exhaust lane, both
+    in the upper right column: the tail (1, 1, 2..3, the sensor stands in 2) and the nose (1, 1, -3), where nothing mounts (thruster side, camera top and gyro
+    front have no mount there).  Decoy 1 takes the sensor's cell on the tail, on the AI Flight block, away from the core (RC, battery 1, gyro at
+    z -2..-1); the sensor (360 degrees, any spot will do) moves one cell back onto the decoy.  No cell is left for a second decoy, the flare launcher,
+    the self-projector or a second gyro (the gyro would also cost 614 kg, -21 % thrust-to-weight, and the single main / reverse thrusters stay one-hit
+    kills anyway): recorded as skipped in bp.kit."""
+    import pods
+    sn = [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_SensorBlock']
+    if sn and tuple(sn[0]['min']) == (1, 1, 2) and (1, 1, 3) not in bp.reserve and (1, 1, 3) not in bp.occupancy():
+        bp.blocks.remove(sn[0])
+        C.add_survival_kit(bp, outline=gnat_section(bp), decoys=1, flares=0, projector=False, panels=False, model=name, decoy_cells=[(1, 1, 2)])
+        pods.orient_attached(bp, "MyObjectBuilder_SensorBlock", "SmallBlockSensor", (1, 1, 3), name=sn[0]['name'], kind="sensor")
+    else:       # test variants with another tail (testships 'Gnat Side*': the side thruster's flame crosses (1, 1, 3)): whatever free cell mounts a decoy
+        C.add_survival_kit(bp, outline=gnat_section(bp), decoys=1, flares=0, projector=False, panels=False, model=name)
+    for what in ('decoy 2: no free cell left inside the 2 x 2 section', 'no cell for the flare launcher inside the 2 x 2 section',
+                 'no cell for the self-projector inside the 2 x 2 section', 'no cell for a second gyro inside the 2 x 2 section'):
+        bp.kit['skipped'].append(what)
     return bp
 
 # ---------------------------------------------------------------------------------------------
@@ -264,18 +306,41 @@ def large_rail_power(bp, tag):
     return bp
 
 def longbow_s(lite=False):
-    bp = C.add_support_pbs(longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite))
+    bp = longbow_frame("Small", script_text("LongbowSniperAI.cs"), lite)
+    # the [Aux] PB (docs/design/staff_split.md) sits in the belly at LONGBOW_S_AUX_CELL: the free choice (-1,-3,-2) took the self-projector's cell, the kit moved
+    # and the Foundry's welders lost the gyro and the up camera (reach.py); this cell leaves every kit block where it was and the Foundry passes
+    C.add_support_pbs(bp, avoid=LONGBOW_S_WELD_CELLS + spine_weld_cells(bp), aux_cell=LONGBOW_S_AUX_CELL)
     # PRINTABLE: free_pb_spot would put the [Thrust] PB into one of the two cells emptied for the printer (out of welder reach); (1,0,-2) is reached
     t = [b for b in bp.blocks if (b['name'] or '').startswith('[Thrust]')]
     if t and tuple(t[0]['min']) in ((-1, -1, -2), (0, -1, -2)):
         t[0]['min'] = (1, 0, -2); t[0]['fwd'], t[0]['up'] = 'Down', 'Forward'
         bp.validate()
-    return bp      # [Flight] + [Staff] (+ [Thrust]) here too, so a Longbow S printed by a Foundry carries its Staff PB
-def longbow_l(lite=False): return longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite)
+    # survival kit (docs/design/survivability.md items 11-15); the two cells emptied for the printer's welders stay empty
+    # no bury_swap: the reactors sit where the Foundry's welders reach them (reach.py; a swap broke the Longbow Foundry)
+    C.add_survival_kit(bp, model=bp.name, avoid=LONGBOW_S_WELD_CELLS + spine_weld_cells(bp), panels=False)
+    return finalize(bp)      # [Flight] + [Staff] (+ [Thrust]) here too, so a Longbow S printed by a Foundry carries its Staff PB
+LONGBOW_S_WELD_CELLS = ((-1, -1, -2), (0, -1, -2))       # emptied so the Foundry's welders reach the railgun's flank (longbow_frame, PRINTABLE)
+LONGBOW_S_AUX_CELL = (1, -5, -1)                          # [Aux] PB: 3 cells from the Flight PB, kit unchanged, Longbow Foundry reach PASS (2026-10-17)
+
+def spine_weld_cells(bp):
+    """Longbow S / Mantis (printed by a Foundry): cells the survival kit leaves empty: everything above the hull floor (y >= -1: the welders for the gyro,
+    the up camera and the railgun's flank work from there) and the space behind the spine (the rear welders reach both gyros and the rear camera).
+    Kit blocks there, and the item 13 skin panels anywhere, broke the Longbow Foundry's welder reach (reach.py), so these drones get no panels."""
+    lo, hi = C.kit_outline(bp)
+    return tuple((x, y, z) for x in range(lo[0], hi[0] + 1) for y in range(lo[1], hi[1] + 1) for z in range(lo[2], hi[2] + 1)
+                 if y >= -1 or (z >= 1 and -1 <= x <= 1 and y >= -3))
+
+def longbow_l(lite=False):
+    """support PBs here (not only in build_all) so the self-projection holds them, then the survival kit"""
+    bp = C.add_support_pbs(longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite))
+    C.bury_swap(bp)
+    return finalize(C.add_survival_kit(bp, model=bp.name))
 
 def longbow_l_seeker(lite=False):
     """Option-4 test ship: Longbow L + artillery turret named [Seeker] on its back (large grid, paste only)."""
-    return longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite, seeker=True)
+    bp = C.add_support_pbs(longbow_frame("Large", script_text("LongbowSniperAI.cs"), lite, seeker=True))
+    C.bury_swap(bp)
+    return finalize(C.add_survival_kit(bp, model=bp.name))
 
 MODELS = {"Hornet": hornet, "Gnat": gnat, "Longbow S": longbow_s, "Longbow L": longbow_l, "Longbow L Seeker": longbow_l_seeker}
 

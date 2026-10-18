@@ -1,4 +1,4 @@
-// >>> WEAKPOINT RELAY v1.0 (shared block: identical in every drone Staff PB, see docs/design/hive_weakpoint.md and docs/hive-protocol.md) >>>
+// >>> WEAKPOINT RELAY v1.1 (shared block: identical in every drone Staff PB, see docs/design/hive_weakpoint.md and docs/hive-protocol.md) >>>
 // Fleet side of the shared breach point. The Flight PB sends its own findings on <Flight>.WPF; this PB puts them on the fleet channel <ch>_WP,
 // collects the findings of the whole wing, and sends the best hole for the Flight's current target back on <Flight>.WPT (once a second).
 //   <ch>_WP  MyTuple<long target, Vector3D s, Vector3D d, Vector3D info, long senderGrid, int flags>
@@ -9,6 +9,9 @@
 // A drone sends only its OWN confirmed findings; a received hole is never forwarded (no echo). Holes within 4 m of each other are one hole; the best
 // one wins (seeker kind by "Weakpoint Priority", then supporters, then depth, then the lowest grid id), so every drone picks the same hole.
 // [Fleet] keys: Weakpoint Priority=1,3,2 (power, propulsion, weapons)   Weakpoint Expire (s)=20
+// v1.1 (docs/design/survivability.md): the drone's OWN seeker turret is read by the Staff (STAFF SEARCH -> WpSeek): that entry (map key ~own grid id,
+// internal flag 4096, kept 3 s) ranks above every other hole, goes to the wing like an own finding, and reaches the Flight with .WPT flag 4096 (the Flight
+// takes it as its own seeker point, BreachSet(s, d, true)); .WPT is sent twice a second while it is fresh, else once a second.
 // Script hooks: WpStep() in Tick after Relay(); _sb.Append(WpStatus()) in Display(). Uses: _fk, _flChan, _tgtId, _tick, _now, _f2sTick.
 class WpE { public long Tgt, Snd; public Vector3D S, D, I; public int F; public double T; }
 Dictionary<long, WpE> _wpMap = new Dictionary<long, WpE>();
@@ -35,6 +38,7 @@ void WpCfg()
 }
 int WpRank(WpE e)
 {
+    if ((e.F & 4096) != 0) return 100;                     // own seeker turret, read this second
     if ((e.F & 8) == 0) return 0;                           // camera breach points rank below anything a turret found
     int k = e.F & 7, i = Array.IndexOf(_wpPri, k);
     return i >= 0 ? 20 - i : 5;
@@ -81,10 +85,11 @@ void WpStep()
         if ((d.Item6 & 96) != 0) WpEvent(d, d.Item5); else WpPut(d.Item5, d);
     }
     _wpDel.Clear();
-    foreach (var kv in _wpMap) if (_now - kv.Value.T > _wpExp) _wpDel.Add(kv.Key);
+    foreach (var kv in _wpMap) if (_now - kv.Value.T > ((kv.Value.F & 4096) != 0 ? 3 : _wpExp)) _wpDel.Add(kv.Key);
     foreach (var k in _wpDel) _wpMap.Remove(k);
     for (int i = _wpDone.Count - 1; i >= 0; i--) if (_now - _wpDone[i].T > 3) _wpDone.RemoveAt(i);
-    if (_tick % 60 != 3) return;
+    WpE sk; bool skf = _wpMap.TryGetValue(~me, out sk) && sk.Tgt == _tgtId && _tgtId != 0;
+    if (_tick % (skf ? 30 : 60) != 3) return;
     // best hole for the Flight's target
     _wpBest = null; _wpBestK = 0;
     if (_tgtId != 0)
@@ -107,11 +112,20 @@ void WpStep()
     if (_fk == "" || _tick - _f2sTick > 90) return;
     if (_wpBest != null)
         IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(_wpBest.Tgt, _wpBest.S, _wpBest.D,
-            new Vector3D(_wpBestDep, _wpBest.I.Y, _now - _wpBest.T + _wpBest.I.Z), _wpBest.Snd, (_wpBest.F & 31) | (Math.Min(_wpBestK, 15) << 8)), TransmissionDistance.CurrentConstruct);
+            new Vector3D(_wpBestDep, _wpBest.I.Y, _now - _wpBest.T + _wpBest.I.Z), _wpBest.Snd, (_wpBest.F & 4127) | (Math.Min(_wpBestK, 15) << 8)), TransmissionDistance.CurrentConstruct);
     foreach (var e in _wpDone)
         if (e.Tgt == _tgtId) IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(e.Tgt, e.S, e.D, e.I, e.Snd, 32), TransmissionDistance.CurrentConstruct);
 }
-double _wpBestDep;
+double _wpBestDep, _wpSkT = -99; MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> _wpSkLast;
+// own seeker finding (STAFF SEARCH): into the map as the top-ranked entry, to the wing on a change or every 2 s
+void WpSeek(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
+{
+    if (!WpOkT(d)) return;
+    long me = Me.CubeGrid.EntityId;
+    var e = WpPut(~me, d); if (e != null) { e.Snd = me; e.F |= 4096; }
+    if (_flChan != "" && (d.Item1 != _wpSkLast.Item1 || (d.Item2 - _wpSkLast.Item2).LengthSquared() > 1 || _now - _wpSkT >= 2))
+    { IGC.SendBroadcastMessage(_flChan + "_WP", d); _wpSkT = _now; _wpSkLast = d; }
+}
 // DONE: every hole within 4 m of it is gone (and the Flight is told for 3 s); STALL: that sender's support is gone
 void WpEvent(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d, long snd)
 {
@@ -131,4 +145,4 @@ string WpStatus()
     string[] kn = { "breach point", "power", "weapons", "propulsion", "block" };
     return "Weakpt : " + kn[Math.Min(_wpBest.F & 7, 4)] + " hole " + _wpBestDep.ToString("0") + " m, " + _wpBestK + " drone(s), age " + (_now - _wpBest.T).ToString("0") + " s\n";
 }
-// <<< WEAKPOINT RELAY v1.0 <<<
+// <<< WEAKPOINT RELAY v1.1 <<<

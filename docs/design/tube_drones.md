@@ -491,3 +491,6 @@ against both (see below).
 
 ## Printing (2026-10-14)
 `Tube Foundry` (Tube 2x2, 2x4, 3x3, 4x4, one bay each) and `Tube W Foundry` (the W tubes) print the small tubes with the merge-pair release the owner confirmed in the game (Sprue Test Merge, Hive Mother). The tubes have no merge block of their own, so `printers.py` sets one flush into the belly armour (`printer_lib.with_flush_latch`, the outline rule: nothing outside the W x H section). TubeRamAI v1.2 is held (treated as docked) while its grid holds a `[Bay` block or the Hive Mother PB, so it never fires the printer's thrusters, and it hunts once the merge pair lets go. It sends `TUBE_SWARM` every second, so the printer counts live tubes (Max Alive / Max Drones 8) and reprints the ones that rammed. The large tubes (Tube L) are not printed: see the large-grid note in the changelog.
+
+## Decoys (2026-10-17)
+Fixed decoys and detachable decoy flare pods were tried on the Tube 4x4: `docs/design/tube_decoys.md` (`Tube 4x4 F`).

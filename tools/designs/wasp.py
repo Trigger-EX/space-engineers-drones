@@ -83,13 +83,15 @@ def frame(name, wtype, wsub, wlabel, wlen, script, custom_data, ai=True, sensor=
 
 def wasp(lite=False):
     name = "Wasp Lite" if lite else "Wasp"
-    return C.add_support_pbs(frame(name, "MyObjectBuilder_SmallMissileLauncher", "", "Launcher", 4, script_text("WaspFlightAI.cs"), _custom("Wasp", "WASP"),
-                 ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Wasp printed by a Foundry carries its Staff PB
+    import core
+    return core.hornet_survival(frame(name, "MyObjectBuilder_SmallMissileLauncher", "", "Launcher", 4, script_text("WaspFlightAI.cs"), _custom("Wasp", "WASP"),
+                 ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE), name)      # Gyroscope 2, [Flight] + [Staff] (+ [Thrust]) here too (a Wasp printed by a Foundry carries its Staff PB), survival kit
 
 def lancer(lite=False):
     name = "Lancer Lite" if lite else "Lancer"
-    return C.add_support_pbs(frame(name, "MyObjectBuilder_SmallGatlingGun", "SmallBlockAutocannon", "Autocannon", 5, script_text("LancerAI.cs"), _custom("Lancer", "LANCER"),
-                 ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Lancer printed by a Foundry carries its Staff PB
+    import core
+    return core.hornet_survival(frame(name, "MyObjectBuilder_SmallGatlingGun", "SmallBlockAutocannon", "Autocannon", 5, script_text("LancerAI.cs"), _custom("Lancer", "LANCER"),
+                 ai=not lite, sensor=not lite, merge=(not lite) or LITE_KEEPS_MERGE), name)      # Gyroscope 2, [Flight] + [Staff] (+ [Thrust]) here too (a Lancer printed by a Foundry carries its Staff PB), survival kit
 
 MODELS = {"Wasp": wasp, "Lancer": lancer}
 

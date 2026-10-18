@@ -120,6 +120,33 @@ class TubeTests(unittest.TestCase):
     def test_script_budget(self):
         self.assertLessEqual(len(C.script_text('TubeRamAI.cs')), 80000)
 
+class TubeDecoyTests(unittest.TestCase):
+    """Decoy variants of the Tube 4x4 (docs/design/tube_decoys.md): D (decoys in the nose), DR (experiment control), F (flare pods)."""
+    def setUp(self):
+        self.bps = {n: tube.build(n) for n in tube.DECOY + tube.DECOY_EXPERIMENTS}
+
+    def test_validate_section_dlc(self):
+        for n, bp in self.bps.items():
+            bp.validate()
+            self.assertEqual(bp.dlc_used(), [] if isinstance(bp.dlc_used(), list) else set(), n)
+            for b in bp.blocks:                                               # outline rule: nothing outside the 2 x 2 m section
+                for (x, y, z) in bp.cells(b): self.assertTrue(0 <= x < 4 and 0 <= y < 4, f'{n}: {b["name"]} at {(x, y, z)}')
+
+    def test_nose_decoys(self):
+        bp = self.bps["Tube 4x4 D"]
+        d = [b for b in bp.blocks if b['sub'] == 'SmallDecoy']
+        self.assertEqual(len(d), 4)
+        self.assertTrue(all(bp.cells(b)[0][2] == 1 for b in d))                 # under the front heavy layer
+
+    def test_flare_pods(self):
+        bp = self.bps["Tube 4x4 F"]
+        self.assertEqual(tube.flare_pod_parts(bp), 4)                              # each pod held only by its merge pair
+        d = [b for b in bp.blocks if b['sub'] == 'SmallDecoy']
+        self.assertEqual(len(d), 4)
+        self.assertTrue(all(b.get('enabled') is False for b in d))                # off until dropped (no decoy on the tube itself)
+        self.assertFalse([b for b in bp.blocks if b['kind'] == 'merge'])           # no docking latch: the flare merges are kind "flare"
+        self.assertEqual(len([b for b in bp.blocks if 'Flare Latch' in (b['name'] or '')]), 4)
+
 class TubeLargeTests(unittest.TestCase):
     """Tube L 1x1 / 2x2 (+ W): large grid, heavy nose, side thrusters without reverse, heavy armour panels round the body."""
     NAMES = ("Tube L 1x1", "Tube L 2x2", "Tube L 1x1 W", "Tube L 2x2 W")

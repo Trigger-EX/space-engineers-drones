@@ -23,7 +23,7 @@ class BasiliskSplit(unittest.TestCase):
             bp = self.mods['extra'].MODELS[k](False)
             bp.validate()
             ps = pbs(bp)
-            self.assertEqual(sorted(b['name'].split(']')[0] + ']' for b in ps), ['[Flight]', '[Staff]'], [b['name'] for b in ps])
+            self.assertEqual(sorted(b['name'].split(']')[0] + ']' for b in ps), ['[Flight]', '[Staff]', '[Thrust]'], [b['name'] for b in ps])
             fl = [b for b in ps if b['name'].startswith('[Flight]')][0]
             st = [b for b in ps if b['name'].startswith('[Staff]')][0]
             self.assertIn('LkInit(', fl['extra']); self.assertIn('BASILISK STAFF', st['extra'])

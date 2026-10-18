@@ -5,7 +5,7 @@
 #   ./run_pending.sh --jobs 12        fewer threads (default: all logical CPUs minus 1)
 #   ./run_pending.sh --start-n 20     first round size (default 5); --max-n 640 stops after the round with N=640
 #   ./run_pending.sh --only retro-pirate-base,matrix-1v1     only these lines (names; "charge-" matches every charge line)
-# Stop: Ctrl+C once. The fight in progress is dropped, every finished fight is kept, summaries are rewritten and SE_results.zip is packed.
+# Stop: press Enter (or Ctrl+C once). The fight in progress is dropped, every finished fight is kept, summaries are rewritten and SE_results.zip is packed.
 # Run it again later and it continues. Works in the SimPack folder (out/sim next to this script) or in a repo checkout (../out/sim).
 cd "$(dirname "$0")"
 PLAN=plans/pending.plan; JOBS=$(( $(nproc 2>/dev/null || echo 4) - 1 )); N=5; MAXN=1000000; ONLY=""
@@ -30,10 +30,14 @@ while IFS= read -r line; do
     while IFS= read -r l2; do case "$l2" in ''|\#*) continue;; esac; LINES+=("$(echo "$l2" | sed -E "s/--seeds [0-9]+/--seeds $tok/")"); done < "$f"
   else LINES+=("$line"); fi
 done < "$PLAN"
-echo "${#LINES[@]} experiments in $PLAN"
+echo "${#LINES[@]} experiments in $PLAN:"; for l in "${LINES[@]}"; do echo "  [$(echo "${l%%|*}" | xargs)]"; done
 
+# a SimHost left over from an earlier run (stopped terminal, crash) would write the same results twice: stop here instead
+OLD=$(pgrep -f "SimHost.exe" 2>/dev/null | grep -vx "$$" | tr '\n' ' ')
+[ -n "$OLD" ] && { echo "A SimHost is still running (pid $OLD). Stop it first:  pkill -f SimHost.exe   then run this again."; exit 1; }
 STOP=0
 finish() {
+  [ -n "${WATCH:-}" ] && kill "$WATCH" 2>/dev/null
   echo; echo "Stopping: writing summaries and SE_results.zip (finished fights are kept; run ./run_pending.sh again to continue)"
   for d in results/*/; do
     [ -s "$d/runs.jsonl" ] && mono "$EXE" summarize --in "$d/runs.jsonl" > /dev/null 2>&1
@@ -41,13 +45,27 @@ finish() {
   [ -f pack_results.sh ] && ./pack_results.sh
   exit 0
 }
-trap 'STOP=1' INT TERM
+CHILD=""
+# Stop the simulator for good: TERM, and KILL after 5 s (mono waits for its worker threads on TERM, so it can keep running for hours). Also on
+# SIGHUP (terminal closed) and on any exit of this script, so no SimHost is left behind.
+killsim() {
+  [ -n "$CHILD" ] || return 0
+  kill -TERM "$CHILD" 2>/dev/null
+  for _i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$CHILD" 2>/dev/null || return 0; sleep 0.5; done
+  kill -KILL "$CHILD" 2>/dev/null
+}
+trap 'STOP=1; killsim' INT TERM HUP
+trap 'killsim' EXIT
+# Enter = Ctrl+C (needs a terminal; with nohup / no tty only Ctrl+C or kill works)
+WATCH=""
+if [ -t 0 ]; then ( read -r _ < /dev/tty && kill -TERM $$ ) 2>/dev/null & WATCH=$!; fi
 
 while [ "$N" -le "$MAXN" ]; do
   echo "$N" > "$STATE"
   echo "##### round N=$N ($(date '+%F %H:%M:%S'))" | tee -a "$LOG"
   for line in "${LINES[@]}"; do
     [ "$STOP" = 1 ] && finish
+    [[ "$line" == *"|"* ]] || { echo "  skipping a malformed plan line (no |): [$line]" | tee -a "$LOG"; continue; }
     name="$(echo "${line%%|*}" | xargs)"; args="${line#*|}"
     if [ -n "$ONLY" ]; then ok=0; IFS=, read -ra sel <<< "$ONLY"; for s in "${sel[@]}"; do [[ "$name" == "$s" || ( "$s" == *- && "$name" == "$s"* ) ]] && ok=1; done; [ $ok = 0 ] && continue; fi
     out="results/$name"; mkdir -p "$out"
@@ -56,7 +74,10 @@ while [ "$N" -le "$MAXN" ]; do
     echo "$EXE $args" > "$out/command.txt"
     start=$(date +%s); tries=0
     while :; do
-      eval "mono $EXE $args" >> "$out/log.txt" 2>&1 < /dev/null; rc=$?
+      eval "exec mono $EXE $args" >> "$out/log.txt" 2>&1 < /dev/null &      # exec: $! is the simulator itself, not a subshell
+      CHILD=$!; wait $CHILD; rc=$?
+      while kill -0 $CHILD 2>/dev/null; do wait $CHILD; rc=$?; done     # a stop signal interrupts wait, not the simulator: it is killed by the trap
+      CHILD=
       [ "$STOP" = 1 ] && break
       [ $rc -ge 128 ] && [ $tries -lt 20 ] && { tries=$((tries + 1)); echo "  $name crashed (rc=$rc), restart $tries" | tee -a "$LOG"; continue; }
       break

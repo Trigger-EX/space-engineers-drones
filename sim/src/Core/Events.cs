@@ -20,6 +20,7 @@ namespace SeSim.Core
         GridSplit,         // ShipA split (Value = parts)
         TargetLocked,      // optional, from scripts' IGC/script state when observable
         CollisionDamage,   // ShipB lost Value hit points of block integrity in a collision with ShipA (ShipA may be -1); not a Hit
+        BlockDamage,       // reporting only: Block of ShipB absorbed Value integrity from ShipA; Aux = SeSim.Combat.DamageKind, Id = projectile id (0 unknown); sent AFTER Block.Hp was reduced
     }
 
     public struct SimEvent
@@ -30,6 +31,8 @@ namespace SeSim.Core
         public double Value;
         public Vector3D Position;
         public string Text;               // rare (exceptions); null otherwise
+        public int Aux;                   // BlockDamage: DamageKind as int
+        public BlockInst Block;           // BlockDamage: the damaged block (Hp already reduced; Hp <= 0 = this hit destroyed it)
         public long Id;                   // Hit/FriendlyFire: id of the projectile that did it (0 = unknown, each event then counts alone)
     }
 

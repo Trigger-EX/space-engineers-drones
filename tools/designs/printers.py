@@ -31,7 +31,7 @@ merge pair is switched off (they are built INTO the projector's grid), projected
 projection offset sign (checked against the Starburst ship, it fits exactly).  The welder sphere centre is NOT known (the dummy position in
 Welder.mwm is unpublished), hence the hypothesis family.
 
-CUSTOM DATA for HiveMotherAI.cs, per [Bay N]: Exit Direction, Drone Box Min / Drone Box Max (printer grid cells, translation T included), Drone Cell
+CUSTOM DATA for HiveMotherAI.cs, per [Bay N]: Dock Forward / Dock Up / Repair (docking-capable drones, printer_lib.DOCK_DRONES), Exit Direction, Drone Box Min / Drone Box Max (printer grid cells, translation T included), Drone Cell
 Count (unique drone blocks), Drone Occupied Cells, Ignore Cells; and a [Launch] section (Auto=true, Burst Seconds=4).
 """
 import sys, os, time, math
@@ -56,6 +56,7 @@ DRONES = {
     'Mantis':     ('extra',   'Mantis',    'MANTIS',   True),
     'Stinger':    ('stinger', 'Stinger',   'STINGER',  False),
     'Peeper':     ('peeper',  'Peeper',    'PEEPER',   False),
+    'Pathfinder': ('peeper',  'Pathfinder', 'PATHFINDER', True),     # PathfinderAI v1.0: no merge of its own -> flush latch set into the hull
     'Midge':      ('support', 'Midge',     'MIDGE',    False),       # scriptless (AI blocks): Hive Mother switches its AI behaviour on at release
     # tube rams (TubeRamAI v1.1: held while welded to the printer, _SWARM heartbeat): no merge block of their own -> latch stalk
     **{f'Tube {s}{w}': ('tube', f'Tube {s}{w}', 'TUBE', True) for s in ('2x2', '2x4', '3x3', '4x4') for w in ('', ' W')},
@@ -132,6 +133,8 @@ SPECS = [
          doc='6 Gnat bays, no thrusters: a stationary hive (still a DYNAMIC grid; never convert it to a station).'),
     dict(name='Probe Foundry',   groups=[('Peeper', 1, (1, 1))], max=1, per_dir=0,
          doc='1 bay, prints Peeper vitals probes (a stationary foundry: the Ballista carries one docked on connectors).'),
+    dict(name='Pathfinder Nest', groups=[('Pathfinder', 2, (2, 1))], max=2, per_dir=2,
+         doc='2 bays, prints Pathfinder weakpoint finders: they wait by the nest until the fleet has a target within 5 km, then find its power blocks for the whole wing (FLEET <ch>_WP).'),
     dict(name='Midge Nest',      groups=[('Midge', 2, (2, 1))], max=6, per_dir=2,
          doc='2 bays, prints scriptless Midges (AI blocks, EXPERIMENTAL) and switches their AI behaviour on as they leave; 3 prints per bay (it cannot report in), then \'reload\'.'),
     dict(name='Tube Foundry',    groups=[('Tube 2x2', 1, (1, 1)), ('Tube 2x4', 1, (1, 1)), ('Tube 3x3', 1, (1, 1)), ('Tube 4x4', 1, (1, 1))], max=8, per_dir=3,
@@ -155,7 +158,7 @@ def build(spec, lite):
         cap = (spec.get('caps') or {}).get(tag, spec['max'] if len(spec['groups']) == 1 else max(4, 3 * count))
         for n in nums:
             scriptless = not any('ProgrammableBlock' in b['xtype'] for b in drone.blocks)      # never reports in: cap the prints instead
-            cfg.append(dict(n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=max(1, cap // count) if scriptless else 0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
+            cfg.append(dict(key=key, n=n, tag=tag, prefix=drone.name, cap=cap, max_prints=max(1, cap // count) if scriptless else 0, exit=next(r['exit'] for r in pr.records if r['n'] == n)))
 
     if spec.get('turret') and not lite: pr.add_turret()
     if spec.get('guns'): pr.add_guns(spec['guns'])
@@ -165,7 +168,10 @@ def build(spec, lite):
     if spec.get('per_dir'): pr.add_thrusters(int(math.ceil(spec['per_dir'] * m1 / m0 - 1e-9)))
     else: pr.tcount = {}
     pr.add_antenna(5000)
-    for cf in cfg: cf['geom'] = PL.bay_geometry(pr, next(r for r in pr.records if r['n'] == cf['n']))
+    for cf in cfg:
+        rec = next(r for r in pr.records if r['n'] == cf['n'])
+        rec['dock_ok'] = cf['key'] in PL.DOCK_DRONES          # survivability item 17: Dock Forward / Dock Up / Repair keys only for drones that can dock back
+        cf['geom'] = PL.bay_geometry(pr, rec)
     comps = {}
     for bay in pr.records:
         comps.setdefault(bay['drone'].name, cost_components_of(bay['drone']))

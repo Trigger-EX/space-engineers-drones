@@ -107,6 +107,10 @@ HAND = {
 GENERIC = dict(level='func', owner=True, tail='', conf='guess')
 CUBE = dict(level='cube', owner=False, tail='', conf='seen-in-Starburst')
 
+# Damage reach of a large-grid large hydrogen thruster's flame, in large cells (2.5 m), for keep_clear(..., face=True).  Space Engineers wiki: the Large Hydrogen
+# Thruster page gives 6 large blocks, the Thruster page's damage table 7 (flame about 15 m); the larger figure is used.  The old single-lane 3-cell check missed burns.
+LARGE_H2_LANE = 7
+
 # Optional fields the game writes only when they are not at their default (so they are not in the templates): where they go when
 # settings={...} asks for them.  tag -> the tag it follows (None = first field after <Enabled>).  Orders read off the samples.
 TAIL_AFTER = {'Range': 'MaxFov',                    # large turrets (terminal range)
@@ -457,12 +461,21 @@ class Blueprint:
         """validate() every grid of this file (this one and all sub-grids); returns {grid name: occupancy}"""
         return {g.name: g.validate(require_connected) for g, _ in self.grids()}
 
-    def keep_clear(self, b, n, why):
-        """reserve n cells in front of block b's forward face (exhaust, muzzle, camera view)."""
+    def keep_clear(self, b, n, why, face=False):
+        """reserve n cells in front of block b's forward face (exhaust, muzzle, camera view).
+        face=False (default, the old behaviour every design was built against): one lane of n cells from a single front cell, enough for a 1x1 face.
+        face=True: every cell of the front face, n deep (a 3x3x3 thruster's flame covers its whole 3x3 nozzle face: the single lane let the Ballista's belly
+        laterals burn the pods' lower vertical thrusters, which sat 1 cell beside the lane).  Use it with LARGE_H2_LANE for large-grid large hydrogen thrusters."""
         f = DIR[b['fwd']]; cs = self.cells(b)
-        tip = min(cs, key=lambda c: -sum(a*d for a, d in zip(c, f)))
-        for i in range(1, n + 1):
-            self.reserve[tuple(tip[k] + f[k]*i for k in range(3))] = f'{why} of {b["name"] or b["sub"]}'
+        dot = lambda c: sum(a*d for a, d in zip(c, f))
+        if face:
+            front = max(dot(c) for c in cs)
+            tips = [c for c in cs if dot(c) == front]
+        else:
+            tips = [max(cs, key=dot)]
+        for tip in tips:
+            for i in range(1, n + 1):
+                self.reserve[tuple(tip[k] + f[k]*i for k in range(3))] = f'{why} of {b["name"] or b["sub"]}'
 
     # ---------- shapes, pre-loads, toolbars, groups ----------
     def shape(self, b):

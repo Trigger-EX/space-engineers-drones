@@ -81,6 +81,7 @@ every enemy their turrets track on `<ch>`, and the argument `fleet <cmd>` (for e
 | Watcher (HornetDroneAI) | `_TGT` (its contacts) | `_TGT`, `_CMD`, `_HOME` |
 | Hornet, Gnat, Longbow S/L, Wasp, Lancer, Harrier, Aegis, Mantis, Basilisk | `_TGT` of the locked target and of "finished" | `_TGT`, `_CMD`, `_HOME` |
 | Stinger | nothing | `_TGT`, `_CMD` (`launch`, `abort`), `_HOME` ignored |
+| Pathfinder (PathfinderAI) | `_WP` (its own turret findings, kind 1 + seeker), `_TGT` of the target its turret holds | `_TGT`, `_CMD`, `_HOME` |
 | Carrier relays | `_TGT`, `_HOME`, `_HOMER`, `_CMD` (on `fleet ...`) | nothing |
 | HiveMotherAI (printer) | nothing (its `_JOIN` and rack `launch` stay on the per-type tags) | nothing |
 
@@ -93,8 +94,13 @@ TARGET frame, `info` = (hole depth m, vital depth hint m or -1, age s). Flags: b
 A drone sends only its own confirmed findings (a seeker sample, or its hole after its own probe ray hit it) and never forwards a received
 one; holes within 4 m are one hole and the best wins (seeker kind by `Weakpoint Priority`, supporters, depth, lowest grid id). The Staff PB
 does all of this (shared block in the nine `*StaffAI.cs`) and hands the Flight PB the best hole on `.WPT`. Keys: `[Fleet] Weakpoint Priority=1,3,2`,
-`Weakpoint Expire (s)=20`; Flight script section `Use Fleet Weakpoints`, `Share Weakpoints`, `Weakpoint Cone (deg)`; command `wp on|off`.
+`Weakpoint Expire (s)=20`; Flight script section `Use Fleet Weakpoints`, `Share Weakpoints`, `Weakpoint Cone (deg)`, `Weakpoint Hold (s)` (10; 0 = swap a held hole for any fresh seeker hole); command `wp on|off`.
 Not in `Allowed Commands`. A different `Secret` keeps the weakpoints of two fleets apart.
+
+**Pathfinder** (`scripts/PathfinderAI.cs`, `docs/design/pathfinder.md`): a dedicated finder with no Staff PB. It waits until a fleet contact is
+within 5 km, circles it, and sends its turret's PowerSystems samples straight on `<ch>_WP` (sender = its grid id, kind 1, flag 8, 16 when the
+game gave the block position). It crosses the aim lines from around its orbit to locate the block, so `info.Y` (depth hint) is known without
+HitPosition and `d` points from the hull entry at the block: receivers on any side can converge on it.
 
 ## 5. Security (read before playing multiplayer)
 

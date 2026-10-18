@@ -662,7 +662,7 @@ namespace SeSim.Combat
                     {
                         string kind = k.Def.Kind;
                         bool want = kind == "WeaponBlock" || kind == "LargeTurretBase" || kind == "TurretControlBlock" || kind == "Warhead";
-                        if (!want) continue;
+                        if (!want || (k.Def.Subtype != null && k.Def.Subtype.Contains("Flare"))) continue;   // flare launchers get no unit (CombatSystem.AttachUnits)
                         total++;
                         if (kind == "Warhead") { if (k.Warhead == null) missing++; else { wh++; if (k.Warhead.Armed) armed++; } }
                         else if (kind == "TurretControlBlock") { if (k.Turret == null || !k.Turret.IsController) missing++; else ctl++; }

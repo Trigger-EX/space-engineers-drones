@@ -27,6 +27,26 @@ def ini(text):
 def box(s): return tuple(int(v) for v in s.split(','))
 
 
+def mine_name(n):
+    """CradleBayAI.Mine(): the name the prefix is checked against, or None when the script never treats the block as a drone block"""
+    if not n: return None
+    for p in ('[Staff] ', '[Flight] '):
+        if n.startswith(p): return n[len(p):]
+    return None if n.startswith('[') else n
+
+
+def check_dock_keys(tc, sec, where):
+    """survivability item 17: Dock Forward / Dock Up come as a pair of orthogonal integer unit axes (host grid axes); Repair is a bool. A bay without them
+    advertises no docking (the scripts read them without writing defaults)."""
+    if 'Dock Forward' not in sec and 'Dock Up' not in sec: return False
+    tc.assertIn('Dock Forward', sec, where); tc.assertIn('Dock Up', sec, where)
+    f, u = box(sec['Dock Forward']), box(sec['Dock Up'])
+    tc.assertEqual(sum(abs(v) for v in f), 1, where); tc.assertEqual(sum(abs(v) for v in u), 1, where)
+    tc.assertEqual(sum(a * b for a, b in zip(f, u)), 0, where + ': Dock Forward and Dock Up must be orthogonal')
+    if 'Repair' in sec: tc.assertIn(sec['Repair'].lower(), ('true', 'false'), where)
+    return True
+
+
 class Corsair(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -61,8 +81,12 @@ class Corsair(unittest.TestCase):
                 if all(lo[i] <= c[i] <= hi[i] for c in cells for i in range(3)):
                     inside.append(n)
             self.assertEqual(len(inside), 1, f'{drone.name}: its cells must lie inside exactly one [Bay n] box ({inside})')
-        # drones of either bay start with the configured prefix
-        self.assertTrue(all(b['name'].startswith(cd['Bay 1']['Drone Prefix']) for b in self.bp.subgrids[0][0].blocks if b['name']))
+        # drones of either bay start with the configured prefix, read the way the script's Mine() reads names: a split drone's "[Staff] " / "[Flight] " PB
+        # names are stripped first, every other "[" name ("[Thrust] ...") is not a drone block for the script
+        pre = cd['Bay 1']['Drone Prefix']
+        for b in self.bp.subgrids[0][0].blocks:
+            n = mine_name(b['name'])
+            if n is not None: self.assertTrue(n.startswith(pre), b['name'])
 
     def test_tags_and_prefix_rule(self):
         pbs = {b['name']: b for b in self.bp.blocks if b['sub'] == 'SmallProgrammableBlock'}
@@ -90,6 +114,11 @@ class Pod(unittest.TestCase):
         pod2 = P.cradle_pod(4, ship_tag='LEVIATHAN', first_bay=5)
         self.assertEqual(ini(pod2.pod.pb['custom_data'])['Pod']['First Bay'], '5')
 
+    def test_dock_keys_when_present(self):
+        pod = P.cradle_pod(4, ship_tag='WARDEN')
+        cd = ini(pod.pod.pb['custom_data'])
+        for k in range(1, len(pod.pod.slots) + 1): check_dock_keys(self, cd['Bay %d' % k], 'pod Bay %d' % k)
+
     def test_every_pod_block_is_not_a_drone_block(self):
         # the script treats a block whose name does not start with '[' as the clamped drone's: every pod block must start with '[' (the PB is '[Pod] ...')
         pod = P.cradle_pod(2, ship_tag='SHIP')
@@ -105,6 +134,25 @@ class Script(unittest.TestCase):
         src = open(os.path.join(C.ROOT, 'scripts', 'CradleBayAI.cs'), encoding='utf-8').read()
         for key in ('Drone Box Min', 'Drone Box Max', 'Drone Prefix', 'First Bay', '"Merge"', '"Away"', '".S2P"', '".P2S"'):
             self.assertIn(key.strip('"'), src)
+
+
+class RepairProtocol(unittest.TestCase):
+    """survivability.md s4.3: both bay scripts speak the same repair channels with the exact tuple types (the drone Staff's REPAIR CLIENT matches them)"""
+    TUPLES = ('MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>', 'MyTuple<long, int, long>', 'MyTuple<long, long, int, int>')
+
+    def test_channels_and_tuples(self):
+        for f in ('CradleBayAI.cs', 'HiveMotherAI.cs'):
+            with open(os.path.join(C.ROOT, 'scripts', f), encoding='utf-8') as fh: src = fh.read()
+            for key in ('"_RBAY"', '"_RREQ"', '"_RACK"', '"Dock Forward"', '"Dock Up"', '"Repair"', 'Projector [Self]', 'GridSize * 0.5', 'WorldMatrix.Up'):
+                self.assertIn(key, src, f + ': ' + key)
+            for t in self.TUPLES: self.assertIn(t, src, f + ': ' + t)
+            # the dock keys are read, never written with a default (a printer / pod without them must stay unchanged)
+            self.assertNotIn('C(sec, "Dock Forward"', src); self.assertNotIn('C(sec, "Repair"', src)
+
+    def test_cradle_repair_state(self):
+        with open(os.path.join(C.ROOT, 'scripts', 'CradleBayAI.cs'), encoding='utf-8') as fh: src = fh.read()
+        self.assertIn('case "REPAIR":', src)
+        self.assertIn('"Reserve Seconds"', src)
 
 
 if __name__ == '__main__':

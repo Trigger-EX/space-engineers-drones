@@ -162,7 +162,7 @@ namespace SeSim.Run
                     while (ci < cmds.Count && cmds[ci].Tick <= w.Tick)
                     {
                         var c = cmds[ci++];
-                        if (c.Arg.StartsWith("!")) { if (c.Ship.Main != null) SimEvents.Run(c.Ship.Main, c.Arg); continue; }   // harness event, not a PB argument
+                        if (c.Arg.StartsWith("!")) { if (c.Ship.Main != null) Console.Error.WriteLine("event t=" + w.Time.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ship " + c.Ship.Index + " " + c.Arg + " -> " + SimEvents.Run(w, c.Ship, c.Arg)); continue; }   // harness event, not a PB argument
                         if (c.Tag == null) { for (int k = 0; k < c.Ship.Pbs.Count; k++) host.RunArgument(c.Ship.Pbs[k].Pb, c.Arg, UpdateType.Terminal); }
                         else { var tp = c.Ship.PbsByTag(c.Tag); for (int k = 0; k < tp.Count; k++) host.RunArgument(tp[k].Pb, c.Arg, UpdateType.Terminal); }   // "Tag:arg" (M0)
                     }
@@ -345,8 +345,9 @@ namespace SeSim.Run
                         if (pb == null) continue;
                         if (sc.BlueprintCustomData && sh.Spec.CustomDataOverride == null && !string.IsNullOrEmpty(bl[q].Src.StoredCustomData) && (!ScenarioGen.IsEnemy(sh.Spec.Model) || ScenarioGen.EnemyScripted)) pb.CustomData = bl[q].Src.StoredCustomData.Replace("\r", "");
                         if (sh.Spec.CustomDataOverride != null) pb.CustomData = sh.Spec.CustomDataOverride;
-                        foreach (var kv in sh.Spec.PbCustomData)      // M0: per PB tag, wins over the all-PB override
-                            if (pb.CustomNameValue.StartsWith("[" + kv.Key + "]", StringComparison.OrdinalIgnoreCase)) pb.CustomData = kv.Value;
+                        foreach (var kv in sh.Spec.PbCustomData)      // M0: per PB tag, wins over the all-PB override; a key equal to the ship's model name
+                            if (pb.CustomNameValue.StartsWith("[" + kv.Key + "]", StringComparison.OrdinalIgnoreCase)      // (e.g. "Tube 4x4 F") reaches every PB of that model
+                                || string.Equals(kv.Key, sh.Spec.Model, StringComparison.Ordinal)) pb.CustomData = kv.Value;
                     }
                 }
             }

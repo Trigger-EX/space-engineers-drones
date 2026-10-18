@@ -36,5 +36,53 @@ class Lanes(unittest.TestCase):
         self.assertTrue(self.check(recs, {(0, -3, 0)}))                 # below the drone: not its lane any more
         with self.assertRaises(AssertionError): self.check(recs, {(4, 0, 0)})
 
+class DockKeys(unittest.TestCase):
+    """survivability item 17 / section 3: [Bay N] Dock Forward / Dock Up / Repair in the printer and pod Custom Data"""
+    @staticmethod
+    def sections(cd):
+        out, cur = {}, None
+        for ln in cd.splitlines():
+            ln = ln.strip()
+            if ln.startswith('[') and ln.endswith(']'): cur = out.setdefault(ln[1:-1], {})
+            elif '=' in ln and cur is not None and not ln.startswith(';'): k, v = ln.split('=', 1); cur[k] = v
+        return out
+
+    def test_dock_axes_follow_rc(self):
+        from core import hornet
+        d = hornet(False)
+        self.assertEqual(PL.dock_axes(d), ((0, 0, -1), (0, 1, 0)))
+        import sebp_multi as MU
+        self.assertEqual(PL.dock_axes(d, MU.Rot.from_axes('Right', 'Up')), ((1, 0, 0), (0, 1, 0)))
+
+    def test_dock_lines_without_axes_advertise_nothing(self):
+        self.assertEqual(PL.dock_lines(None, True), ['Repair=false'])
+
+    def test_printer_bays_carry_keys(self):
+        import printers as P
+        for name, keys in (('Hornet Forge', True), ('Hive Mother', False)):
+            bp = P.MODELS[name](False)
+            pb = [b for b in bp.blocks if 'ProgrammableBlock' in b['xtype'] and b.get('custom_data') and '[Bay 1]' in b['custom_data']][0]
+            bays = {k: v for k, v in self.sections(pb['custom_data']).items() if k.startswith('Bay ')}
+            self.assertEqual(len(bays), 2)
+            for k, v in bays.items():
+                if keys:
+                    self.assertEqual((v['Dock Forward'], v['Dock Up'], v['Repair']), ('0,0,-1', '0,1,0', 'true'), f'{name} {k}')
+                else:
+                    self.assertNotIn('Dock Forward', v); self.assertNotIn('Dock Up', v); self.assertEqual(v['Repair'], 'false')
+
+    def test_pod_bays_carry_keys_and_match_the_clamp_pose(self):
+        import pods
+        from core import hornet
+        for rep in (False, True):
+            pod = pods.cradle_pod(2, repair=rep)
+            secs = self.sections(pod.pod.pb['custom_data'])
+            d = hornet(False)
+            for k in range(2):
+                pose = pods.drone_pose(pod, k, d)
+                f, u = PL.dock_axes(d, pose.rot)
+                v = secs[f'Bay {k + 1}']
+                self.assertEqual(v['Dock Forward'], ','.join(map(str, f))); self.assertEqual(v['Dock Up'], ','.join(map(str, u)))
+                self.assertEqual(v['Repair'], 'true' if rep else 'false')
+
 if __name__ == '__main__':
     unittest.main()

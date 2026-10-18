@@ -101,7 +101,7 @@ namespace SeSim.Run
         /// counts x models grid and the mixed teams. Null = the grid.</summary>
         public static List<string[]> EnemyFleets;
         /// <summary>Blueprints usable in --enemy-fleets but not part of the standard matrices.</summary>
-        public static readonly string[] FleetOnlyModels = { "Basilisk Seeker", "Longbow L Seeker", "Ballista" };
+        public static readonly string[] FleetOnlyModels = { "Basilisk Seeker", "Longbow L Seeker", "Ballista", "Pathfinder" };
 
         /// <summary>Parses "3xHornet+2xGnat+Longbow L" into a model list (count prefix "Nx" optional); models must be known.</summary>
         public static string[] ParseFleet(string spec)

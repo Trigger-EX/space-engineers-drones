@@ -88,9 +88,9 @@ namespace SeSim.Run
                 if (pb.CustomNameValue.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase)) rig.Staff = pb; else if (pb.CustomNameValue.StartsWith("[Helm]", StringComparison.OrdinalIgnoreCase)) rig.Helm = pb;
             }
             foreach (var g in dr)
-            {   // a Hornet is [Flight] + [Staff] + [Thrust] PBs: Drones = its Staff PB (Mode line, commands), Flights = the Flight PB (the [Hornet] Custom Data), AllPbs = all of them (reload)
+            {   // a Hornet is [Flight] + [Staff] + [Thrust] + [Aux] PBs: Drones = its Staff PB (Mode line, commands), Flights = the Flight PB (the [Hornet] Custom Data), AllPbs = all of them (reload)
                 rig.DroneBodies.Add(g[0]); SimProgrammableBlock staff = null, flight = null;
-                foreach (var b in g) foreach (var bi in b.Blocks) { var pb = bi.Api as SimProgrammableBlock; if (pb == null || pb.Runner == null) continue; rig.AllPbs.Add(pb); string pn = pb.CustomNameValue ?? ""; if (pn.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase)) staff = pb; else if (pn.StartsWith("[Flight]", StringComparison.OrdinalIgnoreCase) || (flight == null && !pn.StartsWith("[Thrust]", StringComparison.OrdinalIgnoreCase))) flight = pb; }
+                foreach (var b in g) foreach (var bi in b.Blocks) { var pb = bi.Api as SimProgrammableBlock; if (pb == null || pb.Runner == null) continue; rig.AllPbs.Add(pb); string pn = pb.CustomNameValue ?? ""; if (pn.StartsWith("[Staff]", StringComparison.OrdinalIgnoreCase)) staff = pb; else if (pn.StartsWith("[Flight]", StringComparison.OrdinalIgnoreCase) || (flight == null && !pn.StartsWith("[Thrust]", StringComparison.OrdinalIgnoreCase) && !pn.StartsWith("[Aux]", StringComparison.OrdinalIgnoreCase))) flight = pb; }
                 rig.Drones.Add(staff ?? flight); rig.Flights.Add(flight);
             }
             if (blind)

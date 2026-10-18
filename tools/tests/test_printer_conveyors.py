@@ -41,5 +41,28 @@ class Conveyors(unittest.TestCase):
         self.assertGreater(len(self.bp.conveyor_pairs), 0)
         self.assertIn('<MyObjectBuilder_ConveyorLine>', self.bp.build_xml())
 
+class NestedProjection(unittest.TestCase):
+    """survivability item 15: a drone's own self-projection is stripped from the ghost a printer projects"""
+    def test_ghost_has_no_nested_projection(self):
+        import copy
+        from core import hornet
+        d = hornet(False)
+        d.blocks[0]['name'] = d.blocks[0]['name']
+        pj = d.add('MyObjectBuilder_Projector', 'SmallProjector', (0, 0, 5), name='Hornet Projector [Self]', kind='proj',
+                   settings={'ProjectedGrids': '<ProjectedGrids><MyObjectBuilder_CubeGrid /></ProjectedGrids>', 'ProjectionOffset': '<ProjectionOffset><X>0</X><Y>0</Y><Z>0</Z></ProjectionOffset>'})
+        before = copy.deepcopy(pj['settings'])
+        xml, _ = PL.projected_grid_xml(d)
+        self.assertEqual(xml.count('<ProjectedGrids>'), 1)         # only the outer element
+        self.assertIn('Hornet Projector [Self]', xml)
+        self.assertNotIn('MyObjectBuilder_CubeGrid />', xml)
+        self.assertEqual(pj['settings'], before)                   # the real drone is untouched
+
+    def test_strip_counts_projectors(self):
+        from core import hornet
+        d = hornet(False)
+        PL.strip_nested_projection(d)        # C1 drones may already carry a self-projector
+        self.assertEqual(PL.strip_nested_projection(d), 0)   # second pass: nothing left to strip
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -40,7 +40,9 @@ Everything below is what you need to continue. Read sections 1–4 before touchi
 | Printer ships | Not started (designs in §7) |
 | Simulation engine + fights + audit | Not started (plan in §9) |
 
-**Tube ram drones (Tube 2x2 / 2x4 / 3x3 / 4x4, `TubeRamAI.cs`) are built and sim-smoke-tested, not game-tested:** `docs/design/tube_drones.md` section 8 lists what is left (the `ram` scenario kind, ram metrics, salvo spacing).
+**Pathfinder (`PathfinderAI.cs`, printer `Pathfinder Nest`) is built and sim-tested (it works, but costs the Longbows power kills vs the Tech Hunter: doc section 6), not game-tested:** the Peeper hull as a stand-alone hive weakpoint finder: waits until the fleet has a target within 5 km, circles it, crosses its unarmed turret's PowerSystems aim lines to locate the power block and relays it on `<ch>_WP`. `docs/design/pathfinder.md`.
+
+**Tube decoys (2026-10-17):** `Tube 4x4 F` drops decoy flare pods when hit (TubeRamAI v1.4); sim results and the in-game questions in `docs/design/tube_decoys.md`. **Tube ram drones (Tube 2x2 / 2x4 / 3x3 / 4x4, `TubeRamAI.cs`) are built and sim-smoke-tested, not game-tested:** `docs/design/tube_drones.md` section 8 lists what is left (the `ram` scenario kind, ram metrics, salvo spacing).
 
 **Later work (after this handoff was written):** see `packages/changelog.md` (v2.0 to v2.4) and `docs/RESULTS.md`; v2.4 is the
 **kamikaze defence** against incoming swarms of small warhead drones (`docs/kamikaze-defence.md`, shared block `tools/kz_block.cs`
@@ -372,7 +374,7 @@ The game can't be run here. Build an engine:
 - **v1.8** (uncompiled): printer join / re-scan on grid change, Hornet scout mode.
 
 ## Thrust vectoring and the Flight/Staff drones (this session; docs/thrust-vectoring.md)
-- Every drone/ship whose flight script has the THRUST VECTOR LINK block (Hornet, Lancer, Harrier, Basilisk, Longbow, Mantis, Aegis, Wasp, Shrike Helm, Peeper) gets a small `[Thrust] ... PB` (`scripts/ThrustVectorAI.cs`) from `C.add_support_pbs()` in `tools/build_all.py`. When a thrust direction is lost it tells the flight PB which surviving group to line up with the force needed. Not run in the game; the sim shows no win-rate gain (table in the doc), so it is unproven.
+- Every drone/ship whose flight script has the THRUST VECTOR LINK block (Hornet, Lancer, Harrier, Basilisk, Longbow, Mantis, Aegis, Wasp, Shrike Helm, Peeper, Pathfinder) gets a small `[Thrust] ... PB` (`scripts/ThrustVectorAI.cs`) from `C.add_support_pbs()` in `tools/build_all.py`. When a thrust direction is lost it tells the flight PB which surviving group to line up with the force needed. Not run in the game; the sim shows no win-rate gain (table in the doc), so it is unproven.
 - Aegis, Mantis, Longbow S/L and the Wasp are now two PBs: `[Flight]` (AegisAI.cs / MantisAI.cs / LongbowSniperAI.cs / WaspFlightAI.cs, SPLIT LINK block `tools/lk_block.cs`, `tools/split_sync.py`) + `[Staff]` (`<Drone>StaffAI.cs`, generated from WaspStaffAI by `tools/make_staff.py`). They were at the 100k cap; the flight halves are about 78-80k.
 - Fixed in the split scripts: a zero dt at start-up flipped `_aiOn` and left the AI blocks off for ~14 s (also in the existing Wasp Split).
 - Extra PBs cost ~140 kg each: Aegis-vs-Hornet 300 seeds 191 -> 160 wins. Probe ships `Twin PB Test` / `Hornet Pilot Test` are exempt (pinned PB counts).

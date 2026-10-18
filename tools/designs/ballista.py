@@ -13,8 +13,11 @@ Frame (cells of 2.5 m; x Right, y Up, z Backward, the bow points to -z; mirror p
   * pods    : four 3x3x3 hydrogen tanks on the flanks (x +-5..7, y 0..2 and 3..5, z 5..7); every free tank face carries a large hydrogen thruster
               (exhaust out / up / down / forward / aft), so each tank feeds its thrusters by contact and no conveyor network is needed
   * core    : behind the wall (x -3..3, y 0..5, z 9..11): large reactor, batteries, gyros, the Helm PB and the Remote Control
-  * aux     : two more large reactors on the top deck and two extra hydrogen tanks (top, belly) with thrusters, for the 27-rail recharge (docs/design/ships/Ballista.md section 9)
+  * aux     : two more large reactors on the top deck and two extra hydrogen tanks (belly under the breech, aft behind the core) with thrusters, for the 27-rail recharge
+              (docs/design/ships/Ballista.md sections 9 and 10)
   * mast    : armour pylon on top of the wall carrying the cameras
+  * turrets : four vanilla gatling turrets set for drones and rockets only (two on the reactor tops, two under the outer rails), nothing in front of any of them
+Every large hydrogen thruster keeps its whole 3 x 3 nozzle face clear for sebp.LARGE_H2_LANE (7) cells: the old 1-lane, 3-cell check let two belly thrusters burn the pods.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,23 +27,25 @@ import sebp_toolbar as TB
 from sebp_inv import Item
 from pods import orient_attached
 import pods
-import sebp_multi as MU
-import printers as PR
-import turrets as TU
-import printer_lib as PL
-from types import SimpleNamespace
+import sebp
 
 NAME = 'Ballista'
 TAG = 'BALLISTA'
 # optional point-defence rails: [B2] rails the Helm fires one at a time at small / kamikaze tracks (needs [Battery] Point Defence=B2)
 PD_RAILS = set()      # {(x, r) for x in (-1, 0, 1) for r in (0, 2)} would tag six rails [B2]; with Point Defence=B2 they shoot small tracks alone.  Off: sim A/B (docs 3e) showed no gain over the turrets + full salvo
-# vanilla gatling turrets (3x3x3, base on the breech wall's armour cubes beside the mast): min corner, up, place
-PD_TURRETS = (((-4, 6, 7), 'Up', 'Top P'), ((2, 6, 7), 'Up', 'Top S'), ((-4, -3, 7), 'Down', 'Belly P'), ((2, -3, 7), 'Down', 'Belly S'))
-# two of the four sites are rotor + hinge AI turrets (TurretAI.cs, docs/design/turrets.md PD4L: 4 small gatlings, own lead solver, fast slew) on opposite corners (top port, belly starboard): they see both hemispheres,
-# (PD4L 568 PCU, 4 x 1,050 dps; a vanilla LargeGatlingTurret 225 PCU, 792 dps).  The 10,000 PCU brief pays for the two and for the turret PB only if one vanilla site is dropped (Belly P);
-# the one vanilla turret left (Top S) stays a designator for the Helm and a fallback if the turret script dies
-CUSTOM_PD = ('Top P', 'Belly S')
-DROP_PD = ('Belly P',)
+# point defence (2026-10-16 redesign, owner: "the turrets are blocked from seeing the front ... use vanilla turrets set specifically for drones and rockets"): four vanilla
+# LargeGatlingTurret (3x3x3; the only mount is the 1x1 centre of the base).  min corner, base direction, place.  Top pair: base on the top centre patch of the two top-deck
+# reactors (y 9..11, the highest blocks forward of the mast: nothing ahead, beside or behind them at their height).  Belly pair: base under the outer rails (x +-3), whose bottom
+# patch is z 4.9..6.5 (so z 4..6), ahead of every belly block.  Each pair sees its own hemisphere and the horizon all round; the gatling's -43 deg elevation lets each see past the bow.
+# (The old sites at z 7..9 on the breech wall had the reactors / a belly thruster in front of them at the same height, and two of them were PD4L rotor turrets with their own PB.)
+PD_TURRETS = (((-4, 9, 4), 'Up', 'Top P'), ((2, 9, 4), 'Up', 'Top S'), ((-4, -3, 4), 'Down', 'Belly P'), ((2, -3, 4), 'Down', 'Belly S'))
+# targeting written into the blueprint: small grids and missiles (rockets) only; large grids, stations, characters and meteors off (the railguns and the Helm take large grids).
+# The game writes only the non-default switches in <Flags> (the owner's Tech Hunter: <Flags><TargetMeteors>false</TargetMeteors><TargetCharacters>false</TargetCharacters></Flags>);
+# TargetLargeGrids / TargetStations are the legacy object-builder names, kept in that field order [unverified in game: check the terminal after pasting, packages/tests.md]
+PD_FLAGS = ('<Flags><TargetMeteors>false</TargetMeteors><TargetLargeGrids>false</TargetLargeGrids><TargetCharacters>false</TargetCharacters>'
+            '<TargetStations>false</TargetStations></Flags>')
+PD_SETTINGS = {'TargetCharacters': 'false', 'Flags': PD_FLAGS}
+H2_LANE = sebp.LARGE_H2_LANE      # exhaust lane depth (cells) of a large hydrogen thruster, over its whole nozzle face
 COLS = tuple(range(-4, 5))        # 9 columns of railguns
 ROWS = 3                          # 3 rows (2 cells each) -> 27 guns
 N_GYRO = 13
@@ -147,30 +152,31 @@ def _pods(S):
             ]
             for role, mn, ex, up, label in specs:
                 b = S.fixed('thr_' + role, 'MyObjectBuilder_Thrust', 'LargeBlockLargeHydrogenThrust', mn, ex, up, nm(f'Thruster {label}'), GUND, kind='thr')
-                bp.keep_clear(b, 3, 'exhaust')
+                bp.keep_clear(b, H2_LANE, 'exhaust', face=True)
 
 def _aux(S):
-    """power and thrust added for the 27-gun recharge (docs/design/ships/Ballista.md section 9): two more large reactors on the top deck (300 MW each: the railguns
-    ask 27 x 38 = 1,026 MW to recharge together and the first reactor set gave 360 MW), and two extra hydrogen tanks with thrusters (6 in all), which give back the acceleration the
-    reactors' 148 t take away.  Top deck (y 6..8, over the rails; the rails' top patch is the seat): reactors at x -4..-2 and 2..4, z 4..6; a tank in front of the
-    port reactor (z 1..3) carries an upward-exhaust thruster (pushes down) and a brake.  Belly (y -3..-1, under the rails): one tank at x -1..1, z 4..6 carries
-    four of its free faces (down, left, right, main; the brake lane is left out: the back push already has 5 thrusters, and the 10,000 PCU brief is full), which add a push in every direction together with the top tank (up, down, left, right, forward, back)."""
+    """power and thrust added for the 27-gun recharge (docs/design/ships/Ballista.md sections 9 and 10): two more large reactors on the top deck (300 MW each: the railguns
+    ask 27 x 38 = 1,026 MW to recharge together), and two extra hydrogen tanks with six thrusters, one more per direction, which give back the acceleration the reactors' 148 t take away.
+    Section 10 (2026-10-16) moved the tanks: the old belly tank (z 4..6) fired its side thrusters straight into the pods' lower vertical thrusters (z 5..7, the very next cells), and the old
+    top tank stood in front of the top turrets.  Now:
+      belly tank under the breech wall and the core reactor (x -1..1, y -3..-1, z 8..10): brake (front), main (back), left, right, down.  Its side flames run at z 8..10, behind the
+      pods' lower verticals (z 5..7) and under the pods' mains (y 0..2); the brake's flame runs forward along the keel between the belly turrets (x +-2..4).
+      aft tank on the back of the core reactor (x -1..1, y 0..2, z 12..14, where the foundry connectors were): one upward-exhaust thruster (pushes down) on its top."""
     bp = S.bp
     for n, x in enumerate((-4, 2), 2):
         S.add('reactor', 'MyObjectBuilder_Reactor', 'LargeBlockLargeGenerator', (x, 6, 4), 'Forward', 'Up', nm(f'Reactor Large {n}'), toward='Down', kind='reactor',
               items=[Item.ingot('Uranium', 300)])
-    S.add('tank', 'MyObjectBuilder_OxygenTank', 'LargeHydrogenTank', (-4, 6, 1), 'Forward', 'Up', nm('Hydrogen Tank Aux Top'), toward='Backward', kind='tank', state={'filled': 'full'})
-    S.add('tank', 'MyObjectBuilder_OxygenTank', 'LargeHydrogenTank', (-1, -3, 4), 'Forward', 'Up', nm('Hydrogen Tank Aux Belly'), toward='Up', kind='tank', state={'filled': 'full'})
+    S.add('tank', 'MyObjectBuilder_OxygenTank', 'LargeHydrogenTank', (-1, -3, 8), 'Forward', 'Up', nm('Hydrogen Tank Aux Belly'), toward='Up', kind='tank', state={'filled': 'full'})
+    S.add('tank', 'MyObjectBuilder_OxygenTank', 'LargeHydrogenTank', (-1, 0, 12), 'Forward', 'Up', nm('Hydrogen Tank Aux Aft'), toward='Forward', kind='tank', state={'filled': 'full'})
     for role, mn, ex, up, label in (
-            ('vert', (-4, 9, 1), 'Up', 'Forward', 'Aux Top Vertical'), ('brake', (-4, 6, -2), 'Forward', 'Up', 'Aux Top Brake'),
-            ('vert', (-1, -6, 4), 'Down', 'Forward', 'Aux Belly Vertical'), ('out', (-4, -3, 4), 'Left', 'Up', 'Aux Belly Lateral P'),
-            ('out', (2, -3, 4), 'Right', 'Up', 'Aux Belly Lateral S'),
-            ('main', (-1, -3, 7), 'Backward', 'Up', 'Aux Belly Main')):
+            ('brake', (-1, -3, 5), 'Forward', 'Up', 'Aux Belly Brake'), ('main', (-1, -3, 11), 'Backward', 'Up', 'Aux Belly Main'),
+            ('out', (-4, -3, 8), 'Left', 'Up', 'Aux Belly Lateral P'), ('out', (2, -3, 8), 'Right', 'Up', 'Aux Belly Lateral S'),
+            ('vert', (-1, -6, 8), 'Down', 'Forward', 'Aux Belly Vertical'), ('vert', (-1, 3, 12), 'Up', 'Forward', 'Aux Aft Vertical')):
         b = S.fixed('thr_' + role, 'MyObjectBuilder_Thrust', 'LargeBlockLargeHydrogenThrust', mn, ex, up, nm(f'Thruster {label}'), GUND, kind='thr')
-        bp.keep_clear(b, 3, 'exhaust')
+        bp.keep_clear(b, H2_LANE, 'exhaust', face=True)
 
 def _core(S, full):
-    """behind the breech wall: reactor, batteries, generators, gyros, controllers"""
+    """behind the breech wall: reactor, batteries, gyros, controllers"""
     bp = S.bp
     S.add('reactor', 'MyObjectBuilder_Reactor', 'LargeBlockLargeGenerator', (-1, 0, 9), 'Forward', 'Up', nm('Reactor Large'), toward='Forward', kind='reactor',
           items=[Item.ingot('Uranium', 300)])
@@ -188,26 +194,13 @@ def _core(S, full):
     S.rc = S.add('rc', 'MyObjectBuilder_RemoteControl', 'LargeBlockRemoteControl', (0, 4, 10), 'Forward', 'Up', nm('Remote Control'), toward='Down', kind='ctrl')
     S.helm = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (0, 4, 9), 'Forward', 'Up', '[Helm][SH] Ballista Helm', toward='Down', kind='ctrl',
                    custom_data=f'[Ship]\nTag={TAG}\n' + HELM_DATA, extra=pb_extra(_script('ShrikeAI.cs')) if _script('ShrikeAI.cs') else '')
+    # the Spotter keeps its Lookout (harasser defence); the probe foundry it used to run is gone (2026-10-16: the AI Offensive block's 2.5 km search is detection enough), so Bay Control=0
     S.spotter = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (0, 4, 11), 'Forward', 'Up', '[Spotter][SH] Ballista Spotter', toward='Down', kind='ctrl',
-                      custom_data=f'[Ship]\nTag={TAG}\n', extra=pb_extra(_script('SpotterAI.cs')) if _script('SpotterAI.cs') else '')
+                      custom_data=f'[Ship]\nTag={TAG}\n\n[Spotter]\nBay Control=0\n', extra=pb_extra(_script('SpotterAI.cs')) if _script('SpotterAI.cs') else '')
     # the Staff half of the Helm (docs/design/helm_split.md): fleet channel relay and damage sensing run here, so ShrikeAI stays under its size gate.  Its name must start with [Staff] (the Helm
     # switches its link on for that) and carry the [SH] prefix (the Staff only adopts blocks with the Block Prefix).  Mothership=false: the Ballista carries no drones, so no <Type>_HOME / FLEET_HOME.
     S.spare = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', (1, 4, 11), 'Forward', 'Up', '[Staff][SH] Ballista Staff', toward='Down', kind='ctrl',
                     custom_data=f'[Ship]\nTag={TAG}\n\n[Staff]\nBlock Prefix=[SH]\nMothership=false\n', extra=pb_extra(_script('StaffAI.cs')) if _script('StaffAI.cs') else '')
-    # the turret PB (TurretAI.cs; Custom Data with the masks is filled in by ballista() once the hull is final): first free battery-deck cell where a large PB seats (Bottom mount only, on a battery)
-    S.tpb = None
-    for c in ((-1, 4, 11), (-1, 4, 10), (-1, 4, 9), (1, 4, 9), (1, 4, 10), (-2, 4, 9), (2, 4, 9), (-3, 4, 10), (3, 4, 10), (-2, 4, 11), (2, 4, 11), (-3, 4, 9), (3, 4, 9), (-3, 4, 11), (3, 4, 11)):
-        if c in S.occ or c in bp.reserve: continue
-        try:
-            S.tpb = S.add('pb', 'MyObjectBuilder_MyProgrammableBlock', 'LargeProgrammableBlock', c, 'Forward', 'Up', f'{TU.PREFIX} Turret PB', toward='Down', kind='ctrl',
-                          custom_data=f'[Ship]\nTag={TAG}\n', extra=pb_extra(_script('TurretAI.cs')) if _script('TurretAI.cs') else '')
-            break
-        except AssertionError:
-            continue
-    assert S.tpb is not None, 'no cell for the turret PB'
-    # the two large connectors on the rear face of the battery deck: the probe foundry docks here
-    S.conns = [S.add('conn', 'MyObjectBuilder_ShipConnector', 'Connector', (x, 3, 12), 'Backward', 'Up', nm(f'Foundry Connector {"AB"[i]}'), toward='Forward', kind='conn')
-               for i, x in enumerate((0, 1))]
     if full:
         S.add('ai', 'MyObjectBuilder_OffensiveCombatBlock', 'LargeOffensiveCombat', (-2, 4, 10), 'Forward', 'Up', nm('AI Offensive [AI]'), toward='Down', kind='ai')
         S.add('ai', 'MyObjectBuilder_FlightMovementBlock', 'LargeFlightMovement', (2, 4, 10), 'Forward', 'Up', nm('AI Flight [AI]'), toward='Down', kind='ai')
@@ -228,21 +221,9 @@ def _sensing(S, full):
         S.add('sensor', 'MyObjectBuilder_SensorBlock', 'LargeBlockSensor', (-1, 7, 8), 'Up', 'Forward', nm('Sensor'), color=GUND, kind='sensor')
 
 def _defence(S, full):
-    """four vanilla gatling turrets (autonomous point defence against whatever gets inside 800 m; they are also designators for the Helm)"""
-    S.tmounts = []
+    """four vanilla gatling turrets, loaded, set for small grids and missiles only (PD_TURRETS, PD_SETTINGS): autonomous point defence inside 800 m and designators for the Helm and the Lookout"""
     for n, (mn, up, where) in enumerate(PD_TURRETS, 1):
-        if where in DROP_PD: continue
-        if where in CUSTOM_PD:
-            # the vanilla turret's 3x3x3 footprint holds one PD4L: stator on the base-centre cell (the lower cell of its 2-cell box), swing sphere r 1.9 m
-            base_y = mn[1] if up == 'Up' else mn[1] + 2
-            m = TU.add_turret(S.bp, len(S.tmounts) + 1, (mn[0] + 1, base_y, mn[2] + 1), up, fwd='Forward', model='PD4L', lite=not full, color=GUNC)
-            S.put('tu', m.stator)
-            for x in range(mn[0], mn[0] + 3):
-                for y in range(mn[1], mn[1] + 3):
-                    for z in range(mn[2], mn[2] + 3): S.occ.setdefault((x, y, z), m.stator)
-            S.tmounts.append(m)
-            continue
-        b = S.fixed('pdturret', 'MyObjectBuilder_LargeGatlingTurret', '', mn, 'Forward', up, nm(f'[PD] Gatling Turret {n} {where}'), GUNC, kind='turret')
+        b = S.fixed('pdturret', 'MyObjectBuilder_LargeGatlingTurret', '', mn, 'Forward', up, nm(f'[PD] Gatling Turret {n} {where}'), GUNC, kind='turret', settings=dict(PD_SETTINGS))
         S.bp.fill_ammo(b)
 
 def _groups(S):
@@ -253,141 +234,28 @@ def _groups(S):
     bp.group('Thrusters', [b for k in R if k.startswith('thr_') for b in R[k]])
     bp.group('Gyros', R['gyro']); bp.group('Reactors', R['reactor']); bp.group('Batteries', R['bat'])
 
-# ---------------------------------------------------------------------------------------------
-# probe foundry: a small-grid printer (printers.py 'Probe Foundry', one bay printing Peepers) docked on the two rear connectors
-# ---------------------------------------------------------------------------------------------
-EXIT_WANT = 'Up'                  # host direction the printed probe leaves along (the foundry bay's exit is its local Right)
-
-def foundry(lite, row='x'):
-    """the printer with its two ConnectorMedium blocks on a flange under the equipment pod, in a row along the foundry's x or z axis (ballista() tries both
-    and keeps the one whose bay exit ends up pointing away from the ship)"""
-    fb = PR.MODELS['Probe Foundry'](lite)
-    occ = fb.occupancy()
-    # a flange under the equipment pod carries two ConnectorMedium blocks 5 cells (2.5 m = one large cell) apart, contact face Down
-    pos = (-4, 1)                      # block corner along the row; the pod spans -2..2, so the flange fills -4..-3 and 3
-    for u in (-4, -3, 3):
-        for v in (-1, 0, 1):
-            c = (u, -2, v) if row == 'x' else (v, -2, u)
-            assert c not in occ, f'foundry flange cell {c} is taken'
-            fb.armor(*c, PL.PRINTER_COLOR)
-    conns = [fb.add('MyObjectBuilder_ShipConnector', 'ConnectorMedium', (u, -4, -1) if row == 'x' else (-1, -4, u), 'Down', 'Forward',
-                    f'Foundry Connector {"AB"[i]} ({fb.name})', GUND, kind='conn') for i, u in enumerate(pos)]
-    fb.pod = SimpleNamespace(connectors=conns)
-    # the Spotter starts and stops the foundry (the Hive Mother PB would print a probe the moment it is pasted otherwise)
-    for b in fb.blocks:
-        if b.get('custom_data') and 'Auto Start=true' in b['custom_data']:
-            b['custom_data'] = b['custom_data'].replace('Auto Start=true', 'Auto Start=false')
-    fb.display = 'Ballista Probe Foundry'
-    return fb
-
-def exit_of(fb):
-    """the bay's exit direction in the foundry's own frame: the Hive Mother PB's `Exit Direction=` (the last one in the file wins, as in the script)"""
-    d = None
-    for b in fb.blocks:
-        for line in (b.get('custom_data') or '').split('\n'):
-            if line.startswith('Exit Direction=') and line.split('=', 1)[1].strip() in MU.DIRS: d = line.split('=', 1)[1].strip()
-    assert d, f'{fb.name}: no Exit Direction in the Hive Mother PB'
-    return d
-
-def dock_foundry(host, fb, conns, want=EXIT_WANT, lock=True):
-    """dock with the roll that sends the bay's exit (the foundry's exit direction) along the host direction `want`"""
-    errs = []
-    for order in (list(conns), list(conns)[::-1]):
-        for roll in range(4):
-            try:
-                pose = pods.dock_pod(host, fb, order, host_face='Forward', roll=roll)
-            except AssertionError as e:
-                errs.append(f'roll {roll}: {e}'); continue
-            d = pose.rot.apply(MU.DIRS[exit_of(fb)])
-            if MU._dot(d, MU.DIRS[want]) > 0.99 or MU._dot(d, MU.DIRS['Backward']) > 0.99:
-                if lock:      # written locked, as the Warden / Leviathan pods are (an unlocked pod broke off the hull in the game)
-                    host.lock_connectors(order[0], fb, fb.pod.connectors[0])
-                    host.lock_connectors(order[1], fb, fb.pod.connectors[1])
-                return pose
-            host.subgrids.pop()
-    raise AssertionError('dock_foundry: no roll puts the bay exit along ' + want + '; ' + '; '.join(errs))
-
-def _boxes(g, cs):
-    root = getattr(g, '_world', g.pose)
-    out = []
-    for b in g.blocks:
-        for c in g.cells(b):
-            ctr = root.apply(tuple(v * cs for v in c))
-            out.append((tuple(ctr[i] - cs / 2 for i in range(3)), tuple(ctr[i] + cs / 2 for i in range(3)), b))
-    return out
-
-def check_foundry(bp, min_gap=0.3, lane_m=8.0):
-    """the docked foundry keeps min_gap metres from every ship block (the connector pairs excepted), is outside the ship's exhaust and muzzle zones, and the
-    printed probe can leave: the bay's exit lane (its drone box swept lane_m metres along the exit direction) holds no ship block"""
-    fb = bp.foundry
-    bp.grids()
-    ship = _boxes(bp, 2.5)
-    fbx = _boxes(fb, 0.5)
-    bad = []
-    for lo, hi, b in fbx:
-        for slo, shi, sb in ship:
-            gap = max(max(slo[i] - hi[i], lo[i] - shi[i], 0.0) for i in range(3))
-            if gap < (pods.PAIR_GAP - 0.005 if b['kind'] == 'conn' and sb['kind'] == 'conn' else min_gap) and not (b['kind'] == 'conn' and sb['kind'] == 'conn'):
-                bad.append((b['name'] or b['sub'], sb['name'] or sb['sub'], round(gap, 3)))
-    assert not bad, f'{bp.name}: foundry too close to the ship: {bad[:4]}'
-    zones = []
-    for c, why in bp.reserve.items():
-        if why.startswith(('exhaust', 'muzzle')): zones.append((tuple((c[i] - 0.5) * 2.5 for i in range(3)), tuple((c[i] + 0.5) * 2.5 for i in range(3)), why))
-    hit = [(why, b['name'] or b['sub']) for lo, hi, b in fbx for zlo, zhi, why in zones if all(zlo[i] < hi[i] - 1e-6 and zhi[i] > lo[i] + 1e-6 for i in range(3))]
-    assert not hit, f'{bp.name}: foundry inside an exhaust/muzzle zone: {hit[:3]}'
-    bay = fb.bays[0]
-    d = fb.pose.rot.apply(MU.DIRS[exit_of(fb)])
-    dcells = [c for b in bay['drone'].blocks for c in bay['drone'].cells(b)]
-    root = fb._world
-    lane = []
-    for c in dcells:
-        ctr = root.apply(tuple((c[k] + bay['T'][k]) * 0.5 for k in range(3)))
-        lane.append((ctr, d))
-    blocked = []
-    for ctr, dd in lane:
-        lo = tuple(min(ctr[i], ctr[i] + dd[i] * lane_m) - 0.25 for i in range(3)); hi = tuple(max(ctr[i], ctr[i] + dd[i] * lane_m) + 0.25 for i in range(3))
-        for slo, shi, sb in ship:
-            if all(slo[i] < hi[i] - 1e-6 and shi[i] > lo[i] + 1e-6 for i in range(3)): blocked.append(sb['name'] or sb['sub'])
-    assert not blocked, f'{bp.name}: the probe exit lane is blocked by {sorted(set(blocked))[:3]}'
-    return True
-
-def ballista(lite=False, with_foundry=True):
+def ballista(lite=False):
     full = not lite
     name = 'Ballista Lite' if lite else 'Ballista'
     bp = Blueprint(name, 'Large', seed=seed_for(name))
     S = Ship(bp)
     _rails(S)
     _pods(S)
-    _aux(S)
     _core(S, full)
+    _aux(S)                       # after the core: the aft tank hangs on the core reactor's back face
     _sensing(S, full)
     _defence(S, full)
     _groups(S)
-    S.tu_check = TU.check_mounts(bp, S.tmounts, min_cover=0.4)       # swing envelopes clear the hull, parked pose free, each turret sees 40 % of its bins
-    S.tpb['custom_data'] = TU.turret_custom_data(bp, S.tmounts, TAG)
     bp.ship = S
-    if with_foundry:
-        errs = []
-        for row in ('x', 'z'):
-            fb = foundry(lite, row)
-            try:
-                dock_foundry(bp, fb, S.conns)
-                break
-            except AssertionError as e:
-                errs.append(f'row {row}: {e}')
-        else:
-            raise AssertionError('no foundry docking: ' + ' | '.join(errs))
-        bp.foundry = fb
-        check_foundry(bp)
     pods.assert_clean(bp)
     return C.finalize(bp)
 
 MODELS = {'Ballista': ballista}
 DOCS = {'Ballista': 'Large-grid railgun drone: 27 Large Railguns in a fixed 9 x 3 battery behind a thin frame of 22 large hydrogen thrusters (33 m/s2 forward and back, 20 on the other axes, 13 gyros), 1.35 M of slug damage per salvo at 2,000 m. '
-        'The Helm keeps the stand-off and turns the ship onto the target. A small probe foundry docked on its rear connectors prints a Peeper probe when a big target is engaged; the probe circles the target and its turret finds the '
-        'reactors and batteries (then weapons and propulsion), the Spotter remembers them and the railguns drill the best one. About 8,200 PCU with the foundry, 9,300 with a live probe. Three large reactors (900 MW) and 13 batteries cover the 1,026 MW the 27 rails draw to recharge together. Nothing has run in the game.'}
-MODEL_NOTES = {'Ballista': 'Needs a world PCU limit of 10,000 or more. The foundry connectors are written locked (the Spotter presses Connect if they ever come up unlocked). Lite has no sensor / AI blocks and prints Lite probes (no turret, so they find nothing): use Full.'}
-SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs', 'TurretAI.cs', 'HiveMotherAI.cs', 'PeeperAI.cs']
+        'The Helm keeps the stand-off and turns the ship onto the target; the AI Offensive block (2.5 km) is its detector. Four vanilla gatling turrets set for drones and rockets only (two on top, two under the bow) '
+        'guard it, each with a clear view forward. Three large reactors (900 MW) and 13 batteries cover the 1,026 MW the 27 rails draw to recharge together. No thruster flame touches another block. Nothing has run in the game.'}
+MODEL_NOTES = {'Ballista': 'About 4,700 PCU. The turrets are written with large grids, stations, characters and meteors off (small grids and missiles on): check the terminal after pasting. Lite has no sensor / AI blocks: use Full.'}
+SCRIPTS = ['ShrikeAI.cs', 'SpotterAI.cs', 'StaffAI.cs']
 
 # ---------------------------------------------------------------------------------------------
 def numbers(bp):
@@ -400,13 +268,7 @@ def numbers(bp):
     n = dict(blocks=len(blocks), dims_m=bp.stats()['dims'], mass_t_blocks=round(hull_kg / 1000, 1), mass_t_loaded=round(loaded / 1000, 1))
     n['accel_loaded_m_s2'] = {d: round(f / loaded, 1) for d, f in C.thrust_by_dir(bp).items()}
     n['thrust_MN'] = {d: round(f / 1e6, 1) for d, f in C.thrust_by_dir(bp).items()}
-    tm = getattr(getattr(bp, 'ship', None), 'tmounts', [])
-    n['pcu_ship'] = sum(stat(b).get('pcu') or 0 for b in blocks) + sum(stat(b).get('pcu') or 0 for b in TU.all_blocks(tm))     # the AI turrets' tops and heads are their own grids (their stators are host blocks)
-    fb = getattr(bp, 'foundry', None)
-    n['pcu_foundry'] = sum(stat(b).get('pcu') or 0 for b in fb.blocks) if fb else 0
-    n['pcu'] = n['pcu_ship'] + n['pcu_foundry']
-    n['mass_t_foundry'] = round(sum(C.block_mass(b) for b in fb.blocks) / 1000, 1) if fb else 0
-    n['mass_t_with_foundry_and_probe'] = round(loaded / 1000 + n['mass_t_foundry'] + (C.total_mass(fb.bays[0]['drone']) / 1000 if fb else 0), 1)
+    n['pcu'] = sum(stat(b).get('pcu') or 0 for b in blocks)
     rails = [b for b in blocks if b['sub'] == 'LargeRailgun']
     gens = [b for b in blocks if b['xtype'].endswith('_Reactor')]
     bats = [b for b in blocks if b['xtype'].endswith('_BatteryBlock')]

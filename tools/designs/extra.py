@@ -102,7 +102,8 @@ def harrier(lite=False):
     _all_around(bp, name)
     _merge_stalk(bp, name)
     _ai_sensor(bp, name, not lite, not lite)
-    return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Harrier printed by a Forge carries its Staff PB
+    import core
+    return core.hornet_survival(finalize(bp), name)      # Gyroscope 2, [Flight] + [Staff] (+ [Thrust]) here too (a Harrier printed by a Forge carries its Staff PB), survival kit
 
 # ---------------------------------------------------------------------------------------------
 def aegis(lite=False):
@@ -130,7 +131,8 @@ def aegis(lite=False):
             bp.add("MyObjectBuilder_Decoy", "SmallDecoy", (x, 2, -3), "Forward", "Up", f"{name} Decoy {s}", HULL, kind="decoy")
     _merge_stalk(bp, name)
     _ai_sensor(bp, name, not lite, not lite)
-    return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so an Aegis printed by a Shipyard carries its support PBs
+    import core
+    return core.hornet_survival(finalize(bp), name, decoys=0)      # Gyroscope 2, support PBs (an Aegis printed by a Shipyard carries them), survival kit; it keeps its two roof decoys
 
 # ---------------------------------------------------------------------------------------------
 def mantis(lite=False):
@@ -178,7 +180,9 @@ def mantis(lite=False):
     # power for the railgun recharge (docs/design/railgun_power.md): the Longbow S pack + three more mains on the battery's back face (7 in all keep 8.7 m/s2 forward)
     import core
     core.small_rail_power(bp, name, mains=(((-1, -3, 2), "L3"), ((1, -3, 2), "R3"), ((0, -3, 2), "C")))
-    return C.add_support_pbs(finalize(bp))      # [Flight] + [Staff] (+ [Thrust]) here too, so a Mantis printed by a Foundry carries its support PBs
+    C.add_support_pbs(finalize(bp), avoid=core.spine_weld_cells(bp))      # [Flight] + [Staff] (+ [Thrust] + [Aux]) here too, so a printed Mantis carries them; the Aux PB clear of the Foundry's welders
+    # no bury_swap (as the Longbow S): the reactors keep the cells the Foundry's welders were solved for
+    return finalize(C.add_survival_kit(bp, model=name, avoid=core.spine_weld_cells(bp), panels=False))      # survival kit (docs/design/survivability.md items 11-15), clear of the Foundry's welders
 
 # ---------------------------------------------------------------------------------------------
 def basilisk(lite=False, seeker=False, staff=True):
@@ -213,6 +217,8 @@ def basilisk(lite=False, seeker=False, staff=True):
             for y in (0, 1):
                 if (x, y, z) != (0, 1, 1): bp.armor(x, y, z)
     bp.add("MyObjectBuilder_Gyro", "LargeBlockGyro", (0, 1, 1), "Forward", "Up", f"{name} Gyroscope", kind="gyro")
+    if not lite:    # survivability item 14: Gyroscope 2 in place of the core armour at (0, 0, 2), on the AI Flight block (buried on every face)
+        C.add_gyro(bp, (0, 0, 2), f"{name} Gyroscope 2")
     # engines
     thr(bp, (-1, 0, 3), "Backward", "Up", f"{name} Ion Main L"); thr(bp, (1, 0, 3), "Backward", "Up", f"{name} Ion Main R")
     thr(bp, (-2, 0, -2), "Forward", "Up", f"{name} Ion Brake L"); thr(bp, (2, 0, -2), "Forward", "Up", f"{name} Ion Brake R")
@@ -238,6 +244,10 @@ def basilisk(lite=False, seeker=False, staff=True):
     # staff=False is the Shrike Basilisk Test (ShrikeAI in the main PB, no Staff next to it): today's ship with its blank spare.  [Thrust] is added by build_all.
     if staff: spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, name='[Staff] {model} PB', model=name, reserved_ok=True, extra=pb_extra(script_text("BasiliskStaffAI.cs")))
     else: spares.add_spare_pbs(bp, total=spares.pb_count(bp) + 1, model=name)
+    if staff:       # [Thrust] here (not only in build_all) so the self-projection holds it; then the survival kit (docs/design/survivability.md items 11-15)
+        C.add_support_pbs(finalize(bp))
+        C.bury_swap(bp)
+        C.add_survival_kit(bp, model=name)
     return finalize(bp)
 
 def basilisk_seeker(lite=False):
