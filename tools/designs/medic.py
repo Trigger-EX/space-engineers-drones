@@ -3,19 +3,27 @@
 Module contract: MODELS = {"<Name>": callable(lite: bool) -> sebp.Blueprint}.  Script scripts/MedicAI.cs is read at call time.
 `python3 -I tools/designs/medic.py` builds + validates the model and prints one line.  Unarmed: not in the sim scenario lists.
 
-Frame (cells of 0.5 m; x Right, y Up, z Backward, nose = -z):
-  * one SmallShipWelder (3x3x6, x -1..1, y -1..1, z -9..-4) on the nose axis, tip forward.  Its conveyor port is the centre of its back face (as the
-    printers assume, printer_lib.PIPE_BACK, UNVERIFIED); a small conveyor junction sits in that cell (0,0,-3);
-  * 2 SmallBlockSmallContainer [Stock] above and below the junction (0,+-1,-3): welder <- junction <- cargo, the ConveyorLines are written
-    (_common.link_conveyors, the printers' routing helper) and test_medic.py checks the port chain;
-  * core 3x3x4 behind the welder (z -3..0): Remote Control, MedicAI PB, 2 gyros, 4 small batteries on the welder's back ring, the self-projector
-    [Self] (item 15, built like the printers' projections, Enabled=false), one decoy (item 11), armour;
-  * 12 ion thrusters, 2 per axis (the Hornet pattern), antenna on the rear deck, cameras forward (over the welder), down, left, right, up, rear.
-  Outline: the 3x3 welder section and the 3x3 core; thrusters, cameras and antenna stand on it as on the Hornet.  No merge block (it does not dock).
+Owner (2026-10-18): "medic should be able to carry a lot".  The Medic is built round ONE SmallBlockLargeContainer (5x5x5, 15,625 L, no DLC) that
+carries the parts of TWO full Hornet rebuilds (about 6,100 L / 11.7 t, every component of the Hornet blueprint, the bulky power cells, radio parts and
+metal grids included).  The medium container (3,375 L) would hold barely one Hornet (3,058 L), so the large one it is.
 
-Components: a full Hornet rebuild is about 2,400 L / 4.7 t of components (defs_stats.json), far more than the two 125 L containers of the design hold.
-  The containers are pre-loaded with HORNET_KIT: the Hornet's component mix scaled down to what fits (about a tenth: enough for the damaged blocks of a
-  typical hit, not for a full rebuild).  kit_for() computes it from defs_stats.json at build time.
+Frame (cells of 0.5 m; x Right, y Up, z Backward, nose = -z).  Outline: the 5 x 5 section of the container (x, y -2..2) from the welder tip to the
+main thrusters; the flank thrusters (2 cells), cameras and antenna stand on it as on the Hornet.  No merge block (it does not dock).
+  * one SmallShipWelder (3x3x6, x -1..1, y -1..1, z -9..-4) on the nose axis, tip forward.  Its conveyor port is the centre of its back face (as the
+    printers assume, printer_lib.PIPE_BACK, UNVERIFIED); a small conveyor junction sits in that cell (0,0,-3) and touches the centre of the container's
+    front face (z -2): welder <- junction <- [Stock] container, the ConveyorLines are written (_common.link_conveyors) and test_medic.py checks the chain;
+  * front slab z -3 round the junction: Remote Control, MedicAI PB, the self-projector [Self] (item 15, Enabled=false), a decoy (item 11), 4 small
+    batteries; around it, in the ring x or y = +-2 (z -4..-3), 12 small ion BRAKE thrusters whose flames run forward beside the welder;
+  * container (x, y -2..2, z -2..2), with 10 small ions on each flank (x +-3..4), on its top and on its bottom (y +-3..4): lateral and vertical thrust;
+  * rear core z 3..5: 3 large batteries (12 MW), 4 gyros, armour; 2 large ion MAIN thrusters behind it (x -1..1, y 1..2 and -2..-1, z 6..9);
+  * antenna on the rear deck, cameras forward (corner of the brake ring), down, left, right, up, rear (between the mains).
+  Single welder: a second 3x3 welder does not fit beside the first inside the 5x5 section, and its work sphere (r 1.3 m) would sit 1.5 m off the work
+  point, so it could not reach the block the first one welds (reach.py); the time goes into the hold, not the weld rate.
+
+Flame clearance in the work pose (WORK: the welder tip about 0.1 m off the patient's surface, nose on the work point's normal): the brake thrusters are
+  small ions (flame damage about 0.8 m at full thrust, estimated from defs_stats FlameDamageLengthScale; not measured in the game); their nozzles are
+  5 cells (2.5 m) behind the tip face, so the flame stops about 1.7 m short of the patient's surface.  The flank and vertical flames run sideways from
+  z -2..2 (3.5 m behind the tip face) and the large mains fire backwards: none of them points at the patient.
 """
 import sys, os, copy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,120 +35,124 @@ CUSTOM = ("[Medic]\nMedic Channel=MEDIC\nWork Hold (s)=20\nApproach Speed=5\nWor
           "Max Job Range (m)=3000\n")
 WELDER_TIP = (0, 0, -9)            # tip-centre cell of the welder (works along Forward)
 PORT = (0, 0, -3)                  # junction behind the centre of the welder's back face
-STOCK_CELLS = ((0, 1, -3), (0, -1, -3))
-CARGO_L = 125.0                    # SmallBlockSmallContainer inventory, litres (the CargoContainer shape printer_lib registers)
-KIT_FILL = 0.95                    # of the stock volume
+CARGO_SUB = "SmallBlockLargeContainer"
+CARGO_MIN = (-2, -2, -2)           # 5x5x5: x, y, z -2..2; the centre of its front face (0, 0, -2) touches the junction
+CARGO_L = 15625.0                  # SmallBlockLargeContainer inventory, litres (2.5 m cube; the game's value at inventory multiplier 1)
+KITS = 2                           # full Hornet rebuilds pre-loaded
+STOCK_MIN_L = 300                  # MedicAI StockMinL: below this many litres of parts the medic refuses jobs (STOCK LOW)
+FLANK_Z = (0, 2)                   # z columns of the flank (lateral) and top / bottom (vertical) small ions, 5 per column (y or x -2..2): centred on the
+                                   # loaded centre of mass (z about +0.7 m, pulled back by the rear core), so lateral thrust gives little yaw / pitch
 
-def kit_for(model_bp, litres):
-    """{component: count}: the components of every block of model_bp (defs_stats.json), scaled down by one factor until the volume fits `litres`
-    (at least one of each component that still fits)."""
+def _cargo_shape():
+    """the CargoContainer shape printer_lib registers says Volume 0.125 (a small container): give the large container its own 15.625 m3"""
+    import sebp, printer_lib as PL
+    PL.register_shapes()
+    if f"CargoContainer/{CARGO_SUB}" not in sebp.SHAPES:
+        sp = dict(PL._CARGO_SHAPE)
+        sp['container'] = sp['container'].replace('<Volume>0.125</Volume>', f'<Volume>{CARGO_L / 1000.0}</Volume>')
+        assert f'<Volume>{CARGO_L / 1000.0}</Volume>' in sp['container']
+        sebp.SHAPES[f"CargoContainer/{CARGO_SUB}"] = sp
+
+def kit_for(model_bp, litres, copies=1):
+    """{component: count}: the components of every block of model_bp (defs_stats.json) times `copies`, scaled down by one factor until the volume
+    fits `litres` (at least one of each component that still fits)."""
     from sebp_inv import Item
     tot = {}
     for b in model_bp.blocks:
         for c in C._stat(b).get('components', []): tot[c['subtype']] = tot.get(c['subtype'], 0) + c['count']
     unit = {k: Item.component(k, 1).litres() for k in tot}
     def scaled(f):
-        kit = {k: max(1, int(n * f)) for k, n in tot.items()}
+        kit = {k: max(1, int(n * f + 1e-9)) for k, n in tot.items()}
         while sum(unit[k] * n for k, n in kit.items()) > litres:          # the minimum of one each may overflow: drop the bulkiest singles
             k = max((k for k in kit if kit[k] == 1), key=lambda k: unit[k], default=None)
             if k is None: return None
             del kit[k]
         return kit
     best = {}
-    for i in range(100, 0, -1):                                           # the largest factor (1 % steps) whose kit fits
+    for i in range(100 * copies, 0, -1):                                  # the largest factor (1 % steps) whose kit fits
         kit = scaled(i / 100.0)
         if kit is not None and sum(kit.values()) > sum(best.values()): best = kit
         if kit is not None and len(kit) == len(tot): break
     return best
 
-def _split(kit, n):
-    """deal the kit into n containers of CARGO_L by volume (largest items first)"""
-    from sebp_inv import Item
-    unit = {k: Item.component(k, 1).litres() for k in kit}
-    bins = [dict() for _ in range(n)]; vol = [0.0] * n
-    for k in sorted(kit, key=lambda k: -unit[k] * kit[k]):
-        left = kit[k]
-        while left:
-            i = min(range(n), key=lambda i: vol[i])
-            fit = int((CARGO_L - vol[i]) // unit[k]) if unit[k] else left
-            take = min(left, max(fit, 0))
-            if take == 0:
-                i = max(range(n), key=lambda i: CARGO_L - vol[i]); take = min(left, int((CARGO_L - vol[i]) // unit[k]))
-                if take == 0: break
-            bins[i][k] = bins[i].get(k, 0) + take; vol[i] += take * unit[k]; left -= take
-    return bins
+def hornet_bp():
+    """the Hornet as build_all builds it (support PBs and survival kit included); falls back to the bare frame if a script is mid-edit"""
+    import core
+    try:
+        return core.MODELS["Hornet"](False)
+    except Exception:
+        return core.hornet_frame("Hornet", "", "MyObjectBuilder_SmallGatlingGun", None, ai=True, sensor=True)
 
 def hornet_kit():
-    import core
-    return kit_for(core.hornet_frame("Hornet", "", "MyObjectBuilder_SmallGatlingGun", None, ai=True, sensor=True), CARGO_L * len(STOCK_CELLS) * KIT_FILL)
+    return kit_for(hornet_bp(), CARGO_L * 0.95, copies=KITS)
 
 def medic(lite=False):
     import printer_lib as PL
     from sebp_inv import Item
-    PL.register_shapes()                       # the CargoContainer shape (inventory) seen in Starburst
+    _cargo_shape()
     name = NAME + (" Lite" if lite else "")
     bp = Blueprint(name, "Small", seed=seed_for(name), legacy_shapes=True)
     HULL = (0.58, -0.10, 0.20); ACC = (0.0, 0.0, 0.45)            # white hull, red-cross accents
     # ---- welder on the nose ----
     mn, fwd, up = PL.welder_block_args(WELDER_TIP, DIR["Forward"])
     welder = bp.add("MyObjectBuilder_ShipWelder", "SmallShipWelder", mn, fwd, up, f"{name} Welder", PL.WELD_COLOR, kind="welder")
-    # ---- core (x -1..1, y -1..1, z -3..0) ----
-    roles = {
-        (-1, -1, -3): "bat", (1, -1, -3): "bat", (-1, 1, -3): "bat", (1, 1, -3): "bat",
-        STOCK_CELLS[0]: "cargo", STOCK_CELLS[1]: "cargo", PORT: "conv",
-        (-1, 0, -2): "gyro", (1, 0, -2): "gyro", (0, 0, -2): "rc", (0, -1, -2): "pb", (-1, 1, -2): "proj", (1, 1, -2): "decoy",
-    }
-    n = {"bat": 0, "cargo": 0, "gyro": 0}
-    for z in range(-3, 1):
-        for y in (-1, 0, 1):
-            for x in (-1, 0, 1):
-                c = (x, y, z); r = roles.get(c)
-                if r is None: bp.armor(x, y, z, ACC if (z == -3 or (x == 0 and y == 1)) else HULL)
-                elif r == "bat":
-                    n["bat"] += 1; bat(bp, c, f"{name} Battery {n['bat']}")
-                elif r == "cargo":
-                    n["cargo"] += 1
-                    bp.add("MyObjectBuilder_CargoContainer", "SmallBlockSmallContainer", c, "Forward", "Up", f"{name} Component Stock {n['cargo']} [Stock]", kind="cargo")
-                elif r == "conv":
-                    bp.add("MyObjectBuilder_Conveyor", "SmallBlockConveyor", c, "Forward", "Up", f"{name} Conveyor", kind="conv")
-                elif r == "gyro":       # mounts only on its bottom: stands on the armour below
-                    n["gyro"] += 1; bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro", c, "Forward", "Up", f"{name} Gyroscope {n['gyro']}", kind="gyro")
-                elif r == "rc":
-                    bp.add("MyObjectBuilder_RemoteControl", "SmallBlockRemoteControl", c, name=f"{name} Remote Control", kind="ctrl")
-                elif r == "pb":         # mounts only on its front: faces the lower stock container
-                    bp.add("MyObjectBuilder_MyProgrammableBlock", "SmallProgrammableBlock", c, "Forward", "Up", f"{name} PB",
-                           extra=pb_extra(script_text("MedicAI.cs")), kind="ctrl", custom_data=CUSTOM)
-                elif r == "decoy":
-                    bp.add("MyObjectBuilder_Decoy", "SmallDecoy", c, "Forward", "Up", f"{name} Decoy", kind="decoy")
-                elif r == "proj":
-                    bp.add("MyObjectBuilder_Projector", "SmallProjector", c, "Forward", "Up", f"{name} Projector [Self]", kind="proj", enabled=False)
-    # ---- thrusters: 2 per axis (Hornet pattern) ----
-    thr(bp, (-1, 0, 1), "Backward", "Up", f"{name} Ion Main L"); thr(bp, (1, 0, 1), "Backward", "Up", f"{name} Ion Main R")
-    thr(bp, (-2, 1, -2), "Forward", "Up", f"{name} Ion Brake L"); thr(bp, (2, 1, -2), "Forward", "Up", f"{name} Ion Brake R")
-    thr(bp, (-3, 0, 0), "Left", "Up", f"{name} Ion Strafe R1"); thr(bp, (-3, -1, 0), "Left", "Up", f"{name} Ion Strafe R2")
-    thr(bp, (2, 0, 0), "Right", "Up", f"{name} Ion Strafe L1"); thr(bp, (2, -1, 0), "Right", "Up", f"{name} Ion Strafe L2")
-    thr(bp, (-1, -3, -1), "Down", "Forward", f"{name} Ion Lift L"); thr(bp, (1, -3, -1), "Down", "Forward", f"{name} Ion Lift R")
-    thr(bp, (-1, 2, -1), "Up", "Backward", f"{name} Ion Dive L"); thr(bp, (1, 2, -1), "Up", "Backward", f"{name} Ion Dive R")
+    # ---- front slab z -3 (behind the welder) ----
+    bp.add("MyObjectBuilder_Conveyor", "SmallBlockConveyor", PORT, "Forward", "Up", f"{name} Conveyor", kind="conv")
+    bp.add("MyObjectBuilder_RemoteControl", "SmallBlockRemoteControl", (0, 1, -3), name=f"{name} Remote Control", kind="ctrl")
+    bp.add("MyObjectBuilder_MyProgrammableBlock", "SmallProgrammableBlock", (0, -1, -3), "Backward", "Up", f"{name} PB",   # mounts only on its front: the container
+           extra=pb_extra(script_text("MedicAI.cs")), kind="ctrl", custom_data=CUSTOM)
+    bp.add("MyObjectBuilder_Projector", "SmallProjector", (-1, 0, -3), "Forward", "Up", f"{name} Projector [Self]", kind="proj", enabled=False)
+    bp.add("MyObjectBuilder_Decoy", "SmallDecoy", (1, 0, -3), "Forward", "Up", f"{name} Decoy", kind="decoy")
+    for i, (x, y) in enumerate(((-1, 1), (1, 1), (-1, -1), (1, -1))):
+        bat(bp, (x, y, -3), f"{name} Battery S{i + 1}")
+    # brake ring: small ions in x or y = +-2 (corners left out), z -4..-3, flames forward beside the welder
+    k = 0
+    for x in range(-2, 3):
+        for y in range(-2, 3):
+            if max(abs(x), abs(y)) != 2 or (abs(x) == 2 and abs(y) == 2): continue
+            k += 1; thr(bp, (x, y, -4), "Forward", "Up", f"{name} Ion Brake {k}")
+    cam(bp, (-2, 2, -3), "Forward", "Up", f"{name} Camera Forward", 3)
+    for c in ((2, 2, -3), (-2, -2, -3), (2, -2, -3)): bp.armor(*c, ACC)
+    # ---- the [Stock] container ----
+    stock = bp.add("MyObjectBuilder_CargoContainer", CARGO_SUB, CARGO_MIN, "Forward", "Up", f"{name} Component Stock [Stock]", kind="cargo")
+    # flanks: lateral and vertical small ions on the container
+    for j, z in enumerate(FLANK_Z):
+        for v in range(-2, 3):
+            tag = f"{v + 3}{'ab'[j]}"
+            thr(bp, (3, v, z), "Right", "Up", f"{name} Ion Strafe L {tag}"); thr(bp, (-4, v, z), "Left", "Up", f"{name} Ion Strafe R {tag}")
+            thr(bp, (v, -4, z), "Down", "Forward", f"{name} Ion Lift {tag}"); thr(bp, (v, 3, z), "Up", "Backward", f"{name} Ion Dive {tag}")
+    # ---- rear core z 3..5 ----
+    bp.add("MyObjectBuilder_BatteryBlock", "SmallBlockBatteryBlock", (-2, 1, 3), "Forward", "Up", f"{name} Battery 1", extra=bat_extra(1), kind="bat")
+    bp.add("MyObjectBuilder_BatteryBlock", "SmallBlockBatteryBlock", (-2, -2, 3), "Forward", "Up", f"{name} Battery 2", extra=bat_extra(1), kind="bat")
+    bp.add("MyObjectBuilder_BatteryBlock", "SmallBlockBatteryBlock", (1, -2, 3), "Forward", "Right", f"{name} Battery 3", extra=bat_extra(1), kind="bat")
+    for i, c in enumerate(((1, 1, 3), (2, 1, 3), (1, 1, 4), (2, 1, 4))):   # gyros mount only on their bottom: they stand on Battery 3
+        bp.add("MyObjectBuilder_Gyro", "SmallBlockGyro", c, "Forward", "Up", f"{name} Gyroscope {i + 1}", kind="gyro")
+    occ = bp.occupancy()
+    for z in range(3, 6):
+        for y in range(-2, 3):
+            for x in range(-2, 3):
+                if (x, y, z) not in occ: bp.armor(x, y, z, ACC if z == 5 else HULL)
+    # ---- mains: 2 large ions behind the rear core ----
+    for y, tag in ((1, "U"), (-2, "D")):
+        b = bp.add("MyObjectBuilder_Thrust", "SmallBlockLargeThrust", (-1, y, 6), "Backward", "Up", f"{name} Ion Main {tag}", DARK, kind="thr")
+        bp.keep_clear(b, 6, "exhaust", face=True)
     # ---- antenna and cameras ----
-    ant(bp, (0, 2, 0), "Up", "Backward", f"{name} Antenna", 5000)
-    bp.armor(0, 2, -2, ACC)                                                       # seat of the forward camera (looks over the welder)
-    cam(bp, (0, 2, -3), "Forward", "Up", f"{name} Camera Forward", 3)
-    cam(bp, (0, -2, -3), "Down", "Forward", f"{name} Camera Down")
-    cam(bp, (-2, -1, -2), "Left", "Up", f"{name} Camera Left")
-    cam(bp, (2, -1, -2), "Right", "Up", f"{name} Camera Right")
-    cam(bp, (-1, 2, 0), "Up", "Backward", f"{name} Camera Up")
-    cam(bp, (0, 0, 1), "Backward", "Up", f"{name} Camera Rear")
-    # ---- conveyor lines: welder port <- junction <- both stock containers ----
-    stock = [b for b in bp.blocks if b['kind'] == 'cargo']
-    C.link_conveyors(bp, terminals=[(PORT, welder['name'])] + [(PORT, k['name']) for k in stock])
-    # ---- component kit ----
-    for k, items in zip(stock, _split(hornet_kit(), len(stock))):
-        bp.preload(k, items=[Item.component(s, c) for s, c in sorted(items.items())])
-    # ---- self-projector (item 15): a ghost of this very drone, first block on the real first block, no recursion ----
+    ant(bp, (0, 3, 4), "Up", "Backward", f"{name} Antenna", 5000)
+    cam(bp, (0, -3, 4), "Down", "Forward", f"{name} Camera Down")
+    cam(bp, (-3, 0, 4), "Left", "Up", f"{name} Camera Left")
+    cam(bp, (3, 0, 4), "Right", "Up", f"{name} Camera Right")
+    cam(bp, (-1, 3, 4), "Up", "Backward", f"{name} Camera Up")
+    cam(bp, (0, 0, 6), "Backward", "Up", f"{name} Camera Rear")
+    # ---- conveyor lines: welder port <- junction <- stock container ----
+    C.link_conveyors(bp, terminals=[(PORT, welder['name']), (PORT, stock['name'])])
+    # ---- component kit: KITS full Hornet rebuilds ----
+    bp.preload(stock, items=[Item.component(s, c) for s, c in sorted(hornet_kit().items())])
+    # ---- self-projector (item 15): a ghost of this very drone (no cargo), first block on the real first block, no recursion ----
     proj = [b for b in bp.blocks if b['kind'] == 'proj'][0]
     ghost = copy.deepcopy(bp)
     for b in ghost.blocks:
         if b['kind'] == 'proj': b['settings'] = None
+        b['items'] = []
     sett, _off = PL.projector_settings(ghost, (0, 0, 0), tuple(proj['min']), seed_text='self')
     proj['settings'] = sett
     finalize(bp)
@@ -152,11 +164,12 @@ def build(lite=False):
 
 MODELS = {NAME: build}
 NO_LITE = (NAME,)
-DOCS = {NAME: 'Unarmed tender drone: one ship welder on the nose fed by conveyor from two component containers (pre-loaded with about a tenth of a Hornet '
-              'in parts), 12 ion thrusters, 2 gyros, 4 batteries, antenna, decoy and self-projector. Answers repair calls of damaged drones on the MEDIC channel, '
-              'flies to the patient (which holds still), points the welder at each missing or damaged block in turn, welds, and returns home.'}
-MODEL_NOTES = {NAME: 'Patients are drones whose Staff PB carries the REPAIR CLIENT (medic calls when no repair bay is free). Refill the [Stock] containers by hand; '
-                     'a medic below 10 % stock refuses jobs (STOCK LOW). Run "home" on its PB where it should park.'}
+DOCS = {NAME: 'Unarmed tender drone built round a large cargo container (15,625 L) pre-loaded with the parts of two full Hornet rebuilds, conveyor-fed '
+              'to one ship welder on the nose; 2 large and 52 small ion thrusters, 4 gyros, 3 large + 4 small batteries, antenna, decoy and self-projector. '
+              'Answers repair calls of damaged drones on the MEDIC channel, flies to the patient (which holds still), points the welder at each missing or '
+              'damaged block in turn, welds, and returns home.'}
+MODEL_NOTES = {NAME: 'Patients are drones whose Staff PB carries the REPAIR CLIENT (medic calls when no repair bay is free). Refill the [Stock] container by hand; '
+                     f'a medic with less than {STOCK_MIN_L} L of parts refuses jobs (STOCK LOW). Run "home" on its PB where it should park.'}
 SCRIPTS = ['MedicAI.cs']
 
 if __name__ == "__main__":

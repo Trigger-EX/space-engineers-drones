@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Medic tender drone (docs/design/survivability.md item 18, package E1): tools/designs/medic.py + scripts/MedicAI.cs.   python3 -I tools/tests/test_medic.py
 
-Blueprint: validates, no DLC, 6 thrust axes, welder on the nose fed from the [Stock] containers through a junction at its port (back-face centre),
-ConveyorLines written, kit pre-loaded above the 10 % refusal line, self-projector ghost on the real blocks, no merge block.
+Blueprint: validates, no DLC, one large [Stock] container (SmallBlockLargeContainer) carrying two full Hornet rebuilds, 6 thrust axes >= 4 m/s2 loaded,
+welder on the nose fed from the container through a junction at its port (back-face centre), ConveyorLines written, brake flames clear of the work pose,
+self-projector ghost on the real blocks, no merge block, every block inside the 5x5 section or standing on it.
 Script: within budget, Custom Data keys = the design's, the section 4.3 channels and exact tuple types, welder reach at the default Tip Offset."""
 import os, re, sys, unittest, collections
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +39,10 @@ class Blueprint(unittest.TestCase):
 
     def test_blocks(self):
         k = C.block_counts(bp())
-        for kind, n in (('welder', 1), ('cargo', 2), ('gyro', 2), ('bat', 4), ('thr', 12), ('ant', 1), ('decoy', 1), ('proj', 1)): self.assertEqual(k.get(kind), n, kind)
+        for kind, n in (('welder', 1), ('cargo', 1), ('gyro', 4), ('bat', 7), ('thr', 54), ('ant', 1), ('decoy', 1), ('proj', 1)): self.assertEqual(k.get(kind), n, kind)
+        cargo = [x for x in bp().blocks if x['kind'] == 'cargo'][0]
+        self.assertEqual(cargo['sub'], 'SmallBlockLargeContainer')
+        self.assertAlmostEqual(bp().inventory_limits(cargo)[0], 15.625, 3, 'the written inventory volume is the large container\'s')
         pbs = [x for x in bp().blocks if x['xtype'].endswith('MyProgrammableBlock')]
         self.assertEqual(len(pbs), 1, 'one PB (MedicAI), no support PBs')
         self.assertIn('MEDIC v', pbs[0]['extra'], 'the PB carries MedicAI')
@@ -50,6 +54,32 @@ class Blueprint(unittest.TestCase):
             self.assertGreaterEqual(acc[d], 4.0, f'{d}: {acc[d]:.2f} m/s2 with the kit aboard')
         n = collections.Counter(C.OPP[x['fwd']] for x in bp().blocks if x['kind'] == 'thr')
         self.assertTrue(all(n[d] >= 2 for d in C.AXIS_DIRS), n)
+        self.assertTrue(all('Thrust' not in x['sub'] or x['sub'] in ('SmallBlockSmallThrust', 'SmallBlockLargeThrust') for x in bp().blocks), 'ion thrusters only')
+        pw = C.power_budget(bp())
+        self.assertGreater(pw['margin'], 1.2, pw)
+        tr = C.turn_rates(bp())['pitch_yaw_roll_rad_s2']
+        self.assertTrue(all(r >= 10 for r in tr), tr)
+
+    def test_brake_flames_clear_of_work_pose(self):
+        """the thrusters that fire forward (towards the patient in WORK) are small ions whose nozzles stand >= 5 cells behind the welder tip, beside it"""
+        b = bp(); w = [x for x in b.blocks if x['kind'] == 'welder'][0]
+        tip = min(c[2] for c in b.cells(w))
+        brakes = [x for x in b.blocks if x['kind'] == 'thr' and x['fwd'] == 'Forward']
+        self.assertTrue(brakes)
+        for x in brakes:
+            self.assertEqual(x['sub'], 'SmallBlockSmallThrust', 'brake flames near the patient: small ions only (flame about 0.8 m)')
+            cs = b.cells(x)
+            self.assertGreaterEqual(min(c[2] for c in cs) - tip, 5, x['name'])
+            self.assertFalse({(c[0], c[1]) for c in cs} & {(c[0], c[1]) for c in b.cells(w)}, f'{x["name"]}: its flame would hit the welder')
+
+    def test_outline(self):
+        """the 5x5 section (x, y -2..2) holds the body; only thrusters, cameras and the antenna stand outside it, at most 2 cells"""
+        for x in bp().blocks:
+            for c in bp().cells(x):
+                out = max(abs(c[0]), abs(c[1])) - 2
+                if out > 0:
+                    self.assertIn(x['kind'], ('thr', 'cam', 'ant'), x['name'])
+                    self.assertLessEqual(out, 2, x['name'])
 
     def test_welder_on_nose_and_piped_to_stock(self):
         b = bp(); occ = b.occupancy()
@@ -76,10 +106,12 @@ class Blueprint(unittest.TestCase):
         pairs = {tuple(sorted(p)) for p in b.conveyor_pairs}
         self.assertIn(tuple(sorted((port, centre))), pairs, 'ConveyorLine junction - welder port')
         for k in stock:
-            kc = b.cells(k)[0]
-            j = [c for c in seen if any(add(c, v) == kc for v in DIR.values())]
+            kcs = set(b.cells(k))
+            j = [(c, add(c, v)) for c in seen for v in DIR.values() if add(c, v) in kcs]
             self.assertTrue(j, f'{k["name"]} touches the welder junction network')
-            self.assertIn(tuple(sorted((j[0], kc))), pairs, f'ConveyorLine for {k["name"]}')
+            self.assertIn(tuple(sorted(j[0])), pairs, f'ConveyorLine for {k["name"]}')
+            lo = [min(c[i] for c in kcs) for i in range(3)]; hi = [max(c[i] for c in kcs) for i in range(3)]
+            self.assertEqual(j[0][1], ((lo[0] + hi[0]) // 2, (lo[1] + hi[1]) // 2, lo[2]), 'the junction meets the centre of the container\'s front face (its port)')
         for p in b.conveyor_pairs:
             self.assertEqual(sum(abs(p[0][k] - p[1][k]) for k in range(3)), 1, 'conveyor pairs are face-adjacent')
         self.assertIn('<ConveyorLines>', b._conveyor_xml())
@@ -87,12 +119,21 @@ class Blueprint(unittest.TestCase):
     def test_kit(self):
         from sebp_inv import Item
         b = bp(); stock = [x for x in b.blocks if x['kind'] == 'cargo']
-        vol = [sum(i.litres() for i in b.items_of(k)) for k in stock]
+        vol = sum(i.litres() for k in stock for i in b.items_of(k))
         import medic
-        self.assertTrue(all(0 < v <= medic.CARGO_L for v in vol), vol)
-        self.assertGreater(sum(vol) / (medic.CARGO_L * len(stock)), 0.5, 'well above the 10 % STOCK LOW line')
-        subs = {i.sub for k in stock for i in b.items_of(k)}
-        self.assertTrue({'SteelPlate', 'Construction', 'Computer'} <= subs, subs)
+        self.assertLessEqual(vol, medic.CARGO_L)
+        self.assertGreater(vol, 10 * medic.STOCK_MIN_L, 'well above the STOCK LOW line')
+        self.assertEqual(medic.STOCK_MIN_L, float(re.search(r'StockMinL = ([\d.]+)', raw()).group(1)), 'design and script agree on STOCK LOW')
+        got = collections.Counter()
+        for k in stock:
+            for i in b.items_of(k): got[i.sub] += i.amount
+        need = collections.Counter()
+        for x in medic.hornet_bp().blocks:
+            for c in C._stat(x).get('components', []): need[c['subtype']] += c['count']
+        self.assertGreaterEqual(medic.KITS, 2)
+        for sub, n in need.items():
+            self.assertGreaterEqual(got[sub], medic.KITS * n, f'{sub}: {got[sub]} aboard, {medic.KITS} Hornet rebuilds need {medic.KITS * n}')
+        self.assertTrue({'PowerCell', 'RadioCommunication', 'MetalGrid'} <= set(got), 'the bulky parts are aboard')
 
     def test_self_projector(self):
         b = bp()
@@ -121,7 +162,7 @@ class Script(unittest.TestCase):
         want = {l.split('=')[0] for l in medic.CUSTOM.splitlines() if '=' in l}
         self.assertEqual(keys, want)
         self.assertEqual(want, {'Medic Channel', 'Work Hold (s)', 'Approach Speed', 'Work Speed', 'Tip Offset (m)', 'Cruise Speed', 'Max Job Range (m)'})
-        self.assertIn('const string VER = "1.0", S = "Medic"', raw())
+        self.assertIn('const string VER = "1.1", S = "Medic"', raw())
 
     def test_channels_and_tuples(self):
         """section 4.3: the exact tuple types per channel"""

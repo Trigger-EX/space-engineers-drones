@@ -608,6 +608,8 @@ CONTACT: merge IsConnected -> release overrides, dampeners on, clear FOL bit 2; 
 
 ### Item 18. Medic / tender drone (E1)
 
+**As built (2026-10-18, owner: "carry a lot").** One `SmallBlockLargeContainer` (15,625 L) preloaded with 2 complete Hornet rebuilds (6,116 L / 11.7 t, every component incl. power cells, radio parts, metal grids); 16.1 t empty / 27.8 t loaded, 5.2-12.4 m/s2 loaded, 23/23/45 rad/s2; one welder (a second does not fit or reach the same point); 12 small ion brakes round the welder (flame about 0.8 m, nozzles 2.5 m behind the tip). MedicAI v1.1: STOCK LOW below 300 L, an EXIT step that backs straight out from the patient before turning home (the long hull grazed the patient in the sim without it). The text below is the original plan.
+
 **Design: new `tools/designs/medic.py`, model "Medic", kind drone.** Added to `DRONE_MODULES` in `tools/designs/__init__.py`. Not added to the sim scenario lists (unarmed).
 - One `SmallShipWelder` (3x3x6) on the nose axis, tip forward.
 - Core behind it: RC, `[Flight]`-less single PB running MedicAI, 2 gyros, 4 small batteries, 12 ion thrusters (2 per axis), antenna, forward, side and rear cameras.

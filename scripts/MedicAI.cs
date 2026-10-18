@@ -1,8 +1,8 @@
 // =====================================================================
-//  MEDIC AI  v1.0  - field repair drone (docs/design/survivability.md item 18)
+//  MEDIC AI  v1.1  - field repair drone (docs/design/survivability.md item 18)
 // ---------------------------------------------------------------------
-//  One PB on the Medic (tools/designs/medic.py): a ship welder on the nose, component stock in cargo containers named "[Stock]" (conveyor-fed
-//  to the welder), 12 ion thrusters, gyros, Remote Control, antenna. It answers the repair calls of damaged drones (their Staff PB's REPAIR
+//  One PB on the Medic (tools/designs/medic.py): a ship welder on the nose, component stock in a large cargo container named "[Stock]" (15,625 L,
+//  two Hornet rebuilds pre-loaded, conveyor-fed to the welder), ion thrusters on all 6 axes, gyros, Remote Control, antenna. It answers the repair calls of damaged drones (their Staff PB's REPAIR
 //  CLIENT), flies to the patient, which holds still under its own Staff, holds the welder tip on each missing or damaged block in turn and goes home.
 //
 //  IGC (default broadcast distance, antenna; M = "Medic Channel", default MEDIC; section 4.3 of the design):
@@ -15,14 +15,17 @@
 //             first); a zero vector = no point.
 //
 //  MODES
-//   IDLE      hold the home point (where the PB first ran, or 'home'); answer calls when free with stock >= 10 % (else ACK 0, STOCK LOW)
+//   IDLE      hold the home point (where the PB first ran, or 'home'); answer calls when free with >= 300 L of parts aboard (else ACK 0, STOCK LOW;
+//             litres, not a share of the container: 300 L is about a tenth of a Hornet, the damage of a typical hit)
 //   GO        cruise to the patient (Cruise Speed) until 60 m + its radius
 //   APPROACH  relative speed <= Approach Speed: go round the keep-out sphere (patient radius + medic radius + 1 m) to the stand point on the
 //             work point's outward normal (patient centre -> point), welder pointing at the point
 //   WORK      slide in along the normal (<= Work Speed inside 3 m) until the tip (welder centre + forward x 1.25 m) is Tip Offset off the point,
 //             hold relative to the patient's velocity, welders on. Stay until the patient's WORK drops that point, or Work Hold s (then skip it 60 s)
 //   NEXT      back out along the old normal to the keep-out sphere, then APPROACH the next point
-//   RTB       done bit (or job lost / given up): welders off, fly home, then IDLE
+//   RTB       done bit (or job lost / given up): welders off; first EXIT the patient without turning (straight out along the line from its centre,
+//             at most Work Speed at first, then round its keep-out sphere towards home: the long Medic's nose must not swing or slide along the
+//             patient's hull), then fly home, then IDLE
 //  SAFETY: the medic centre stays outside the keep-out sphere except on the work point's normal; abort to 25 m standoff while the patient reports
 //   under fire or changes speed by > 1 m/s; give the job up when an own block is lost, or the stock is empty. FRIENDLY AVOIDANCE (shared block)
 //   in GO and the outer APPROACH; the patient itself is exempt (it is put in _contacts).
@@ -30,12 +33,13 @@
 //  COMMANDS: home (park here) | rtb | idle (drop the job, hold here) | reload
 //  CUSTOM DATA [Medic]: Medic Channel, Work Hold (s), Approach Speed, Work Speed, Tip Offset (m), Cruise Speed, Max Job Range (m)
 //  NOT MEASURED IN THE GAME: the welder work sphere (centre and radius: tools/designs/reach.py), that the welder pulls components from the
-//   [Stock] containers through the junction, collisions at the tip, ion flame damage on the patient.
+//   [Stock] containers through the junction, collisions at the tip, ion flame damage on the patient (the design keeps the brake ions' nozzles
+//   2.5 m behind the welder tip face; their flames, about 0.8 m, stop short of the patient in the WORK pose).
 // =====================================================================
-const string VER = "1.0", S = "Medic";
+const string VER = "1.1", S = "Medic";
 string Ch = "MEDIC";
 double HoldS = 20, AppSpd = 5, WorkSpd = 0.5, TipOff = 0.6, Cruise = 40, MaxRange = 3000;
-const double TipFwd = 1.25, StockMin = 0.10, LostS = 10, AckWaitS = 15;
+const double TipFwd = 1.25, StockMinL = 300, LostS = 10, AckWaitS = 15;
 
 enum Mode { IDLE, GO, APPROACH, WORK, NEXT, RTB }
 Mode _mode = Mode.IDLE;
@@ -51,7 +55,7 @@ IMyTextSurface _lcd;
 MyIni _ini = new MyIni();
 StringBuilder _sb = new StringBuilder();
 
-double _now, _modeT, _adT = -99, _stockF, _minA = 1;
+double _now, _modeT, _adT = -99, _stockF, _stockL, _minA = 1;
 int _tick, _blkMax, _blk;
 bool _damaged, _homeSet, _welding;
 Vector3D _home;
@@ -60,6 +64,7 @@ string _log = "", _err = "";
 // patient
 long _pid; double _workT = -99, _ackT = -99, _pr = 3, _ptT = -99, _moveT = -99, _fireT = -99;
 Vector3D _pc, _pv, _pvPrev, _wo, _woOld; bool _haveWp, _done, _haveWork;
+Vector3D _exC, _exV; double _exR, _exT = -99;                       // the patient just left (EXIT in RTB)
 int _rem;
 Vector3D[] _pts = new Vector3D[2]; int _np;
 Dictionary<Vector3I, double> _skip = new Dictionary<Vector3I, double>();
@@ -200,7 +205,7 @@ void GetBlocks()
     }
     double cur = 0, max = 0;
     foreach (var b in _stock) { var inv = b.GetInventory(0); if (inv == null) continue; cur += (double)inv.CurrentVolume; max += (double)inv.MaxVolume; }
-    _stockF = max > 0 ? cur / max : 0;
+    _stockF = max > 0 ? cur / max : 0; _stockL = cur * 1000;
     if (_pid != 0 && _stock.Count > 0 && cur <= 0) Drop("stock empty");
     _lcd = Me.GetSurface(0);
     _lcd.ContentType = ContentType.TEXT_AND_IMAGE;
@@ -226,7 +231,7 @@ public void Main(string arg, UpdateType u)
 }
 
 bool Free() { return _pid == 0 && !_damaged && _weld.Count > 0; }
-bool StockOk() { return _stockF >= StockMin; }
+bool StockOk() { return _stockL >= StockMinL; }
 
 void Command(string c)
 {
@@ -248,7 +253,7 @@ void Drop(string why)
     _log = "job dropped: " + why;
     EndJob();
 }
-void EndJob() { _contacts.Remove(_pid); _pid = 0; _pv = Vector3D.Zero; _haveWp = false; _haveWork = false; _np = 0; _skip.Clear(); Weld(false); SetMode(Mode.RTB); }
+void EndJob() { if (_haveWork) { _exC = Pc(); _exV = _pv; _exR = _pr; _exT = _now; } _contacts.Remove(_pid); _pid = 0; _pv = Vector3D.Zero; _haveWp = false; _haveWork = false; _np = 0; _skip.Clear(); Weld(false); SetMode(Mode.RTB); }
 
 void ReadIGC()
 {
@@ -328,6 +333,19 @@ void Step(double dt)
         if (_mode == Mode.RTB && d < 5) SetMode(Mode.IDLE);
         want = Toward(_home, pos, Cruise);
         if (d > 20) face = e;
+        if (_mode == Mode.RTB && _now - _exT < 40)
+        {   // EXIT: leave the patient without turning (face stays zero: the gyros hold the attitude)
+            Vector3D c = _exC + _exV * (_now - _exT), mc = Me.CubeGrid.WorldVolume.Center, u = Dir(mc - c, -_rc.WorldMatrix.Forward), h = Dir(_home - c, u);
+            double rl = (mc - c).Length(), Rk = _exR + Me.CubeGrid.WorldVolume.Radius + 1;
+            if (rl < Rk + 1) { want = _exV + u * Math.Min(AppSpd, WorkSpd + (_now - _exT)); face = Vector3D.Zero; cap = AppSpd + _exV.Length(); }
+            else if (Vector3D.Dot(u, h) < 0.85 && rl < Rk + 10)
+            {
+                Vector3D t = h - u * Vector3D.Dot(h, u);
+                t = t.LengthSquared() < 1e-6 ? Perp(u) : Vector3D.Normalize(t);
+                want = _exV + Toward(c + Vector3D.Normalize(u + t * 0.6) * (Rk + 2), mc, AppSpd); face = Vector3D.Zero; cap = AppSpd + _exV.Length();
+            }
+            else _exT = -99;
+        }
     }
     else if (_mode == Mode.GO)
     {
@@ -495,7 +513,7 @@ void Display()
 {
     _sb.Clear();
     _sb.Append("MEDIC v").Append(VER).Append("  ").Append(_mode).Append(_welding ? "  WELD" : "").Append('\n');
-    _sb.Append("Channel ").Append(Ch).Append("  stock ").Append((_stockF * 100).ToString("0")).Append(" %").Append(StockOk() ? "" : "  STOCK LOW").Append('\n');
+    _sb.Append("Channel ").Append(Ch).Append("  stock ").Append(_stockL.ToString("0")).Append(" L (").Append((_stockF * 100).ToString("0")).Append(" %)").Append(StockOk() ? "" : "  STOCK LOW").Append('\n');
     if (_pid != 0 && _rc != null)
         _sb.Append("Patient ").Append(_pid % 100000).Append("  ").Append((Pc() - _rc.GetPosition()).Length().ToString("0")).Append(" m  r ").Append(_pr.ToString("0.0"))
            .Append("  left ").Append(_rem).Append('\n');

@@ -13,7 +13,8 @@
 //   (< 1.5 m, longest unbroken hold and total, must reach --hold-min), welders on in WORK, max relative speed with the tip within 3 m of a block
 //   (<= 1 m/s), no collision / collision damage on either ship, writer audit 0 (SimEvents.WriterAudit), repaired (played), RTB, IDLE again within 25 m of home.
 //   PASS needs every stage; a FAIL line names the stages missed. The run stops 6 s after the Medic is back in IDLE, or at --seconds.
-//   --no-stock     leave the Medic's cargo as the blueprint spawns it (otherwise the [Stock] containers are filled to 60 %, the sim spawns cargo empty)
+//   --no-stock     leave the Medic's cargo as the blueprint spawns it (otherwise the [Stock] container is filled to 60 %, the sim does not load the
+//                  blueprint's items)
 //   failover       not here: PB failover (Flight off then on, Staff limp-home, writer audit) is covered by "one --events 30:!disable-pb Flight;45:!enable-pb Flight"
 //                  (survivability.md item 5, F1); this command only prints that and exits 2.
 using System;
@@ -84,8 +85,11 @@ namespace SeSim.Run
             string bpDir = Arg(args, "--bp", Path.Combine(Path.Combine(repo, "out"), "Blueprints"));
             var settings = new SimSettings();
             DefDb defs = DefDb.LoadCached(Path.Combine(repo, "defs_stats.json"));
-            // defs_stats.json carries no inventory volume for the small container: the sim then gives it none and the Medic reads "stock 0 %". Harness-only fix, before spawning.
-            foreach (var d in defs.Blocks.Values) if (d.TypeId == "CargoContainer" && d.InventoryVolume <= 0 && d.Subtype.StartsWith("SmallBlock", StringComparison.Ordinal)) d.InventoryVolume = 0.2f;
+            // defs_stats.json carries no inventory volume for the cargo containers: the sim then gives them none and the Medic reads "stock 0 L". Harness-only fix,
+            // before spawning: the game's small-grid volumes (m3, inventory multiplier 1); the Medic carries one SmallBlockLargeContainer (15,625 L).
+            foreach (var d in defs.Blocks.Values)
+                if (d.TypeId == "CargoContainer" && d.InventoryVolume <= 0 && d.Subtype.StartsWith("SmallBlock", StringComparison.Ordinal))
+                    d.InventoryVolume = d.Subtype == "SmallBlockLargeContainer" ? 15.625f : d.Subtype == "SmallBlockMediumContainer" ? 3.375f : 0.125f;
             var hbp = BlueprintLoader.Get(bpDir, "Hornet"); var mbp = BlueprintLoader.Get(bpDir, "Medic");
             var w = new World(settings, defs, seed);
             var host = new ScriptHost(w, simDir);
