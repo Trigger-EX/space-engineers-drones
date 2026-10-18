@@ -1,0 +1,389 @@
+# Flight split: off-hot-path modules leave the 9 drone Flight PBs and the ShrikeAI Helm
+
+`docs/design/flight_split.md`. Planned 2026-10-18 at 9027e80, read-only. Pattern: `docs/design/wasp_split.md`, `staff_split.md`, `helm_split.md`. Rules: CLAUDE.md "Script size". Owner, 2026-10-18: "always split PBs if they outgrow their space".
+
+**Status 2026-10-18:** Gnat runs variant G2 until the owner answers Q1 (section 7.2).
+
+## 0. Decision in one paragraph
+
+The same set of modules leaves every drone Flight PB. Each one is model-independent, or is passed over IGC as parameters:
+
+1. **All Flight config** goes to the drone's **Staff**: the `[<Model>]` section, `[Kamikaze Defence]`, `[AI Gate]` and the Flight's `[Survival]` keys. A new CONFIG SERVER block in the Staff writes every default and parses the values; the Flight's CONFIG LINK receives them as one `.CFG` string and caches it in `Storage`. The Flight PB's Custom Data then has one writer, the Staff.
+2. **Damage sensing** goes to the **Staff**, sent to the Flight on `.DMG`. The Staff is the survival brain that already uses it.
+3. **Camera and sensor search** goes to the **Aux**: auto-scan, all-round close scan, hit-look, manual lock, sensor poll and the kamikaze pack/refresh rays. Contacts come back to the Flight on `.SCN` and are rebuilt there.
+4. **AI-block setup** (`AiGateFind`) goes to the **Aux**.
+5. **Weapon auto-detect** (`DetectWeapon`, Longbow and Mantis) goes into the Staff's config server.
+6. Dead status helpers are deleted (they are not referenced anywhere).
+
+To make room in the Staffs, **WEAKPOINT RELAY moves Staff → Aux**, where the seeker already runs. **Basilisk gets the [Aux] PB.** Its Staff switches to AUX LINK, so REPAIR CLIENT and SEEKER leave it as they left the other 7. **ShrikeAI** follows helm_split.md: its config server, AI GATE SETUP, Cut 2 (cockpit HUD page and Run menu), part of the status text and the manual lock go to `StaffAI.cs`.
+
+The hot path stays whole in the Flight / Helm: tracking (MaintainLock, designators, Track, target selection), lead, aim, control, firing, KZ classification and steering, FA, AI time-share. **No override writer changes.**
+
+## 1. Measured sizes (minified, `tools/minify_cs.py`, 9027e80)
+
+| Script | Minified | Needed to reach 76k |
+|---|---|---|
+| HornetDroneAI | 80,303 | 4.3k |
+| HarrierAI | 81,361 | 5.4k |
+| LancerAI | 81,743 | 5.7k |
+| AegisAI | 84,304 | 8.3k |
+| WaspFlightAI | 86,245 | 10.2k |
+| LongbowSniperAI | 86,286 | 10.3k |
+| GnatSwarmAI | 86,391 | 10.4k |
+| BasiliskAI | 87,489 | 11.5k |
+| MantisAI | 89,304 | 13.3k |
+| ShrikeAI | 84,678 | 8.7k |
+
+Receiving PBs:
+- Hornet / Harrier / Lancer / Aegis / Wasp / Longbow / Mantis Staff: 72,667 / 72,675 / 72,667 / 72,659 / 72,654 / 72,720 / 72,712.
+- Gnat Staff 73,820. Basilisk Staff 73,550.
+- AuxAI 19,449. StaffAI 39,526. ThrustVectorAI 7,314.
+- `scripts/WaspAI.cs` (99,761) is legacy: it is not embedded in any design (`wasp.py` uses WaspFlightAI).
+
+### 1.1 Shared blocks, identical in all 10 scripts
+
+| Block | Size |
+|---|---|
+| KAMIKAZE DEFENCE | 7,355 |
+| AI GATE | 3,489 |
+| LEAD | 2,663 |
+| FRIENDLY AVOIDANCE | 2,377 |
+
+In the 9 drone Flights only: SURVIVAL LINK 5,906, BREACH+SEEKER 4,829, SPLIT LINK 2,851.
+
+### 1.2 Candidate modules per Flight
+
+Sizes are gross / net of the Flight-side receiver.
+
+| Module | Hor | Har | Lan | Aeg | Wsp | Lbw | Gnt | Bas | Man |
+|---|---|---|---|---|---|---|---|---|---|
+| M1 `[Model]` config (`LoadConfig` + `Cfg`); net after `CfgIn` (about 15 chars per key) and the link (0.55k) | 4183/2657 | 4604/2962 | 4403/2804 | 4807/3095 | 5668/3744 | 4910/3179 | 3755/2344 | 5923/3947 | 5255/3427 |
+| keys in `[Model]` | 65 | 72 | 69 | 76 | 91 | 79 | 59 | 94 | 86 |
+| M2 KZ config (`KzLoad/KzD/KzB` + `KzStatus`, the latter dead in split Flights) | 1731/1431 | all 9 | | | | | | | |
+| M3 AI GATE setup (`AiGateLoad`, `AiGateFind`, `AiGateStatus`, fields) | 2563/2503 | all 9 | | | | | | | |
+| M4 `[Survival]` read (`SvLoad/SvK`) | 437/317 | all 9 | | | | | | | |
+| M5 damage sensing (`ScanSlims`, `StepSlimScan`, `CheckDamage`, fields) | 1886/1536 | | | | | | 1928/1578 | 1899/1549 | |
+| M6 dead code (`HiveStatus`, `AiStatus`, `_sb`, `_sweepYaw`, ...) | 446 | 446 | 446 | 446 | 65 | 381 | 680 (unused model consts) | 103 | 381 |
+| M7 search (`AutoScanStep`, `OmniScan`, `HitPoint`, `ManualLock`, `PollSensors`, fields); net of the `.SCS/.SCN` link (0.85k) | 3123/2273 | | | | | 3141/2291 | 2569/1719 | | 3141/2291 |
+| M8 `DetectWeapon` | – | – | – | – | – | 573 | – | – | 578 |
+| M9 `KzRayStep` (net of a 0.25k proxy) | 929/680, all 9 | | | | | | | | |
+
+### 1.3 Rejected candidates
+
+| Candidate | Size (Mantis) | Why it stays |
+|---|---|---|
+| KZ classification (`KzAssess`, `KzWant`, `KzScore`) | about 4k | It steers. It reads the whole contact table at 6 Hz and is life-critical. |
+| Fleet weakpoint adoption (`WpAdopt`, `WpTick` in BREACH) | 2.0k | Aim-point selection on the Flight's own hull samples and breach state. Only the relay side moves (Staff → Aux). |
+| AI time-share (`AiGate`, `AiStep`) | 1.9k | Decides when the AI blocks fly: override arbitration. |
+| Hive (`ReadSwarm`, `BroadcastStatus`), friendly beacon | 1.0k | Mates feed separation and fire safety. If the beacon or `_SWARM` came from a softer PB, mates would lose this drone. |
+| Command parsing | 1.4k | The Flight must take words while its Staff is dead (`Tag_CMD`, PB argument). |
+| `PowerAndHealth` | 1.0k | `_powerScale` throttles thrust for the railgun recharge: that is control. |
+| `PollDesignators` | 0.3k | A tracking source for the current target. |
+| `SweepDir` | 0.8k | An attitude setpoint every tick. |
+| Flight `Display` and first-contact line | 0.5k | Small. Errors must show while the Staff is dead. Kept as reserve R1. |
+| `[Thrust]` PB as a receiver | – | It is on the thrust allocation path. Gets nothing. |
+
+## 2. Why each move is off the hot path
+
+- **Config.** It is read at start and on `reload` only. Values persist in `Storage`.
+- **Damage sensing.** A pass already runs every 20 ticks over 4-80 ticks; the move adds 1 tick. Evade (`Evade`, jinks) stays in the Flight and reads `_hits/_hitDir` as before.
+- **Search.** It finds *new* contacts; it does not track. A first sighting gets 1-2 ticks older. The tracked target (MaintainLock, designators, Track, Lead) stays in the Flight. Side benefit: the raycasts and the 200-cells-per-tick slim scan leave the Flight's instruction budget.
+- **KZ rays.** They refresh *other* incoming tracks and search for the rest of a pack, once per 6 Hz pass. Classification and `KzWant` steering stay.
+- **AiGateFind.** One-time terminal property writes. The values persist in the world.
+- **DetectWeapon.** Setup.
+- **WEAKPOINT RELAY.** 1 Hz wing data, holes valid for seconds.
+- **Helm HUD and menu.** Pilot display. helm_split's Cut 2 was deferred; the owner's directive now settles it. Risk "HUD pip lag" goes on the in-game list.
+
+## 3. Blocks (`tools/blocks.json`; legacy `kz_sync.py` / `ai_gate_sync.py` keep the core markers)
+
+| Block | File | Hosts | Content |
+|---|---|---|---|
+| KAMIKAZE DEFENCE v1.1 (core) | `tools/kz_block.cs` | the 10 + WaspAI | v1.0 minus `KzLoad/KzD/KzB/KzStatus/KzRayStep`. Hooks unchanged: `KzAssess` still calls `KzRayStep()`. |
+| KZ CONFIG v1.0 | `tools/kzc_block.cs` (new) | WaspAI (standalone) | `KzLoad`, `KzD`, `KzB`, `KzStatus` |
+| KZ RAYS v1.0 | `tools/kzr_block.cs` (new) | WaspAI, ShrikeAI, GnatSwarmAI (until Q1) | `KzRayStep` (local) |
+| AI GATE v1.3 (core) | `tools/ai_gate_block.cs` | the 10 + WaspAI + TubeRamAI | runtime fields, `AiGateOn/AiWin/ScriptWin/AiHoldMax`, `AiGate()` |
+| AI GATE SETUP v1.0 | `tools/ags_block.cs` (new) | AuxAI, StaffAI, GnatStaffAI (until Q1), WaspAI, TubeRamAI | `AiBehaviorSwitch/AiTyped/AiSpeed/AiSearchEvery/_agProps/_agFound`, `AiGateFind`, `AiGateStatus`, `AgSet(string)` |
+| AI GATE CONFIG v1.0 | `tools/agc_block.cs` (new) | WaspAI, TubeRamAI | `AiGateLoad` (writes and parses `[AI Gate]` into core + setup fields) |
+| CONFIG LINK v1.0 | `tools/cl_block.cs` (new) | 9 drone Flights, ShrikeAI | `.CFG` listener on `CfKey()+".CFG"`, `N()/B()/T()` value readers, `CfApply`, schema check, `Storage` cache (`CfSave/CfLoad`), `CfWant`. Section appliers `KzSet`, `AgSet4`, `SvSet`. Host hook `CfgIn()` holds the per-model assignments. |
+| CONFIG SERVER v1.0 | `tools/cs_block.cs` (new) | 9 drone Staffs, StaffAI | Generic table-driven MyIni default writer and reader for the target PB's Custom Data; KZ, AI Gate and Survival tables; builds and sends `.CFG`. Host hooks: `CfTarget()`, `CfModel()` (per-model `string[]` key/default/type table), `CfKey()`, `CfExtra(...)` (DetectWeapon override). |
+| DAMAGE SENSE v1.0 | `tools/ds_block.cs` (new) | 8 drone Staffs (Gnat Staff only after Q1) | The Flight's `ScanSlims/StepSlimScan/CheckDamage` verbatim, plus the `.DMG` sender |
+| DAMAGE LINK v1.0 | `tools/dl_block.cs` (new) | 8 drone Flights (Gnat keeps local until Q1) | `.DMG` receiver: fills `_hits/_hitAt/_hitDir/_hitDirT/_integ/_svNb/_svMax`, then calls `SvDamage()` |
+| SEARCH v1.0 | `tools/sc_block.cs` (new) | AuxAI | Auto-scan, omni-scan, hit-look, lock ray, sensor poll, KZ rays from the `.KZR` table, own `CamFor`/`Forwardish`; sends `.SCN` |
+| SEARCH LINK v1.0 | `tools/sq_block.cs` (new) | 8 drone Flights | `.SCS` sender, `.KZR` sender (the `KzRayStep()` proxy), `.SCN` receiver (rebuilds `MyDetectedEntityInfo`, `Valid()`, `AddContact(e, src)`, lock results and messages), Aux heartbeat |
+| WEAKPOINT RELAY v1.2 | `tools/wp_block.cs` | AuxAI, GnatStaffAI (until Q1) | `WpCfg()` becomes a host hook. In the Aux, values come from SDK and `WpSeek` is local. |
+| AUX LINK v1.1 | `tools/al_block.cs` | 7 split Staffs + Basilisk Staff | SDK cfg gets more lines (fleet channel, Weakpoint Priority/Expire, AI Gate setup values); flags bit 9 AI ASSIST; `.SKW` reader removed; `WpStatus` comes in the DKS status |
+| SPLIT LINK v1.2 | `tools/lk_block.cs` | 9 drone Flights | F2S flags bit 16 CFG WANT, bit 17 AI ASSIST |
+| SURVIVAL LINK v1.1 | `tools/sv_block.cs` | 9 drone Flights | `SvLoad` gone (values come through `SvSet`) |
+| HELMLINK 1.3 / MANUAL 1.2 / BATTERY | Helm block files | ShrikeAI | Section 4.3 |
+
+`blocks_sync` does not delete blocks. The stale sub-block text is removed from the 10 scripts by hand.
+
+## 4. IGC (all `TransmissionDistance.CurrentConstruct`)
+
+Drone key: `K = "WSPL"+<Flight PB EntityId>`. Helm key: `<Ship Tag>.` (HELMLINK).
+
+### 4.1 Drone channels
+
+| Tag | From → to | Tuple | Rate |
+|---|---|---|---|
+| F2S (existing) | Flight → Staff | new flag bits: 16 CFG WANT, 17 AI ASSIST (runtime `AiAssist`) | unchanged (5 Hz + change); WANT set means an F2S goes out within 12 ticks |
+| `.CFG` | Staff → Flight | `string`: `"CF1\t<schema>\t<status>\n" + one line per section (M model, K kamikaze, A AI gate, S survival), values tab-separated in table order`. Bools are `1/0`, doubles `ToString("R")`, strings raw. `schema` = key counts per section + version, generated on both sides from `tools/cfg_tables.json`. A mismatch is ignored and the screen says `! config schema: update Flight and Staff together`. | In the tick the Staff sees F2S with bit 16, at most once per 30 ticks per key |
+| `.DMG` | Staff → Flight | `MyTuple<int hits, double integ, Vector3D hitDir, double hitDirAge, int blocksHit, double maxDrop>`; `hits` is a cumulative counter | After each `CheckDamage` with a drop (≤ 3 Hz), else 1 Hz |
+| `.SCS` | Flight → Aux | `MyTuple<int flags, long tgtId, Vector3D lostPos, Vector3D lostVel, Vector3D hitDir, MyTuple<Vector3D,Vector3D,Vector3D,Vector3D> p>` (see below) | Every 6 ticks + at once on a flag change. Stale at the Aux after 30 ticks: the Aux stops all scanning. |
+| `.KZR` | Flight → Aux | `MyTuple<long id, Vector3D pos, Vector3D vel, double radius, double age, int flags>`: bit0 is the Flight's target, bits 8-11 index, 12-15 count, 16-31 pass number | From the `KzRayStep()` proxy, ≤ 4 per KZ pass (6 Hz), only while threats exist |
+| `.SCN` | Aux → Flight | `MyTuple<long id, int f, Vector3D hit, Vector3D vel, MyTuple<Vector3D,Vector3D> box, MyTuple<Vector3D,Vector3D> ori(fwd, up)>`: f bits 0-7 entity type, 8-15 relationship, 16 has hit, 20-22 source (1 SCAN, 2 SENSOR, 3 KZ, 4 LOCK), 24-27 lock result (0 ok, 1 no forward camera, 2 nothing hit with the charge in `hit.X`). `id 0` = heartbeat. | Per non-empty hit, except own grid and planets; friendlies and asteroids are sent because FaSee uses them. About ≤ 6 per tick. Heartbeat every 30 ticks. |
+| `.SDK` (existing) | Staff → Aux | Same tuple type. cfg = `Tag\nSeekerGroup\nflChan\nwpPri\nwpExp\nagSwitch\|agTyped\|agSpeed\|agEvery`; new flags bit 9 AI ASSIST | unchanged |
+| `.DKS` (existing) | Aux → Staff | status string adds `WpStatus()` and a search / AI-setup line | unchanged |
+| `.WPF` (existing) | Flight → **Aux** | unchanged tuple; the Staff no longer listens | unchanged |
+| `.WPT` (existing) | **Aux** → Flight | unchanged tuple; exactly one sender, guaranteed by the host lists | unchanged |
+| `.SKW` | removed | | |
+| `<ch>_WP` | Aux, through the antenna | unchanged | unchanged |
+
+`.SCS` details:
+- **flags.** bit0 AUTO (the Flight's existing auto-scan condition: no target, AI off, AutoScan on, mode GUARD/HUNT/FOLLOW). bit1 OMNI (mode not IDLE and CloseScan on). bit2 HARD (UnderFire or Alerted). bit3 has target. bit4 AI on. bit5 SENSORS. bit6 HITLOOK (off for the Gnat variant). bit7 KZRAYS. bits 8-15 lock request counter. bit17 lock camera uses Forwardish (0.9) instead of 0.99.
+- **p.** a = (auto-scan range, scan cone in degrees, spiral N). b = (close-scan range, 900, lock range). c = (lost age, hit-dir age, lost radius). d = (KzPack, KzReserve, 0).
+- The model differences found by diffing the variants (ScanRange vs WeaponRange×1.1, N 120/150, Gnat without HitPoint, lock rule and range) are carried in p and the flags. AuxAI stays model-independent.
+
+### 4.2 The Flight rebuilds contacts
+
+`new MyDetectedEntityInfo(id, "", type, hit?, MatrixD.CreateWorld(c, fwd, up), vel, rel, box, 0)`, then `Valid(e)` (FaSee, SvSee), then `AddContact(e, src)`.
+
+The constructor exists in the sim (`sim/src/Api/Detection.cs`). In the game it is [game?]. Fallback if the game rejects it: refactor to `AddContactRaw(...)`, about +0.3k.
+
+On a run gap the Flight drops any queued `.SCN`.
+
+### 4.3 Helm channels (HELMLINK 1.3)
+
+- H2S flags: bit 9 CFG WANT, bit 10 AI ASSIST (first free bits; verify in `helmlink_block.cs`).
+- `.CFG` Staff → Helm: same format as the drones. Helm sections: `[Shrike]` minus Tag/Start Mode, the Helm-side `[Manual]` keys, `[Battery]`, `[Kamikaze Defence]`, 4 `[AI Gate]` values.
+- `.HUD` and `.MNU`: exactly as specified in helm_split.md section 2 (Cut 2). `.HUD` also gains the KZ count / next impact and the AI-search bits, for the lines that leave the Helm screen.
+- `.LCK` Helm → Staff: `int` lock counter. The Staff casts the ray from its message callback and replies `.LKR` with the `.SCN` tuple.
+
+## 5. Override writers (survivability.md 1.3 is unchanged for overrides)
+
+| Output | Writer after this split |
+|---|---|
+| Gyro / thruster overrides, `DampenersOverride` | **Unchanged.** Flight. Staff under FOL bit 2 (take-off burn, dock via `.DKS`). Staff limp-home when the Flight is down. Aux, `[Thrust]` and StaffAI never write (StaffAI only `ReleaseAll` while the Helm is silent). |
+| Guns, railgun | unchanged (Flight / Helm) |
+| AI blocks `Enabled` | unchanged (Flight; Staff off-once when the Flight is down) |
+| AI blocks "AI Behavior" / `SpeedLimit` / `UpdateTargetInterval` | **Aux** (drones), **StaffAI** (Helm), was Flight. GnatStaffAI until Q1. |
+| Flight / Helm PB Custom Data | **Staff only.** The Flight and Helm never write it any more (test). |
+| Camera `EnableRaycast` (always true) | Flight GetBlocks + Aux (SEEKER, SEARCH). Same value every time, so harmless. |
+| Sensor properties | Staff (unchanged) |
+| Projector / merge / seeker turret group | unchanged (staff_split) |
+| Cockpit HUD surface (Helm ships) | StaffAI (Cut 2) |
+
+## 6. Sync
+
+### 6.1 Config
+- **Start-up.**
+  - The Flight sets CFG WANT on every start and on `reload`.
+  - Until a matching `.CFG` arrives, it runs on its `Storage` cache, or on its field defaults if the cache is empty. Screen: `cfg: cached` or `cfg: defaults (no Staff)`.
+  - The Staff answers within one F2S period (≤ 12 ticks). The Flight applies atomically, clears WANT and saves the string in `Storage`.
+- **Values that stay local.** Tag and Start Mode are read locally, Get-only, because the IGC channels are registered in the constructor. Drone Flights also keep the SPLIT LINK key; the Helm keeps `[Link]`.
+- **Runtime words.** `aim`, `breach`, `wp`, `range`, `split/focus`, `ai on|off` survive until the next start or `reload`, as today. The Staff never pushes config unasked.
+- **Re-bind.**
+  - Flight rebuilt: a new key, WANT, and the Staff re-keys (its existing 1 Hz rescan while down).
+  - Staff rebuilt: nothing to do. It answers the next WANT.
+- **Run gaps.** Nothing happens; the config is in memory.
+
+### 6.2 Damage
+- First message, or a counter that went down (a new Staff): the Flight copies the value.
+- Counter up while the link is alive: `_hitAt = _now; _hits++`.
+- `.DMG` silent for 3 s after it was heard: `_hitAt = _now` once, `_integ = -1` (the helm_split rule).
+
+### 6.3 Search
+- The Aux scans only while `.SCS` is ≤ 30 ticks old.
+- Aux rebuilt: re-binds to the nearest `[Flight]` (existing rule); scanning resumes on the next `.SCS`, within 6 ticks.
+- Flight rebuilt: new key; the Aux re-scans at 1 Hz while stale.
+- Aux run gap: drops `.KZR` entries older than 0.5 s.
+- Flight run gap: sends `.SCS` at once and drops queued `.SCN`.
+
+### 6.4 AI setup
+The Aux runs `AiGateFind` when:
+- SDK bit 9 rises;
+- the AI Gate values in the cfg change;
+- it rescans blocks (every 600 ticks) while bit 9 is set.
+
+### 6.5 WEAKPOINT RELAY in the Aux
+- The holes are soft state (20 s expiry). Aux rebuilt: the map refills from the wing.
+- The Staff writes the two `[Fleet]` weakpoint defaults and passes them in SDK.
+
+### 6.6 Failure behaviour (add to survivability.md 1.4)
+- **Aux dead.** Lost (besides repair, medic, seeker): camera auto-scan, close scan, hit-look, sensor poll, manual lock, KZ pack rays, wing weakpoint sharing, AI-behaviour setup. Setup already made persists.
+- What still finds and tracks targets: the AI Offensive block (hybrid search), turret designators, hive and fleet shares, MaintainLock on the current target.
+- The Flight screen says `! Aux PB silent: camera search off`.
+
+## 7. Per-model decisions, placement, sizes after (estimates ±0.5k)
+
+| PB | Now | After | Moves |
+|---|---|---|---|
+| Hornet / Watcher Flight | 80,303 | ~68.5k | M1-M9 |
+| Harrier | 81,361 | ~69.2k | same |
+| Lancer | 81,743 | ~69.8k | same |
+| Aegis | 84,304 | ~72.0k | same |
+| WaspFlight | 86,245 | ~73.7k | same |
+| Longbow (S/L/L Seeker) | 86,286 | ~73.4k | same + M8 |
+| Basilisk (+ Seeker) | 87,489 | ~74.7k | same; **gets an Aux** |
+| Mantis | 89,304 | ~76.2k | same + M8 (tightest) |
+| Gnat | 86,391 | **G2 ~79.1k / G1a ~75.1k** | G2: M1-M4 + dead consts. G1a: everything. |
+| ShrikeAI | 84,678 | ~76.4k | H1-H6 below |
+| Hornet / Harrier / Lancer / Aegis Staff | 72.7k | ~73.5 / 73.8 / 73.6 / 73.9k | − WP RELAY 5.5k, + CONFIG SERVER 2.0k + model table 2.1-2.5k + DAMAGE SENSE 2.2k |
+| Wasp / Longbow / Mantis Staff | 72.7k | ~74.4 / 74.7 / 74.8k | same (Longbow and Mantis + DetectWeapon 0.6k) |
+| Basilisk Staff | 73,550 | ~64.9k | − RC 10.5k, − SEEKER 2.8k, + AUX LINK 2.65k, then as above |
+| Gnat Staff | 73,820 | **G2 ~78.9k / G1a ~63.8k** | |
+| AuxAI | 19,449 | ~32.5k | + WP RELAY 5.5k, SEARCH ~5.9k, AI GATE SETUP 1.15k, glue 0.5k |
+| StaffAI | 39,526 | ~47k | config server and Helm table 3.35k, AGS 1.15k, HUD and menu 1.9k, status 0.4k, lock 0.6k |
+| ThrustVectorAI | 7,314 | unchanged | |
+
+### 7.1 ShrikeAI moves (helm_split pattern, all into StaffAI)
+
+| Move | Net |
+|---|---|
+| H1 config: `LoadConfig/Cfg/ManCfg/BatCfg/HlkCfg`, KZ CONFIG, `AiGateLoad` → CONFIG SERVER. The Helm keeps Get-only Tag, Start Mode and `[Link]`. | −4.9k |
+| H2 `AiGateFind` and `AiGateStatus` | −1.06k |
+| H3 Cut 2: `ManHud`, `ManShow`, menu, HUD surface → `.HUD/.MNU` | −1.5k |
+| H4 `AiStatus` and the KZ line leave the Helm screen | −0.23k |
+| H5 dead `AimInfo` and `_avgMs` | −0.15k |
+| H6 manual lock through `.LCK/.LKR` | −0.35k |
+
+- **Ships without a Staff.** They run the Helm on the `Storage` cache or on defaults. All five shipped blueprints (Ballista, Shrike, Corsair, Warden, Leviathan) carry a Staff. This reverses helm_split's "config stays", per the owner's directive; the cache keeps the Helm self-sufficient after its first link.
+- **KZ RAYS** stay local in the Helm (StaffAI is Update10).
+
+### 7.2 Placement (CLAUDE.md outline rule)
+- **Basilisk / Basilisk Seeker:**
+  - Change: add `'BASILISK'` to `SUPPORT_AUX` in `_common.py`.
+  - In-memory dry run: `[Aux] Basilisk PB` at **(2,0,1), Forward/Right**, inside `kit_outline`, Chebyshev distance 3 from the Flight PB at (-1,1,0). `validate()` OK, kit skipped `[]`.
+  - Note: the dry run added the Aux after the kit. Re-check with the real order (add_support_pbs → bury_swap → add_survival_kit).
+  - No printer prints the Basilisk, so no welder reach check is needed.
+  - +100 PCU, +138 kg. Check that min accel stays ≥ 1.0 m/s².
+- **The other 7:** already in place (staff_split).
+- **Gnat — owner question Q1.** Dry runs:
+  - armour cell (1,1,-1): an Aux PB there cuts the two ion thrusters off ("separate pieces");
+  - decoy cell (1,1,2): cuts the sensor off;
+  - nose cell (1,1,-3): nothing mounts there;
+  - sensor moved to decoy cell (1,1,2), PB at (1,1,3): the PB does not mount;
+  - **the only cell that works is the sensor's own cell (1,1,3), PB facing Forward/Up, and it validates.**
+
+  **Q1: may the Gnat trade its 50 m sensor for an `[Aux] Gnat PB` at (1,1,3)?** Close contacts would then come from its 5 cameras' close scan, the AI Offensive block and the hive. Gnat printer welder reach would need re-checking.
+  - **G1a (yes):** the Gnat follows the full design.
+  - **G2 (no / until answered):** the Gnat moves only config and AI-gate setup into its Staff. Flight ~79.1k / Staff ~78.9k: under the 80k hard budget, but no room left to grow. The budget test names the Gnat as the documented exception to the 76k target and points to Q1.
+
+## 8. Work packages
+
+Every package owns its files exclusively. Phase-1 packages never edit `blocks.json`; they apply with `blocks_sync.py --apply --only <their blocks>`. The full `--check` runs only in phase 2.
+
+### P0 (sequential, first)
+1. Split the KZ and AI GATE blocks into core plus sub-blocks, behaviour-preserving: every current carrier gets all of its sub-blocks, so all 12 scripts compile unchanged.
+2. Write `tools/gen_cfg_tables.py` (one-off) and `tools/cfg_tables.json`: per model / section, the ordered list of [key, default, type, field, post-op], extracted from today's `LoadConfig/KzLoad/AiGateLoad/SvLoad/ManCfg/BatCfg` **before** anyone edits them.
+3. Set the final host lists in `blocks.json` and create the new block files (skeletons with header contracts).
+4. Save this doc.
+5. Checks: `compile_check`, kz / ai_gate sync, `blocks_sync --check`.
+
+Files owned: `kz_block`, `kzc_block`, `kzr_block`, `ai_gate_block`, `ags_block`, `agc_block`, `blocks.json`, `cfg_tables.json`, `gen_cfg_tables.py`, this doc. Re-sync: TubeRamAI and WaspAI.
+
+### Phase 1 (parallel)
+
+| Package | Files owned | Work |
+|---|---|---|
+| **P1-F, drone Flights** | the 9 Flight scripts, `cl_block.cs`, `dl_block.cs`, `sq_block.cs`, `lk_block.cs`, `sv_block.cs` | Writes CONFIG LINK (publishes it for P1-H); generates `CfgIn` from `cfg_tables.json`; removes M1-M9; Gnat per G2. |
+| **P1-S, drone Staffs** | the 9 `*StaffAI.cs` (not StaffAI.cs), `cs_block.cs`, `ds_block.cs`, `al_block.cs` | Writes CONFIG SERVER (publishes it for P1-H) and the model tables from `cfg_tables.json`; DAMAGE SENSE; DetectWeapon hook; removes WP RELAY from 8 Staffs; Basilisk Staff → AUX LINK; Gnat Staff per G2 (CONFIG SERVER + AGS); re-syncs `wp_block` v1.2 into Gnat after P1-X. |
+| **P1-X, Aux** | `AuxAI.cs`, `sc_block.cs`, `wp_block.cs` | SEARCH, WP RELAY v1.2 hosting, AGS hosting, SDK cfg parsing, DKS status lines |
+| **P1-H, Helm** | `ShrikeAI.cs`, `StaffAI.cs`, `helmlink_block.cs`, `manual_block.cs`, `battery_block.cs`, `sim/src/Run/SelfTestHelmSplit.cs` | H3-H6 first; H1/H2 once `cl`/`cs` are published |
+| **P1-D, designs** | `tools/designs/_common.py`, `core.py` (only G1a after Q1) | `SUPPORT_AUX += BASILISK`; `PB_BUDGET = 80000` as the default limit in `script_text()`; ShrikeAI entry → 80000 |
+| **P1-T, tests** | every `tools/tests/*.py` edit, any `sim/src` IGC check | Section 9; confirms the sim's IGC accepts nested `MyTuple` |
+
+### Phase 2 (one agent)
+1. `blocks_sync --apply`, then `--check`.
+2. `compile_check.sh`, `minify_check.sh`; measure every size and fill in section 7.
+3. `run_all.py --update-golden` (every drone and Helm ship hash changes).
+4. `build_all.py --no-zip --only` Hornet Harrier Lancer Aegis Wasp Watcher "Longbow S" "Longbow L" "Longbow L Seeker" Mantis Gnat Basilisk "Basilisk Seeker" Ballista Shrike Corsair Warden Leviathan "Shrike Staff Test".
+5. Sim runs (section 9).
+6. Docs: survivability.md 1.1-1.4, 4.1, 5; staff_split / helm_split status lines; `retrofit.md` Role-specific row; one line in CLAUDE.md "Script size" (budget enforced by `test_pb_budget.py` and `script_text()`; owner 2026-10-18).
+7. Commit to main. Say the zips are not rebuilt.
+
+### Phase 3
+P2-G, Gnat G1a — only if the owner answers Q1 yes.
+
+## 9. Tests
+
+### 9.1 Static
+1. `tools/compile_check.sh` (all scripts) and `tools/minify_check.sh`.
+2. `python3 -I tools/blocks_sync.py --check` (includes the legacy kz / ai_gate / split syncs): no UNLISTED.
+
+### 9.2 New `tools/tests/test_pb_budget.py` (the durable rule)
+- Every `scripts/*.cs` minified ≤ 80,000. The only exception is `LEGACY = {'WaspAI.cs'}`, which the test also asserts is never passed to `script_text(` in `tools/designs`.
+- Failure message: "over the 80,000 PB budget: move an off-hot-path module into another PB (CLAUDE.md 'Script size', docs/design/flight_split.md section 10); do not trim features or raise the budget".
+- Prints a "plan the next split" note above 76,000.
+- `_common.script_text()` fails builds above `PB_BUDGET` too.
+
+### 9.3 New `tools/tests/test_flight_split.py`
+- **(a) Tuple shapes.** `.DMG .SCS .KZR .SCN .LKR` `MyTuple<...>` text is identical at the sender and the receiver. The `.CFG` header and schema constants match on both sides.
+- **(b) What moved.**
+  - The 9 Flights + ShrikeAI have no `Me.CustomData =`, no `void KzLoad(`, no `void AiGateLoad(`, no `void AiGateFind(`.
+  - The 8 drone Flights (and the Gnat after G1a) have no `void ScanSlims(` and no `void AutoScanStep(`.
+  - The 8 Staffs have no `void WpStep(`. AuxAI has `WEAKPOINT RELAY v1.2` and `SEARCH v1.0`.
+  - AuxAI has no `ThrustOverride`, `GyroOverride` or `DampenersOverride`.
+- **(c) Config tables.** For each model: the Staff table and the Flight `CfgIn` match `cfg_tables.json` in count and order, and each default equals the Flight field initializer.
+- **(d) Sizes.**
+  - the 10 scripts ≤ 76,500 (Gnat ≤ 80,000 while Q1 is open);
+  - the 9 Staffs ≤ 78,000 (Gnat ≤ 80,000 under G2);
+  - AuxAI ≤ 40,000; StaffAI ≤ 78,000.
+
+### 9.4 Updates to existing tests
+- `test_gnat_split.test_sizes` (stale 80k / 40k) and `test_basilisk_split.test_sizes` (85k / 40k): replace with pointers to (d).
+- `test_aux_split`:
+  - (a): drop `.SKW`;
+  - (b): WP RELAY moved;
+  - (c): Staff ≤ 78k, AuxAI ≤ 40k;
+  - (d): Basilisk has 4 PBs (Aux ≤ 4 cells from its Flight PB, kit complete), Gnat per Q1.
+- `test_m6`, `test_ballista`, `test_helm_split`, `test_harasser`: limits now come from `C.PB_BUDGET`; ShrikeAI ≤ 80,000.
+- `test_pb_count`.
+- `golden_hashes.json`.
+
+### 9.5 Sim runs (seed counts: "runs, no exception, writer audit 0", not strength)
+1. `SimHost.exe selftest m2 m4 m5 m6 hsplit`; hsplit gains the CFG handshake, HUD/menu (helm_split step 5d) and lock checks.
+2. `one --scenario "1v1/Hornet-vs-Hornet" --seed-index 0 --echo-every 5 --pb-custom-data "<Flight>=[Hornet]\nCombat Speed=55"`: the Flight shows `cfg: Staff` within 1 s and its trace speed cap is 55.
+3. `--events "0:!disable-pb Staff;6:!enable-pb Staff"`: `cfg: defaults (no Staff)`, then applied within 1 s of the Staff's return. 1 seed, Hornet and Basilisk.
+4. `--events "20:!disable-pb Aux;35:!enable-pb Aux"`: SCAN contacts stop and resume. 3 seeds each on Hornet, Basilisk and Mantis.
+5. `--events "30:!disable-pb Staff;45:!enable-pb Staff"`: one hit on DMG loss, no false hit burst on return. 3 seeds.
+6. `--events "30:!disable-pb Flight;45:!enable-pb Flight"`: limp-home as before. 3 seeds.
+7. Writer audit gyro 0 / thrust 0 in every run.
+8. `run --filter "kamikaze/" --seeds 3`, baseline vs after (KZ-sourced contacts present, outcomes in line).
+9. `run --filter "1v1/(Hornet|Wasp|Mantis|Longbow S|Basilisk|Gnat)-vs-Hornet" --seeds 5`, before vs after.
+10. `follow-test --model Hornet --count 3`; `dock-launch` for Hornet, Wasp and Basilisk (new Aux).
+11. Helm: `run --filter "^enemy/Tech Hunter-vs-Ballista$" --seeds 5`; Shrike vs Hornet 5 seeds; Corsair / Warden / Leviathan vs Pirate 3 seeds each.
+
+Note: the sim cannot rebuild a PB mid-run, so the re-bind after a rebuild is only exercised by the t=0 start-up handshake.
+
+### 9.6 In-game list (owner)
+- `.CFG` reaches the Flight and the Helm.
+- `MyDetectedEntityInfo` construction compiles in game.
+- Aux camera search finds a target.
+- Shrike HUD pip lag (Cut 2).
+- Gnat sensor trade, if Q1 is yes.
+
+## 10. Next cuts (when a PB passes 76k again; test_pb_budget points here)
+
+- **R1:** Flight `Display` lines → Staff screen (0.4k).
+- **R2:** `PollDesignators` → Aux (0.3k; needs a tracking-latency A/B first).
+- **H7:** Helm `AutoScanStep` → StaffAI on Update1, with its old step gated to every 10th tick (0.8k).
+- **Staff side:** SURVIVAL STAFF missiles / threat memory → Aux.
+- **KZ classification:** rejected unless the owner asks and a sim A/B supports it.
+- **Gnat:** see Q1.
+
+## 11. Risks
+- Real-game IGC latency and loss (as in staff_split).
+- The `MyDetectedEntityInfo` constructor in game (fallback in 4.2).
+- The Aux now matters to search, which is a combat degradation if it dies (6.6).
+- Config dependence on the Staff (the `Storage` cache mitigates it).
+- Drift between the Staff tables and the Flight defaults (test 9.3c).
+- Gnat sits at the budget edge until Q1 is answered.
+
+### Critical files for implementation
+- /home/user/space-engineers-drones/tools/kz_block.cs and /home/user/space-engineers-drones/tools/ai_gate_block.cs (core and sub-block split; new kzc/kzr/ags/agc block files)
+- /home/user/space-engineers-drones/tools/blocks.json (final host lists; new cl/cs/ds/dl/sc/sq blocks)
+- /home/user/space-engineers-drones/scripts/MantisAI.cs and /home/user/space-engineers-drones/scripts/MantisStaffAI.cs (the tightest pair; the pattern for all 9 drones)
+- /home/user/space-engineers-drones/scripts/AuxAI.cs and /home/user/space-engineers-drones/tools/wp_block.cs (SEARCH, WEAKPOINT RELAY v1.2, AI GATE SETUP)
+- /home/user/space-engineers-drones/scripts/ShrikeAI.cs and /home/user/space-engineers-drones/scripts/StaffAI.cs (H1-H6; tools/helmlink_block.cs, tools/manual_block.cs)
+- /home/user/space-engineers-drones/tools/designs/_common.py (SUPPORT_AUX += BASILISK, PB_BUDGET in script_text) and /home/user/space-engineers-drones/tools/designs/core.py (Gnat G1a only after Q1)
