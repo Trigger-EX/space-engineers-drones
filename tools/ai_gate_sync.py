@@ -9,7 +9,7 @@ import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = ["HornetDroneAI", "GnatSwarmAI", "LongbowSniperAI", "WaspAI", "WaspFlightAI", "LancerAI", "HarrierAI", "AegisAI", "MantisAI",
            "BasiliskAI", "ShrikeAI", "TubeRamAI"]
-BEGIN, END = "// >>> AI GATE", "// <<< AI GATE <<<"
+BEGIN, END = "// >>> AI GATE v", "// <<< AI GATE <<<"   # ("v": not the AI GATE SETUP / AI GATE CONFIG sub-blocks)
 
 def unlisted():
     """Scripts that carry this block's marker but are not in SCRIPTS (or are on EXCLUDE): a new script would otherwise silently skip the sync."""

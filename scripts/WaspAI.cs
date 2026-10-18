@@ -315,7 +315,7 @@ void FleetSendHome(Vector3D p) { if (_flChan != "") IGC.SendBroadcastMessage(_fl
 void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flChan + "_CMD", c); }
 // <<< FLEET LINK <<<
 
-// >>> AI GATE v1.2 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
+// >>> AI GATE v1.3 (shared block core: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
 // The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
 // default, so switching them on (Enabled) may do nothing at all. In-game report 2026-10-13: Full drones in GUARD stood still and
 // HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
@@ -333,62 +333,14 @@ void FleetSendCmd(string c) { if (_flChan != "") IGC.SendBroadcastMessage(_flCha
 // to IMyOffensiveCombatBlock.UpdateTargetInterval: the block rescans only every 30 s by default [wiki], longer than the AI Window, so a
 // window often saw no search at all. Scripts with an AI Block Search Assist switch call AiGateFind only while it is on (with it off the
 // AI blocks stay as they came, "AI Behavior" off: switched on, the AI Flight block may fly the ship away on its own) and re-run FindAi on `ai on|off`.
-// Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
-// Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
-// "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
-bool AiGateOn = true, AiBehaviorSwitch = true, AiTyped = false;
-double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60; int AiSearchEvery = 5;
-bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
-int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
-List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
-
-void AiGateLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "AI Gate";
-    if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
-    if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
-    if (!ini.ContainsKey(S, "Use Typed AI Block API")) ini.Set(S, "Use Typed AI Block API", AiTyped);
-    if (!ini.ContainsKey(S, "AI Flight Speed Limit (m/s)")) ini.Set(S, "AI Flight Speed Limit (m/s)", AiSpeed);
-    if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
-    if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
-    if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
-    if (!ini.ContainsKey(S, "AI Search Interval (s)")) ini.Set(S, "AI Search Interval (s)", AiSearchEvery);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
-    AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
-    AiTyped = ini.Get(S, "Use Typed AI Block API").ToBoolean(AiTyped);
-    AiSpeed = Math.Max(1, ini.Get(S, "AI Flight Speed Limit (m/s)").ToDouble(AiSpeed));
-    AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
-    ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
-    AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
-    AiSearchEvery = Math.Max(0, ini.Get(S, "AI Search Interval (s)").ToInt32(AiSearchEvery));
-}
-
-void AiGateFind(List<IMyFunctionalBlock> ai)
-{
-    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
-    if (!AiBehaviorSwitch || ai.Count == 0) return;
-    int n = 0;
-    foreach (var b in ai)
-    {
-        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
-        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
-        _agProps.Clear(); b.GetProperties(_agProps);
-        ITerminalProperty<bool> sw = null;
-        foreach (var p in _agProps)
-        {
-            string id = p.Id.ToLowerInvariant();
-            if (!id.Contains("behavio")) continue;
-            var bp = p.As<bool>();
-            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
-        }
-        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
-        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
-    }
-    _agFound = n;
-}
+// v1.3 (2026-10-18, docs/design/flight_split.md): the core keeps only the time-share (AiGate) and its runtime fields. The one-time AI-block setup
+// (AiGateFind, AiGateStatus, AiBehaviorSwitch/AiTyped/AiSpeed/AiSearchEvery) is AI GATE SETUP (tools/ags_block.cs), which may run in another PB
+// (the Aux, or StaffAI for a Helm); the [AI Gate] section reader AiGateLoad is AI GATE CONFIG (tools/agc_block.cs), or the values come from the Staff
+// through CONFIG LINK's AgSet4. AiGateOn/AiWin/ScriptWin/AiHoldMax keep their defaults here; whoever loads the config overwrites them.
+// Hooks: AiGateLoad() (AI GATE CONFIG) after FleetLoad(true); AiGateFind(_ai) at the end of FindAi() and AiGateStatus() in the status text (AI GATE SETUP
+// hosts); want = AiGate(want) right before "if (want != _aiOn)" in AiStep(). Uses from the script: _rc, _now, UnderFire.
+bool AiGateOn = true, _agAi = true, _agLive = false, _agFwdSet = false;
+double AiWin = 6, ScriptWin = 8, AiHoldMax = 60, _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
 
 bool AiGate(bool want)
 {
@@ -416,6 +368,42 @@ bool AiGate(bool want)
     else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
     return _agAi;
 }
+// <<< AI GATE <<<
+
+// >>> AI GATE SETUP v1.0 (sub-block of AI GATE v1.3: one-time AI-block setup; tools/ags_block.cs, synced by tools/blocks_sync.py) >>>
+// Switches "AI Behavior" on, sets IMyFlightMovementBlock.SpeedLimit (typed API, opt-in) and IMyOffensiveCombatBlock.UpdateTargetInterval on the [AI]
+// blocks. Off the hot path (terminal property writes that persist in the world), so it may run in another PB than the AI GATE core: final hosts AuxAI
+// (drones), StaffAI (Helm ships), GnatStaffAI (variant G2), WaspAI and TubeRamAI (standalone, with the core). The Aux sets the four fields from the
+// SDK cfg line "agSwitch|agTyped|agSpeed|agEvery" with its own host code (AgSet(string) in AuxAI.cs) and calls AiGateFind when SDK bit 9 AI ASSIST rises,
+// when those values change, and on its 600-tick block rescan while bit 9 is set (flight_split.md 6.4).
+// Hooks: AiGateFind(list of [AI] blocks) after the AI blocks are found; AiGateStatus() in the status text.
+// Uses from the script: _agLive (declared by the AI GATE core; a host without the core declares "bool _agLive;" itself, false = no "AI ok" suffix).
+bool AiBehaviorSwitch = true, AiTyped = false; double AiSpeed = 100; int AiSearchEvery = 5, _agFound = -1;   // _agFound: -1 not tried, else the number of AI blocks whose behaviour switch was found
+List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
+
+void AiGateFind(List<IMyFunctionalBlock> ai)
+{
+    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
+    if (!AiBehaviorSwitch || ai.Count == 0) return;
+    int n = 0;
+    foreach (var b in ai)
+    {
+        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
+        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
+        _agProps.Clear(); b.GetProperties(_agProps);
+        ITerminalProperty<bool> sw = null;
+        foreach (var p in _agProps)
+        {
+            string id = p.Id.ToLowerInvariant();
+            if (!id.Contains("behavio")) continue;
+            var bp = p.As<bool>();
+            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
+        }
+        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
+        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
+    }
+    _agFound = n;
+}
 
 string AiGateStatus()
 {
@@ -423,7 +411,37 @@ string AiGateStatus()
     if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
     return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
 }
-// <<< AI GATE <<<
+// <<< AI GATE SETUP v1.0 <<<
+
+// >>> AI GATE CONFIG v1.0 (sub-block of AI GATE v1.3: the [AI Gate] section, read locally; tools/agc_block.cs, synced by tools/blocks_sync.py) >>>
+// Hosts that read their own Custom Data (WaspAI, TubeRamAI). Writes the 8 defaults on first run ("reload" re-reads them) into the AI GATE core fields
+// (AiGateOn, AiWin, ScriptWin, AiHoldMax) and the AI GATE SETUP fields (AiBehaviorSwitch, AiTyped, AiSpeed, AiSearchEvery): a host needs both blocks.
+// A split Flight / Helm gets these values from its Staff (CONFIG LINK AgSet4 for the core four; the setup four go to the Aux in the SDK cfg).
+// Hook: AiGateLoad() after FleetLoad(true).
+void AiGateLoad()
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "AI Gate";
+    if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
+    if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
+    if (!ini.ContainsKey(S, "Use Typed AI Block API")) ini.Set(S, "Use Typed AI Block API", AiTyped);
+    if (!ini.ContainsKey(S, "AI Flight Speed Limit (m/s)")) ini.Set(S, "AI Flight Speed Limit (m/s)", AiSpeed);
+    if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
+    if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
+    if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
+    if (!ini.ContainsKey(S, "AI Search Interval (s)")) ini.Set(S, "AI Search Interval (s)", AiSearchEvery);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
+    AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
+    AiTyped = ini.Get(S, "Use Typed AI Block API").ToBoolean(AiTyped);
+    AiSpeed = Math.Max(1, ini.Get(S, "AI Flight Speed Limit (m/s)").ToDouble(AiSpeed));
+    AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
+    ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
+    AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
+    AiSearchEvery = Math.Max(0, ini.Get(S, "AI Search Interval (s)").ToInt32(AiSearchEvery));
+}
+// <<< AI GATE CONFIG v1.0 <<<
 
 // >>> FOLLOW v1.1 (shared block: identical in every scripted combat drone, synced by tools/follow_sync.py) >>>
 // FOLLOW mode ("follow" or "escort" command, Start Mode FOLLOW, or launch Mode=FOLLOW): the drone stays with its owner instead of
@@ -798,7 +816,7 @@ List<int> LeadPick(List<Vector3D> hull, Vector3D l, double need)
 }
 // <<< LEAD v1.0 <<<
 
-// >>> KAMIKAZE DEFENCE v1.0 (shared block: identical in every combat drone script, synced by tools/kz_sync.py, see docs/kamikaze-defence.md) >>>
+// >>> KAMIKAZE DEFENCE v1.1 (shared block core: identical in every combat drone script, synced by tools/kz_sync.py, see docs/kamikaze-defence.md) >>>
 // Countermeasures against incoming swarms of small warhead drones (Stingers and the like). A contact is an INCOMING KAMIKAZE when it is
 // small (bounding radius <= Max Radius), seen in the last 3 s, closing faster than Min Closing Speed, its straight-line closest approach
 // to me (or to a hive mate) is within Miss Distance (+ Miss Distance Per km of range) and that approach is less than Warning Time away,
@@ -814,12 +832,15 @@ List<int> LeadPick(List<Vector3D> hull, Vector3D l, double need)
 //   4 inside Break Time of impact it breaks sideways, away from the predicted impact point (a blast reaches only ~4.5 m)
 //   5 spare camera charge keeps the other incoming tracks fresh and searches round known kamikazes for the rest of the pack
 //   6 incoming tracks are shared with the hive (<Tag>_TGT and the FLEET channel), so wingmates shoot what dives on me
-// Own [Kamikaze Defence] section in Custom Data (defaults written on first run, "reload" re-reads them).
-// Script hooks: KzLoad() next to every FleetLoad(true); KzAssess() first in the target-selection pass (PruneAndSelect / Housekeeping);
+// v1.1 (2026-10-18, docs/design/flight_split.md): config and camera rays live in sub-blocks so a split Flight can drop them. The [Kamikaze Defence]
+// section (KzLoad/KzD/KzB) and KzStatus() are in KZ CONFIG (tools/kzc_block.cs) or come from the Staff through CONFIG LINK's KzSet; KzRayStep() is
+// KZ RAYS (tools/kzr_block.cs, local rays) or the SEARCH LINK proxy (tools/sq_block.cs, rays cast by the Aux PB). This core needs exactly one KzRayStep().
+// Fields KzOn..KzReserve keep their defaults here; whoever loads the config (KzLoad or KzSet) overwrites them.
+// Script hooks: KzLoad() (KZ CONFIG) or KzSet(...) (CONFIG LINK) next to every FleetLoad(true); KzAssess() first in the target-selection pass (PruneAndSelect / Housekeeping);
 // score += KzScore(t) next to HiveScore(t); "&& !KzLive(t.Id)" on the GUARD/FORM radius skip; "if (KzLive(t.Id)) return false;" after
-// the DeadAt line of Disabled(), followed by "if (KzSpent(t)) return true;"; want = KzWant(want, me, cap) right before the speed cap; _sb.Append(KzStatus()) after HiveStatus().
+// the DeadAt line of Disabled(), followed by "if (KzSpent(t)) return true;"; want = KzWant(want, me, cap) right before the speed cap; _sb.Append(KzStatus()) after HiveStatus() (KZ CONFIG hosts).
 // Uses from the script: _contacts, _mates, _tgt, _now, _rc, Tag, Track (Id, Pos, Vel, AccMag, Radius, Seen, Src, Type, P(), V()),
-// Mate (Pos, Vel, Seen), CamFor(), Valid(), AddContact(), FleetSend().
+// Mate (Pos, Vel, Seen), FleetSend(), KzRayStep().
 bool KzOn = true, KzBack = true, KzBreak = true, KzRays = true, KzShareOn = true, KzMates = true;
 double KzMaxRadius = 3.5, KzHorizon = 12, KzMiss = 40, KzMissPerKm = 60, KzMinClosing = 15, KzPriority = 2500;
 double KzBackSpeed = 60, KzBackRange = 800, KzReact = 10, KzBreakTime = 2, KzBreakSpeed = 40, KzBreakMiss = 20, KzPack = 60, KzReserve = 600;
@@ -829,36 +850,6 @@ Dictionary<long, double> _kzT = new Dictionary<long, double>();     // id -> las
 Dictionary<long, KzThreat> _kzById = new Dictionary<long, KzThreat>();
 List<long> _kzDrop = new List<long>();
 double _kzShareT = -9; int _kzRay = 0, _kzMine = 0; Vector3D _kzSide; Random _kzRng = new Random();
-
-void KzLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Kamikaze Defence";
-    KzOn = KzB(ini, S, "Enabled", KzOn);
-    KzMaxRadius = KzD(ini, S, "Max Kamikaze Radius (m)", KzMaxRadius);
-    KzHorizon = KzD(ini, S, "Warning Time (s)", KzHorizon);
-    KzMiss = KzD(ini, S, "Miss Distance (m)", KzMiss);
-    KzMissPerKm = KzD(ini, S, "Miss Distance Per km Of Range (m)", KzMissPerKm);
-    KzMinClosing = KzD(ini, S, "Min Closing Speed (m/s)", KzMinClosing);
-    KzPriority = KzD(ini, S, "Priority Bonus", KzPriority);
-    KzMates = KzB(ini, S, "Protect Hive Mates", KzMates);
-    KzBack = KzB(ini, S, "Back Away", KzBack);
-    KzBackSpeed = KzD(ini, S, "Back Away Speed (m/s)", KzBackSpeed);
-    KzBackRange = KzD(ini, S, "Back Away Within (m)", KzBackRange);
-    KzReact = KzD(ini, S, "Back Away Reaction Time (s)", KzReact);
-    KzBreak = KzB(ini, S, "Break Sideways", KzBreak);
-    KzBreakTime = KzD(ini, S, "Break Time (s)", KzBreakTime);
-    KzBreakSpeed = KzD(ini, S, "Break Speed (m/s)", KzBreakSpeed);
-    KzBreakMiss = KzD(ini, S, "Break Miss Distance (m)", KzBreakMiss);
-    KzRays = KzB(ini, S, "Track And Pack Search Rays", KzRays);
-    KzPack = KzD(ini, S, "Pack Search Radius (m)", KzPack);
-    KzReserve = KzD(ini, S, "Camera Charge Reserve (m)", KzReserve);
-    KzShareOn = KzB(ini, S, "Share Threats With Hive", KzShareOn);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-}
-double KzD(MyIni i, string s, string k, double d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToDouble(d); }
-bool KzB(MyIni i, string s, string k, bool d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToBoolean(d); }
 
 // Closest approach of a threat (p, v) to a protected point (q, u), both on straight lines: time to it, miss distance, closing speed.
 bool KzCpa(Vector3D p, Vector3D v, Vector3D q, Vector3D u, out double tgo, out double miss, out double closing)
@@ -976,6 +967,67 @@ Vector3D KzWant(Vector3D want, Vector3D me, double cap)
     return want;
 }
 
+// The two most urgent incoming tracks I see myself go to the hive twice a second (same tuple as a target share).
+void KzShare()
+{
+    _kzShareT = _now; int n = 0;
+    foreach (var k in _kz)
+    {
+        if (k.T.Src == "IGC" || _now - k.T.Seen > 0.5) continue;
+        var tup = new MyTuple<long, Vector3D, Vector3D, double, long>(k.T.Id, k.T.P(_now), k.T.V(_now), k.T.Radius, Me.EntityId);
+        IGC.SendBroadcastMessage(Tag + "_TGT", tup); FleetSend(tup);
+        if (++n >= 2) break;
+    }
+}
+// <<< KAMIKAZE DEFENCE <<<
+
+// >>> KZ CONFIG v1.0 (sub-block of KAMIKAZE DEFENCE v1.1: the [Kamikaze Defence] section, read locally; tools/kzc_block.cs, synced by tools/blocks_sync.py) >>>
+// Hosts that read their own Custom Data (WaspAI). A split Flight / Helm gets these values from its Staff (CONFIG LINK KzSet) and does not carry this block.
+// Writes the defaults of the [Kamikaze Defence] section on first run ("reload" re-reads it) into KAMIKAZE DEFENCE's fields (KzOn .. KzShareOn).
+// Hooks: KzLoad() next to every FleetLoad(true); _sb.Append(KzStatus()) after HiveStatus(). Uses from the core: the Kz* fields, _kz, _kzMine.
+void KzLoad()
+{
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "Kamikaze Defence";
+    KzOn = KzB(ini, S, "Enabled", KzOn);
+    KzMaxRadius = KzD(ini, S, "Max Kamikaze Radius (m)", KzMaxRadius);
+    KzHorizon = KzD(ini, S, "Warning Time (s)", KzHorizon);
+    KzMiss = KzD(ini, S, "Miss Distance (m)", KzMiss);
+    KzMissPerKm = KzD(ini, S, "Miss Distance Per km Of Range (m)", KzMissPerKm);
+    KzMinClosing = KzD(ini, S, "Min Closing Speed (m/s)", KzMinClosing);
+    KzPriority = KzD(ini, S, "Priority Bonus", KzPriority);
+    KzMates = KzB(ini, S, "Protect Hive Mates", KzMates);
+    KzBack = KzB(ini, S, "Back Away", KzBack);
+    KzBackSpeed = KzD(ini, S, "Back Away Speed (m/s)", KzBackSpeed);
+    KzBackRange = KzD(ini, S, "Back Away Within (m)", KzBackRange);
+    KzReact = KzD(ini, S, "Back Away Reaction Time (s)", KzReact);
+    KzBreak = KzB(ini, S, "Break Sideways", KzBreak);
+    KzBreakTime = KzD(ini, S, "Break Time (s)", KzBreakTime);
+    KzBreakSpeed = KzD(ini, S, "Break Speed (m/s)", KzBreakSpeed);
+    KzBreakMiss = KzD(ini, S, "Break Miss Distance (m)", KzBreakMiss);
+    KzRays = KzB(ini, S, "Track And Pack Search Rays", KzRays);
+    KzPack = KzD(ini, S, "Pack Search Radius (m)", KzPack);
+    KzReserve = KzD(ini, S, "Camera Charge Reserve (m)", KzReserve);
+    KzShareOn = KzB(ini, S, "Share Threats With Hive", KzShareOn);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+}
+double KzD(MyIni i, string s, string k, double d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToDouble(d); }
+bool KzB(MyIni i, string s, string k, bool d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToBoolean(d); }
+
+string KzStatus()
+{
+    if (!KzOn) return "";
+    if (_kz.Count == 0) return "Kamikaze: none incoming\n";
+    var k = _kz[0];
+    return "!! KAMIKAZE x" + _kz.Count + " (" + _kzMine + " at me)  next " + k.Tgo.ToString("0.0") + " s " + k.Dist.ToString("0") + " m" + (k.Mine ? "" : " (mate)") + "\n";
+}
+// <<< KZ CONFIG v1.0 <<<
+
+// >>> KZ RAYS v1.0 (sub-block of KAMIKAZE DEFENCE v1.1: the kamikaze pack / refresh rays cast by this PB's own cameras; tools/kzr_block.cs, synced by tools/blocks_sync.py) >>>
+// Hosts that cast their own camera rays (WaspAI, ShrikeAI, GnatSwarmAI under variant G2). The 8 split drone Flights get KzRayStep() from SEARCH LINK
+// instead (a proxy that sends the threats on .KZR; the Aux PB casts the rays and returns hits on .SCN). Called by KzAssess() once per pass while threats exist.
+// Uses from the script: _kz, _kzRay, _tgt, _now, _rc, KzPack, KzReserve, CamFor(), Valid(), AddContact().
 // Spare camera charge: one ray refreshes the stalest incoming track that is not the current target, one (every 2nd pass) searches
 // round a known kamikaze for the rest of its pack (they launch together). A camera is used only with KzReserve metres of charge left over.
 void KzRayStep()
@@ -1008,28 +1060,7 @@ void KzRayStep()
     var pe = cam.Raycast(pt);
     if (Valid(pe)) AddContact(pe, "KZ");
 }
-
-// The two most urgent incoming tracks I see myself go to the hive twice a second (same tuple as a target share).
-void KzShare()
-{
-    _kzShareT = _now; int n = 0;
-    foreach (var k in _kz)
-    {
-        if (k.T.Src == "IGC" || _now - k.T.Seen > 0.5) continue;
-        var tup = new MyTuple<long, Vector3D, Vector3D, double, long>(k.T.Id, k.T.P(_now), k.T.V(_now), k.T.Radius, Me.EntityId);
-        IGC.SendBroadcastMessage(Tag + "_TGT", tup); FleetSend(tup);
-        if (++n >= 2) break;
-    }
-}
-
-string KzStatus()
-{
-    if (!KzOn) return "";
-    if (_kz.Count == 0) return "Kamikaze: none incoming\n";
-    var k = _kz[0];
-    return "!! KAMIKAZE x" + _kz.Count + " (" + _kzMine + " at me)  next " + k.Tgo.ToString("0.0") + " s " + k.Dist.ToString("0") + " m" + (k.Mine ? "" : " (mate)") + "\n";
-}
-// <<< KAMIKAZE DEFENCE <<<
+// <<< KZ RAYS v1.0 <<<
 
 // >>> LAUNCH v1.1 (shared block: identical in every drone script, see docs/launch-protocol.md) >>>
 // Automatic take-off for drones that were printed on (merged to) a printer. A drone must leave and start working WITHOUT depending on one message:

@@ -2,7 +2,81 @@
 
 `docs/design/flight_split.md`. Planned 2026-10-18 at 9027e80, read-only. Pattern: `docs/design/wasp_split.md`, `staff_split.md`, `helm_split.md`. Rules: CLAUDE.md "Script size". Owner, 2026-10-18: "always split PBs if they outgrow their space".
 
-**Status 2026-10-18:** Gnat runs variant G2 until the owner answers Q1 (section 7.2).
+**Status 2026-10-18:** Gnat runs variant G2 until the owner answers Q1 (section 7.2). P0 done (see "P0 handover"); phase 1 may start.
+
+## P0 handover (read first in every phase-1 package)
+
+P0 split KAMIKAZE DEFENCE and AI GATE into core + sub-blocks, behaviour-preserving: every old carrier carries all of its sub-blocks, the sorted IL of the 12 scripts is identical to before (only member order moved), minified sizes went down by 3-5 characters (merged field declarations). Every script compiles; `blocks_sync.py --check` passes.
+
+**How the host lists work during phase 1** (`tools/blocks.json`, `tools/blocks_sync.py`):
+- `scripts` is already the **final** host list of every block (section 3).
+- `leaving`: scripts that still carry the block until their phase-1 package deletes it **by hand**. They are never UNLISTED; `--apply` never writes them; a stale copy is only a `note`.
+- `arriving`: final hosts that do not carry the block yet. Absent is `pending`, not a problem. `--apply` inserts it only when the script is named with `--in`.
+- **Every phase-1 apply names its own scripts:** `python3 -I tools/blocks_sync.py --apply --only "<BLOCK>" --in <Script>[,<Script>]`. Without `--in`, an apply also writes the final hosts other packages own (example: `--only "WEAKPOINT RELAY"` would rewrite GnatStaffAI, which is P1-S's).
+- `--final` ignores both lists: it shows the target state (phase 2 must pass it).
+- Phase 2 deletes every `leaving` / `arriving` list and the `_transition` note; `--check` is then strict.
+- `blocks.json` legacy list now also runs `split_sync.py` (SPLIT LINK) and `thrust_sync.py` (THRUST VECTOR LINK), so one `--check` covers every shared block. `ai_gate_sync.py` matches `// >>> AI GATE v` only, so the sub-blocks are not UNLISTED there.
+
+**Block states after P0**
+
+| Block | File | Final hosts (`scripts`) | Carried now | Content |
+|---|---|---|---|---|
+| KAMIKAZE DEFENCE v1.1 core (legacy `kz_sync.py`) | `kz_block.cs` | the 10 + WaspAI | same | final. Needs exactly one `KzRayStep()` in the host. |
+| KZ CONFIG v1.0 | `kzc_block.cs` | WaspAI | + leaving: 9 Flights, ShrikeAI | final (`KzLoad/KzD/KzB/KzStatus`) |
+| KZ RAYS v1.0 | `kzr_block.cs` | WaspAI, ShrikeAI, GnatSwarmAI | + leaving: the 8 Flights (not Gnat) | final (`KzRayStep`) |
+| AI GATE v1.3 core (legacy `ai_gate_sync.py`) | `ai_gate_block.cs` | the 10 + WaspAI + TubeRamAI | same | final (`AiGateOn/AiWin/ScriptWin/AiHoldMax`, runtime fields, `AiGate`) |
+| AI GATE SETUP v1.0 | `ags_block.cs` | AuxAI, StaffAI, GnatStaffAI, WaspAI, TubeRamAI | WaspAI, TubeRamAI + leaving: 9 Flights, ShrikeAI; arriving: AuxAI, StaffAI, GnatStaffAI | final (`AiBehaviorSwitch/AiTyped/AiSpeed/AiSearchEvery/_agFound/_agProps`, `AiGateFind`, `AiGateStatus`) |
+| AI GATE CONFIG v1.0 | `agc_block.cs` | WaspAI, TubeRamAI | + leaving: 9 Flights, ShrikeAI | final (`AiGateLoad`) |
+| CONFIG LINK v1.0 | `cl_block.cs` | 9 Flights, ShrikeAI | none (all arriving) | skeleton: header contract only. P1-F writes it. |
+| CONFIG SERVER v1.0 | `cs_block.cs` | 9 drone Staffs, StaffAI | none (all arriving) | skeleton. P1-S writes it. |
+| DAMAGE SENSE v1.0 | `ds_block.cs` | the 8 Staffs (not Gnat) | none (all arriving) | skeleton. P1-S. |
+| DAMAGE LINK v1.0 | `dl_block.cs` | the 8 Flights (not Gnat) | none (all arriving) | skeleton. P1-F. |
+| SEARCH v1.0 | `sc_block.cs` | AuxAI | none (arriving) | skeleton. P1-X. |
+| SEARCH LINK v1.0 | `sq_block.cs` | the 8 Flights (not Gnat) | none (all arriving) | skeleton. P1-F. |
+| WEAKPOINT RELAY (v1.1 now) | `wp_block.cs` | AuxAI, GnatStaffAI | GnatStaffAI + leaving: the 8 Staffs; arriving: AuxAI | P1-X makes it v1.2 |
+| AUX LINK (v1.0 now) | `al_block.cs` | 7 split Staffs + BasiliskStaffAI | the 7; arriving: BasiliskStaffAI | P1-S makes it v1.1 |
+| REPAIR CLIENT, SEEKER | `rc_block.cs`, `sk_block.cs` | GnatStaffAI, AuxAI | + leaving: BasiliskStaffAI | unchanged |
+| SPLIT LINK, SURVIVAL LINK, HELMLINK, MANUAL, BATTERY | unchanged lists | | | each owned by one package (P1-F / P1-H) |
+
+**Two decisions that differ from the section 3 text:**
+- `AgSet(string)` is **not** in AI GATE SETUP. It is host code in `AuxAI.cs` (P1-X), the only PB that parses the SDK `agSwitch|agTyped|agSpeed|agEvery` line. Why: WaspAI (99,770 minified) carries the block and has no room for dead code, and nobody owns `ags_block.cs` in phase 1.
+- AI GATE SETUP reads `_agLive` (the "AI ok" suffix of `AiGateStatus`). The AI GATE core declares it. **A host without the core (AuxAI, StaffAI, GnatStaffAI) declares `bool _agLive;` itself.** Checked: those three compile with the block inserted plus that one line.
+
+**`tools/cfg_tables.json`** (generator `tools/gen_cfg_tables.py`, `--check` regenerates and diffs, `--src DIR` reads other script copies). It was extracted from the pre-split readers; re-running it on the split scripts gives the same file.
+- Per model and section: `[key, default, type, field, post]` in reader order, which is the `.CFG` value order. Extras: `local` (Tag, Start Mode), `block` (`core`/`setup` on the [AI Gate] keys: `.CFG` carries only the 4 core values; the 4 setup values go in SDK), `then` (Helm locals such as `_asLvl`, `_batFix`, `_pd`), `src`.
+- Counts: Hornet 65, Harrier 72, Lancer 69, Aegis 76, Wasp 91, Longbow 79, Gnat 61 (section 1.2 said 59), Basilisk 94, Mantis 86. Shrike 17, Manual 15, Battery 10. Shared: Kamikaze Defence 20, AI Gate 8, Survival 8.
+- The self-check passed: every key read in `LoadConfig/KzLoad/AiGateLoad/SvLoad/ManCfg/BatCfg` is in the table, there is no `Cfg(...)` outside those readers (except `HlkCfg`, deliberately left out), no constructor presets a table field, and every default was cross-checked against the field initializer (732 entries).
+
+**What each phase-1 package flips or removes**
+- **P1-F (9 Flights; `cl`, `dl`, `sq`, `lk`, `sv`).**
+  - In all 9, remove by hand the KZ CONFIG, AI GATE SETUP and AI GATE CONFIG blocks. In the 8 (not Gnat), remove KZ RAYS too. Gnat keeps KZ RAYS (G2).
+  - Remove the call sites: `KzLoad();` and `AiGateLoad();` (constructor and `reload`), `if (AiAssist) AiGateFind(_ai);` in `FindAi`, `AiGateStatus()` in the AI status line (every Flight except Basilisk), `_sb.Append(KzStatus())` (Gnat).
+  - Write `cl_block.cs`, `dl_block.cs` and `sq_block.cs` within their header contracts, then apply:
+    - `--apply --only "CONFIG LINK" --in HornetDroneAI,HarrierAI,LancerAI,AegisAI,WaspFlightAI,LongbowSniperAI,GnatSwarmAI,BasiliskAI,MantisAI` (not ShrikeAI);
+    - DAMAGE LINK and SEARCH LINK `--in` the same list minus GnatSwarmAI.
+  - SEARCH LINK provides `KzRayStep()` for the 8 Flights.
+  - SPLIT LINK v1.2: `split_sync.py --apply`. SURVIVAL LINK v1.1: `--only "SURVIVAL LINK"`. P1-F owns every host of both.
+  - Publish `cl_block.cs` early: P1-H needs it.
+- **P1-S (9 `*StaffAI.cs`; `cs`, `ds`, `al`).**
+  - Apply CONFIG SERVER `--in` the 9 Staffs (not StaffAI), DAMAGE SENSE `--in` the 8 (not GnatStaffAI), and AUX LINK `--in` the 7 + BasiliskStaffAI.
+  - Remove by hand: WEAKPOINT RELAY from the 8 Staffs; REPAIR CLIENT and SEEKER from BasiliskStaffAI.
+  - GnatStaffAI (G2): `--apply --only "AI GATE SETUP" --in GnatStaffAI`, then declare `bool _agLive;`. Once P1-X publishes `wp_block` v1.2: `--apply --only "WEAKPOINT RELAY" --in GnatStaffAI`.
+  - Build the model tables from `cfg_tables.json`.
+- **P1-X (`AuxAI.cs`; `sc`, `wp`).**
+  - `--apply --only "SEARCH" --in AuxAI`, `--only "AI GATE SETUP" --in AuxAI`, `--only "WEAKPOINT RELAY" --in AuxAI`.
+  - Declare `bool _agLive;` and write `AgSet(string)` in AuxAI.
+  - `wp_block` → v1.2. The leaving Staff copies are never rewritten.
+- **P1-H (`ShrikeAI.cs`, `StaffAI.cs`, Helm blocks).**
+  - ShrikeAI: remove KZ CONFIG, AI GATE SETUP and AI GATE CONFIG (keep KZ RAYS) and their call sites (`KzLoad`, `AiGateLoad`, `AiGateFind`, `AiGateStatus`, `KzStatus`).
+  - StaffAI: `--apply --only "AI GATE SETUP" --in StaffAI`, plus `bool _agLive;`.
+  - Then `--only "CONFIG SERVER" --in StaffAI` once P1-S publishes `cs`, and `--only "CONFIG LINK" --in ShrikeAI` once P1-F publishes `cl`.
+- **P1-D:** nothing from P0.
+- **P1-T:**
+  - `blocks_sync.py --check --final` lists what phase 1 still owes.
+  - Use `cfg_tables.json` for test 9.3c.
+  - `test_gnat_split.test_sizes` and `test_basilisk_split.test_sizes` already failed before P0 (stale 80k / 85k limits, section 9.4).
+  - Golden hashes change with any script text change, P0 included.
+- **Phase 2:** delete the transition lists, then `blocks_sync.py --check` must pass. Keep `cfg_tables.json` (tests); `gen_cfg_tables.py` is one-off: do not regenerate it from the split scripts, whose readers are gone.
 
 ## 0. Decision in one paragraph
 
@@ -102,7 +176,7 @@ Sizes are gross / net of the Flight-side receiver.
 | KZ CONFIG v1.0 | `tools/kzc_block.cs` (new) | WaspAI (standalone) | `KzLoad`, `KzD`, `KzB`, `KzStatus` |
 | KZ RAYS v1.0 | `tools/kzr_block.cs` (new) | WaspAI, ShrikeAI, GnatSwarmAI (until Q1) | `KzRayStep` (local) |
 | AI GATE v1.3 (core) | `tools/ai_gate_block.cs` | the 10 + WaspAI + TubeRamAI | runtime fields, `AiGateOn/AiWin/ScriptWin/AiHoldMax`, `AiGate()` |
-| AI GATE SETUP v1.0 | `tools/ags_block.cs` (new) | AuxAI, StaffAI, GnatStaffAI (until Q1), WaspAI, TubeRamAI | `AiBehaviorSwitch/AiTyped/AiSpeed/AiSearchEvery/_agProps/_agFound`, `AiGateFind`, `AiGateStatus`, `AgSet(string)` |
+| AI GATE SETUP v1.0 | `tools/ags_block.cs` (new) | AuxAI, StaffAI, GnatStaffAI (until Q1), WaspAI, TubeRamAI | `AiBehaviorSwitch/AiTyped/AiSpeed/AiSearchEvery/_agProps/_agFound`, `AiGateFind`, `AiGateStatus`. `AgSet(string)` is AuxAI host code; a host without the core declares `bool _agLive;` (P0 handover) |
 | AI GATE CONFIG v1.0 | `tools/agc_block.cs` (new) | WaspAI, TubeRamAI | `AiGateLoad` (writes and parses `[AI Gate]` into core + setup fields) |
 | CONFIG LINK v1.0 | `tools/cl_block.cs` (new) | 9 drone Flights, ShrikeAI | `.CFG` listener on `CfKey()+".CFG"`, `N()/B()/T()` value readers, `CfApply`, schema check, `Storage` cache (`CfSave/CfLoad`), `CfWant`. Section appliers `KzSet`, `AgSet4`, `SvSet`. Host hook `CfgIn()` holds the per-model assignments. |
 | CONFIG SERVER v1.0 | `tools/cs_block.cs` (new) | 9 drone Staffs, StaffAI | Generic table-driven MyIni default writer and reader for the target PB's Custom Data; KZ, AI Gate and Survival tables; builds and sends `.CFG`. Host hooks: `CfTarget()`, `CfModel()` (per-model `string[]` key/default/type table), `CfKey()`, `CfExtra(...)` (DetectWeapon override). |

@@ -1,4 +1,4 @@
-// >>> AI GATE v1.2 (shared block: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
+// >>> AI GATE v1.3 (shared block core: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
 // The AI blocks tagged [AI] (AI Offensive + AI Flight) come out of a blueprint with "AI Behavior" off and every setting at its
 // default, so switching them on (Enabled) may do nothing at all. In-game report 2026-10-13: Full drones in GUARD stood still and
 // HUNT drones never saw a pirate 700 m away, because the script handed the ship to the AI blocks and stopped its own search.
@@ -16,62 +16,14 @@
 // to IMyOffensiveCombatBlock.UpdateTargetInterval: the block rescans only every 30 s by default [wiki], longer than the AI Window, so a
 // window often saw no search at all. Scripts with an AI Block Search Assist switch call AiGateFind only while it is on (with it off the
 // AI blocks stay as they came, "AI Behavior" off: switched on, the AI Flight block may fly the ship away on its own) and re-run FindAi on `ai on|off`.
-// Own [AI Gate] section in Custom Data (written on first run, "reload" re-reads it).
-// Hooks: AiGateLoad() after FleetLoad(true); AiGateFind(_ai) at the end of FindAi(); want = AiGate(want) right before
-// "if (want != _aiOn)" in AiStep(); AiGateStatus() in the status text.
-bool AiGateOn = true, AiBehaviorSwitch = true, AiTyped = false;
-double AiSpeed = 100, AiWin = 6, ScriptWin = 8, AiHoldMax = 60; int AiSearchEvery = 5;
-bool _agAi = true, _agLive = false, _agFwdSet = false; double _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
-int _agFound = -1;   // -1 not tried, else the number of AI blocks whose behaviour switch was found
-List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
-
-void AiGateLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "AI Gate";
-    if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
-    if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
-    if (!ini.ContainsKey(S, "Use Typed AI Block API")) ini.Set(S, "Use Typed AI Block API", AiTyped);
-    if (!ini.ContainsKey(S, "AI Flight Speed Limit (m/s)")) ini.Set(S, "AI Flight Speed Limit (m/s)", AiSpeed);
-    if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
-    if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
-    if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
-    if (!ini.ContainsKey(S, "AI Search Interval (s)")) ini.Set(S, "AI Search Interval (s)", AiSearchEvery);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
-    AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
-    AiTyped = ini.Get(S, "Use Typed AI Block API").ToBoolean(AiTyped);
-    AiSpeed = Math.Max(1, ini.Get(S, "AI Flight Speed Limit (m/s)").ToDouble(AiSpeed));
-    AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
-    ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
-    AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
-    AiSearchEvery = Math.Max(0, ini.Get(S, "AI Search Interval (s)").ToInt32(AiSearchEvery));
-}
-
-void AiGateFind(List<IMyFunctionalBlock> ai)
-{
-    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
-    if (!AiBehaviorSwitch || ai.Count == 0) return;
-    int n = 0;
-    foreach (var b in ai)
-    {
-        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
-        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
-        _agProps.Clear(); b.GetProperties(_agProps);
-        ITerminalProperty<bool> sw = null;
-        foreach (var p in _agProps)
-        {
-            string id = p.Id.ToLowerInvariant();
-            if (!id.Contains("behavio")) continue;
-            var bp = p.As<bool>();
-            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
-        }
-        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
-        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
-    }
-    _agFound = n;
-}
+// v1.3 (2026-10-18, docs/design/flight_split.md): the core keeps only the time-share (AiGate) and its runtime fields. The one-time AI-block setup
+// (AiGateFind, AiGateStatus, AiBehaviorSwitch/AiTyped/AiSpeed/AiSearchEvery) is AI GATE SETUP (tools/ags_block.cs), which may run in another PB
+// (the Aux, or StaffAI for a Helm); the [AI Gate] section reader AiGateLoad is AI GATE CONFIG (tools/agc_block.cs), or the values come from the Staff
+// through CONFIG LINK's AgSet4. AiGateOn/AiWin/ScriptWin/AiHoldMax keep their defaults here; whoever loads the config overwrites them.
+// Hooks: AiGateLoad() (AI GATE CONFIG) after FleetLoad(true); AiGateFind(_ai) at the end of FindAi() and AiGateStatus() in the status text (AI GATE SETUP
+// hosts); want = AiGate(want) right before "if (want != _aiOn)" in AiStep(). Uses from the script: _rc, _now, UnderFire.
+bool AiGateOn = true, _agAi = true, _agLive = false, _agFwdSet = false;
+double AiWin = 6, ScriptWin = 8, AiHoldMax = 60, _agT0 = -1, _agMoveT = -99, _agMinV = 0; Vector3D _agFwd;
 
 bool AiGate(bool want)
 {
@@ -98,12 +50,5 @@ bool AiGate(bool want)
     }
     else if (age >= ScriptWin) { _agAi = true; _agT0 = _now; _agMoveT = -99; _agMinV = v; _agFwdSet = false; }
     return _agAi;
-}
-
-string AiGateStatus()
-{
-    if (_agFound < 0) return "";
-    if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
-    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
 }
 // <<< AI GATE <<<

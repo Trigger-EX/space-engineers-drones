@@ -1,4 +1,4 @@
-// >>> KAMIKAZE DEFENCE v1.0 (shared block: identical in every combat drone script, synced by tools/kz_sync.py, see docs/kamikaze-defence.md) >>>
+// >>> KAMIKAZE DEFENCE v1.1 (shared block core: identical in every combat drone script, synced by tools/kz_sync.py, see docs/kamikaze-defence.md) >>>
 // Countermeasures against incoming swarms of small warhead drones (Stingers and the like). A contact is an INCOMING KAMIKAZE when it is
 // small (bounding radius <= Max Radius), seen in the last 3 s, closing faster than Min Closing Speed, its straight-line closest approach
 // to me (or to a hive mate) is within Miss Distance (+ Miss Distance Per km of range) and that approach is less than Warning Time away,
@@ -14,12 +14,15 @@
 //   4 inside Break Time of impact it breaks sideways, away from the predicted impact point (a blast reaches only ~4.5 m)
 //   5 spare camera charge keeps the other incoming tracks fresh and searches round known kamikazes for the rest of the pack
 //   6 incoming tracks are shared with the hive (<Tag>_TGT and the FLEET channel), so wingmates shoot what dives on me
-// Own [Kamikaze Defence] section in Custom Data (defaults written on first run, "reload" re-reads them).
-// Script hooks: KzLoad() next to every FleetLoad(true); KzAssess() first in the target-selection pass (PruneAndSelect / Housekeeping);
+// v1.1 (2026-10-18, docs/design/flight_split.md): config and camera rays live in sub-blocks so a split Flight can drop them. The [Kamikaze Defence]
+// section (KzLoad/KzD/KzB) and KzStatus() are in KZ CONFIG (tools/kzc_block.cs) or come from the Staff through CONFIG LINK's KzSet; KzRayStep() is
+// KZ RAYS (tools/kzr_block.cs, local rays) or the SEARCH LINK proxy (tools/sq_block.cs, rays cast by the Aux PB). This core needs exactly one KzRayStep().
+// Fields KzOn..KzReserve keep their defaults here; whoever loads the config (KzLoad or KzSet) overwrites them.
+// Script hooks: KzLoad() (KZ CONFIG) or KzSet(...) (CONFIG LINK) next to every FleetLoad(true); KzAssess() first in the target-selection pass (PruneAndSelect / Housekeeping);
 // score += KzScore(t) next to HiveScore(t); "&& !KzLive(t.Id)" on the GUARD/FORM radius skip; "if (KzLive(t.Id)) return false;" after
-// the DeadAt line of Disabled(), followed by "if (KzSpent(t)) return true;"; want = KzWant(want, me, cap) right before the speed cap; _sb.Append(KzStatus()) after HiveStatus().
+// the DeadAt line of Disabled(), followed by "if (KzSpent(t)) return true;"; want = KzWant(want, me, cap) right before the speed cap; _sb.Append(KzStatus()) after HiveStatus() (KZ CONFIG hosts).
 // Uses from the script: _contacts, _mates, _tgt, _now, _rc, Tag, Track (Id, Pos, Vel, AccMag, Radius, Seen, Src, Type, P(), V()),
-// Mate (Pos, Vel, Seen), CamFor(), Valid(), AddContact(), FleetSend().
+// Mate (Pos, Vel, Seen), FleetSend(), KzRayStep().
 bool KzOn = true, KzBack = true, KzBreak = true, KzRays = true, KzShareOn = true, KzMates = true;
 double KzMaxRadius = 3.5, KzHorizon = 12, KzMiss = 40, KzMissPerKm = 60, KzMinClosing = 15, KzPriority = 2500;
 double KzBackSpeed = 60, KzBackRange = 800, KzReact = 10, KzBreakTime = 2, KzBreakSpeed = 40, KzBreakMiss = 20, KzPack = 60, KzReserve = 600;
@@ -29,36 +32,6 @@ Dictionary<long, double> _kzT = new Dictionary<long, double>();     // id -> las
 Dictionary<long, KzThreat> _kzById = new Dictionary<long, KzThreat>();
 List<long> _kzDrop = new List<long>();
 double _kzShareT = -9; int _kzRay = 0, _kzMine = 0; Vector3D _kzSide; Random _kzRng = new Random();
-
-void KzLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Kamikaze Defence";
-    KzOn = KzB(ini, S, "Enabled", KzOn);
-    KzMaxRadius = KzD(ini, S, "Max Kamikaze Radius (m)", KzMaxRadius);
-    KzHorizon = KzD(ini, S, "Warning Time (s)", KzHorizon);
-    KzMiss = KzD(ini, S, "Miss Distance (m)", KzMiss);
-    KzMissPerKm = KzD(ini, S, "Miss Distance Per km Of Range (m)", KzMissPerKm);
-    KzMinClosing = KzD(ini, S, "Min Closing Speed (m/s)", KzMinClosing);
-    KzPriority = KzD(ini, S, "Priority Bonus", KzPriority);
-    KzMates = KzB(ini, S, "Protect Hive Mates", KzMates);
-    KzBack = KzB(ini, S, "Back Away", KzBack);
-    KzBackSpeed = KzD(ini, S, "Back Away Speed (m/s)", KzBackSpeed);
-    KzBackRange = KzD(ini, S, "Back Away Within (m)", KzBackRange);
-    KzReact = KzD(ini, S, "Back Away Reaction Time (s)", KzReact);
-    KzBreak = KzB(ini, S, "Break Sideways", KzBreak);
-    KzBreakTime = KzD(ini, S, "Break Time (s)", KzBreakTime);
-    KzBreakSpeed = KzD(ini, S, "Break Speed (m/s)", KzBreakSpeed);
-    KzBreakMiss = KzD(ini, S, "Break Miss Distance (m)", KzBreakMiss);
-    KzRays = KzB(ini, S, "Track And Pack Search Rays", KzRays);
-    KzPack = KzD(ini, S, "Pack Search Radius (m)", KzPack);
-    KzReserve = KzD(ini, S, "Camera Charge Reserve (m)", KzReserve);
-    KzShareOn = KzB(ini, S, "Share Threats With Hive", KzShareOn);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-}
-double KzD(MyIni i, string s, string k, double d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToDouble(d); }
-bool KzB(MyIni i, string s, string k, bool d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToBoolean(d); }
 
 // Closest approach of a threat (p, v) to a protected point (q, u), both on straight lines: time to it, miss distance, closing speed.
 bool KzCpa(Vector3D p, Vector3D v, Vector3D q, Vector3D u, out double tgo, out double miss, out double closing)
@@ -176,39 +149,6 @@ Vector3D KzWant(Vector3D want, Vector3D me, double cap)
     return want;
 }
 
-// Spare camera charge: one ray refreshes the stalest incoming track that is not the current target, one (every 2nd pass) searches
-// round a known kamikaze for the rest of its pack (they launch together). A camera is used only with KzReserve metres of charge left over.
-void KzRayStep()
-{
-    Vector3D me = _rc.GetPosition();
-    KzThreat st = null;
-    foreach (var k in _kz) if (k.T != _tgt && _now - k.T.Seen > 0.25 && (st == null || k.T.Seen < st.T.Seen)) st = k;
-    if (st != null)
-    {
-        Vector3D p = st.T.P(_now), d = p - me; double len = d.Length();
-        if (len > 1)
-        {
-            Vector3D aim = p + d / len * Math.Min(st.T.Radius + 2, 8);
-            var c = CamFor(aim, len + KzReserve);
-            if (c != null) { var e = c.Raycast(aim); if (Valid(e)) AddContact(e, "KZ"); }
-        }
-    }
-    if ((++_kzRay & 1) == 1) return;
-    var pk = _kz[(_kzRay >> 1) % _kz.Count];
-    if (_now - pk.T.Seen > 1) return;
-    Vector3D pc = pk.T.P(_now), dl = pc - me; double dd = dl.Length();
-    if (dd < 30) return;
-    dl /= dd;
-    Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
-    Vector3D vv = Vector3D.Cross(dl, uu);
-    double rr = KzPack * Math.Sqrt(((_kzRay >> 1) % 17 + 0.5) / 17.0), th = _kzRay * 2.39996323;
-    Vector3D pt = pc + uu * (rr * Math.Cos(th)) + vv * (rr * Math.Sin(th)) + dl * KzPack;
-    var cam = CamFor(pt, dd + KzPack + KzReserve);
-    if (cam == null) return;
-    var pe = cam.Raycast(pt);
-    if (Valid(pe)) AddContact(pe, "KZ");
-}
-
 // The two most urgent incoming tracks I see myself go to the hive twice a second (same tuple as a target share).
 void KzShare()
 {
@@ -220,13 +160,5 @@ void KzShare()
         IGC.SendBroadcastMessage(Tag + "_TGT", tup); FleetSend(tup);
         if (++n >= 2) break;
     }
-}
-
-string KzStatus()
-{
-    if (!KzOn) return "";
-    if (_kz.Count == 0) return "Kamikaze: none incoming\n";
-    var k = _kz[0];
-    return "!! KAMIKAZE x" + _kz.Count + " (" + _kzMine + " at me)  next " + k.Tgo.ToString("0.0") + " s " + k.Dist.ToString("0") + " m" + (k.Mine ? "" : " (mate)") + "\n";
 }
 // <<< KAMIKAZE DEFENCE <<<
