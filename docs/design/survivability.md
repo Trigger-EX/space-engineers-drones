@@ -1253,7 +1253,7 @@ Team runs, `pirate/3xHornet-vs-Pirate` + `pirate/3xHarrier-vs-Pirate`, 20 seeds 
 | Base (bd7817a) | 18 | 37 | 2.06 |
 | New, old defaults (all four triggers) | 18 | 24 | 1.33 |
 | New, `Damage RTB=false` | 31 | 28 | 0.90 |
-| **New, AB2 defaults (integrity 0.55 only)** | **30** | **25** | **0.83** |
+| **New, AB2 defaults (integrity 0.55 only)** | **30** | **25** (29 with the fixed metric) | **0.83** (0.97) |
 | integrity only, 0.65 | 28 | 22 | 0.79 |
 | integrity only, 0.75 | 25 | 27 | 1.08 |
 | integrity 0.55 + lost axis | 17 | 21 | 1.24 |
@@ -1268,14 +1268,27 @@ Solo pirate (`pirate/{Hornet,Harrier,Aegis}-vs-Pirate`, 20 seeds): the old defau
 
 0.65 is within noise of 0.55, so the default stays 0.55.
 
+**Re-check with the fixed sim metric (0acaaa6).** The two metric bugs in 11.4 (an `[Aux]` / `[Thrust]` PB counted as control, a flare launcher counted as a gun) are fixed in 0acaaa6. The base-vs-new comparisons they could inflate were re-run on a fresh sim build of main (3785530 + 0acaaa6). Base (bd7817a) and new blueprints both ran in that one sim; the base scripts were compiled from their blueprints.
+
+| Run | Seeds | Base | New (AB2 defaults) |
+|---|---|---|---|
+| Team 3xHornet + 3xHarrier vs Pirate | 20 each (40 fights, 120 drones) | 18 W, 37 lost, 2.06 lost per kill; writer audit 8 ticks (3xHornet) | 30 W, 29 lost, 0.97 lost per kill; writer audit 0 |
+| 1v1 regression, 9 duels | 5 (45 fights) | 17 side-A wins, 14 timeouts, side A lost 14 | 18 side-A wins, 16 timeouts, side A lost 11; writer audit 0 |
+
+- The bias was real but small: 4 of the 25 new-build team losses had been hidden (now 29), and the base numbers do not change (no Aux PB, no flare launcher).
+- The conclusions stand. The new builds with the AB2 defaults win 30 of 40 team fights against 18 for the base, and lose fewer drones (29 vs 37).
+- The Longbow S-vs-Wasp timeouts (3/5) remain with the fixed metric. They come from the Longbow S running out of rail ammo, not from a capable-but-headless Wasp.
+- The default tuning (11.1) compared variants of the new build with each other, so both sides carried the same bias. It was not re-run.
+- Exceptions 0 in every run.
+
 ### 11.2 Per run
 
 | # | Run | Seeds | Base | New (AB2 defaults) | Writer audit / exceptions |
 |---|---|---|---|---|---|
-| 1 | 1v1 regression, 9 duels (Hornet-vs-Hornet, Aegis-, Gnat-vs-Gnat, Longbow S-vs-Wasp, Hornet-vs-Mantis, Basilisk-, Hornet-vs-Wasp, Harrier-, Hornet-vs-Lancer) | 5 | 17 side-A wins, 14 timeouts | 18 side-A wins, 16 timeouts (old defaults: 17, 19) | 0 / 0 |
+| 1 | 1v1 regression, 9 duels (Hornet-vs-Hornet, Aegis-, Gnat-vs-Gnat, Longbow S-vs-Wasp, Hornet-vs-Mantis, Basilisk-, Hornet-vs-Wasp, Harrier-, Hornet-vs-Lancer) | 5 | 17 side-A wins, 14 timeouts; fixed metric: side A lost 14/45 | 18 side-A wins, 16 timeouts (old defaults: 17, 19); fixed metric: side A lost 11/45, same wins and timeouts | new 0 / 0; base (fixed-metric sim) 6 writer-audit ticks in Basilisk-vs-Hornet |
 | 2 | Jinks, solo pirate ×3 models, `Lead-Breaking Jinks` on / off / `Jink Accel Fraction` 2 / 4 / Period Min 1 + 2 | 20 | lost 52/60, Pirate hit rate 6.7 % | on: lost 56/60, hit 7.9 %; off 56/60, 7.9 %; ×2 58/60, 8.3 %; ×4 59/60, 8.0 %; P1 55/60, 8.2 % | 0 / 0 |
 | 2b | Jinks drone vs drone (only the Hornet changed; vs Aegis, Harrier, Lancer) | 20 | n/a | on 22 W / 29 L, hit on Hornet 26.9 %; off 23 / 29, 28.7 %; ×4 21 / 30, 27.3 % | 0 / 0 |
-| 3 | Team 3xHornet + 3xHarrier, AB2 defaults, then one key off | 20 | 18 W, 37 lost | all on 30 W / 25 lost; `Attack Together=false` 28 / 35; `Blind Side Orbit=false` 24 / 41; `Wing Hand-off=false` 21 / 41; `Standoff By Enemy Weapons=false`: identical (no range advantage over the Pirate, never fires) | 0 / 0 |
+| 3 | Team 3xHornet + 3xHarrier, AB2 defaults, then one key off | 20 | 18 W, 37 lost (fixed metric: the same) | all on 30 W / 25 lost (fixed metric: 30 W / 29 lost); `Attack Together=false` 28 / 35; `Blind Side Orbit=false` 24 / 41; `Wing Hand-off=false` 21 / 41; `Standoff By Enemy Weapons=false`: identical (no range advantage over the Pirate, never fires) | 0 / 0 |
 | 4 | Events, `pirate/Hornet-vs-Pirate` at t=40 s: `!kill-thrust B`, `!kill-block Gyroscope 1`, `!damage 0.5`, `!disable-pb Flight` / `!enable-pb Flight` at 55 s | 3 each | n/a | see 11.3 | 0 / 0 |
 | 5 | Charge, `charge-Hornet-default` (Tech Hunter rush at 100 m/s from 3 km) | 10 | Hornet lost 10/10 at 70.8 s mean, dealt 10.6k | lost 10/10 at 74.0 s, dealt 6.9k; `Damage RTB=false` 73.8 s / 7.3k; jinks off 73.2 s / 6.8k | 0 / 0 |
 | 6a | Power guard, `1v1/Hornet-vs-{Longbow S,Mantis}`, `Power Guard` on / off (railgun drones only) | 10 | Longbow S 5 W, Mantis 4 W | on and off identical (Longbow S 7 W, Mantis 5 W): the brown-out condition never occurs in these duels | 0 / 0 |
@@ -1294,12 +1307,12 @@ Solo pirate (`pirate/{Hornet,Harrier,Aegis}-vs-Pirate`, 20 seeds): the old defau
 
 - **Jinks: no direction.** Lead-breaking jinks on, off, or 2 to 4 times the amplitude make no measurable difference, either against the Pirate's turrets or in drone duels. All are within noise at 20 seeds. The defaults stay (0.8, 800 m/s, 0.4-3 s); `Jink Speed` stays 12 (Harrier 35). The base's lower Pirate hit rate (6.7 % vs 7.9 %) is most likely the denser kit hull inside the same outline: the new drones get hit just as often with jinks off.
 - **Kills in duels.** The kit-hardened drones take more hits to disable. In `Longbow S-vs-Wasp`, the Longbow S now runs out of rail ammo (12 shots) before the Wasp is disabled: 3/5 timeouts against 0/5 on the base.
-- **Sim metric: the `[Aux]` PB counts as control.** `Metrics.BodyCapable` accepts any functional PB as control, so a drone whose Flight and Staff PBs were shot off keeps "capable" through its `[Aux]` PB. Its guns still exist but nobody steers them (seen in Longbow S-vs-Wasp seed 3: Wasp at 26/61 blocks, Flight and Staff detached, run ends as a timeout). Sim owner: control should need a PB that writes the overrides (the Flight, or the Staff while it holds).
+- **Sim metric: the `[Aux]` PB counted as control (fixed in 0acaaa6, see 11.2).** `Metrics.BodyCapable` accepts any functional PB as control, so a drone whose Flight and Staff PBs were shot off keeps "capable" through its `[Aux]` PB. Its guns still exist but nobody steers them (seen in Longbow S-vs-Wasp seed 3: Wasp at 26/61 blocks, Flight and Staff detached, run ends as a timeout). Sim owner: control should need a PB that writes the overrides (the Flight, or the Staff while it holds).
 - **Explosive class thresholds** (`Explosive Hit Blocks` 3, `Explosive Drop Min` 400) are not calibrated. Sim turrets never fire rockets at drones; only `!msl` does, and those mostly miss.
 - **Power guard** never triggers in the sim duels. Left on: it only acts on a real brown-out.
 - **Gnat-vs-Gnat:** both Gnats never meet (5/5 timeouts, the same on the base).
 - **PB sizes (section 5.1):** every Flight PB is within its estimate + 1k.
-- **Sim metric: the flare launcher counts as a weapon.** The sim builds the kit's `SmallFlareLauncher` as a slug (railgun-mode) weapon with no power sink. `selftest` C fails with "missing 10", one per kit drone. Worse, `BodyCapable` counts it as a gun, so a drone whose guns are all shot off stays "capable" while its flare launcher lives. New-vs-base survival numbers (11.1, 11.2) are therefore biased toward the new builds. The variant-vs-variant comparisons on the new build, which set the defaults, carry the same bias on both sides. Sim owner: no weapon unit for flare launchers (or exclude them from capability), and make control need the Flight PB (above).
+- **Sim metric: the flare launcher counted as a weapon (fixed in 0acaaa6, see 11.2).** The sim builds the kit's `SmallFlareLauncher` as a slug (railgun-mode) weapon with no power sink. `selftest` C fails with "missing 10", one per kit drone. Worse, `BodyCapable` counts it as a gun, so a drone whose guns are all shot off stays "capable" while its flare launcher lives. New-vs-base survival numbers (11.1, 11.2) are therefore biased toward the new builds. The variant-vs-variant comparisons on the new build, which set the defaults, carry the same bias on both sides. Sim owner: no weapon unit for flare launchers (or exclude them from capability), and make control need the Flight PB (above).
 
 ### 11.5 Checks
 
