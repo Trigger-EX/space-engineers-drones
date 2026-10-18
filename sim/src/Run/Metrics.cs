@@ -381,6 +381,7 @@ namespace SeSim.Run
                 for (int i = 0; i < sh.Pbs.Count; i++)
                 {
                     var r = sh.Pbs[i];
+                    if (r.ScriptName == "AuxAI" || r.ScriptName == "ThrustVectorAI") continue;   // helper PBs cannot fly the drone (the Flight, or the Staff's limp-home, must live)
                     if (!r.Dead && r.Pb.Inst.Body == b && r.Pb.Inst.IsFunctional && !r.Pb.Inst.Destroyed) { pbOk = true; break; }
                 }
                 if (!pbOk) return false;
