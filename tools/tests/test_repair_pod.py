@@ -149,11 +149,10 @@ class Conveyors(unittest.TestCase):
         self.assertTrue(all((x['name'] or '').startswith('[POD] Conveyor ') for x in b.blocks if x['kind'] == 'conv'))
 
     def test_kit_preloaded(self):
-        import medic
         b = bp(); stock = [x for x in b.blocks if x['kind'] == 'cargo']
         vol = [sum(i.litres() for i in b.items_of(k)) for k in stock]
-        self.assertTrue(all(0 < v <= medic.CARGO_L for v in vol), vol)
-        self.assertGreater(sum(vol) / (medic.CARGO_L * len(stock)), 0.5)
+        self.assertTrue(all(0 < v <= designs.load(('pods',))[0]['pods'].STOCK_L for v in vol), vol)
+        self.assertGreater(sum(vol) / (designs.load(('pods',))[0]['pods'].STOCK_L * len(stock)), 0.5)
         subs = {i.sub for k in stock for i in b.items_of(k)}
         self.assertTrue({'SteelPlate', 'Construction', 'Computer', 'InteriorPlate'} <= subs, subs)
 

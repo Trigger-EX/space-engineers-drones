@@ -253,6 +253,26 @@ class _KeepOut(set):
         (x0, x1), (y0, y1), (z0, z1) = self.box
         return not (x0 <= c[0] <= x1 and y0 <= c[1] <= y1 and z0 <= c[2] <= min(z1, self.zmax)) or set.__contains__(self, c)
 
+
+STOCK_L = 125.0         # SmallBlockSmallContainer inventory, litres (the CargoContainer shape printer_lib registers)
+
+def _split_kit(kit, n, cap):
+    """deal the kit into n containers of `cap` litres by volume (largest items first)"""
+    from sebp_inv import Item
+    unit = {k: Item.component(k, 1).litres() for k in kit}
+    bins = [dict() for _ in range(n)]; vol = [0.0] * n
+    for k in sorted(kit, key=lambda k: -unit[k] * kit[k]):
+        left = kit[k]
+        while left:
+            i = min(range(n), key=lambda i: vol[i])
+            fit = int((cap - vol[i]) // unit[k]) if unit[k] else left
+            take = min(left, max(fit, 0))
+            if take == 0:
+                i = max(range(n), key=lambda i: cap - vol[i]); take = min(left, int((cap - vol[i]) // unit[k]))
+                if take == 0: break
+            bins[i][k] = bins[i].get(k, 0) + take; vol[i] += take * unit[k]; left -= take
+    return bins
+
 def cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', script=None, uranium_kg=4.0, conn_spacing=None, first_bay=1, repair=False):
     n = int(n_slots)
     assert 2 <= n <= 8, 'a pod holds 2..8 slots'
@@ -418,8 +438,8 @@ def cradle_pod(n_slots=4, lite=False, name=None, tag='POD', ship_tag='WARDEN', s
         import medic
         from core import hornet
         stock = [dev('MyObjectBuilder_CargoContainer', 'SmallBlockSmallContainer', f'Component Stock {i + 1} [Stock]', kind='cargo') for i in range(REPAIR_STOCK)]
-        kit = medic.kit_for(hornet(False), medic.CARGO_L * len(stock) * REPAIR_KIT_FILL)
-        for k_, items in zip(stock, medic._split(kit, len(stock))):
+        kit = medic.kit_for(hornet(False), STOCK_L * len(stock) * REPAIR_KIT_FILL)
+        for k_, items in zip(stock, _split_kit(kit, len(stock), STOCK_L)):
             bp.preload(k_, items=[Item.component(s_, c_) for s_, c_ in sorted(items.items())])
         # conveyors: every welder's port cell (behind the centre of its back face) joined to the [Stock] cargo by small conveyor junctions
         # (printer_lib.Printer.route_conveyors: Dijkstra through free cells and plain armour, never through a bay's keep-clear set)
