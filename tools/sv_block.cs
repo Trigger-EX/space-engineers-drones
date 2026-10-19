@@ -1,4 +1,4 @@
-// >>> SURVIVAL LINK v1.0 (evade, jinks, survival advice from the Staff PB, docs/design/survivability.md) >>>
+// >>> SURVIVAL LINK v1.1 (evade, jinks, survival advice from the Staff PB, docs/design/survivability.md) >>>
 // The Flight side of the survivability plan. Only what must react within a tick or what only the Flight PB sees lives here: the dodge on a hit, the
 // lead-breaking jinks, missile sightings, per-check hit stats, the railgun power guard, and applying the Staff's advice. Every decision (damage RTB,
 // limp caps, failover, threat memory, blind side, gather, missile dodge, flares) is the Staff PB's SURVIVAL STAFF block. Advice older than 0.6 s is
@@ -15,7 +15,7 @@
 //       yields), 10 fight back in RTB, 11 standoff advice (N.X floor, N.Y add), 16-23 limp speed cap m/s, 24-27 threat class; N.Z enemy projectile speed.
 // Failover handshake (plan item 5): SvYield is true for the first 6 ticks and while a fresh SVS has bit 9; the tick it ends SvResync() resends the AI and gun state.
 // Hooks: SvInit() after LkInit(); SvRead() after LkRead(); "if (!LkBurn && !SvYield && !AiStep()) Control(dt)"; SvSend() after LkSend(); "_svSentT = -99;" in the
-// run-gap line; SvLoad(_ini) in LoadConfig; _guns.RemoveAll(SvNotGun) in GetBlocks; SvSee(e) first in Valid(); "_svNb++; _svMax = Math.Max(_svMax, drop);" in
+// run-gap line; (v1.1: the [Survival] values come from the Staff on .CFG: CONFIG LINK calls SvSet() for the S line); _guns.RemoveAll(SvNotGun) in GetBlocks; SvSee(e) first in Valid(); "_svNb++; _svMax = Math.Max(_svMax, drop);" in
 // CheckDamage's hit-block branch and SvDamage() at its end; "| SvSwarm()" in the SWARM flags; SvStatus() on the screen; "if (LkBurn || SvYield) return;" first
 // in Release(); Control: SvStand, SvJink, SvOrbit, SvGather, SvHome/SvViaOn/SvFightBack, SvBrake, SvCap, SvWant. Railgun drones: SvPower(load, SvRecharging())
 // at the end of PowerAndHealth, SvRails(true) first in Release(), SvRails(!_svRx) in GetBlocks. Per script: double SvRange() (own max fire range),
@@ -35,15 +35,8 @@ bool SvViaOn { get { return SvOn(2); } }
 bool SvFightBack { get { return SvOn(1024); } }
 bool SvMine { get { return _tgt != null && _svTid == _tgt.Id; } }
 void SvInit() { _svL = IGC.RegisterBroadcastListener(_lkK + ".SVS"); }
-// [Survival] keys in this PB's Custom Data: read only (the Staff PB writes the defaults, after our first F2S); the defaults here equal the Staff's
-MyIni _svI;
-double SvK(string k, double d) { return _svI.Get("Survival", k).ToDouble(d); }
-void SvLoad(MyIni i)
-{
-    _svI = i; SvLJ = i.Get("Survival", "Lead-Breaking Jinks").ToBoolean(true); SvPG = i.Get("Survival", "Power Guard").ToBoolean(true);
-    SvJa = SvK("Jink Accel Fraction", 0.8); SvEv = SvK("Enemy Projectile Speed (m/s)", 800); SvJm = SvK("Jink Period Min (s)", 0.4);
-    SvJM = SvK("Jink Period Max (s)", 3); SvJr = SvK("Jink Period Random", 0.3); SvPh = SvK("Power Guard Hold (s)", 2);
-}
+// [Survival] values (the Staff writes the defaults and sends them on .CFG): CONFIG LINK's S line, tools/cfg_tables.json "shared" order; defaults = the Staff's
+void SvSet() { SvLJ = B(); SvPG = B(); SvJa = N(); SvEv = N(); SvJm = N(); SvJM = N(); SvJr = N(); SvPh = N(); }
 void SvTx<T>(string c, T d) { IGC.SendBroadcastMessage(_lkK + c, d, TransmissionDistance.CurrentConstruct); }
 void SvRead()
 {
@@ -184,4 +177,4 @@ void SvPower(double load, bool rech)
     if (!_svRx && SvPG && need && rech && load > 0.97 && _powerScale < 0.6 && _now - _svRo > SvPh) { SvRails(false); _svRf = _now; }
     else if (_svRx && (!SvPG || !need || _now - _svRf > SvPh)) { SvRails(true); _svRo = _now; }
 }
-// <<< SURVIVAL LINK v1.0 <<<
+// <<< SURVIVAL LINK v1.1 <<<

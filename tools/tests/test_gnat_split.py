@@ -20,9 +20,9 @@ class GnatSplit(unittest.TestCase):
         bp = designs.load()[0]['core'].MODELS['Gnat'](False)
         bp.validate()
         ps = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
-        self.assertEqual(sorted(b['name'] for b in ps), ['[Flight] Gnat PB', '[Staff] Gnat PB'])
+        self.assertEqual(sorted(b['name'] for b in ps), ['[Aux] Gnat PB', '[Flight] Gnat PB', '[Staff] Gnat PB'])   # [Aux]: flight_split.md 7.2 (G1a)
         n = len(bp.blocks); C.add_support_pbs(bp)
-        self.assertEqual(len(bp.blocks), n, 'no [Thrust] PB (point-and-burn), no second Staff')
+        self.assertEqual(len(bp.blocks), n, 'no [Thrust] PB (point-and-burn), no second Staff or Aux')
 
     def test_outline_and_flush_latch(self):
         """owner rule: nothing may stand outside the 2 x 2 section (only the Left / Right side cameras); the merge block is set flush into the belly"""
@@ -45,7 +45,7 @@ class GnatSplit(unittest.TestCase):
 
     def test_link_tags_pair_up(self):
         f, s = src('GnatSwarmAI.cs'), src('GnatStaffAI.cs')
-        for tag in ('.HMR', '.FOL', '.S2F', '.TGT'):      # Staff sends, Flight listens
+        for tag in ('.HMR', '.FOL', '.S2F', '.TGT', '.DMG', '.HAX'):      # Staff sends, Flight listens
             self.assertIn('_fk + "' + tag + '"', s, tag); self.assertIn('_lkK + "' + tag + '"', f, tag)
         for tag in ('.F2S', '.FLT', '.CMD'):                # Flight sends, Staff listens
             self.assertIn('_lkK + "' + tag + '"', f, tag); self.assertIn('_fk + "' + tag + '"', s, tag)
@@ -60,8 +60,9 @@ class GnatSplit(unittest.TestCase):
         self.assertIn('"Mode   : "', s); self.assertIn('"Target : "', s); self.assertIn('FLIGHT PB DOWN', s)
 
     def test_sizes(self):
-        self.assertLess(len(minify(raw('GnatSwarmAI.cs'))), 80000)
-        self.assertLess(len(minify(raw('GnatStaffAI.cs'))), 40000)
+        # flight_split.md 9.4: the full table is test_flight_split.Sizes (G1a + P2-G2: Flight <= 76,500, Staff <= 78,000 like the others)
+        self.assertLessEqual(len(minify(raw('GnatSwarmAI.cs'))), 76500, 'Gnat Flight over the 76,500 Flight target (flight_split.md 7.2, P2-G2: damage sensing + hit estimator in the Staff)')
+        self.assertLessEqual(len(minify(raw('GnatStaffAI.cs'))), 78000, 'Gnat Staff over the 78,000 Staff target (flight_split.md G1a)')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

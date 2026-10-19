@@ -5,7 +5,11 @@
 //   * FLEET LINK   fleet channel (targets in, target shares out, home, carrier radius, commands) - same [Fleet] section as the single-PB Gnat
 //   * LAUNCH       take-off after the release from a printer - same [Launch] section; Staff flies the burn, Flight lets go of the ship
 //   * DISPLAY      mode, target, aim error, battery, alarm, launch and link state
-//   * SURVIVAL     STAFF SEARCH (sensors, seeker), SURVIVAL STAFF (damage RTB, limp, threats, missiles, gather), REPAIR CLIENT (medic) - docs/design/survivability.md
+//   * SURVIVAL     STAFF SEARCH (seeker keys), SURVIVAL STAFF (damage RTB, limp, threats, missiles, gather) - docs/design/survivability.md
+//   * CONFIG       CONFIG SERVER: the only writer of the Flight PB's Custom Data; parses [Gnat], [Kamikaze Defence], [AI Gate], [Survival] and sends them on .CFG
+//   * AUX LINK     the "[Aux] Gnat PB" (scripts/AuxAI.cs) runs REPAIR CLIENT (medic), SEEKER, WEAKPOINT RELAY, SEARCH and AI GATE SETUP (flight_split.md G1a:
+//                  the Gnat traded its sensor for that PB, so it has no sensor block)
+//   * HIT BEARING  damage sensing and the hit-bearing estimator (moved from the Flight, flight_split P2-G2): .DMG and .HAX to the Flight, "<Tag>_HIT" with the wing
 //   * WATCHDOG     the Flight PB silent for 1.5 s (or switched off / destroyed): gyro and thruster overrides released once, dampeners on, "FLIGHT PB DOWN"
 //  Link (TransmissionDistance.CurrentConstruct, key "WSPL" + the Flight PB's EntityId; both PBs run Update1) - see the SPLIT LINK block of GnatSwarmAI.cs.
 //  Gnat only: ".HMR" (Staff -> Flight, double) is the carrier radius from "<fleet channel>_HOMER"; FOL bit 3 is sent ONCE per new fleet home fix (the Flight derives the carrier's
@@ -23,6 +27,30 @@ double MaxSpeed = 98;
 
 // survivability (docs/design/survivability.md): the Flight PB's Custom Data section, which STAFF SEARCH modules this model has, its orbit speed key
 readonly string FS = "Gnat", SvOrbK = "Orbit Speed"; const double SvOrbD = 12;
+
+// CONFIG SERVER (docs/design/flight_split.md 4.1): this Staff writes and parses the Flight PB's config and sends it on .CFG
+string[] CfModel() { return new[] {   // [Gnat] key / default / type, tools/cfg_tables.json order
+    "IGC Tag", "GNAT", "s", "Start Mode (FORM/ATTACK/IDLE)", "SENTRY", "s", "Projectile Speed", "800", "d", "Fire Range", "700", "d",
+    "Closing Speed", "45", "d", "Run-in Start Range", "650", "d", "Back-off Speed", "30", "d", "Orbit Speed", "12", "d",
+    "Back-off Range", "140", "d", "Re-close Range", "480", "d", "Emergency Break Range", "60", "d", "Attack Cone Degrees", "55", "d",
+    "Max Sideways Drift m/s", "25", "d", "Formation Radius", "45", "d", "Satellite Distance (m)", "400", "d", "Satellite Orbit Period (s)", "180", "d",
+    "Separation Radius", "35", "d", "Engage Radius From Home", "2500", "d", "Sentry Range (m)", "2500", "d", "Combat Speed", "98", "d",
+    "Cruise Speed", "70", "d", "Velocity Gain", "1.6", "d", "Aim Kp", "7", "d", "Aim Kd", "0.3", "d",
+    "Max Turn Rate rad/s", "7", "d", "RTB Battery Fraction", "0.12", "d", "Auto Camera Scan", "true", "b", "All-around Close Scan", "true", "b",
+    "Close Scan Range", "120", "d", "Lead Scale (1 = calculated)", "1", "d", "Aim Margin (predicted misses)", "1", "d", "Use Target Acceleration", "true", "b",
+    "Split Targets Across Hive (false = focus fire)", "true", "b", "Seconds Before Dropping Disabled Target", "5", "d", "Evade Speed When Hit", "20", "d", "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", "AUTO", "s",
+    "Breach Large Ships (AUTO)", "true", "b", "Breach Min Target Radius (m)", "25", "d", "Breach Stall (s)", "30", "d", "Use Fleet Weakpoints", "true", "b",
+    "Share Weakpoints", "true", "b", "Weakpoint Cone (deg)", "40", "d", "Weakpoint Hold (s)", "10", "d", "AI Block Search Assist", "true", "b",
+    "AI Confirm Raycast Range", "1300", "d", "AI Confirm Long Raycast Range", "2600", "d", "Max Track Age To Fire (s)", "2", "d", "Raid Fan Half-angle Degrees", "25", "d",
+    "Raid Scan Cone Degrees", "40", "d", "Raid Scan Ray Length", "600", "d", "Raid Speed", "80", "d", "Raid Max Travel", "700", "d",
+    "Raid Bearing Memory Seconds", "35", "d", "Raid Start Confidence", "2.5", "d", "Raid Hold Confidence", "1.2", "d", "Listen To IGC Tags (target feeds)", "HORNET,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER", "s",
+    "Scan Range", "1000", "d", "Target Large Grids", "true", "b", "Target Small Grids", "true", "b", "Target Characters", "false", "b",
+    "Target Neutral/Unowned", "false", "b"
+}; }
+const string CfSh = "KAS";
+IMyProgrammableBlock CfTarget() { return _fpb; }
+string CfKey() { return _fk; }
+string CfExtra(MyIni i) { return ""; }
 readonly bool SsPatrol = false, SsFeed = false, SsFoot = false, RpDockOk = false;
 bool SsHunt() { return false; }
 bool SvFightMode() { return _mode == Mode.ATTACK; }   // a fight mode: an attack-together gather window may open
@@ -422,155 +450,6 @@ void ReadSwarm()
 // =====================================================================
 //  SETUP
 void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }
-
-// >>> WEAKPOINT RELAY v1.1 (shared block: identical in every drone Staff PB, see docs/design/hive_weakpoint.md and docs/hive-protocol.md) >>>
-// Fleet side of the shared breach point. The Flight PB sends its own findings on <Flight>.WPF; this PB puts them on the fleet channel <ch>_WP,
-// collects the findings of the whole wing, and sends the best hole for the Flight's current target back on <Flight>.WPT (once a second).
-//   <ch>_WP  MyTuple<long target, Vector3D s, Vector3D d, Vector3D info, long senderGrid, int flags>
-//     s = hull entry and d = drill direction, both in the TARGET frame; info = (hole depth m, vital depth hint m or -1, age s)
-//     flags: bits 0-2 kind (0 camera breach point, 1 PowerSystems, 2 Weapons, 3 Propulsion, 4 other), 8 seeker found it, 16 block position
-//     from the game, 32 DONE (everybody drops the hole), 64 STALL (that sender gave up), 128 ADOPTED (the sender took it from the wing and its own ray confirmed it)
-//     Staff -> Flight (.WPT): bits 8-11 = number of drones that support the hole.
-// A drone sends only its OWN confirmed findings; a received hole is never forwarded (no echo). Holes within 4 m of each other are one hole; the best
-// one wins (seeker kind by "Weakpoint Priority", then supporters, then depth, then the lowest grid id), so every drone picks the same hole.
-// [Fleet] keys: Weakpoint Priority=1,3,2 (power, propulsion, weapons)   Weakpoint Expire (s)=20
-// v1.1 (docs/design/survivability.md): the drone's OWN seeker turret is read by the Staff (STAFF SEARCH -> WpSeek): that entry (map key ~own grid id,
-// internal flag 4096, kept 3 s) ranks above every other hole, goes to the wing like an own finding, and reaches the Flight with .WPT flag 4096 (the Flight
-// takes it as its own seeker point, BreachSet(s, d, true)); .WPT is sent twice a second while it is fresh, else once a second.
-// Script hooks: WpStep() in Tick after Relay(); _sb.Append(WpStatus()) in Display(). Uses: _fk, _flChan, _tgtId, _tick, _now, _f2sTick.
-class WpE { public long Tgt, Snd; public Vector3D S, D, I; public int F; public double T; }
-Dictionary<long, WpE> _wpMap = new Dictionary<long, WpE>();
-IMyBroadcastListener _wpLf, _wpLw;
-string _wpKey = null; int[] _wpPri = new int[] { 1, 3, 2 }; double _wpExp = 20, _wpFleetT = -99, _wpFlT = -99, _wpEvSendT = -99; WpE _wpBest; int _wpBestK;
-List<WpE> _wpDone = new List<WpE>(); List<long> _wpDel = new List<long>(); MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> _wpLast;
-bool WpOkT(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
-{
-    double dl = d.Item3.Length();
-    return FleetV(d.Item2) && FleetV(d.Item4) && Math.Abs(d.Item2.X) < 1e4 && Math.Abs(d.Item2.Y) < 1e4 && Math.Abs(d.Item2.Z) < 1e4 && dl > 0.9 && dl < 1.1
-        && d.Item4.X >= 0 && d.Item4.X <= 100 && d.Item4.Y < 500 && !double.IsNaN(d.Item4.X + d.Item4.Y + d.Item4.Z);
-}
-void WpCfg()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Fleet";
-    if (!ini.ContainsKey(S, "Weakpoint Priority")) ini.Set(S, "Weakpoint Priority", "1,3,2");
-    if (!ini.ContainsKey(S, "Weakpoint Expire (s)")) ini.Set(S, "Weakpoint Expire (s)", 20.0);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    var l = new List<int>();
-    foreach (var p in ini.Get(S, "Weakpoint Priority").ToString("1,3,2").Split(',')) { int k; if (int.TryParse(p.Trim(), out k)) l.Add(k); }
-    _wpPri = l.ToArray(); _wpExp = Math.Max(3, ini.Get(S, "Weakpoint Expire (s)").ToDouble(20));
-}
-int WpRank(WpE e)
-{
-    if ((e.F & 4096) != 0) return 100;                     // own seeker turret, read this second
-    if ((e.F & 8) == 0) return 0;                           // camera breach points rank below anything a turret found
-    int k = e.F & 7, i = Array.IndexOf(_wpPri, k);
-    return i >= 0 ? 20 - i : 5;
-}
-WpE WpPut(long snd, MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
-{
-    WpE e;
-    if (!_wpMap.TryGetValue(snd, out e)) { if (_wpMap.Count >= 64) return null; e = new WpE(); _wpMap[snd] = e; }
-    e.Tgt = d.Item1; e.Snd = snd; e.S = d.Item2; e.D = d.Item3; e.I = d.Item4; e.F = d.Item6; e.T = _now;
-    return e;
-}
-void WpStep()
-{
-    string key = _flChan + "|" + _fk;
-    if (key != _wpKey)
-    {
-        if (_wpKey != null) { if (_wpLf != null) IGC.DisableBroadcastListener(_wpLf); if (_wpLw != null) IGC.DisableBroadcastListener(_wpLw); }
-        _wpKey = key; _wpMap.Clear(); _wpDone.Clear(); WpCfg();
-        _wpLf = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".WPF") : null;
-        _wpLw = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_WP") : null;
-    }
-    else if (_tick % 600 == 1) WpCfg();
-    long me = Me.CubeGrid.EntityId;
-    // my Flight PB -> map, and on to the fleet channel (changes and events at once, else every 2 s)
-    while (_wpLf != null && _wpLf.HasPendingMessage)
-    {
-        var m = _wpLf.AcceptMessage();
-        if (!(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
-        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
-        if (!WpOkT(d)) continue;
-        d.Item5 = me;
-        if ((d.Item6 & 96) != 0) WpEvent(d, me);
-        else WpPut(me, d);
-        bool changed = d.Item1 != _wpLast.Item1 || d.Item6 != _wpLast.Item6 || (d.Item2 - _wpLast.Item2).LengthSquared() > 1;
-        if (_wpLw != null && (changed || (d.Item6 & 96) != 0 || _now - _wpFleetT >= 2)) { IGC.SendBroadcastMessage(_flChan + "_WP", d); _wpFleetT = _now; _wpLast = d; }
-    }
-    // the wing -> map
-    while (_wpLw != null && _wpLw.HasPendingMessage)
-    {
-        var m = _wpLw.AcceptMessage();
-        if (m.Source == IGC.Me || !(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
-        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
-        if (d.Item5 == me || d.Item5 == 0 || !WpOkT(d)) continue;
-        if ((d.Item6 & 96) != 0) WpEvent(d, d.Item5); else WpPut(d.Item5, d);
-    }
-    _wpDel.Clear();
-    foreach (var kv in _wpMap) if (_now - kv.Value.T > ((kv.Value.F & 4096) != 0 ? 3 : _wpExp)) _wpDel.Add(kv.Key);
-    foreach (var k in _wpDel) _wpMap.Remove(k);
-    for (int i = _wpDone.Count - 1; i >= 0; i--) if (_now - _wpDone[i].T > 3) _wpDone.RemoveAt(i);
-    WpE sk; bool skf = _wpMap.TryGetValue(~me, out sk) && sk.Tgt == _tgtId && _tgtId != 0;
-    if (_tick % (skf ? 30 : 60) != 3) return;
-    // best hole for the Flight's target
-    _wpBest = null; _wpBestK = 0;
-    if (_tgtId != 0)
-    {
-        long bs = 0; int br = -1, bk = 0; double bd = -1; WpE bb = null;
-        foreach (var a in _wpMap.Values)
-        {
-            if (a.Tgt != _tgtId) continue;
-            int k = 0; double dep = 0; int rank = WpRank(a); long low = a.Snd; WpE rep = a;
-            foreach (var b in _wpMap.Values)
-            {
-                if (b.Tgt != _tgtId || (b.S - a.S).LengthSquared() > 16) continue;
-                k++; dep = Math.Max(dep, b.I.X); int rb = WpRank(b); if (rb > rank) { rank = rb; rep = b; } if (b.Snd < low) low = b.Snd;
-            }
-            if (rank > br || (rank == br && (k > bk || (k == bk && (dep > bd || (dep == bd && low < bs))))))
-            { br = rank; bk = k; bd = dep; bs = low; bb = rep; }
-        }
-        if (bb != null) { _wpBest = bb; _wpBestK = bk; _wpBestDep = bd; }
-    }
-    if (_fk == "" || _tick - _f2sTick > 90) return;
-    if (_wpBest != null)
-        IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(_wpBest.Tgt, _wpBest.S, _wpBest.D,
-            new Vector3D(_wpBestDep, _wpBest.I.Y, _now - _wpBest.T + _wpBest.I.Z), _wpBest.Snd, (_wpBest.F & 4127) | (Math.Min(_wpBestK, 15) << 8)), TransmissionDistance.CurrentConstruct);
-    foreach (var e in _wpDone)
-        if (e.Tgt == _tgtId) IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(e.Tgt, e.S, e.D, e.I, e.Snd, 32), TransmissionDistance.CurrentConstruct);
-}
-double _wpBestDep, _wpSkT = -99; MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> _wpSkLast;
-// own seeker finding (STAFF SEARCH): into the map as the top-ranked entry, to the wing on a change or every 2 s
-void WpSeek(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
-{
-    if (!WpOkT(d)) return;
-    long me = Me.CubeGrid.EntityId;
-    var e = WpPut(~me, d); if (e != null) { e.Snd = me; e.F |= 4096; }
-    if (_flChan != "" && (d.Item1 != _wpSkLast.Item1 || (d.Item2 - _wpSkLast.Item2).LengthSquared() > 1 || _now - _wpSkT >= 2))
-    { IGC.SendBroadcastMessage(_flChan + "_WP", d); _wpSkT = _now; _wpSkLast = d; }
-}
-// DONE: every hole within 4 m of it is gone (and the Flight is told for 3 s); STALL: that sender's support is gone
-void WpEvent(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d, long snd)
-{
-    if ((d.Item6 & 32) != 0)
-    {
-        _wpDel.Clear();
-        foreach (var kv in _wpMap) if (kv.Value.Tgt == d.Item1 && (kv.Value.S - d.Item2).LengthSquared() < 16) _wpDel.Add(kv.Key);
-        foreach (var k in _wpDel) _wpMap.Remove(k);
-        var e = new WpE(); e.Tgt = d.Item1; e.Snd = snd; e.S = d.Item2; e.D = d.Item3; e.I = d.Item4; e.F = 32; e.T = _now;
-        _wpDone.Add(e); if (_wpDone.Count > 8) _wpDone.RemoveAt(0);
-    }
-    else _wpMap.Remove(snd);
-}
-string WpStatus()
-{
-    if (_wpBest == null) return _wpMap.Count > 0 ? "Weakpt : " + _wpMap.Count + " report(s), none for the target\n" : "";
-    string[] kn = { "breach point", "power", "weapons", "propulsion", "block" };
-    return "Weakpt : " + kn[Math.Min(_wpBest.F & 7, 4)] + " hole " + _wpBestDep.ToString("0") + " m, " + _wpBestK + " drone(s), age " + (_now - _wpBest.T).ToString("0") + " s\n";
-}
-// <<< WEAKPOINT RELAY v1.1 <<<
 
 // >>> STAFF SEARCH v1.1 (patrol, sensor setup, target feeds, seeker keys; moved from the Flight PB, docs/design/survivability.md) >>>
 // The four search modules that left the Flight PB (off the hot path, docs/design/survivability.md s1.1). Keys keep their names in the Flight PB's [<FS>] section;
@@ -1344,354 +1223,419 @@ string SvStatus()
 }
 // <<< SURVIVAL STAFF v1.1 <<<
 
-// >>> REPAIR CLIENT v1.1 (self-projector, repair bay and medic patient side, docs/design/survivability.md, docs/design/staff_split.md) >>>
-// Patient side of the repair work (docs/design/survivability.md items 15, 17, 18; channels s4.3, antenna range):
-//  * REPAIR BAY (item 17): damaged (SURVIVAL STAFF latch, or the words "repair" / "dock"), Flight in RTB or IDLE, not under fire, an own merge block (RpDockOk):
-//    the nearest free, stationary bay advertised on <Tag>_RBAY MyTuple<long bayPb, int bay | flags << 8 (bit0 free, bit1 repair, bit2 stock), Vector3D clampPos,
-//    Vector3D axis, Vector3D dockFwd, Vector3D dockUp> within 4 km is asked on <Tag>_RREQ MyTuple<long bayPb, int bay, long droneGrid> (resent once after 5 s) and
-//    answers on <Tag>_RACK MyTuple<long droneGrid, long bayPb, int bay, int ok>. Then the Staff flies (FOL bit 2: the Flight lets go): TRANSIT to 20 m + radius
-//    out along the axis (the RREQ is renewed every 30 s: the bay holds a reservation 90 s), ALIGN (2 deg, 0.3 m/s, 15 s max), INSERT along -axis at "Dock Speed" .. "Dock Final Speed" with a lateral PD (off by 0.8 m within 3 m:
-//    back out, 3 retries, then the bay is dropped and a medic may be called), CONTACT = own merge locked: overrides released, dampeners on; the bay repairs and
-//    releases and the LAUNCH block flies the take-off. Aborts (overrides released) on fire, a mode word, "fight", the bay's silence or the Flight PB going down.
-//  * MEDIC (item 18): no bay, the Flight IDLE (home) and a free <M>_AD MyTuple<long medic, Vector3D pos, int flags> within 3 km: <M>_REQ MyTuple<long medic,
-//    long patient, Vector3D pos, int missing>; on <M>_ACK MyTuple<long patient, long medic, int ok> ok = 1 the self-projector goes on and <M>_WORK
-//    MyTuple<long patient, Vector3D centre, Vector3D vel, Vector3D p0, Vector3D p1, int packed (remaining | radius dm << 12 | done << 24 | under fire << 25)>
-//    is sent at 1 Hz with the two missing / damaged cells nearest the medic (zero = no point). An ACK ok = 0 while serviced = the medic gave up.
-//    Done (nothing missing or damaged, projector RemainingBlocks 0): WORK with the done bit, projector off, the mode from before the damage RTB is sent again.
-//    Missing cells: an own-grid cell scan (200 cells a tick) when the grid is new (printed / released / repaired), re-checked every 2 s while serviced.
-//  * SELF-PROJECTOR (item 15): the block named "... Projector [Self]": on while a medic works or docked at a bay without a projector (no Hive Mother on the
-//    grid), off at a printer bay and on return to duty. Written only on those changes (a cradle bay switches it itself in its REPAIR state).
-// Keys ([Survival]): Repair At Bay, Dock Speed (m/s), Dock Final Speed (m/s), Call Medic, Medic Channel. Per-script: bool RpDockOk.
-// Hosts (v1.1, docs/design/staff_split.md): GnatStaffAI and BasiliskStaffAI, and AuxAI (the [Aux] PB of the other 7 drones, which reach it through AUX LINK).
-// The block never writes a thruster / gyro override or DampenersOverride itself: it calls the host's actuator hooks DkGo() (take the actuators), DkSteer(vel, nose,
-// roof) (fly that setpoint), DkRel() (let go) and SvRepaired() (clear the damage latch). SURVIVAL STAFF implements them (the Staff flies, FOL bit 2); AuxAI turns
-// them into .DKS setpoints for its Staff. SvFly (FOL bit 2) = flying or the 2 ticks after the release write (DkHold).
-// Uses: _svRtb, _svDock, _svAmin, _svPrevVerb, SvCapV(), SvB/SvD/SvT, DkGo/DkSteer/DkRel/DkHold/SvRepaired, _rc, _now, _tick, _mode (IDLE/RTB), _fl, _down, Tag,
-//   MaxSpeed, Fwd(), FleetV().
-bool RpBayOn = true, RpMedic = true, _rpFly, _rpRetry; double RpDockV = 2, RpDockV0 = 0.3, _rpT, _rpT2, _rpStart, _rpNext, _rpScanT = -99; string RpMedCh = "MEDIC", _rpMsg = "";
-int _rpS, _rpReq, _rpTry, _rpScanI, _rpChkI = -1, _rpBadN; long _rpKey, _rpMed;
-IMyBroadcastListener _rpLb, _rpLa, _rpLm, _rpLk; IMyShipMergeBlock _rpMerge; IMyProjector _rpProj; IMyCubeGrid _rpScanG;
-Vector3D _rpO; class RpB { public long Pb; public int Bay, F; public Vector3D P, P0, Ax, Fw, Up; public double T, Bad = -999; public bool Two; }
-Dictionary<long, RpB> _rpBays = new Dictionary<long, RpB>(); Dictionary<long, MyTuple<Vector3D, int, double>> _rpMeds = new Dictionary<long, MyTuple<Vector3D, int, double>>();
-Dictionary<long, double> _rpMedBad = new Dictionary<long, double>();
-List<Vector3I> _rpCells = new List<Vector3I>(), _rpBad = new List<Vector3I>(), _rpBadDone = new List<Vector3I>();
-bool SvFly { get { return _rpFly || DkHold; } }
+// >>> CONFIG SERVER v1.0 (Staff side of the config move, docs/design/flight_split.md sections 3, 4.1, 6.1; tools/cs_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 9 drone Staffs and StaffAI (Helm ships). The only writer of the target PB's Custom Data (the Flight / Helm PB): a table-driven MyIni
+// default writer and reader. On a WANT it re-parses the target's Custom Data, writes every missing default, reads every value, sends .CFG, and keeps
+// the four AI GATE SETUP values in CfAg. Tables: [Kamikaze Defence], [AI Gate] and [Survival] are here (cfg_tables.json "shared", in its order); the
+// model section comes from the host (CfModel(), section name FS).
+// Channel (TransmissionDistance.CurrentConstruct):
+//   .CFG  Staff -> Flight/Helm   string "CF1\t<schema>\t<status>\n" + one line per section, in this order: "M" model, then the host's CfExtra() lines
+//         (Helm: its [Manual] / [Battery] lines), then one line per letter of the host's CfSh: "K" [Kamikaze Defence], "A" [AI Gate] (the 4 core values
+//         only: Time-share, AI Window, Script Search Window, Max AI Hold), "S" [Survival]. A line = its letter, then "\t" + value for every sent key, in
+//         table order, then "\n". Not sent: the model's local keys (IGC Tag, Start Mode ...: the Flight reads them itself) and the 4 AI GATE SETUP values.
+//         Values are raw, the receiver applies the post-ops of cfg_tables.json ((int), Math.Max, Trim().ToUpperInvariant()): bools 1/0, d and i
+//         ToDouble().ToString("R"), strings as written (MyIni single-line values; a tab in one would break the line).
+//         schema = "1" (cfg_tables.json version) + "/" + the number of values of each line, in line order. Drones: "1/<model count without the
+//         locals>/20/4/8", e.g. Mantis "1/84/20/4/8", Gnat "1/59/20/4/8".
+//         status = "ok", or what CfExtra() set (Longbow / Mantis: the detected weapon name, e.g. "Small Railgun", "Gatling/Autocannon", "custom").
+//         Sent when the host's WANT is true (drones: F2S bit 16 CFG WANT on a fresh F2S; Helm: H2S bit 9), at most once per 30 ticks per key. The Staff
+//         never sends unasked; a target whose Custom Data does not parse gets nothing (_cfE says so on the Staff screen).
+//   CfAg = "agSwitch|agTyped|agSpeed|agEvery" (same value format, raw): the [AI Gate] setup values. Drone Staffs pass it to the Aux in the SDK cfg
+//   (AUX LINK v1.1); GnatStaffAI (G2) and StaffAI give it to their own AI GATE SETUP. It is filled on every parse: on a WANT and once on every new key
+//   (a Staff that starts next to a running Flight knows the values without a WANT; that parse writes missing defaults but sends nothing).
+// Host hooks (define CfModel() above this block: the tests read the first "CfModel()" in the file):
+//   string[] CfModel()          flat key / default / type triples of the model section, cfg_tables.json order and types (d double, i int, b bool, s string)
+//   IMyProgrammableBlock CfTarget()   the Flight / Helm PB whose Custom Data is served (null: nothing)
+//   string CfKey()              the target's link key; the channel is CfKey() + ".CFG" (drones "WSPL"+<Flight PB EntityId> = _fk); "" = no target
+//   string CfExtra(MyIni i)     after the model values are read, before the lines are built: may change model values in _cfV (index = triple number
+//                               in _cfT; Longbow and Mantis: DetectWeapon, host helpers CfGet / CfPut), set _cfSt, and return extra lines built with
+//                               CfLine (Helm sections); "" otherwise
+//   const string CfSh           the shared lines, in order ("KAS" drones)
+// Call: CfStep(bool want) once a tick (drones: after ReadF2S, want = (_fl & 65536) != 0 && _tick - _f2sTick < 30). _cfE on the screen ("" or the
+// target's parse error line).
+// Uses: _tick, FS, Me / IGC. Sync: answers every WANT (Staff rebuilt: nothing to do); a new key (Flight rebuilt: the Staff re-keys on its 1 Hz rescan)
+// resets the 30-tick gate.
+string _cfSt = "", CfAg = "", _cfK = "", _cfSc = "", _cfE = ""; string[] _cfT, _cfV; long _cfTk = -99;
+readonly string[] CfKz = {
+    "Enabled", "true", "b", "Max Kamikaze Radius (m)", "3.5", "d", "Warning Time (s)", "12", "d", "Miss Distance (m)", "40", "d",
+    "Miss Distance Per km Of Range (m)", "60", "d", "Min Closing Speed (m/s)", "15", "d", "Priority Bonus", "2500", "d", "Protect Hive Mates", "true", "b",
+    "Back Away", "true", "b", "Back Away Speed (m/s)", "60", "d", "Back Away Within (m)", "800", "d", "Back Away Reaction Time (s)", "10", "d",
+    "Break Sideways", "true", "b", "Break Time (s)", "2", "d", "Break Speed (m/s)", "40", "d", "Break Miss Distance (m)", "20", "d",
+    "Track And Pack Search Rays", "true", "b", "Pack Search Radius (m)", "60", "d", "Camera Charge Reserve (m)", "600", "d", "Share Threats With Hive", "true", "b"
+};
+readonly string[] CfAi = {
+    "Time-share With Script Search", "true", "b", "Switch On AI Behavior", "true", "B", "Use Typed AI Block API", "false", "B", "AI Flight Speed Limit (m/s)", "100", "D",
+    "AI Window (s)", "6", "d", "Script Search Window (s)", "8", "d", "Max AI Hold (s)", "60", "d", "AI Search Interval (s)", "5", "I"
+};
+readonly string[] CfSv = {
+    "Lead-Breaking Jinks", "true", "b", "Power Guard", "true", "b", "Jink Accel Fraction", "0.8", "d", "Enemy Projectile Speed (m/s)", "800", "d",
+    "Jink Period Min (s)", "0.4", "d", "Jink Period Max (s)", "3", "d", "Jink Period Random", "0.3", "d", "Power Guard Hold (s)", "2", "d"
+};
+
+void CfStep(bool want)
+{
+    string k = CfKey();
+    if (k != _cfK) { _cfK = k; _cfTk = -99; if (k != "") CfSend(false); }
+    if (want && k != "" && _tick - _cfTk >= 30) CfSend(true);
+}
+void CfSend(bool tx)
+{
+    var p = CfTarget(); if (p == null) return;
+    if (tx) _cfTk = _tick;
+    var i = new MyIni(); MyIniParseResult r;
+    if (!i.TryParse(p.CustomData, out r)) { _cfE = "! Flight Custom Data: error line " + r.LineNo + "\n"; return; }
+    _cfE = ""; _cfSt = "ok"; _cfSc = "1"; CfAg = "";
+    _cfT = CfModel(); _cfV = CfRd(i, FS, _cfT);
+    string x = CfExtra(i), sc = _cfSc; _cfSc = "1";   // CfExtra may change model values first, but its line counts go after M in the schema
+    string s = "M" + CfJ(_cfT, _cfV) + "\n" + x; _cfSc += sc.Substring(1);
+    foreach (char c in CfSh)
+    {
+        var t = c == 'K' ? CfKz : c == 'A' ? CfAi : CfSv;
+        s += CfLine(i, c == 'K' ? "Kamikaze Defence" : c == 'A' ? "AI Gate" : "Survival", t, c.ToString());
+    }
+    string o = i.ToString(); if (o != p.CustomData) p.CustomData = o;
+    if (tx) IGC.SendBroadcastMessage(_cfK + ".CFG", "CF1\t" + _cfSc + "\t" + _cfSt + "\n" + s, TransmissionDistance.CurrentConstruct);
+}
+// one section: write the missing defaults, read every value (raw, .CFG format)
+string[] CfRd(MyIni i, string s, string[] t)
+{
+    var v = new string[t.Length / 3];
+    for (int n = 0; n < v.Length; n++)
+    {
+        string k = t[3 * n], d = t[3 * n + 1]; char y = char.ToLower(t[3 * n + 2][0]);
+        if (!i.ContainsKey(s, k)) i.Set(s, k, d);
+        var g = i.Get(s, k);
+        v[n] = y == 'b' ? (g.ToBoolean(d == "true") ? "1" : "0") : y == 's' ? g.ToString(d) : g.ToDouble(double.Parse(d)).ToString("R");
+    }
+    return v;
+}
+// the sent values of a section ("\t" + value each); locals are skipped, upper-case types (AI GATE SETUP) go to CfAg; the count goes into the schema
+string CfJ(string[] t, string[] v)
+{
+    string b = ""; int c = 0;
+    for (int n = 0; n < v.Length; n++)
+    {
+        string k = t[3 * n];
+        if (k == "IGC Tag" || k.StartsWith("Start Mode")) continue;
+        if (char.IsUpper(t[3 * n + 2][0])) CfAg += (CfAg == "" ? "" : "|") + v[n];
+        else { b += "\t" + v[n]; c++; }
+    }
+    _cfSc += "/" + c; return b;
+}
+string CfLine(MyIni i, string s, string[] t, string l) { return l + CfJ(t, CfRd(i, s, t)) + "\n"; }
+// <<< CONFIG SERVER v1.0 <<<
+
+// >>> AUX LINK v1.1 (the Staff side of the [Aux] PB: REPAIR CLIENT, SEEKER, WEAKPOINT RELAY, SEARCH and AI GATE SETUP run there, docs/design/staff_split.md, flight_split.md) >>>
+// REPAIR CLIENT (bay dock, medic, self-projector) and the SEEKER turret reader run in a fourth PB, "[Aux] <Model> PB" (scripts/AuxAI.cs, one script for every
+// model). This block gives SURVIVAL STAFF and STAFF SEARCH the same function names as proxies. The Aux PB never writes an override: during a dock approach it
+// sends setpoints and the Staff flies them with the SURVIVAL STAFF dock actuator (DkGo / DkSteer / DkRel, FOL bit 2). Link (CurrentConstruct, key _fk):
+//   .SDK  Staff -> Aux    MyTuple<int flags, long tgtId, Vector3D aux, string cfg, string prevVerb, string ops>: flags bit0 DAMAGED (_svRtb), bit1 docked / welded,
+//         bit2 FLIGHT DOWN, bit3 Staff steers a dock, bit4 under fire, bit5 mode IDLE, bit6 mode RTB, bit7 SeekerOn, bit8 RpDockOk, bit9 AI ASSIST (F2S bit 17);
+//         aux = (_svAmin, SvCapV(), MaxSpeed); cfg = Tag \n SeekerGroup \n flChan (FLEET LINK _flChan) \n wpPri \n wpExp \n agSwitch|agTyped|agSpeed|agEvery
+//         (wpPri / wpExp: [Fleet] "Weakpoint Priority" / "Weakpoint Expire (s)" of this Staff PB as written, defaults 1,3,2 / 20 written here; the last line
+//         is CONFIG SERVER's CfAg, "" until its first parse); ops = queued repair words, one a line ("w<k>" RpWant(k), "s<why>" RpStop(why)). Every 10 ticks,
+//         at once on a change or with ops; at once on a new Aux (DKS source), a new key, a Staff run gap and SkBlocks() (the "seeker" word).
+//   .DKS  Aux -> Staff    MyTuple<int flags, Vector3D vel, Vector3D fwd, Vector3D up, string status>: bit0 FLY (DkSteer(vel, fwd, up)), bit1 repair session,
+//         bit3 REPAIRED (SvRepaired()); status = the Aux's Repair / Project / Seek / weakpoint (WpStatus) / search / AI-setup lines for this screen.
+//   v1.1: .SKW is gone (WEAKPOINT RELAY runs in the Aux next to its seeker). The Staff still listens to the wing's <flChan>_WP (receive only) and keeps the
+//   turret holes (kind 2 Weapons) in _wpMap for SURVIVAL STAFF's exposure score (SvExpo); entries drop after wpExp s or on DONE.
+//   .D2S  Aux -> Staff    string: a PB argument given to the Aux PB -> Command().
+// FLY counts while the last DKS is at most 15 ticks old and the Flight is up: its rise calls DkGo(), its fall DkRel(); a Staff run gap drops it without a write.
+// Without an [Aux] PB: no bay dock, medic, self-projector or seeker (the screen says so after 5 s); everything else works.
+// Hooks: the REPAIR CLIENT / SEEKER call sites of SURVIVAL STAFF and STAFF SEARCH (RpRead in SvsRead, RpStep in SvWatch, SkBlocks in SsBlocks, ...).
+// Uses: _fk, _now, _tick, _mode (IDLE/RTB), _fl, _tgtId, _down, Tag, MaxSpeed, RpDockOk, SeekerOn, SeekerGroup, _svRtb, _svDock, _svAmin, _svPrevVerb, SvCapV(),
+//   SvB/SvD/SvT, DkGo/DkRel/DkSteer/DkHold/SvRepaired, _dkOn, _dkRelTk, Command(), _flChan, FleetV(), CfAg (CONFIG SERVER).
+string RpMedCh = "MEDIC", _alSt = "", _alOps = "", _alCfg = "", _alPv = "", _alWp = "1,3,2\n20"; double _alWx = 20;
+IMyBroadcastListener _alLd, _alLa, _alLs; long _alSrc, _alTgt, _alTk = -99, _alDkTk = -99; int _alF = -1, _alDf; double _alDkT = -99;
+bool _dkFly, _alFull = true; Vector3D _alV, _alW, _alU;
+bool SvFly { get { return _dkFly || DkHold; } }
+class WpE { public long Tgt; public Vector3D S; public int F; public double T; }
+Dictionary<long, WpE> _wpMap = new Dictionary<long, WpE>(); List<long> _alDel = new List<long>();
 
 void RpCfg(MyIni i)
-{
-    RpBayOn = SvB(i, "Repair At Bay", true); RpDockV = Math.Max(0.2, SvD(i, "Dock Speed (m/s)", 2)); RpDockV0 = Math.Max(0.05, SvD(i, "Dock Final Speed (m/s)", 0.3));
-    RpMedic = SvB(i, "Call Medic", true); RpMedCh = SvT(i, "Survival", "Medic Channel", "MEDIC").Trim().ToUpperInvariant();
+{   // the Aux reads these itself (Flight PB [Survival]); listed here so that the Staff writes their defaults
+    SvB(i, "Repair At Bay", true); SvD(i, "Dock Speed (m/s)", 2); SvD(i, "Dock Final Speed (m/s)", 0.3); SvB(i, "Call Medic", true);
+    RpMedCh = SvT(i, "Survival", "Medic Channel", "MEDIC").Trim().ToUpperInvariant();
     if (RpMedCh == "") RpMedCh = "MEDIC";
 }
 void RpListen()
 {
-    foreach (var l in new[] { _rpLb, _rpLa, _rpLm, _rpLk }) if (l != null) IGC.DisableBroadcastListener(l);
-    _rpLb = IGC.RegisterBroadcastListener(Tag + "_RBAY"); _rpLa = IGC.RegisterBroadcastListener(Tag + "_RACK");
-    _rpLm = IGC.RegisterBroadcastListener(RpMedCh + "_AD"); _rpLk = IGC.RegisterBroadcastListener(RpMedCh + "_ACK");
+    foreach (var l in new[] { _alLd, _alLa, _alLs }) if (l != null) IGC.DisableBroadcastListener(l);
+    _alLd = _alLa = _alLs = null;
+    if (_fk != "") { _alLd = IGC.RegisterBroadcastListener(_fk + ".DKS"); _alLa = IGC.RegisterBroadcastListener(_fk + ".D2S"); }
+    _alLs = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_WP") : null;
+    _alFull = true;
 }
 void RpBlocks()
-{
-    var g = Me.CubeGrid; _rpMerge = null; _rpProj = null;
-    var ml = new List<IMyShipMergeBlock>(); GridTerminalSystem.GetBlocksOfType(ml, b => b.CubeGrid == g && !b.CustomName.Contains("Flare"));
-    if (ml.Count > 0) _rpMerge = ml[0];
-    var pl = new List<IMyProjector>(); GridTerminalSystem.GetBlocksOfType(pl, b => b.CubeGrid == g && b.CustomName.Contains("Projector [Self]"));
-    if (pl.Count > 0) _rpProj = pl[0];
+{   // the [Fleet] weakpoint keys of this PB: the Aux's WEAKPOINT RELAY gets them in the SDK cfg
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "Fleet", P = "Weakpoint Priority", E = "Weakpoint Expire (s)";
+    if (!ini.ContainsKey(S, P)) ini.Set(S, P, "1,3,2");
+    if (!ini.ContainsKey(S, E)) ini.Set(S, E, 20.0);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    _alWx = Math.Max(3, ini.Get(S, E).ToDouble(20));
+    _alWp = ini.Get(S, P).ToString("1,3,2").Replace('\n', ' ') + "\n" + _alWx;
 }
-void RpProj(bool on) { if (_rpProj != null && _rpProj.IsFunctional && _rpProj.Enabled != on) _rpProj.Enabled = on; }
-
 void RpRead()
 {
-    long me = Me.CubeGrid.EntityId;
-    while (_rpLb != null && _rpLb.HasPendingMessage)
+    while (_alLd != null && _alLd.HasPendingMessage)
     {
-        var m = _rpLb.AcceptMessage();
-        if (!(m.Data is MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>)) continue;
-        var d = (MyTuple<long, int, Vector3D, Vector3D, Vector3D, Vector3D>)m.Data;
-        if (!FleetV(d.Item3) || d.Item4.LengthSquared() < 0.5 || d.Item5.LengthSquared() < 0.5 || d.Item6.LengthSquared() < 0.5) continue;
-        long k = d.Item1 * 97 + (d.Item2 & 255); RpB b;
-        if (!_rpBays.TryGetValue(k, out b)) { if (_rpBays.Count >= 16) continue; b = new RpB { Pb = d.Item1, Bay = d.Item2 & 255 }; _rpBays[k] = b; }
-        else { b.P0 = b.P; b.Two = _now - b.T < 6; }
-        b.F = d.Item2 >> 8; b.P = d.Item3; b.Ax = Vector3D.Normalize(d.Item4); b.Fw = Vector3D.Normalize(d.Item5); b.Up = Vector3D.Normalize(d.Item6); b.T = _now;
+        var m = _alLd.AcceptMessage();
+        if (!(m.Data is MyTuple<int, Vector3D, Vector3D, Vector3D, string>)) continue;
+        var d = (MyTuple<int, Vector3D, Vector3D, Vector3D, string>)m.Data;
+        if (m.Source != _alSrc) { _alSrc = m.Source; _alFull = true; }   // a new (or rebuilt) Aux PB: tell it everything at once
+        _alDf = d.Item1; _alV = d.Item2; _alW = d.Item3; _alU = d.Item4; _alSt = d.Item5; _alDkT = _now; _alDkTk = _tick;
+        if ((d.Item1 & 8) != 0) SvRepaired();
     }
-    while (_rpLa != null && _rpLa.HasPendingMessage)
-    {
-        var m = _rpLa.AcceptMessage();
-        if (!(m.Data is MyTuple<long, long, int, int>)) continue;
-        var d = (MyTuple<long, long, int, int>)m.Data; RpB b;
-        if (d.Item1 != me || _rpS != 1 || _rc == null || d.Item2 * 97 + d.Item3 != _rpKey || !_rpBays.TryGetValue(_rpKey, out b)) continue;
-        if (d.Item4 == 0) { b.Bad = _now; _rpS = 0; _rpNext = _now + 10; _rpMsg = "bay refused"; continue; }
-        _rpO = Vector3D.TransformNormal(_rpMerge.GetPosition() - _rc.GetPosition(), MatrixD.Transpose(_rc.WorldMatrix));   // merge offset in the RC frame, taken once
-        DkGo();                                             // the host takes the actuators (FOL bit 2)
-        _rpS = 2; _rpFly = true; _rpStart = _rpT2 = _now; _rpTry = 0; _rpMsg = "";
+    while (_alLa != null && _alLa.HasPendingMessage) { var m = _alLa.AcceptMessage(); if (m.Data is string) Command((string)m.Data); }
+    while (_alLs != null && _alLs.HasPendingMessage)
+    {   // the wing's weakpoints (receive only): turret holes for SvExpo
+        var m = _alLs.AcceptMessage();
+        if (!(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
+        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
+        if ((d.Item6 & 32) != 0) { _wpMap.Remove(d.Item5); continue; }
+        if ((d.Item6 & 7) != 2 || !FleetV(d.Item2) || (!_wpMap.ContainsKey(d.Item5) && _wpMap.Count >= 64)) continue;
+        _wpMap[d.Item5] = new WpE { Tgt = d.Item1, S = d.Item2, F = d.Item6, T = _now };
     }
-    while (_rpLm != null && _rpLm.HasPendingMessage)
-    {
-        var m = _rpLm.AcceptMessage();
-        if (!(m.Data is MyTuple<long, Vector3D, int>)) continue;
-        var d = (MyTuple<long, Vector3D, int>)m.Data;
-        if (FleetV(d.Item2) && (_rpMeds.Count < 8 || _rpMeds.ContainsKey(d.Item1))) _rpMeds[d.Item1] = new MyTuple<Vector3D, int, double>(d.Item2, d.Item3, _now);
+    if (_tick % 60 == 0) { _alDel.Clear(); foreach (var kv in _wpMap) if (_now - kv.Value.T > _alWx) _alDel.Add(kv.Key); foreach (var k in _alDel) _wpMap.Remove(k); }
+    bool f = (_alDf & 1) != 0 && _tick - _alDkTk <= 15 && !_down;
+    if (Runtime.TimeSinceLastRun.TotalSeconds > 0.5)
+    {   // run gap: let go without a write (the Flight may fly already); a FLY still coming re-takes with the 3-tick gate
+        if (_dkFly) { _dkOn = false; _dkRelTk = _tick; }
+        _dkFly = false; _alFull = true;
     }
-    while (_rpLk != null && _rpLk.HasPendingMessage)
-    {
-        var m = _rpLk.AcceptMessage();
-        if (!(m.Data is MyTuple<long, long, int>)) continue;
-        var d = (MyTuple<long, long, int>)m.Data;
-        if (d.Item1 != me || d.Item2 != _rpMed) continue;
-        if (d.Item3 != 0 && _rpS == 6) { _rpS = 7; _rpT = _now; _rpStart = _now; RpProj(true); _rpScanT = -99; _rpMsg = ""; }
-        else if (d.Item3 == 0 && _rpS >= 6) { _rpMedBad[_rpMed] = _now; RpProj(false); _rpS = 0; _rpNext = _now + 10; _rpMsg = "medic gave up"; }
-    }
+    else if (f != _dkFly) { if (f) DkGo(); else DkRel(); _dkFly = f; }
+    if (_fk == "") { _alOps = ""; return; }
+    int fl = (_svRtb ? 1 : 0) | (_svDock ? 2 : 0) | (_down ? 4 : 0) | (_dkFly ? 8 : 0) | ((_fl & 16) != 0 ? 16 : 0) | (_mode == Mode.IDLE ? 32 : 0)
+        | (_mode == Mode.RTB ? 64 : 0) | (SeekerOn ? 128 : 0) | (RpDockOk ? 256 : 0) | ((_fl & 131072) != 0 ? 512 : 0);
+    string c = Tag + "\n" + SeekerGroup + "\n" + _flChan + "\n" + _alWp + "\n" + CfAg;
+    if (!_alFull && _alOps == "" && fl == _alF && _tgtId == _alTgt && c == _alCfg && _svPrevVerb == _alPv && _tick - _alTk < 10) return;
+    IGC.SendBroadcastMessage(_fk + ".SDK", new MyTuple<int, long, Vector3D, string, string, string>(fl, _tgtId, new Vector3D(_svAmin, SvCapV(), MaxSpeed), c, _svPrevVerb, _alOps),
+        TransmissionDistance.CurrentConstruct);
+    _alF = fl; _alTgt = _tgtId; _alCfg = c; _alPv = _svPrevVerb; _alTk = _tick; _alOps = ""; _alFull = false;
 }
-
-void RpWant(int k) { _rpReq = k; _rpNext = 0; }
-void RpStop(string why)
-{
-    if (_rpS >= 2 && _rpS <= 4) DkRel();
-    if (_rpS >= 6) { if (_rpS == 7) RpWork(true); RpProj(false); }
-    if (_rpS != 5) { _rpS = 0; }
-    _rpFly = false; _rpReq = 0; if (why != "") _rpMsg = why;
-}
-void RpAbort(string why, double bad)
-{
-    RpB b; if (_rpBays.TryGetValue(_rpKey, out b)) b.Bad = _now + bad;
-    DkRel(); _rpFly = false; _rpS = 0; _rpNext = _now + 10; _rpMsg = why;
-}
-
-void RpStep()
-{
-    RpScan();
-    bool uf = (_fl & 16) != 0, home = _mode == Mode.RTB || _mode == Mode.IDLE;
-    if (_rpS == 0)
-    {
-        if (_tick % 30 != 21 || _now < _rpNext || !(_svRtb || _rpReq > 0) || _svDock || uf || _down || !(home || _rpReq > 0)) return;
-        Vector3D me = _rc.GetPosition(); RpB best = null; double bd = 1.6e7; bool any = false;
-        foreach (var kv in _rpBays)
-        {
-            var b = kv.Value; double q = Vector3D.DistanceSquared(b.P, me);
-            if (_now - b.T > 5 || (b.F & 1) == 0 || q > 1.6e7) continue;
-            if (_now - b.Bad < 60) continue;
-            any = true;
-            if (b.Two && (b.P - b.P0).LengthSquared() < 4 && q < bd) { bd = q; best = b; _rpKey = kv.Key; }
-        }
-        if (RpBayOn && RpDockOk && _rpMerge != null && _rpReq != 3 && best != null)
-        {
-            IGC.SendBroadcastMessage(Tag + "_RREQ", new MyTuple<long, int, long>(best.Pb, best.Bay, Me.CubeGrid.EntityId));
-            _rpS = 1; _rpT = _now; _rpRetry = false; _rpMsg = "asking bay " + best.Bay; return;
-        }
-        if (!RpMedic || _rpReq == 2 || (any && RpDockOk && _rpMerge != null && RpBayOn) || !(_mode == Mode.IDLE || _rpReq > 0)) return;
-        long mb = 0; double md = 9e6;
-        foreach (var kv in _rpMeds)
-        {
-            double bt; if (_now - kv.Value.Item3 > 6 || (kv.Value.Item2 & 1) == 0 || (_rpMedBad.TryGetValue(kv.Key, out bt) && _now - bt < 60)) continue;
-            double q = Vector3D.DistanceSquared(kv.Value.Item1, me); if (q < md) { md = q; mb = kv.Key; }
-        }
-        if (mb == 0) return;
-        _rpMed = mb; _rpTry = 0; RpReq(); _rpS = 6; _rpMsg = "calling medic";
-        return;
-    }
-    if (_rpS == 1)
-    {
-        if (_now - _rpT < 5) return;
-        RpB b;
-        if (!_rpRetry && _rpBays.TryGetValue(_rpKey, out b)) { _rpRetry = true; _rpT = _now; IGC.SendBroadcastMessage(Tag + "_RREQ", new MyTuple<long, int, long>(b.Pb, b.Bay, Me.CubeGrid.EntityId)); return; }
-        RpAbort("bay did not answer", 0); return;
-    }
-    if (_rpS == 5)
-    {   // docked: the bay repairs and releases (LAUNCH flies the take-off); back to duty when the merge pair has opened
-        if (_rpMerge == null || !_rpMerge.IsConnected) { if (_svDock) return; RpProj(false); _rpS = 0; SvRepaired(); _rpReq = 0; _rpMsg = "repaired, released"; }
-        return;
-    }
-    if (_rpS >= 6) { RpMedicStep(uf); return; }
-    // dock approach (2 transit, 3 align, 4 insert)
-    RpB y;
-    if (!_rpBays.TryGetValue(_rpKey, out y) || _now - y.T > 10) { RpAbort("bay silent", 60); return; }
-    if (uf) { RpAbort("under fire", 30); return; }
-    if (_down || _rpMerge == null || !_rpMerge.IsFunctional) { RpAbort("aborted", 0); return; }
-    if (!home && _rpReq == 0) { RpAbort("mode changed", 0); return; }
-    if (_now - _rpStart > 180) { RpAbort("dock timeout", 600); return; }
-    if (_rpMerge.IsConnected)
-    {
-        DkRel(); _rpFly = false; _rpS = 5; _rpMsg = "docked";
-        var hm = new List<IMyProgrammableBlock>(); GridTerminalSystem.GetBlocksOfType(hm, b => b.CubeGrid == Me.CubeGrid && b.CustomData.Contains("[Hive Mother]"));
-        RpProj(hm.Count == 0);                               // a printer bay projects the drone itself (and keeps ours off); a cradle bay works through ours
-        return;
-    }
-    if (_now - _rpT2 > 30) { _rpT2 = _now; IGC.SendBroadcastMessage(Tag + "_RREQ", new MyTuple<long, int, long>(y.Pb, y.Bay, Me.CubeGrid.EntityId)); }   // the bay holds us 90 s: renew
-    MatrixD R = MatrixD.CreateWorld(Vector3D.Zero, y.Fw, Vector3D.Normalize(y.Up - y.Fw * Vector3D.Dot(y.Up, y.Fw)));
-    Vector3D G = y.P + y.Ax * (Me.CubeGrid.GridSize * 0.5) - Vector3D.TransformNormal(_rpO, R), L = G + y.Ax * (20 + Me.CubeGrid.WorldVolume.Radius);
-    Vector3D M = _rc.GetPosition(), v; var mw = _rc.WorldMatrix;
-    if (_rpS == 2)
-    {
-        Vector3D d = L - M; double dist = d.Length(), sp = Math.Min(Math.Min(40, MaxSpeed), Math.Min(dist * 0.5, Math.Sqrt(2 * _svAmin * dist))), cap = SvCapV();
-        if (cap > 0) sp = Math.Min(sp, cap);
-        if (dist < 2) { _rpS = 3; _rpT = _now; }
-        DkSteer(dist > 0.1 ? d / dist * sp : Vector3D.Zero, dist > 100 ? d : R.Forward, dist > 100 ? Vector3D.Zero : R.Up);
-        return;
-    }
-    if (_rpS == 3)
-    {
-        v = (L - M) * 0.5; if (v.LengthSquared() > 4) v = Vector3D.Normalize(v) * 2;
-        bool al = Vector3D.Dot(mw.Forward, R.Forward) > 0.9994 && Vector3D.Dot(mw.Up, R.Up) > 0.9994 && _rc.GetShipVelocities().LinearVelocity.LengthSquared() < 0.09;
-        if (al || _now - _rpT > 15) { _rpS = 4; _rpMerge.Enabled = true; }   // (LAUNCH switched it off after the last take-off)
-        DkSteer(v, R.Forward, R.Up);
-        return;
-    }
-    Vector3D rel = M - G, lat; double along = Vector3D.Dot(rel, y.Ax); lat = rel - y.Ax * along;
-    if ((lat.LengthSquared() > 0.64 && along < 3) || along < -1)
-    {
-        if (++_rpTry > 3) { RpAbort("dock failed", 600); return; }
-        _rpS = 3; _rpT = _now; return;                      // back out to the line-up point and try again
-    }
-    DkSteer(-y.Ax * MathHelper.Clamp(0.5 * along, RpDockV0, RpDockV) - lat, R.Forward, R.Up);
-}
-
-void RpReq()
-{
-    IGC.SendBroadcastMessage(RpMedCh + "_REQ", new MyTuple<long, long, Vector3D, int>(_rpMed, Me.CubeGrid.EntityId, _rc.GetPosition(), Math.Max(_rpBadDone.Count, _rpProj != null ? _rpProj.RemainingBlocks : 0)));
-    _rpT = _now; _rpTry++;
-}
-void RpMedicStep(bool uf)
-{
-    MyTuple<Vector3D, int, double> md;
-    bool seen = _rpMeds.TryGetValue(_rpMed, out md) && _now - md.Item3 < 10;
-    if (!seen || _now - _rpStart > 900) { _rpMedBad[_rpMed] = _now; RpStop("medic lost"); _rpNext = _now + 10; return; }
-    if (_rpS == 6)
-    {
-        if (_now - _rpT < 5) return;
-        if (_rpTry < 3) RpReq(); else { _rpMedBad[_rpMed] = _now; _rpS = 0; _rpNext = _now + 10; _rpMsg = "medic did not answer"; }
-        return;
-    }
-    if (_now - _rpT < 1) return;
-    _rpT = _now;
-    if (_rpChkI < 0 && _now - _rpScanT > 2) { _rpChkI = 0; _rpBad.Clear(); }
-    bool done = _rpScanT > 0 && _rpBadDone.Count == 0 && (_rpProj == null || !_rpProj.IsProjecting || _rpProj.RemainingBlocks == 0);
-    RpWork(done);
-    if (!done) return;
-    RpProj(false); _rpS = 0; SvRepaired(); _rpReq = 0; _rpMsg = "repaired by medic";
-    if (_svPrevVerb != "") Fwd(_svPrevVerb);
-}
-void RpWork(bool done)
-{
-    if (_rc == null) return;
-    var g = Me.CubeGrid; MyTuple<Vector3D, int, double> md; Vector3D mp = _rpMeds.TryGetValue(_rpMed, out md) ? md.Item1 : _rc.GetPosition(), p0 = Vector3D.Zero, p1 = Vector3D.Zero;
-    double d0 = 1e18, d1 = 1e18;
-    foreach (var c in _rpBadDone)
-    {
-        Vector3D w = g.GridIntegerToWorld(c); double q = Vector3D.DistanceSquared(w, mp);
-        if (q < d0) { p1 = p0; d1 = d0; p0 = w; d0 = q; } else if (q < d1) { p1 = w; d1 = q; }
-    }
-    var v = g.WorldVolume;
-    int pk = Math.Min(4095, _rpBadDone.Count) | (Math.Min(4095, (int)(v.Radius * 10)) << 12) | (done ? 1 << 24 : 0) | ((_fl & 16) != 0 ? 1 << 25 : 0);
-    IGC.SendBroadcastMessage(RpMedCh + "_WORK", new MyTuple<long, Vector3D, Vector3D, Vector3D, Vector3D, int>(g.EntityId, v.Center, _rc.GetShipVelocities().LinearVelocity, p0, p1, pk));
-}
-// own-grid cells: a full scan when the grid is new (the intact drone), and while a medic works a re-check of those cells (missing, or damaged)
-void RpScan()
-{
-    var g = Me.CubeGrid;
-    if (_svDock) return;
-    if (g != _rpScanG) { _rpScanG = g; _rpCells.Clear(); _rpScanI = 0; _rpChkI = -1; _rpBadDone.Clear(); _rpScanT = -99; }
-    Vector3I a = g.Min, s = g.Max - g.Min + Vector3I.One; int n = s.X * s.Y * s.Z;
-    if (_rpScanI < n && n < 200000)
-    {
-        for (int k = 0; k < 200 && _rpScanI < n; k++, _rpScanI++)
-        {
-            int i = _rpScanI; var c = new Vector3I(a.X + i % s.X, a.Y + (i / s.X) % s.Y, a.Z + i / (s.X * s.Y));
-            if (g.CubeExists(c) && _rpCells.Count < 4000) _rpCells.Add(c);
-        }
-        return;
-    }
-    if (_rpChkI < 0) return;
-    for (int k = 0; k < 200 && _rpChkI < _rpCells.Count; k++, _rpChkI++)
-    {
-        var c = _rpCells[_rpChkI]; var b = g.CubeExists(c) ? g.GetCubeBlock(c) : null;
-        if (b == null || b.CurrentDamage > 0 || b.BuildIntegrity < b.MaxIntegrity) _rpBad.Add(c);
-    }
-    if (_rpChkI >= _rpCells.Count) { _rpBadDone.Clear(); _rpBadDone.AddRange(_rpBad); _rpChkI = -1; _rpScanT = _now; }
-}
+void RpStep() { if (_dkFly) DkSteer(_alV, _alW, _alU); }
+void RpWant(int k) { _alOps += "w" + k + "\n"; }
+void RpStop(string why) { _alOps += "s" + why + "\n"; }
 string RpStatus()
 {
-    string[] sn = { "", "asking bay", "dock transit", "dock align", "dock insert", "docked", "calling medic", "medic working" };
-    string s = _rpS > 0 ? "Repair : " + sn[_rpS] + (_rpS == 7 ? ", " + _rpBadDone.Count + " cells" : "") + (_rpS == 4 && _rpTry > 0 ? ", retry " + _rpTry : "") + "\n" : _rpMsg != "" && _svRtb ? "Repair : " + _rpMsg + "\n" : "";
-    if (_rpProj != null && _rpProj.Enabled && _rpProj.IsProjecting) s += "Project: " + _rpProj.RemainingBlocks + " blocks to build\n";
-    return s;
+    if (_now - _alDkT < 3) return _alSt;
+    return _alSrc != 0 ? "! Aux PB silent\n" : _now > 5 ? "! no [Aux] PB (repair, medic, seeker off)\n" : "";
 }
-// <<< REPAIR CLIENT v1.1 <<<
+void SkBlocks() { _alFull = true; }
+void SkStep() { }
+string SkStatus() { return ""; }
+// <<< AUX LINK v1.1 <<<
 
-// >>> SEEKER v1.0 (the [Seeker] turret reader, cut out of STAFF SEARCH, docs/design/staff_split.md) >>>
-// A turret named [Seeker] on this grid is set to "Seeker Group" (PowerSystems / Weapons / Propulsion). Twice a second, when it holds the Flight's target and
-// is aimed, the point it shows (the game's block position, else its line with the lead taken off) is raycast by a camera holding twice the ray length (the
-// camera charge is shared with the Flight PB). The hull point hit (target frame) goes to WpSeek(): an own-seeker entry of the WEAKPOINT RELAY (ranked first,
-// sent to the Flight on .WPT with flag 4096, shared with the wing on <ch>_WP). "seeker on" / "seeker off" (Staff word) switch it; Seek : line on screen.
-// Hosts: GnatStaffAI, BasiliskStaffAI (WpSeek = the local WEAKPOINT RELAY) and AuxAI (the [Aux] PB of the 7 split Staffs: WpSeek sends .SKW to the Staff,
-// whose AUX LINK calls its WpSeek). The other Staff scripts carry AUX LINK's SkBlocks/SkStep/SkStatus proxies instead.
-// Hooks: SkBlocks() at the end of SsBlocks (AuxAI: GetBlocks and on a new seeker configuration); SkStep() in SsStep (AuxAI: Tick); SkStatus() first in SsStatus.
-// Uses: _tgtId, _rc, _now, Me, SeekerOn, SeekerGroup, WpSeek().
-List<IMyLargeTurretBase> _skT = new List<IMyLargeTurretBase>(); List<IMyCameraBlock> _skCams = new List<IMyCameraBlock>();
-double _skT0 = -99; string _skLog = "";
-
-void SkBlocks()
+// =====================================================================
+//  GNAT HIT BEARING (damage sensing + hit-bearing estimator, moved Flight -> Staff by flight_split P2-G2; docs/design/flight_split.md 4.1, 6.2, 7.2)
+// Gnat-local on purpose: the shared DAMAGE SENSE block (tools/ds_block.cs) checks every 20 ticks and takes the hit side from the centroid of the hurt blocks;
+// the Gnat checks every 2nd tick (the drone turns fast, a hit must be read in its attitude of the moment), keeps each block's cell bounds and votes over
+// 64 directions. Hosting that in DAMAGE SENSE would change it in all 8 Staffs, so this copy stays here (the Flight's v1.9 code, moved unchanged).
+// Channels (TransmissionDistance.CurrentConstruct, key _fk = "WSPL"+<Flight PB EntityId>):
+//   .DMG  Staff -> Flight  MyTuple<int hits, double integ, Vector3D hitDir, double hitDirAge, int blocksHit, double maxDrop>: the DAMAGE SENSE tuple, read by
+//         DAMAGE LINK in GnatSwarmAI. hitDir is the estimator's axis (set on a vote with strength >= 1). After each check with a drop (<= 30 Hz), else 1 Hz.
+//   .HAX  Staff -> Flight  MyTuple<Vector3D axis, double strength, double spread, double lastHitAge>: HitAxis() at send time, spread in deg (80 % of the
+//         likelihood), lastHitAge = s since the last vote or mate share. At once after a vote / share, every 6 ticks while strength > 0, else 1 Hz.
+//   "<Tag>_HIT" (antenna, unchanged): MyTuple<Vector3D pos, Vector3D axis>, a mate's bearing in (AddHit 0.7), own bearing out (strength >= 1, <= 2 Hz).
+// Sync: a rebuilt Staff starts with _hits 0 and an empty estimator (DAMAGE LINK copies a counter that went down; the Flight's RAID needs fresh hits).
+//   A run gap needs nothing (the next .HAX carries the decayed state). The Flight: .HAX silent 3 s = strength falls to 0, .DMG silent 3 s = DAMAGE LINK rule.
+// Hooks: ScanSlims() in GetBlocks; GdStep() in the tick after ReadIGC(); _lHit registered in Listen(). Uses: _fk, _now, _tick, _rc, Tag, Me, IGC.
+List<IMySlimBlock> _slims = new List<IMySlimBlock>();
+double _integ = -1, _hitDirT = -99, _svMax, _dsT = -99, _haxT = -99; int _hits, _svNb; Vector3D _hitDir; IMyBroadcastListener _lHit; bool _haxNew;
+void GdStep()
+{
+    while (_lHit.HasPendingMessage)
+    {
+        var m = _lHit.AcceptMessage();
+        if (m.Source == IGC.Me || !(m.Data is MyTuple<Vector3D, Vector3D>)) continue;
+        AddHit(((MyTuple<Vector3D, Vector3D>)m.Data).Item2, 0.7);
+    }
+    if (Runtime.CurrentInstructionCount < Runtime.MaxInstructionCount * 0.6) StepSlimScan();
+    if ((_tick & 1) == 1) CheckDamage();
+    double st; Vector3D ax = HitAxis(out st);
+    if (_fk == "" || !(_haxNew || (st > 0 ? _tick % 6 == 0 : _now - _haxT >= 1))) return;
+    _haxNew = false; _haxT = _now;
+    IGC.SendBroadcastMessage(_fk + ".HAX", new MyTuple<Vector3D, double, double, double>(ax, st, _axisSpread, _now - _hitLastT), TransmissionDistance.CurrentConstruct);
+}
+// Every block's integrity; a drop means this drone is being hit.
+// Incremental: walking the whole bounding box in one tick blows the PB instruction limit once the drone is
+// merged into a printer (one huge grid). Starts a pass; StepSlimScan() does SlimCellsPerTick cells per tick.
+List<IMySlimBlock> _slimsNew = new List<IMySlimBlock>(); HashSet<Vector3I> _slimSeen = new HashSet<Vector3I>();
+IMyCubeGrid _slimsGrid, _scanGrid; bool _slimBusy = false; int _sx, _sy, _sz, _mnx, _mny, _mnz, _mxx, _mxy, _mxz;
+const int SlimCellsPerTick = 200, SlimMaxCells = 30000;
+void ScanSlims()
 {
     var g = Me.CubeGrid;
-    GridTerminalSystem.GetBlocksOfType(_skCams, b => b.CubeGrid == g);
-    foreach (var c in _skCams) c.EnableRaycast = true;
-    _skT.Clear();
-    if (SeekerOn) GridTerminalSystem.GetBlocksOfType(_skT, b => b.CubeGrid == g && b.CustomName.Contains("[Seeker]"));
-    if (_skT.Count == 0) _skLog = ""; else if (_skLog == "") _skLog = "ready, group " + SeekerGroup;   // (re-scans keep the last report)
-    foreach (var tu in _skT)
-    {
-        try { if (SeekerGroup.Length > 0 && tu.GetTargetingGroup() != SeekerGroup) tu.SetTargetingGroup(SeekerGroup); }
-        catch (Exception x) { _skLog = "group not set: " + x.Message; }
-    }
+    if (_slimsGrid != g) { _slims.Clear(); _integ = -1; }
+    _slimBusy = false;
+    Vector3I mn = g.Min, mx = g.Max;
+    if ((long)(mx.X - mn.X + 1) * (mx.Y - mn.Y + 1) * (mx.Z - mn.Z + 1) > SlimMaxCells) return;   // docked to something big: skip
+    _scanGrid = g; _slimsNew.Clear(); _slimSeen.Clear();
+    _mnx = mn.X; _mny = mn.Y; _mnz = mn.Z; _mxx = mx.X; _mxy = mx.Y; _mxz = mx.Z;
+    _sx = _mnx; _sy = _mny; _sz = _mnz; _slimBusy = true;
 }
-
-// the turret's view of the Flight's target -> a hull point in the target frame -> the WEAKPOINT RELAY (own-seeker entry)
-void SkStep()
+void StepSlimScan()
 {
-    if (!SeekerOn || _skT.Count == 0 || _tgtId == 0 || _now - _skT0 < 0.5) return;
-    _skT0 = _now;
-    foreach (var tu in _skT)
+    if (!_slimBusy) return;
+    var g = _scanGrid;
+    if (g != Me.CubeGrid) { _slimBusy = false; return; }
+    for (int n = 0; n < SlimCellsPerTick; n++)
     {
-        if (!tu.IsFunctional) { _skLog = "turret damaged"; continue; }
-        if (!tu.HasTarget) { _skLog = "turret has no target (group " + tu.GetTargetingGroup() + ")"; continue; }
-        var te = tu.GetTargetedEntity();
-        if (te.EntityId != _tgtId) { _skLog = "turret on another target"; continue; }
-        if (!tu.IsAimed) { _skLog = "turret turning"; continue; }
-        Vector3D o = tu.GetPosition(), q;
-        bool hp = te.HitPosition.HasValue && (te.HitPosition.Value - te.Position).LengthSquared() > 1;
-        if (hp) q = te.HitPosition.Value;                  // the game told us the block itself
-        else
-        {
-            Vector3D d; Vector3D.CreateFromAzimuthAndElevation(tu.Azimuth, tu.Elevation, out d);
-            d = Vector3D.TransformNormal(d, tu.WorldMatrix);
-            double D = Vector3D.Dot(te.Position - o, d);
-            if (D < 5) { _skLog = "turret points away"; continue; }
-            // turrets lead their target; take the lead off again (bullets inherit our velocity)
-            Vector3D rv = new Vector3D(te.Velocity) - _rc.GetShipVelocities().LinearVelocity;
-            string st = tu.BlockDefinition.SubtypeName;
-            q = o + d * D - rv * (D / (st.Contains("Calibre") ? 500 : tu is IMyLargeMissileTurret ? 200 : 800));
-        }
-        IMyCameraBlock cam = null; double best = 0;
-        foreach (var c in _skCams)
-        {
-            if (!c.IsWorking) continue;
-            Vector3D cd0 = q - c.GetPosition(); double l0 = cd0.Length();
-            if (l0 < 1 || Vector3D.Dot(cd0 / l0, c.WorldMatrix.Forward) < 0.72 || c.AvailableScanRange < 2 * (l0 + 30)) continue;   // the Flight PB shares the charge: twice the ray
-            if (c.AvailableScanRange > best) { best = c.AvailableScanRange; cam = c; }
-        }
-        if (cam == null) { _skLog = "no camera charge/angle"; continue; }
-        Vector3D cd = q - cam.GetPosition(); double cl = cd.Length(); cd /= cl;
-        var e = cam.Raycast(q + cd * 30);
-        if (e.IsEmpty() || e.EntityId != _tgtId || !e.HitPosition.HasValue) { _skLog = (hp ? "block pos given, " : "aim ray, ") + "ray missed hull"; continue; }
-        MatrixD inv = MatrixD.Transpose(e.Orientation);
-        double hint = hp ? (q - e.HitPosition.Value).Length() : -1;
-        int k = SeekerGroup == "PowerSystems" ? 1 : SeekerGroup == "Weapons" ? 2 : SeekerGroup == "Propulsion" ? 3 : 4;
-        WpSeek(new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(_tgtId, Vector3D.TransformNormal(e.HitPosition.Value - e.Position, inv),
-            Vector3D.TransformNormal(cd, inv), new Vector3D(0, hint, 0), Me.CubeGrid.EntityId, k | 8 | (hp ? 16 : 0)));
-        _skLog = (hp ? "block pos given" : "aim ray") + ", " + (q - e.HitPosition.Value).Length().ToString("0") + " m under hull";
-        return;
+        var p = new Vector3I(_sx, _sy, _sz);
+        if (g.CubeExists(p)) { var s = g.GetCubeBlock(p); if (s != null && _slimSeen.Add(s.Position)) _slimsNew.Add(s); }
+        if (++_sz > _mxz) { _sz = _mnz; if (++_sy > _mxy) { _sy = _mny; if (++_sx > _mxx) { _slimBusy = false; break; } } }
+    }
+    if (_slimBusy) return;
+    _slims.Clear(); _slims.AddRange(_slimsNew); _slimsGrid = g; _integ = -1;   // swap in the finished pass
+    _slimMin.Clear(); _slimMax.Clear();     // cell bounds of every block, kept so a destroyed block can still be located
+    foreach (var sb in _slims)
+    {
+        Vector3I mn = sb.Position, mx = sb.Position;
+        if (sb.FatBlock != null) { mn = sb.FatBlock.Min; mx = sb.FatBlock.Max; }
+        _slimMin.Add(mn); _slimMax.Add(mx);
     }
 }
-string SkStatus() { return _skT.Count > 0 ? "Seek   : " + _skLog + "\n" : ""; }
-// <<< SEEKER v1.0 <<<
+void CheckDamage()
+{
+    double sum = 0; var g = Me.CubeGrid;
+    bool cmp = _integ >= 0 && _slimInt.Count == _slims.Count;
+    if (!cmp) { _slimInt.Clear(); for (int i = 0; i < _slims.Count; i++) _slimInt.Add(0f); }
+    _hurt.Clear();
+    for (int i = 0; i < _slims.Count; i++)
+    {
+        var s = _slims[i];
+        float v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0f;
+        sum += v;
+        if (cmp && _slimInt[i] - v > 0.5f) { _hurt.Add(i); _svNb++; _svMax = Math.Max(_svMax, _slimInt[i] - v); }
+        _slimInt[i] = v;
+    }
+    bool hit = _integ >= 0 && sum < _integ - 0.5;
+    if (hit)
+    {
+        _hits++;
+        if (_hurt.Count > 0 && cmp && _now - _lastVoteT >= 0.25) { _lastVoteT = _now; HitVotes(g); double st; Vector3D ax = HitAxis(out st); if (st >= 1) { _hitDir = ax; _hitDirT = _now; } }   // throttled: one vote costs a few thousand instructions
+    }
+    _integ = sum;
+    if (_fk == "" || (!hit && _svNb == 0 && _now - _dsT < 1)) return;
+    IGC.SendBroadcastMessage(_fk + ".DMG", new MyTuple<int, double, Vector3D, double, int, double>(_hits, _integ, _hitDir, Math.Min(99, _now - _hitDirT), _svNb, _svMax),
+        TransmissionDistance.CurrentConstruct);
+    _dsT = _now; _svNb = 0; _svMax = 0;
+}
+List<float> _slimInt = new List<float>(); List<int> _hurt = new List<int>(); List<Vector3I> _slimMin = new List<Vector3I>(), _slimMax = new List<Vector3I>();
+
+// ---- v1.9: HIT BEARING + RAID ------------------------------------------------------------------------------------
+// A drone with no AI block cannot find a 3 m ship by raycast beyond a few hundred metres (the search cone is far too big),
+// but an enemy that shoots at the swarm tells it where it is. A projectile hits the first block along its path, so the
+// chance that block B is the one hit from direction u is proportional to the area of B the shooter can see: the sum over
+// B's exposed faces of max(0, u.normal). Divided by the same sum over the whole drone (its silhouette from u) this is a
+// likelihood; every damaged block multiplies it in for each of 64 candidate directions (world frame, so tumbling does not
+// matter), with exponential forgetting. The best direction is the bearing of the shooter. It is shared over IGC ("<Tag>_HIT").
+// The Flight's RAID (fan of runs and camera sweep along the bearing) reads it from .HAX.
+const int HN = 64;
+Vector3D[] _hd; float[] _lp = new float[HN]; double _histT = 0, _histMass = 0, _hitLastT = -99, _hitShareT = -9;
+int[] _faces = new int[6 * 40];   // per damaged-block slot: exposed face counts (+x,-x,+y,-y,+z,-z)
+int[] _allFaces = new int[6];
+Vector3D SpherePoint(int i, int n)   // (a copy of the Flight's: the 64 candidate directions)
+{
+    if (n <= 1) return Vector3D.Zero;
+    double y = 1 - 2 * (i + 0.5) / n, r = Math.Sqrt(Math.Max(0, 1 - y * y)), ph = i * 2.39996323;
+    return new Vector3D(Math.Cos(ph) * r, y, Math.Sin(ph) * r);
+}
+void InitDirs() { if (_hd == null) { _hd = new Vector3D[HN]; for (int i = 0; i < HN; i++) _hd[i] = SpherePoint(i, HN); } }
+// exposed face counts of the cells [mn..mx] (the block); faces towards cells of the block itself do not count
+void CountFaces(IMyCubeGrid g, Vector3I mn, Vector3I mx, int[] f, int off)
+{
+    for (int i = 0; i < 6; i++) f[off + i] = 0;
+    for (int x = mn.X; x <= mx.X; x++) for (int y = mn.Y; y <= mx.Y; y++) for (int z = mn.Z; z <= mx.Z; z++)
+    {
+        if (x == mn.X && !g.CubeExists(new Vector3I(x - 1, y, z))) f[off + 1]++;
+        if (x == mx.X && !g.CubeExists(new Vector3I(x + 1, y, z))) f[off + 0]++;
+        if (y == mn.Y && !g.CubeExists(new Vector3I(x, y - 1, z))) f[off + 3]++;
+        if (y == mx.Y && !g.CubeExists(new Vector3I(x, y + 1, z))) f[off + 2]++;
+        if (z == mn.Z && !g.CubeExists(new Vector3I(x, y, z - 1))) f[off + 5]++;
+        if (z == mx.Z && !g.CubeExists(new Vector3I(x, y, z + 1))) f[off + 4]++;
+    }
+}
+void HitVotes(IMyCubeGrid g)
+{
+    InitDirs();
+    Vector3D o = g.GridIntegerToWorld(Vector3I.Zero);
+    Vector3D ex = Vector3D.Normalize(g.GridIntegerToWorld(new Vector3I(1, 0, 0)) - o), ey = Vector3D.Normalize(g.GridIntegerToWorld(new Vector3I(0, 1, 0)) - o), ez = Vector3D.Normalize(g.GridIntegerToWorld(new Vector3I(0, 0, 1)) - o);
+    Decay();
+    // silhouette from direction u: exposed faces of the whole drone (every present block that is not part of a hurt block is counted too)
+    for (int i = 0; i < 6; i++) _allFaces[i] = 0;
+    int[] tmp = _faces; int hurtN = Math.Min(_hurt.Count, 4);   // (4: the 64-direction loop costs ~100 instructions per hurt block per direction; 6 could reach the 50k tick limit)
+    int sn = _slims.Count, stride = Math.Max(1, (sn + VoteMaxBlocks - 1) / VoteMaxBlocks);   // cap the per-tick work: above VoteMaxBlocks blocks only every stride-th one is counted (x stride)
+    for (int i = 0; i < sn; i++)
+    {
+        int slot = -1;
+        for (int q = 0; q < hurtN; q++) if (_hurt[q] == i) slot = q;
+        if (slot < 0 && (i % stride != 0 || !g.CubeExists(_slims[i].Position))) continue;      // a destroyed block that was not just hit is gone
+        Vector3I mn = _slimMin[i], mx = _slimMax[i];
+        if (slot >= 0) { CountFaces(g, mn, mx, tmp, slot * 6); for (int k = 0; k < 6; k++) _allFaces[k] += tmp[slot * 6 + k]; }
+        else { CountFaces(g, mn, mx, _tmpF, 0); for (int k = 0; k < 6; k++) _allFaces[k] += _tmpF[k] * stride; }
+    }
+    float wgt = 1f / hurtN;
+    for (int j = 0; j < HN; j++)
+    {
+        Vector3D u = _hd[j];
+        double ux = Vector3D.Dot(u, ex), uy = Vector3D.Dot(u, ey), uz = Vector3D.Dot(u, ez);
+        double[] c = _cs; c[0] = Math.Max(0, ux); c[1] = Math.Max(0, -ux); c[2] = Math.Max(0, uy); c[3] = Math.Max(0, -uy); c[4] = Math.Max(0, uz); c[5] = Math.Max(0, -uz);
+        double W = 0.3; for (int k = 0; k < 6; k++) W += _allFaces[k] * c[k];
+        double lik = 0;
+        for (int q = 0; q < hurtN; q++)
+        {
+            double wb = 0.05; for (int k = 0; k < 6; k++) wb += _faces[q * 6 + k] * c[k];
+            lik += Math.Log(wb / W);
+        }
+        _lp[j] += (float)(lik * wgt);
+    }
+    _histMass += 1.0; _hitLastT = _now; _axisT = -9; _haxNew = true;
+    if (_now - _hitShareT > 0.5)
+    {
+        double st; Vector3D ax = HitAxis(out st);
+        if (st >= 1) { _hitShareT = _now; IGC.SendBroadcastMessage(Tag + "_HIT", new MyTuple<Vector3D, Vector3D>(_rc.GetPosition(), ax)); }
+    }
+}
+const int VoteMaxBlocks = 160;
+int[] _tmpF = new int[6]; double[] _cs = new double[6]; double _lastVoteT = -9;
+void Decay()
+{
+    double dec = Math.Exp(-(_now - _histT) / 12.0); _histT = _now;
+    for (int k = 0; k < HN; k++) _lp[k] = (float)(_lp[k] * dec);
+    _histMass *= dec;
+}
+// a mate's axis: a soft vote (von Mises-like) around it
+void AddHit(Vector3D axis, double w)
+{
+    InitDirs(); Decay();
+    for (int k = 0; k < HN; k++) _lp[k] += (float)(2.5 * w * Vector3D.Dot(_hd[k], axis));
+    _histMass += w; _hitLastT = _now; _axisT = -9; _haxNew = true;
+}
+// best bearing + strength (decayed number of hits x how sharply the likelihood peaks); cached for 0.1 s
+double[] _sp = new double[18];
+Vector3D _axisC; double _axisS, _axisT = -9, _axisSpread = 40;   // spread = half-angle (deg) holding ~80% of the likelihood
+Vector3D HitAxis(out double strength)
+{
+    if (_now - _axisT < 0.1) { strength = _axisS; return _axisC; }
+    _axisT = _now; strength = 0; _axisC = Vector3D.Zero; _axisS = 0;
+    if (_hd == null || _histMass < 0.05) return Vector3D.Zero;
+    int best = 0; for (int k = 1; k < HN; k++) if (_lp[k] > _lp[best]) best = k;
+    Vector3D v = Vector3D.Zero; double near = 0, all = 0;
+    for (int k = 0; k < 18; k++) _sp[k] = 0;
+    for (int j = 0; j < HN; j++)
+    {
+        double w = Math.Exp(_lp[j] - _lp[best]), c = Vector3D.Dot(_hd[best], _hd[j]);
+        all += w; if (c > 0.82) { near += w; v += _hd[j] * w; }
+        _sp[Math.Min(17, (int)(Math.Acos(MathHelper.Clamp(c, -1, 1)) * 11.4592))] += w;     // 5 degree bins around the peak
+    }
+    _axisS = _histMass * Math.Exp(-(_now - _histT) / 12.0) * (near / all);
+    { double cum = 0; _axisSpread = 90; for (int k = 0; k < 18; k++) { cum += _sp[k]; if (cum >= 0.8 * all) { _axisSpread = 5 * (k + 1); break; } } }
+    _axisC = v.LengthSquared() > 1e-12 ? Vector3D.Normalize(v) : _hd[best];
+    strength = _axisS; return _axisC;
+}
 
 public Program()
 {
@@ -1731,7 +1675,7 @@ void GetBlocks()
     _fk = _fpb != null ? "WSPL" + _fpb.EntityId : "";
     if (_fk != oldK) { _f2sN = 0; _f2sTick = _tick; _down = false; }
     LoadFlightCfg();
-    SvBlocks(); SsBlocks();
+    SvBlocks(); SsBlocks(); ScanSlims();
     _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.75f; _lcd.Font = "Monospace";
     string sig = Tag + "|" + _fk;
     if (sig != _sig) { _sig = sig; LoadMods(); }
@@ -1746,8 +1690,8 @@ void Listen()
     string k = Tag + "|" + _fk;
     if (k == _lsKey) return;
     _lsKey = k;
-    foreach (var l in new[] { _lHome, _lCmd, _lSwarm, _lF2S, _lFlt, _lArg }) if (l != null) IGC.DisableBroadcastListener(l);
-    _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME"); _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD"); _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
+    foreach (var l in new[] { _lHome, _lCmd, _lSwarm, _lF2S, _lFlt, _lArg, _lHit }) if (l != null) IGC.DisableBroadcastListener(l);
+    _lHit = IGC.RegisterBroadcastListener(Tag + "_HIT"); _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME"); _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD"); _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
     _lF2S = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".F2S") : null; _lFlt = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".FLT") : null; _lArg = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".CMD") : null;
 }
 
@@ -1770,13 +1714,14 @@ void Tick(string arg, UpdateType src)
     _now += dt; _tick++;
     if (_tick % 600 == 0 || Me.CubeGrid != _myGrid) { _myGrid = Me.CubeGrid; GetBlocks(); }
     ReadF2S();
+    CfStep((_fl & 65536) != 0 && _tick - _f2sTick < 30);
     SvsRead();
     if (_down && _tick % 60 == 0) GetBlocks();   // Flight is down: look for it (rebuilt PB = new EntityId) at 1 Hz
     if (_rc == null || !_rc.IsFunctional || !_rc.IsSameConstructAs(Me)) { if (_tick % 60 == 0) GetBlocks(); SvWatch(false); if (_tick % 30 == 0) Display(); return; }
     ReadIGC();
+    GdStep();   // GNAT HIT BEARING: damage sensing, hit-bearing estimator, .DMG / .HAX to the Flight
     bool burn = LaunchStep(dt, _mode == Mode.IDLE, StartMode, _dynHomeT > 0, _dynHome, Cb);   // automatic take-off after the release from a printer (LAUNCH block)
     Relay();
-    WpStep();
     SendFol(burn || SvFly);
     SendHmr();
     SvWatch(burn || _lnS == 2);
@@ -1895,8 +1840,8 @@ void Display()
     _sb.Append(LaunchStatus());
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner: set ownership\n");
     if (_crash != "") _sb.Append("! ").Append(_crash).Append('\n');
-    _sb.Append(WpStatus());
     _sb.Append(SvStatus());
+    _sb.Append(_cfE);
     string s = _sb.ToString();
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);

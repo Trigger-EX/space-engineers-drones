@@ -7,6 +7,12 @@
 //               a HOME inside 50 m of the ship is ignored (the Staff's own HOME is its own position)
 //   c damage    in a duel the Staff's block-integrity scan sees hits and the Helm's UnderFire / _hits follow (.DMG)
 //   d staff dead  KillPb Staff at 15 s: the Helm keeps its mode, counts exactly one hit, shows the loss
+// flight_split.md (H1-H7, the Helm's config / HUD / menu / lock / AI setup / auto-scan in the Staff):
+//   e config    the Staff writes the Helm's Custom Data defaults and answers the Helm's CFG WANT (H2S bit 9): values set in [Shrike] / [Manual] / [Battery] /
+//               [Kamikaze Defence] / [AI Gate] reach the Helm's fields, "cfg: Staff", CfWant cleared, the Helm never writes its own Custom Data
+//   f HUD/menu  a pilot sits: the Staff's HUD page shows MODE MANUAL; two argument-less Runs of the Helm show "MENU > guard 2/2" and the 2nd item reaches the Helm
+//   g lock      "lock" facing the enemy: the Staff's ray (.LCK -> .LKR) becomes the Helm's target with source LOCK; AI ASSIST (H2S bit 10) seen by the Staff
+//   h scan      while the Helm asks for the auto-scan (H2S bit 11) the Staff casts the camera rays (hits come back on .LKR as SCAN contacts)
 // EVIDENCE: the sim's IGC (delivery next tick) and damage model; nothing measured in the game. Script state is read by reflection.
 using System;
 using System.Collections.Generic;
@@ -37,6 +43,9 @@ namespace SeSim.Run
             TestFleet();
             TestDamage();
             TestStaffDead();
+            TestConfig();
+            TestHudMenuLock();
+            TestScan();
             Console.WriteLine(_fail == 0 ? "SelfTestHelmSplit passed (" + _pass + " checks)" : "SelfTestHelmSplit FAILED: " + _fail + " of " + (_pass + _fail));
             return _fail;
         }
@@ -49,12 +58,13 @@ namespace SeSim.Run
         }
         static bool HasContact(object helm, long id) { var d = Fld<System.Collections.IDictionary>(helm, "_contacts"); return d.Contains(id); }
 
-        static Scenario Duel(string pilot, bool idleEnemy, params string[] cmds)
+        static Scenario Duel(string pilot, bool idleEnemy, params string[] cmds) { return Duel2(pilot, idleEnemy, "", cmds); }
+        static Scenario Duel2(string pilot, bool idleEnemy, string helmCd, params string[] cmds)
         {
             var sc = new Scenario { Kind = "1v1", Name = "hsplit/Shrike Staff Test-vs-Hornet", StartDistanceMin = 900, StartDistanceMax = 900, MaxTicks = 120 * 60, FaceEnemies = true, DecisiveHoldSeconds = 1000 };
             sc.Teams.Add(new TeamSpec(0, "Shrike Staff Test")); sc.Teams.Add(new TeamSpec(1, "Hornet"));
             var sa = new ShipSpec { Model = "Shrike Staff Test", Team = 0, Role = "A1", Pilot = pilot };
-            sa.PbCustomData["Helm"] = "[Shrike]\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=IDLE\n";
+            sa.PbCustomData["Helm"] = "[Shrike]\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=IDLE\n" + helmCd;
             for (int i = 0; i + 1 < cmds.Length; i += 2) sa.Commands.Add(new KeyValuePair<double, string>(double.Parse(cmds[i], Inv), cmds[i + 1]));
             var sb = new ShipSpec { Model = "Hornet", Team = 1, Role = "B1" };
             if (!idleEnemy) sb.Commands.Add(new KeyValuePair<double, string>(0.5, "hunt"));
@@ -150,6 +160,88 @@ namespace SeSim.Run
                 Info("seed " + seed + ": hits " + h14 + " -> " + h24 + ", mode " + m14 + " -> " + m24 + ", Staff-lost flag " + lost);
             }
             Check(ok == 3, "Staff killed at 15 s: the Helm keeps its mode, counts exactly one hit and flags the loss (" + ok + "/3 seeds)");
+        }
+
+        static string HelmCd(object helm) { var me = typeof(Sandbox.ModAPI.Ingame.MyGridProgram).GetProperty("Me", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public); var pb = me != null ? me.GetValue(helm, null) as IMyProgrammableBlock : null; return pb != null ? pb.CustomData : ""; }
+
+        static void TestConfig()
+        {
+            Console.WriteLine("-- the Helm's config comes from the Staff (CONFIG SERVER -> .CFG -> CONFIG LINK) --");
+            int ok = 0, okDef = 0;
+            const string cd = "Combat Speed=55\n[Manual]\nPilot Rate Gain=2.25\nAssist (OFF/HUD/FBW)=fbw\n[Battery]\nStandoff By Weapons=false\n[Kamikaze Defence]\nWarning Time (s)=9\n[AI Gate]\nAI Window (s)=7\n";
+            for (int seed = 0; seed < 3; seed++)
+            {
+                string st = "", dbg = ""; bool want = true, vals = false, defs = false; int at = -1;
+                var sc = Duel2(null, true, cd, "0.5", "Helm:idle");
+                Go(sc, seed, 4, (w, sh, helm, staff) =>
+                {
+                    if (at < 0 && !Fld<bool>(helm, "CfWant")) at = (int)w.Tick;
+                    if (w.Tick == 3 * 60)
+                    {
+                        st = Fld<string>(helm, "_cfSt"); want = Fld<bool>(helm, "CfWant");
+                        double ms = Fld<double>(helm, "MaxSpeed"), g = Fld<double>(helm, "ManGain"), kh = Fld<double>(helm, "KzHorizon"), aw = Fld<double>(helm, "AiWin"); int al = Fld<int>(helm, "_asLvl"); bool so = Fld<bool>(helm, "BatSo");
+                        vals = ms == 55 && g == 2.25 && kh == 9 && aw == 7 && al == 2 && !so;
+                        string c = HelmCd(helm); defs = c.Contains("Orbit Speed=22") && c.Contains("[Battery]") && c.Contains("Max AI Hold (s)=60") && c.Contains("Seat Exclude (name part)=gunnery");
+                        dbg = "MaxSpeed " + ms + " ManGain " + g + " KzHorizon " + kh + " AiWin " + aw + " asLvl " + al + " BatSo " + so;
+                    }
+                });
+                if (st.StartsWith("cfg: Staff") && !want && vals) ok++; if (defs) okDef++;
+                Info("seed " + seed + ": '" + st + "', WANT cleared at tick " + at + ", " + dbg + ", Staff wrote the defaults " + defs);
+            }
+            Check(ok == 3, "the Helm asks (H2S bit 9) and applies the Staff's .CFG: [Shrike] [Manual] [Battery] [Kamikaze Defence] [AI Gate] values arrive, 'cfg: Staff' (" + ok + "/3 seeds)");
+            Check(okDef == 3, "the Staff writes the missing defaults into the Helm PB's Custom Data (" + okDef + "/3 seeds)");
+        }
+
+        static void TestHudMenuLock()
+        {
+            Console.WriteLine("-- HUD page, Run menu, lock ray and AI setup in the Staff --");
+            int okHud = 0, okMenu = 0, okLock = 0, okAi = 0;
+            for (int seed = 0; seed < 3; seed++)
+            {
+                string hud = "", menu = "", lockSrc = "", mode = ""; bool ai = false; long enemy = 0;
+                var sc = Duel2("2:seat;2.1:sit;4:run Helm;4.2:run Helm;9:leave", true, "[Manual]\nRun Menu=hunt,guard\nRun Menu Wait=1.5\n", "0.5", "Helm:idle");
+                Go(sc, seed, 13, (w, sh, helm, staff) =>
+                {
+                    var hs = Fld<object>(staff, "_hsf") as IMyTextSurface;
+                    if (w.Tick == 3 * 60 && hs != null) hud = hs.GetText();
+                    if (w.Tick == 4 * 60 + 20 && hs != null) menu = hs.GetText();
+                    if (w.Tick == 7 * 60) { mode = Fld<object>(helm, "_mode").ToString(); ai = Fld<bool>(staff, "_aiA"); }
+                });
+                var sl = Duel(null, true, "0.5", "Helm:ai off", "0.6", "Helm:idle", "3", "Helm:lock");
+                string note = "";
+                Go(sl, seed, 4, (w, sh, helm, staff) =>
+                {
+                    if (w.Tick > 3 * 60 && lockSrc != "LOCK") { var tg = Fld<object>(helm, "_tgt"); if (tg != null) { lockSrc = (string)tg.GetType().GetField("Src").GetValue(tg); enemy = (long)tg.GetType().GetField("Id").GetValue(tg); } }
+                    if (w.Tick == 4 * 60 - 2) note = Fld<string>(staff, "_lcN");
+                });
+                if (hud.Contains("MODE MANUAL")) okHud++; if (menu.Contains("MENU > guard 2/2") && mode == "GUARD") okMenu++; if (lockSrc == "LOCK") okLock++; if (ai) okAi++;
+                Info("seed " + seed + ": HUD '" + hud.Split('\n')[0] + "', menu line " + menu.Contains("MENU > guard 2/2") + ", mode after the menu " + mode + ", lock -> target source '" + lockSrc + "' id " + enemy + " (Staff: " + note + "), Staff AI ASSIST " + ai);
+            }
+            Check(okHud == 3, "a seated pilot: the Staff writes the HUD page (MODE MANUAL) from the Helm's .HUD (" + okHud + "/3 seeds)");
+            Check(okMenu == 3, "two argument-less Runs of the Helm: the Staff shows MENU > guard 2/2 and the item reaches the Helm (" + okMenu + "/3 seeds)");
+            Check(okLock == 3, "'lock' facing the enemy: the Staff's ray comes back on .LKR and becomes the Helm's target (source LOCK) (" + okLock + "/3 seeds)");
+            Check(okAi == 3, "the Staff sees AI ASSIST (H2S bit 10) and runs the AI-block setup (" + okAi + "/3 seeds)");
+        }
+
+        static void TestScan()
+        {
+            Console.WriteLine("-- the camera auto-scan in the Staff --");
+            int ok = 0;
+            for (int seed = 0; seed < 3; seed++)
+            {
+                int bit = 0, scan = 0, rays = 0; string dbg = "";
+                var sc = Duel(null, true, "0.5", "Helm:ai off", "0.6", "Helm:hunt");   // ("ai off": the AI blocks would find it first)
+                Go(sc, seed, 15, (w, sh, helm, staff) =>
+                {
+                    if ((Fld<int>(staff, "_fl") & 2048) != 0) bit++;
+                    rays = Fld<int>(staff, "_scanIdx");
+                    if (w.Tick % 180 == 0) { var tg = Fld<object>(helm, "_tgt"); dbg += " t" + w.Tick / 60 + ":" + Fld<object>(helm, "_mode") + "/" + (tg == null ? "-" : (string)tg.GetType().GetField("Src").GetValue(tg)) + "/ai" + Fld<bool>(helm, "_aiOn")  + "/rays" + Fld<int>(staff, "_scanIdx"); }
+                    foreach (var o in Fld<System.Collections.IDictionary>(helm, "_contacts").Values) if ((string)o.GetType().GetField("Src").GetValue(o) == "SCAN") { scan++; break; }
+                });
+                if (bit > 0 && rays >= 20) ok++;
+                Info("seed " + seed + ": ticks with H2S bit 11 at the Staff " + bit + ", ticks with a SCAN contact in the Helm " + scan + dbg);
+            }
+            Check(ok == 3, "H2S bit 11 SCAN: the Staff casts the auto-scan rays while the Helm asks (" + ok + "/3 seeds; SCAN contacts are info only: the pre-split Helm found none in this 900 m set-up either)");
         }
     }
 }

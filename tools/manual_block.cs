@@ -1,50 +1,40 @@
-// >>> MANUAL v1.1 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat, Run menu; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
+// >>> MANUAL v1.2 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
 // MANUAL is a mode of the Helm script, not another script. While somebody sits in a flight seat (an IMyShipController that CanControlShip and is not the Remote Control)
 // the script gives the ship to him: every gyro and thruster override is released the tick the seat is taken, the dampener switch goes back to his state, the AI blocks
 // go off, target tracking, sensors and turrets keep running, and ManFly() replaces Control(). The seat must stay taken for "Seat Debounce" before MANUAL is committed
 // (until then the ship is only held free), and stay empty for "Release Delay" before the script flies again from its saved auto mode (_mode, in Storage).
-// Verbs: manual | auto | pilot (toggle) | assist hud|fbw|off | fire auto|pilot. "manual" / "auto" override the seat until the seat changes. Run without an argument
-// (cockpit toolbar fallback when Run-with-argument does not save): each press steps through "Run Menu", the highlighted item runs 2 s after the last press.
-// Assist: HUD = lead pip and fire window text on the cockpit surface; FBW = fly-by-wire: the pilot's stick rate (Rotation Input Scale, Pilot Rate Gain, Pilot Rot Sign
+// Verbs: manual | auto | pilot (toggle) | assist hud|fbw|off | fire auto|pilot. "manual" / "auto" override the seat until the seat changes.
+// v1.2 (docs/design/flight_split.md H3, helm_split.md Cut 2): the cockpit HUD page and the Run menu live in the Staff PB (StaffAI.cs). The Helm sends the HUD data
+// on "<Ship Tag>.HUD" and a Run without argument as ".MNU" (HELMLINK 1.3); the Staff writes the page, steps "Run Menu" and sends the chosen verb back on .S2H.
+// Without a live Staff a Run without argument toggles "pilot". [Manual] Run Menu / Run Menu Wait / HUD Surface stay in this PB's Custom Data; the Staff reads them.
+// Assist: HUD = lead pip and fire window text on the cockpit surface (written by the Staff); FBW = fly-by-wire: the pilot's stick rate (Rotation Input Scale, Pilot Rate Gain, Pilot Rot Sign
 // are ASSUMED until the in-game tests K1/K2) plus the PD rate to the lead point, only while a lock exists, faded out by the stick (Pilot Priority Rate).
 // Dead-man: a Timer named like "Deadman" is re-armed (Stop + Start) once a second while the script flies; in MANUAL it is stopped.
-// Script hooks: ManCfg() at the end of LoadConfig; ManBlocks() at the end of GetBlocks; ManSeat() early in Tick, then "if (Man) ManFly(dt); else if (!AiStep()) Control(dt);";
-// ManTick() each Update1 tick and ManMenu() for a Run without argument; "if (ManCmd(w)) return;" at the top of Command; ManMode()/ManHud() in Display; ManSave() / ManLoad(..)
-// for Storage; ManCap() as the turn-rate cap of Aim.
-// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _sb, _ai, _aiOn, _aiKick, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
+// Script hooks: ManIn() for the [Manual] line of CONFIG LINK (CfgIn; the Staff's CONFIG SERVER writes and reads the section, H1); ManBlocks() at the end of GetBlocks; ManSeat() early in Tick, then
+// "if (Man) ManFly(dt); else if (!AiStep()) Control(dt);"; ManTick() each Update1 tick; "if (ManCmd(w)) return;" at the top of Command; ManMode() in Display; ManSave() / ManLoad(..)
+// for Storage; ManCap() as the turn-rate cap of Aim. _pipR / _pipU / _aimErrDeg / _fireWinDeg feed the HUD (HELMLINK HlkHud).
+// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _ai, _aiOn, _aiKick, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
 List<IMyShipController> _seats = new List<IMyShipController>(); IMyShipController _seat;
-List<IMyTimerBlock> _dm = new List<IMyTimerBlock>(); IMyTextSurface _hud;
-bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _menuOn; int _force, _asLvl = 1, _menuI; // _force: 0 follow the seat, 1 manual, 2 auto
-double _rawT, _rampT = -99, _w0, _asG = 1, _menuT, _pipR, _pipU;
-double ManDebounce = 0.4, ManRelease = 1.5, ManAssistMax = 1.5, ManGain = 1.5, ManSign = -1, ManScale = 1, ManPrio = 0.3, ManMenuWait = 2;
-bool ManAutoFire, ManScan; string ManMenuItems = "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", ManDmName = "Deadman", ManSeatEx = "gunnery"; int ManHudSurf = 0;
+List<IMyTimerBlock> _dm = new List<IMyTimerBlock>();
+bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _asKeep; int _force, _asLvl = 1; // _force: 0 follow the seat, 1 manual, 2 auto
+double _rawT, _rampT = -99, _w0, _asG = 1, _pipR, _pipU;
+double ManDebounce = 0.4, ManRelease = 1.5, ManAssistMax = 1.5, ManGain = 1.5, ManSign = -1, ManScale = 1, ManPrio = 0.3;
+bool ManAutoFire, ManScan; string ManDmName = "Deadman", ManSeatEx = "gunnery";
 bool Man { get { return _man || _hold; } }
 
-void ManCfg()
-{
-    const string M = "Manual";
-    ManDebounce = Cfg(M, "Seat Debounce", ManDebounce); ManRelease = Cfg(M, "Release Delay", ManRelease);
-    string a = Cfg(M, "Assist (OFF/HUD/FBW)", "HUD").Trim().ToUpperInvariant();
-    _asLvl = a == "FBW" ? 2 : a == "OFF" ? 0 : 1;
-    ManAssistMax = Cfg(M, "Assist Max Rate", ManAssistMax); ManGain = Cfg(M, "Pilot Rate Gain", ManGain); ManSign = Cfg(M, "Pilot Rot Sign", ManSign);
-    ManScale = Math.Max(1e-3, Cfg(M, "Rotation Input Scale", ManScale)); ManPrio = Math.Max(1e-3, Cfg(M, "Pilot Priority Rate", ManPrio));
-    ManAutoFire = Cfg(M, "Auto Fire In Manual", ManAutoFire); ManScan = Cfg(M, "Scan In Manual", ManScan);
-    ManMenuItems = Cfg(M, "Run Menu", ManMenuItems); ManMenuWait = Cfg(M, "Run Menu Wait", ManMenuWait);
-    ManDmName = Cfg(M, "Deadman Timer Name", ManDmName); ManSeatEx = Cfg(M, "Seat Exclude (name part)", ManSeatEx).ToLowerInvariant(); ManHudSurf = (int)Cfg(M, "HUD Surface", (double)ManHudSurf);
+void ManIn()
+{   // [Manual] values in cfg_tables.json order; Run Menu, Run Menu Wait and HUD Surface are the Staff's (HUD page and menu). The assist level saved in Storage wins until "reload".
+    ManDebounce = N(); ManRelease = N(); string a = T().Trim().ToUpperInvariant();
+    if (!_asKeep) _asLvl = a == "FBW" ? 2 : a == "OFF" ? 0 : 1;
+    ManAssistMax = N(); ManGain = N(); ManSign = N(); ManScale = Math.Max(1e-3, N()); ManPrio = Math.Max(1e-3, N()); ManAutoFire = B(); ManScan = B(); T(); N(); ManDmName = T(); ManSeatEx = T().ToLowerInvariant();
 }
 
 void ManBlocks()
 {
-    _seats.Clear(); _dm.Clear(); _hud = null;
+    _seats.Clear(); _dm.Clear();
     GridTerminalSystem.GetBlocksOfType(_seats, b => Own(b) && b.CanControlShip && !(b is IMyRemoteControl) && (ManSeatEx == "" || !b.CustomName.ToLowerInvariant().Contains(ManSeatEx)));   // (a gunnery seat does not take the ship from the Helm)
     string n = ManDmName.ToLowerInvariant();
     if (n != "") GridTerminalSystem.GetBlocksOfType(_dm, b => Own(b) && b.CustomName.ToLowerInvariant().Contains(n));
-    try
-    {
-        var sp = _seats.Count > 0 ? _seats[0] as IMyTextSurfaceProvider : null;
-        if (sp != null && ManHudSurf >= 0 && ManHudSurf < sp.SurfaceCount) { _hud = sp.GetSurface(ManHudSurf); _hud.ContentType = ContentType.TEXT_AND_IMAGE; _hud.FontSize = 0.8f; _hud.Font = "Monospace"; }
-    }
-    catch (Exception) { _hud = null; }
     if (!_dampInit && _rc != null) { _userDamp = _rc.DampenersOverride; _dampInit = true; }   // the pilot's own dampener switch, until MANUAL tracks it
 }
 
@@ -90,10 +80,8 @@ void ManDm(bool arm) { foreach (var t in _dm) { try { t.StopCountdown(); if (arm
 
 void ManTick()
 {
-    if (_menuOn && _now - _menuT > ManMenuWait) { _menuOn = false; var it = ManMenuItems.Split(','); if (it.Length > 0) Command(it[_menuI % it.Length]); }
     if (_tick % 60 == 11) ManDm(!Man);   // dead-man heartbeat: re-armed once a second while the script flies, stopped while a pilot does
 }
-void ManMenu() { _menuI = _menuOn ? _menuI + 1 : 0; _menuOn = true; _menuT = _now; }
 
 bool ManCmd(string[] w)
 {
@@ -108,7 +96,7 @@ bool ManCmd(string[] w)
 }
 
 string ManSave() { return _asLvl + ";" + (_userDamp ? "1" : "0"); }
-void ManLoad(string asl, string dmp) { int a; if (int.TryParse(asl, out a)) _asLvl = Math.Max(0, Math.Min(2, a)); if (dmp == "0" || dmp == "1") { _dampInit = true; _userDamp = dmp == "1"; } }
+void ManLoad(string asl, string dmp) { int a; if (int.TryParse(asl, out a)) { _asLvl = Math.Max(0, Math.Min(2, a)); _asKeep = true; } if (dmp == "0" || dmp == "1") { _dampInit = true; _userDamp = dmp == "1"; } }
 
 // MANUAL flight step (replaces Control): lead data for the HUD, optional auto fire, optional fly-by-wire
 void ManFly(double dt)
@@ -165,26 +153,4 @@ void ManFly(double dt)
 
 string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl == 2 ? "FBW" : "HUD") : "") : (_occ ? "AUTO (pilot aboard) " : "AUTO ") + (_sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString()); }
 
-// compact cockpit page (<= 8 lines)
-string ManHud()
-{
-    if (_rc == null) return "NO CONTROLLER\n";   // (the Remote Control was destroyed)
-    var b = new StringBuilder();
-    b.Append("MODE ").Append(ManMode()).Append(_hold ? " (seat taken)" : "").Append('\n');
-    if (_tgt != null)
-    {
-        b.Append("TGT  ").Append(Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()).ToString("0")).Append(" m  v ").Append(_tgt.V(_now).Length().ToString("0")).Append("  seen ").Append((_now - _tgt.Seen).ToString("0.0")).Append("s  T ").Append(_leadT.ToString("0.00")).Append('\n');
-        b.Append("PIP  R").Append(_pipR.ToString("+0.0;-0.0")).Append(" U").Append(_pipU.ToString("+0.0;-0.0")).Append("  err ").Append(_aimErrDeg.ToString("0.0")).Append(" win ").Append(_fireWinDeg.ToString("0.0")).Append(_fireWinDeg > 0 && _aimErrDeg < _fireWinDeg ? " FIRE" : "").Append("  B").Append(_prim + 1).Append(_bat[_prim].Cls).Append('\n');
-    }
-    else b.Append("TGT  none (").Append(_contacts.Count).Append(")\n");
-    b.Append("PWR ").Append((_batFrac * 100).ToString("0")).Append("% AMMO ").Append((_ammoFrac * 100).ToString("0")).Append("% THR ").Append((_powerScale * 100).ToString("0")).Append("% DAMP ").Append(_rc.DampenersOverride ? "on" : "off").Append("  DEADMAN ").Append(_dm.Count == 0 ? "-" : Man ? "off" : "armed").Append('\n');
-    if (_menuOn) { var it = ManMenuItems.Split(','); b.Append("MENU > ").Append(it[_menuI % it.Length].Trim()).Append(' ').Append(_menuI % it.Length + 1).Append('/').Append(it.Length).Append('\n'); }
-    if (_err != "") b.Append("! ").Append(_err).Append('\n');
-    return b.ToString();
-}
-void ManShow()
-{
-    if (_hud == null) return;
-    try { _hud.WriteText(ManHud()); } catch (Exception) { _hud = null; }
-}
-// <<< MANUAL v1.1 <<<
+// <<< MANUAL v1.2 <<<

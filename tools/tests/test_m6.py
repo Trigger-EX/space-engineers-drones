@@ -8,7 +8,7 @@ Pure python (builds Shrike, Corsair, Warden and, for one test, the Leviathan; ab
   * the ship tag agrees between the Helm ([Link] Ship Tag / [Ship] Tag), the Staff ([Staff] Ship Tag / [Ship] Tag) and the pod PBs ([Pod] Tag);
   * [Link] Block Prefix == [Staff] Block Prefix and every thruster, gyro, gun, turret, battery, seat, camera and the dead-man timer of a prefixed ship carries it;
   * the Helm finds a dead-man timer ("deadman" in its name) and a seat; the Staff's [Hangar n] Pod= names a PB, its Group= a block group; the bay's Merge= / Timer= names exist;
-  * the script sizes: ShrikeAI <= 86,000 minified characters, every other <= 100,000;
+  * the script sizes: every script <= C.PB_BUDGET (80,000) minified characters, ShrikeAI included;
   * the packager files the warships as kind 'ship', the test ships as 'test', the drones as 'drone'.
 """
 import os, re, sys, unittest
@@ -25,7 +25,8 @@ from minify_cs import minify                   # noqa: E402
 _CACHE = {}
 def ship(name):
     if name not in _CACHE:
-        _CACHE[name] = {'Shrike': lambda: shrike.shrike(False), 'Corsair': lambda: corsair.corsair(False), 'Corsair Wing': lambda: corsair.corsair_wing(False),
+        _CACHE[name] = {'Shrike': lambda: shrike.shrike_shipped(False),  # shipped: carries the [Staff] that reads the Helm's Custom Data
+                         'Corsair': lambda: corsair.corsair(False), 'Corsair Wing': lambda: corsair.corsair_wing(False),
                         'Warden': lambda: warden.warden(False), 'Leviathan': lambda: leviathan.leviathan(False)}[name]()
     return _CACHE[name]
 
@@ -65,9 +66,15 @@ SECTION_PREFIX = ('Hangar ', 'Bay ', 'Mount T')
 
 class CustomDataTests(unittest.TestCase):
     def check_keys(self, model, bp):
+        scripts = [x[1] for x in pbs(bp)]
+        if 'ShrikeAI.cs' in scripts:
+            self.assertIn('StaffAI.cs', scripts, f'{model}: a Helm without a Staff never gets its Custom Data (.CFG, flight_split.md 7.1)')
         for name, script, data, _g in pbs(bp):
             if script in (None, 'HornetDroneAI.cs'): continue
             lit = literals(script)
+            # flight_split H1 (2026-10-18): the Helm reads only Tag, Start Mode and [Link] itself; every other key of the Helm PB's Custom Data
+            # is written and parsed by the ship's Staff (StaffAI.cs: CONFIG SERVER + the Helm tables) and reaches the Helm on .CFG.
+            if script == 'ShrikeAI.cs': lit = lit | literals('StaffAI.cs')
             for sec, kv in data.items():
                 base = next((p for p in SECTION_PREFIX if sec.startswith(p)), None)
                 self.assertTrue(sec in lit or (base and base in lit), f'{model} {name}: section [{sec}] is not read by {script}')
@@ -160,7 +167,7 @@ class SizeTests(unittest.TestCase):
     def test_script_sizes(self):
         for f in ('ShrikeAI.cs', 'StaffAI.cs', 'CradleBayAI.cs', 'TurretAI.cs'):
             n = len(minify(src(f)))
-            self.assertLessEqual(n, C.SCRIPT_LIMITS.get(f, 100000), f)
+            self.assertLessEqual(n, getattr(C, 'PB_BUDGET', 80000), f'{f}: {n} minified, over the PB budget (move a module into another PB, CLAUDE.md Script size; flight_split.md section 10)')
 
 class PackagerTests(unittest.TestCase):
     def test_kinds(self):

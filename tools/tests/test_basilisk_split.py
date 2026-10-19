@@ -23,19 +23,23 @@ class BasiliskSplit(unittest.TestCase):
             bp = self.mods['extra'].MODELS[k](False)
             bp.validate()
             ps = pbs(bp)
-            self.assertEqual(sorted(b['name'].split(']')[0] + ']' for b in ps), ['[Flight]', '[Staff]', '[Thrust]'], [b['name'] for b in ps])
+            # flight_split 7.2 (2026-10-18): the Basilisk got the [Aux] PB (search, AI setup, weakpoint relay, repair client, seeker)
+            self.assertEqual(sorted(b['name'].split(']')[0] + ']' for b in ps), ['[Aux]', '[Flight]', '[Staff]', '[Thrust]'], [b['name'] for b in ps])
             fl = [b for b in ps if b['name'].startswith('[Flight]')][0]
             st = [b for b in ps if b['name'].startswith('[Staff]')][0]
             self.assertIn('LkInit(', fl['extra']); self.assertIn('BASILISK STAFF', st['extra'])
-            self.assertEqual(tuple(st['min']), (-2, 0, 1)); self.assertEqual(bp.stats()['dims'], (17.5, 17.5, 20.0))
+            self.assertEqual(tuple(st['min']), (-1, 0, 1)); self.assertEqual(bp.stats()['dims'], (17.5, 17.5, 20.0))   # (-1, 0, 1) since the [Aux] PB: bury_swap now buries the Staff one cell deeper (was (-2, 0, 1))
             n = [b['name'] for b in C.add_support_pbs(bp).blocks if b['xtype'].endswith('MyProgrammableBlock')]
-            self.assertEqual(len(n), 3, n); self.assertTrue(any(x.startswith('[Thrust]') for x in n))
+            self.assertEqual(len(n), 4, n); self.assertTrue(any(x.startswith('[Thrust]') for x in n)); self.assertTrue(any(x.startswith('[Aux]') for x in n))
 
-    def test_shrike_basilisk_test_is_unchanged(self):
+    def test_shrike_basilisk_test_runs_the_helm_with_a_staff(self):
+        # flight_split H1 (2026-10-18): the Helm's Custom Data reaches it from the Staff (StaffAI CONFIG SERVER, .CFG), so the m3 test ship's blank spare
+        # became a StaffAI Staff; no Basilisk script on it
         bp = self.mods['shrike_test'].MODELS['Shrike Basilisk Test'](False)
-        n = [b['name'] for b in pbs(bp)]
-        self.assertFalse(any(x.startswith('[Staff]') for x in n), n)
-        self.assertTrue(any(x.startswith('[Helm]') for x in n))
+        ps = pbs(bp); n = [b['name'] for b in ps]
+        self.assertEqual(sorted(x.split(']')[0] + ']' for x in n), ['[Helm]', '[Staff]'], n)
+        st = [b for b in ps if b['name'].startswith('[Staff]')][0]
+        self.assertNotIn('BASILISK STAFF', st['extra']); self.assertIn('CfModel()', st['extra'])
 
     def test_what_moved(self):
         f, s = src('BasiliskAI.cs'), src('BasiliskStaffAI.cs')
@@ -47,8 +51,9 @@ class BasiliskSplit(unittest.TestCase):
 
     def test_sizes(self):
         from minify_cs import minify
-        self.assertLess(len(minify(src('BasiliskAI.cs'))), 85000)
-        self.assertLess(len(minify(src('BasiliskStaffAI.cs'))), 40000)
+        # flight_split.md 9.4: the stale 85k / 40k limits are replaced by the real targets (the full table is test_flight_split.Sizes)
+        self.assertLessEqual(len(minify(src('BasiliskAI.cs'))), 76500, 'Basilisk Flight over 76,500 minified (flight_split.md 9.3d)')
+        self.assertLessEqual(len(minify(src('BasiliskStaffAI.cs'))), 78000, 'Basilisk Staff over 78,000 minified (flight_split.md 9.3d)')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

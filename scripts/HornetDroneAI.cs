@@ -175,12 +175,8 @@ double _powerScale = 1.0;
 bool _firing = false;
 double _holdFireUntil = 0;
 Vector3D _jink;
-int _scanIdx = 0;
-double _sweepYaw = 0;
 string _err = "";
-double _aimErrDeg = 0, _fireWinDeg = 0, _leadT = 0;
-double _avgMs = 0; int _peakIns = 0;   // instruction counter: PB limit is Runtime.MaxInstructionCount per run
-StringBuilder _sb = new StringBuilder();
+double _aimErrDeg = 0, _fireWinDeg = 0;
 
 
 // >>> AI GATE v1.3 (shared block core: identical in every drone script that uses AI-block search, synced by tools/ai_gate_sync.py) >>>
@@ -237,79 +233,6 @@ bool AiGate(bool want)
     return _agAi;
 }
 // <<< AI GATE <<<
-
-// >>> AI GATE SETUP v1.0 (sub-block of AI GATE v1.3: one-time AI-block setup; tools/ags_block.cs, synced by tools/blocks_sync.py) >>>
-// Switches "AI Behavior" on, sets IMyFlightMovementBlock.SpeedLimit (typed API, opt-in) and IMyOffensiveCombatBlock.UpdateTargetInterval on the [AI]
-// blocks. Off the hot path (terminal property writes that persist in the world), so it may run in another PB than the AI GATE core: final hosts AuxAI
-// (drones), StaffAI (Helm ships), GnatStaffAI (variant G2), WaspAI and TubeRamAI (standalone, with the core). The Aux sets the four fields from the
-// SDK cfg line "agSwitch|agTyped|agSpeed|agEvery" with its own host code (AgSet(string) in AuxAI.cs) and calls AiGateFind when SDK bit 9 AI ASSIST rises,
-// when those values change, and on its 600-tick block rescan while bit 9 is set (flight_split.md 6.4).
-// Hooks: AiGateFind(list of [AI] blocks) after the AI blocks are found; AiGateStatus() in the status text.
-// Uses from the script: _agLive (declared by the AI GATE core; a host without the core declares "bool _agLive;" itself, false = no "AI ok" suffix).
-bool AiBehaviorSwitch = true, AiTyped = false; double AiSpeed = 100; int AiSearchEvery = 5, _agFound = -1;   // _agFound: -1 not tried, else the number of AI blocks whose behaviour switch was found
-List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
-
-void AiGateFind(List<IMyFunctionalBlock> ai)
-{
-    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
-    if (!AiBehaviorSwitch || ai.Count == 0) return;
-    int n = 0;
-    foreach (var b in ai)
-    {
-        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
-        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
-        _agProps.Clear(); b.GetProperties(_agProps);
-        ITerminalProperty<bool> sw = null;
-        foreach (var p in _agProps)
-        {
-            string id = p.Id.ToLowerInvariant();
-            if (!id.Contains("behavio")) continue;
-            var bp = p.As<bool>();
-            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
-        }
-        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
-        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
-    }
-    _agFound = n;
-}
-
-string AiGateStatus()
-{
-    if (_agFound < 0) return "";
-    if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
-    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
-}
-// <<< AI GATE SETUP v1.0 <<<
-
-// >>> AI GATE CONFIG v1.0 (sub-block of AI GATE v1.3: the [AI Gate] section, read locally; tools/agc_block.cs, synced by tools/blocks_sync.py) >>>
-// Hosts that read their own Custom Data (WaspAI, TubeRamAI). Writes the 8 defaults on first run ("reload" re-reads them) into the AI GATE core fields
-// (AiGateOn, AiWin, ScriptWin, AiHoldMax) and the AI GATE SETUP fields (AiBehaviorSwitch, AiTyped, AiSpeed, AiSearchEvery): a host needs both blocks.
-// A split Flight / Helm gets these values from its Staff (CONFIG LINK AgSet4 for the core four; the setup four go to the Aux in the SDK cfg).
-// Hook: AiGateLoad() after FleetLoad(true).
-void AiGateLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "AI Gate";
-    if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
-    if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
-    if (!ini.ContainsKey(S, "Use Typed AI Block API")) ini.Set(S, "Use Typed AI Block API", AiTyped);
-    if (!ini.ContainsKey(S, "AI Flight Speed Limit (m/s)")) ini.Set(S, "AI Flight Speed Limit (m/s)", AiSpeed);
-    if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
-    if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
-    if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
-    if (!ini.ContainsKey(S, "AI Search Interval (s)")) ini.Set(S, "AI Search Interval (s)", AiSearchEvery);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
-    AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
-    AiTyped = ini.Get(S, "Use Typed AI Block API").ToBoolean(AiTyped);
-    AiSpeed = Math.Max(1, ini.Get(S, "AI Flight Speed Limit (m/s)").ToDouble(AiSpeed));
-    AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
-    ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
-    AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
-    AiSearchEvery = Math.Max(0, ini.Get(S, "AI Search Interval (s)").ToInt32(AiSearchEvery));
-}
-// <<< AI GATE CONFIG v1.0 <<<
 
 
 // >>> LEAD v1.0 (shared block: identical in every armed drone script, see docs/lead-v1.md) >>>
@@ -572,87 +495,6 @@ void KzShare()
 }
 // <<< KAMIKAZE DEFENCE <<<
 
-// >>> KZ CONFIG v1.0 (sub-block of KAMIKAZE DEFENCE v1.1: the [Kamikaze Defence] section, read locally; tools/kzc_block.cs, synced by tools/blocks_sync.py) >>>
-// Hosts that read their own Custom Data (WaspAI). A split Flight / Helm gets these values from its Staff (CONFIG LINK KzSet) and does not carry this block.
-// Writes the defaults of the [Kamikaze Defence] section on first run ("reload" re-reads it) into KAMIKAZE DEFENCE's fields (KzOn .. KzShareOn).
-// Hooks: KzLoad() next to every FleetLoad(true); _sb.Append(KzStatus()) after HiveStatus(). Uses from the core: the Kz* fields, _kz, _kzMine.
-void KzLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Kamikaze Defence";
-    KzOn = KzB(ini, S, "Enabled", KzOn);
-    KzMaxRadius = KzD(ini, S, "Max Kamikaze Radius (m)", KzMaxRadius);
-    KzHorizon = KzD(ini, S, "Warning Time (s)", KzHorizon);
-    KzMiss = KzD(ini, S, "Miss Distance (m)", KzMiss);
-    KzMissPerKm = KzD(ini, S, "Miss Distance Per km Of Range (m)", KzMissPerKm);
-    KzMinClosing = KzD(ini, S, "Min Closing Speed (m/s)", KzMinClosing);
-    KzPriority = KzD(ini, S, "Priority Bonus", KzPriority);
-    KzMates = KzB(ini, S, "Protect Hive Mates", KzMates);
-    KzBack = KzB(ini, S, "Back Away", KzBack);
-    KzBackSpeed = KzD(ini, S, "Back Away Speed (m/s)", KzBackSpeed);
-    KzBackRange = KzD(ini, S, "Back Away Within (m)", KzBackRange);
-    KzReact = KzD(ini, S, "Back Away Reaction Time (s)", KzReact);
-    KzBreak = KzB(ini, S, "Break Sideways", KzBreak);
-    KzBreakTime = KzD(ini, S, "Break Time (s)", KzBreakTime);
-    KzBreakSpeed = KzD(ini, S, "Break Speed (m/s)", KzBreakSpeed);
-    KzBreakMiss = KzD(ini, S, "Break Miss Distance (m)", KzBreakMiss);
-    KzRays = KzB(ini, S, "Track And Pack Search Rays", KzRays);
-    KzPack = KzD(ini, S, "Pack Search Radius (m)", KzPack);
-    KzReserve = KzD(ini, S, "Camera Charge Reserve (m)", KzReserve);
-    KzShareOn = KzB(ini, S, "Share Threats With Hive", KzShareOn);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-}
-double KzD(MyIni i, string s, string k, double d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToDouble(d); }
-bool KzB(MyIni i, string s, string k, bool d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToBoolean(d); }
-
-string KzStatus()
-{
-    if (!KzOn) return "";
-    if (_kz.Count == 0) return "Kamikaze: none incoming\n";
-    var k = _kz[0];
-    return "!! KAMIKAZE x" + _kz.Count + " (" + _kzMine + " at me)  next " + k.Tgo.ToString("0.0") + " s " + k.Dist.ToString("0") + " m" + (k.Mine ? "" : " (mate)") + "\n";
-}
-// <<< KZ CONFIG v1.0 <<<
-
-// >>> KZ RAYS v1.0 (sub-block of KAMIKAZE DEFENCE v1.1: the kamikaze pack / refresh rays cast by this PB's own cameras; tools/kzr_block.cs, synced by tools/blocks_sync.py) >>>
-// Hosts that cast their own camera rays (WaspAI, ShrikeAI, GnatSwarmAI under variant G2). The 8 split drone Flights get KzRayStep() from SEARCH LINK
-// instead (a proxy that sends the threats on .KZR; the Aux PB casts the rays and returns hits on .SCN). Called by KzAssess() once per pass while threats exist.
-// Uses from the script: _kz, _kzRay, _tgt, _now, _rc, KzPack, KzReserve, CamFor(), Valid(), AddContact().
-// Spare camera charge: one ray refreshes the stalest incoming track that is not the current target, one (every 2nd pass) searches
-// round a known kamikaze for the rest of its pack (they launch together). A camera is used only with KzReserve metres of charge left over.
-void KzRayStep()
-{
-    Vector3D me = _rc.GetPosition();
-    KzThreat st = null;
-    foreach (var k in _kz) if (k.T != _tgt && _now - k.T.Seen > 0.25 && (st == null || k.T.Seen < st.T.Seen)) st = k;
-    if (st != null)
-    {
-        Vector3D p = st.T.P(_now), d = p - me; double len = d.Length();
-        if (len > 1)
-        {
-            Vector3D aim = p + d / len * Math.Min(st.T.Radius + 2, 8);
-            var c = CamFor(aim, len + KzReserve);
-            if (c != null) { var e = c.Raycast(aim); if (Valid(e)) AddContact(e, "KZ"); }
-        }
-    }
-    if ((++_kzRay & 1) == 1) return;
-    var pk = _kz[(_kzRay >> 1) % _kz.Count];
-    if (_now - pk.T.Seen > 1) return;
-    Vector3D pc = pk.T.P(_now), dl = pc - me; double dd = dl.Length();
-    if (dd < 30) return;
-    dl /= dd;
-    Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
-    Vector3D vv = Vector3D.Cross(dl, uu);
-    double rr = KzPack * Math.Sqrt(((_kzRay >> 1) % 17 + 0.5) / 17.0), th = _kzRay * 2.39996323;
-    Vector3D pt = pc + uu * (rr * Math.Cos(th)) + vv * (rr * Math.Sin(th)) + dl * KzPack;
-    var cam = CamFor(pt, dd + KzPack + KzReserve);
-    if (cam == null) return;
-    var pe = cam.Raycast(pt);
-    if (Valid(pe)) AddContact(pe, "KZ");
-}
-// <<< KZ RAYS v1.0 <<<
-
 void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }   // a failing setup step must not kill the script for good: the rest still runs and the error is on the screen
 
 // >>> FRIENDLY AVOIDANCE v1.0 (shared block: identical in every combat drone script, synced by tools/blocks_sync.py, see docs/friendly-avoidance.md) >>>
@@ -756,13 +598,14 @@ void TvAim(ref Vector3D f, ref Vector3D u, ref Vector3D ff)
 }
 // <<< THRUST VECTOR LINK <<<
 
-// >>> SPLIT LINK v1.1 (shared block: identical in every Flight half of a two-PB drone, synced by tools/split_sync.py, see docs/design/wasp_split.md) >>>
+// >>> SPLIT LINK v1.2 (shared block: identical in every Flight half of a two-PB drone, synced by tools/split_sync.py, see docs/design/wasp_split.md) >>>
 // Flight side of the Flight/Staff link; the Staff PB (scripts/<Drone>StaffAI.cs) has the other end. Everything that is not on the hot path lives there:
 // FLEET LINK, FOLLOW / SATELLITE geometry, LAUNCH (take-off burn), the status screen. IGC key "WSPL" + this PB's EntityId, TransmissionDistance.CurrentConstruct.
 // Script hooks: LkInit() with the other listener setup; ReadIGC(); LkRead(); LkSend() in the tick; "if (!LkBurn && !AiStep()) Control(dt)"; "if (LkBurn) return;" first in Control();
 // LkWantOk/_lkWant/LkFar/LkBack/LkEngage/_lkOwner/_lkOwnerP in the FOLLOW code; ReadTgt(_lkTgt); LkAmmo() = the script's ammo count (0-254, 255 unknown).
-// Uses: _now, _tick, _mode, _firing, _aiOn, UnderFire, LockStale, _tgt, _aimErrDeg, _fireWinDeg, _batFrac, _gateWhy, _dynHome, _dynHomeT, MaxSpeed, ParseMode, Command.
-// WEAKPOINT: .WPT (Staff -> Flight) feeds the BREACH block's _wp* slot, WpSend() carries its .WPF (Flight -> Staff); the relay itself is the Staff PB's WEAKPOINT RELAY block.
+// Uses: _now, _tick, _mode, _firing, _aiOn, UnderFire, LockStale, _tgt, _aimErrDeg, _fireWinDeg, _batFrac, _gateWhy, _dynHome, _dynHomeT, MaxSpeed, ParseMode, Command, CfWant (CONFIG LINK), AiAssist.
+// WEAKPOINT: .WPT (Aux -> Flight) feeds the BREACH block's _wp* slot, WpSend() carries its .WPF (Flight -> Aux); the relay itself is the Aux PB's WEAKPOINT RELAY block.
+// v1.2 (flight_split): F2S flags bit 16 CFG WANT (CONFIG LINK CfWant; F2S goes out at least every 12 ticks), bit 17 AI ASSIST (runtime AiAssist: the Aux does the AI-block setup).
 string _lkK = ""; IMyBroadcastListener _lkFol, _lkCmd, _lkTgt, _lkWpt;
 Vector3D _lkWant, _lkOwnerP, _lkOwnerV; double _lkEng = 800, _lkLeash = 1200, _lkT = -99, _aBrake = 5; int _lkFl, _lkMd = -9; bool _lkOwner;
 bool LkAlive { get { return _now - _lkT < 1.0; } }                       // the Staff PB talks (a FOL at least every 0.5 s)
@@ -773,7 +616,7 @@ void LkInit()
 {
     _lkK = "WSPL" + Me.EntityId;
     _lkFol = IGC.RegisterBroadcastListener(_lkK + ".FOL"); _lkCmd = IGC.RegisterBroadcastListener(_lkK + ".S2F"); _lkTgt = IGC.RegisterBroadcastListener(_lkK + ".TGT");
-    _lkWpt = IGC.RegisterBroadcastListener(_lkK + ".WPT");   // best fleet weakpoint for my target (WEAKPOINT RELAY, Staff PB) -> the _wp* slot of the BREACH block
+    _lkWpt = IGC.RegisterBroadcastListener(_lkK + ".WPT");   // best fleet weakpoint for my target (WEAKPOINT RELAY, Aux PB) -> the _wp* slot of the BREACH block
 }
 void WpSend(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> tup) { if (LkAlive) IGC.SendBroadcastMessage(_lkK + ".WPF", tup, TransmissionDistance.CurrentConstruct); }
 bool LkFar(Vector3D me) { double l = LkAlive ? _lkLeash : 1200; return _lkOwner && Vector3D.DistanceSquared(me, _lkOwnerP) > l * l; }
@@ -811,7 +654,7 @@ void LkSend()
     int md = (int)_mode;
     if (md == _lkMd && _tick % 12 != 5) return;
     _lkMd = md;
-    int f = md | (_firing ? 8 : 0) | (UnderFire ? 16 : 0) | (LockStale ? 32 : 0) | (_aiOn ? 64 : 0) | (LkAmmo() < 0 ? 255 : Math.Min(254, LkAmmo())) << 8;
+    int f = md | (_firing ? 8 : 0) | (UnderFire ? 16 : 0) | (LockStale ? 32 : 0) | (_aiOn ? 64 : 0) | (LkAmmo() < 0 ? 255 : Math.Min(254, LkAmmo())) << 8 | (CfWant ? 65536 : 0) | (AiAssist ? 131072 : 0);
     var t = _tgt;
     IGC.SendBroadcastMessage(_lkK + ".F2S", new MyTuple<int, long, Vector3D, Vector3D, float, string>(f, t != null ? t.Id : 0, t != null ? t.P(_now) : Vector3D.Zero,
         new Vector3D(_aimErrDeg, _fireWinDeg, _aBrake), (float)_batFrac, LkGate()), TransmissionDistance.CurrentConstruct);
@@ -874,7 +717,7 @@ bool PatrolStep()
 double SvRange() { return MaxFireRange; }
 void SvResync() { _aiOn = !_aiOn; _firing = false; _aiKick = false; }
 
-// >>> SURVIVAL LINK v1.0 (evade, jinks, survival advice from the Staff PB, docs/design/survivability.md) >>>
+// >>> SURVIVAL LINK v1.1 (evade, jinks, survival advice from the Staff PB, docs/design/survivability.md) >>>
 // The Flight side of the survivability plan. Only what must react within a tick or what only the Flight PB sees lives here: the dodge on a hit, the
 // lead-breaking jinks, missile sightings, per-check hit stats, the railgun power guard, and applying the Staff's advice. Every decision (damage RTB,
 // limp caps, failover, threat memory, blind side, gather, missile dodge, flares) is the Staff PB's SURVIVAL STAFF block. Advice older than 0.6 s is
@@ -891,7 +734,7 @@ void SvResync() { _aiOn = !_aiOn; _firing = false; _aiKick = false; }
 //       yields), 10 fight back in RTB, 11 standoff advice (N.X floor, N.Y add), 16-23 limp speed cap m/s, 24-27 threat class; N.Z enemy projectile speed.
 // Failover handshake (plan item 5): SvYield is true for the first 6 ticks and while a fresh SVS has bit 9; the tick it ends SvResync() resends the AI and gun state.
 // Hooks: SvInit() after LkInit(); SvRead() after LkRead(); "if (!LkBurn && !SvYield && !AiStep()) Control(dt)"; SvSend() after LkSend(); "_svSentT = -99;" in the
-// run-gap line; SvLoad(_ini) in LoadConfig; _guns.RemoveAll(SvNotGun) in GetBlocks; SvSee(e) first in Valid(); "_svNb++; _svMax = Math.Max(_svMax, drop);" in
+// run-gap line; (v1.1: the [Survival] values come from the Staff on .CFG: CONFIG LINK calls SvSet() for the S line); _guns.RemoveAll(SvNotGun) in GetBlocks; SvSee(e) first in Valid(); "_svNb++; _svMax = Math.Max(_svMax, drop);" in
 // CheckDamage's hit-block branch and SvDamage() at its end; "| SvSwarm()" in the SWARM flags; SvStatus() on the screen; "if (LkBurn || SvYield) return;" first
 // in Release(); Control: SvStand, SvJink, SvOrbit, SvGather, SvHome/SvViaOn/SvFightBack, SvBrake, SvCap, SvWant. Railgun drones: SvPower(load, SvRecharging())
 // at the end of PowerAndHealth, SvRails(true) first in Release(), SvRails(!_svRx) in GetBlocks. Per script: double SvRange() (own max fire range),
@@ -911,15 +754,8 @@ bool SvViaOn { get { return SvOn(2); } }
 bool SvFightBack { get { return SvOn(1024); } }
 bool SvMine { get { return _tgt != null && _svTid == _tgt.Id; } }
 void SvInit() { _svL = IGC.RegisterBroadcastListener(_lkK + ".SVS"); }
-// [Survival] keys in this PB's Custom Data: read only (the Staff PB writes the defaults, after our first F2S); the defaults here equal the Staff's
-MyIni _svI;
-double SvK(string k, double d) { return _svI.Get("Survival", k).ToDouble(d); }
-void SvLoad(MyIni i)
-{
-    _svI = i; SvLJ = i.Get("Survival", "Lead-Breaking Jinks").ToBoolean(true); SvPG = i.Get("Survival", "Power Guard").ToBoolean(true);
-    SvJa = SvK("Jink Accel Fraction", 0.8); SvEv = SvK("Enemy Projectile Speed (m/s)", 800); SvJm = SvK("Jink Period Min (s)", 0.4);
-    SvJM = SvK("Jink Period Max (s)", 3); SvJr = SvK("Jink Period Random", 0.3); SvPh = SvK("Power Guard Hold (s)", 2);
-}
+// [Survival] values (the Staff writes the defaults and sends them on .CFG): CONFIG LINK's S line, tools/cfg_tables.json "shared" order; defaults = the Staff's
+void SvSet() { SvLJ = B(); SvPG = B(); SvJa = N(); SvEv = N(); SvJm = N(); SvJM = N(); SvJr = N(); SvPh = N(); }
 void SvTx<T>(string c, T d) { IGC.SendBroadcastMessage(_lkK + c, d, TransmissionDistance.CurrentConstruct); }
 void SvRead()
 {
@@ -1060,7 +896,188 @@ void SvPower(double load, bool rech)
     if (!_svRx && SvPG && need && rech && load > 0.97 && _powerScale < 0.6 && _now - _svRo > SvPh) { SvRails(false); _svRf = _now; }
     else if (_svRx && (!SvPG || !need || _now - _svRf > SvPh)) { SvRails(true); _svRo = _now; }
 }
-// <<< SURVIVAL LINK v1.0 <<<
+// <<< SURVIVAL LINK v1.1 <<<
+
+// >>> CONFIG LINK v1.0 (Flight / Helm side of the config move, docs/design/flight_split.md 3, 4.1, 4.3, 6.1; tools/cl_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 9 drone Flights and ShrikeAI. The PB never writes its own Custom Data any more: the Staff's CONFIG SERVER (tools/cs_block.cs) writes
+// every default there, parses the values and sends them on .CFG; this block applies them and caches the string in Storage.
+// Channel (TransmissionDistance.CurrentConstruct): listener CfKey() + ".CFG" (drones CfKey() = _lkK = "WSPL"+<Flight PB EntityId>; Helm "<Ship Tag>.").
+//   .CFG  Staff -> Flight/Helm, string (exact format, the CONFIG SERVER builds the same):
+//         line 0  "CF1\t<schema>\t<status>"      status: "ok", or (Longbow, Mantis) the weapon the Staff detected; kept in _cfX, shown after "cfg: Staff, "
+//         line i  "<letter>\t<v1>\t<v2>...\n"    one line per section, values in tools/cfg_tables.json order (empty lines are skipped)
+//         letters: M the model section (cfg_tables "sections" of the model, WITHOUT the "local" entries IGC Tag / Start Mode), K [Kamikaze Defence]
+//         (all 20), A [AI Gate] (only the 4 "block":"core" entries: AiGateOn, AiWin, ScriptWin, AiHoldMax; the 4 setup values go to the Aux in SDK),
+//         S [Survival] (all 8). Drone line order M K A S. Helm (4.3): one line per Helm section with its own letter (CfgIn switches on _cfV[0]), then K A.
+//         Values: bools "1"/"0" (anything else reads false), doubles and ints ToString("R") (read with double.TryParse, current culture on both PBs;
+//         ints are read as doubles and cast by the post-op), strings raw (no tab / newline). Values are sent RAW (as MyIni reads them); the post-ops
+//         of cfg_tables.json ((int), Math.Max clamps, .Trim().ToUpperInvariant()) are applied here, in CfgIn / AgSet4 (all are idempotent).
+//         schema = cfg_tables.json "version" + "/" + the value count of each line, in line order; drone example (Mantis) "1/84/20/4/8".
+//         The Flight accepts a message only if the header schema equals its const CfSchema AND the schema rebuilt from the lines it got equals it too;
+//         otherwise nothing is applied and the screen says "! config schema: update Flight and Staff together".
+//   WANT: CfWant rides on drone F2S flags bit 16 (SPLIT LINK v1.2: F2S goes out at least every 12 ticks); Helm H2S bit 9 (HELMLINK 1.3). The Staff answers
+//         a WANT within one F2S period, at most once per 30 ticks per key, re-reading the Flight's Custom Data at that moment ("reload" reaches both PBs).
+//   AI ASSIST (runtime AiAssist) rides beside it: F2S bit 17 / H2S bit 10; the Aux (SDK bit 9) or StaffAI does the AI-block setup.
+// Contract: value readers N() (double), B() (bool), T() (string) read the next value of the line being applied (_cfV, cursor _cfI, _cfV[0] = letter).
+//   bool CfApply(string): schema check, then applies atomically line by line: K -> KzSet(), A -> AgSet4(), S -> SvSet() (in SURVIVAL LINK v1.1),
+//   any other letter -> host CfgIn(). Returns false (nothing applied) on a mismatch. CfRead(): applies each .CFG, then clears CfWant, keeps the string
+//   (CfSave) and sets the screen line _cfSt. string CfLoad(): applies the Storage cache at start (status "cfg: cached") and returns the host's own part
+//   of Storage. string CfSave(): the suffix the host appends to its Storage in Save() ("\u0001" + the last applied .CFG). bool CfWant: true from start
+//   and "reload" until a matching .CFG is applied.
+// Host hooks: string CfKey(); const string CfSchema; void CfgIn() (model line(s), one statement per field in cfg_tables.json order with the post-ops,
+//   generated from cfg_tables.json); a Helm without SURVIVAL LINK declares "void SvSet() { }". Calls: CfInit() after the link key exists (drones: after
+//   LkInit()), "string st = CfLoad();" before the host parses Storage, CfRead() in the tick, "+ CfSave()" in Save(), "CfWant = true;" in "reload",
+//   "\n" + _cfSt on the screen. Tag and Start Mode stay local (Get-only reads; the IGC channels are registered in the constructor).
+// Sync: until a matching .CFG arrives the PB runs on its Storage cache, else on its field defaults ("cfg: defaults (no Staff)"); after an apply
+//   "cfg: Staff". Runtime words (aim, breach, wp, range, split/focus, ai on|off) last until the next start or "reload"; the Staff never pushes config
+//   unasked. Flight rebuilt: new key + WANT. Staff rebuilt: answers the next WANT. Run gap: nothing (the config is in memory).
+IMyBroadcastListener _cfL; bool CfWant = true; string _cfS = "", _cfX = "", _cfSt = "cfg: defaults (no Staff)"; string[] _cfV; int _cfI;
+double N() { double v; double.TryParse(_cfV[_cfI++], out v); return v; }
+bool B() { return _cfV[_cfI++] == "1"; }
+string T() { return _cfV[_cfI++]; }
+void CfInit() { _cfL = IGC.RegisterBroadcastListener(CfKey() + ".CFG"); }
+bool CfApply(string s)
+{
+    var L = s.Split('\n'); var h = L[0].Split('\t'); string c = "1";
+    for (int i = 1; i < L.Length; i++) if (L[i] != "") c += "/" + (L[i].Split('\t').Length - 1);
+    if (h.Length < 3 || h[0] != "CF1" || h[1] != CfSchema || c != CfSchema) return false;
+    _cfX = h[2];
+    for (int i = 1; i < L.Length; i++)
+    {
+        if (L[i] == "") continue;
+        _cfV = L[i].Split('\t'); _cfI = 1;
+        char k = _cfV[0][0];
+        if (k == 'K') KzSet(); else if (k == 'A') AgSet4(); else if (k == 'S') SvSet(); else CfgIn();
+    }
+    return true;
+}
+void CfRead()
+{
+    while (_cfL.HasPendingMessage)
+    {
+        var m = _cfL.AcceptMessage(); string s = m.Data as string;
+        if (s == null) continue;
+        if (!CfApply(s)) { _cfSt = "! config schema: update Flight and Staff together"; continue; }
+        CfWant = false; _cfS = s; _cfSt = "cfg: Staff" + (_cfX != "ok" && _cfX != "" ? ", " + _cfX : "");
+    }
+}
+string CfLoad()
+{
+    var p = Storage.Split('\u0001');
+    if (p.Length > 1 && CfApply(p[1])) { _cfS = p[1]; _cfSt = "cfg: cached"; }
+    return p[0];
+}
+string CfSave() { return _cfS != "" ? "\u0001" + _cfS : ""; }
+void KzSet()
+{
+    KzOn = B(); KzMaxRadius = N(); KzHorizon = N(); KzMiss = N(); KzMissPerKm = N(); KzMinClosing = N(); KzPriority = N(); KzMates = B(); KzBack = B();
+    KzBackSpeed = N(); KzBackRange = N(); KzReact = N(); KzBreak = B(); KzBreakTime = N(); KzBreakSpeed = N(); KzBreakMiss = N(); KzRays = B();
+    KzPack = N(); KzReserve = N(); KzShareOn = B();
+}
+void AgSet4() { AiGateOn = B(); AiWin = Math.Max(1, N()); ScriptWin = Math.Max(1, N()); AiHoldMax = Math.Max(AiWin, N()); }
+// <<< CONFIG LINK v1.0 <<<
+
+// >>> DAMAGE LINK v1.0 (Flight side of the damage-sensing move, docs/design/flight_split.md 3, 4.1, 6.2; tools/dl_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 9 drone Flights (GnatSwarmAI since flight_split P2-G2: its .DMG comes from GnatStaffAI's GNAT HIT BEARING, after each 2-tick check with a
+// drop, <= 30 Hz). The Staff's DAMAGE SENSE (tools/ds_block.cs) runs the
+// slim scan and CheckDamage and sends the result; Evade and the jinks stay in the Flight and read _hits / _hitDir as before.
+// Channel (TransmissionDistance.CurrentConstruct, key _lkK = "WSPL"+<Flight PB EntityId>):
+//   .DMG  Staff -> Flight   MyTuple<int, double, Vector3D, double, int, double> = (hits, integ, hitDir, hitDirAge, blocksHit, maxDrop); hits is a
+//         cumulative counter (CheckDamage's _hits), integ the summed integrity (-1 unknown), hitDirAge the age of hitDir at send time (s),
+//         blocksHit / maxDrop of the checks since the previous message (capped age 99 s for hitDirAge). After each CheckDamage with a drop (<= 3 Hz),
+//         else 1 Hz.
+// Receiver: _integ = integ, _hitDir / _hitDirT = hitDir / now - hitDirAge; when hits rose while the link was alive: _hitAt = _now, _hits += the rise,
+//   _svNb += blocksHit, _svMax = max(_svMax, maxDrop) (SURVIVAL LINK's per-check stats); then SvDamage() (SURVIVAL LINK) on every message.
+// Sync: first message, or a counter that went down (a new Staff): copy the counter, no hit. .DMG silent for 3 s after it was heard: _hitAt = _now
+//   once and _integ = -1 (the helm_split rule); the next message counts as a first one.
+// Hooks: DlInit() after LkInit(); DlRead() after LkRead(). Uses: _now, _lkK, _hits, _hitAt, _hitDir, _hitDirT, _integ, _svNb, _svMax, SvDamage().
+IMyBroadcastListener _dlL; double _dlT = -99; int _dlH = -1;
+void DlInit() { _dlL = IGC.RegisterBroadcastListener(_lkK + ".DMG"); }
+void DlRead()
+{
+    while (_dlL.HasPendingMessage)
+    {
+        var m = _dlL.AcceptMessage();
+        if (!(m.Data is MyTuple<int, double, Vector3D, double, int, double>)) continue;
+        var d = (MyTuple<int, double, Vector3D, double, int, double>)m.Data;
+        if (_dlH >= 0 && d.Item1 > _dlH) { _hitAt = _now; _hits += d.Item1 - _dlH; _svNb += d.Item5; _svMax = Math.Max(_svMax, d.Item6); }
+        _dlH = d.Item1; _dlT = _now; _integ = d.Item2;
+        if (d.Item4 < 1e3) { _hitDir = d.Item3; _hitDirT = _now - d.Item4; }
+        SvDamage();
+    }
+    if (_dlH >= 0 && _now - _dlT > 3) { _hitAt = _now; _integ = -1; _dlH = -1; }
+}
+// <<< DAMAGE LINK v1.0 <<<
+
+// >>> SEARCH LINK v1.0 (Flight side of the search move, docs/design/flight_split.md 3, 4.1, 4.2, 6.3, 6.6; tools/sq_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 8 drone Flights (not the Gnat under G2). The Aux PB's SEARCH block (tools/sc_block.cs) casts the auto-scan, the all-round close scan,
+// the hit-look, the manual lock ray, the sensor poll and the KZ rays; this block tells it what to do and rebuilds the contacts it finds. The tracked
+// target (MaintainLock, designators, Track, Lead) stays in the Flight.
+// Channels (TransmissionDistance.CurrentConstruct, key _lkK = "WSPL"+<Flight PB EntityId>):
+//   .SCS  Flight -> Aux   MyTuple<int, long, Vector3D, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D, Vector3D, Vector3D>>
+//         = (flags, tgtId, lostPos, lostVel, hitDir, p). Every 6 ticks + at once on a flag change (and after a run gap). Stale at the Aux after 30 ticks.
+//         flags: bit0 AUTO (the host's old auto-scan condition, e.g. no target, AI off, AutoScan on, mode GUARD/HUNT/FOLLOW), bit1 OMNI (mode not IDLE
+//         and CloseScan on), bit2 HARD (UnderFire or Alerted), bit3 has target, bit4 AI on, bit5 SENSORS, bit6 HITLOOK, bit7 KZRAYS (KzRays), bits 8-15
+//         lock request counter (+1 per "lock" word), bit17 lock camera uses Forwardish (0.9) instead of 0.99. Bits 0, 5, 6 and 17 come from the host's
+//         int SqF() (the 8: AUTO | 96; Gnat: AUTO (its own condition) | bit17, no sensor, no hit-look).
+//         lostPos / lostVel: the dropped target's last state (NoteLost; the Aux extrapolates lostPos + lostVel * min(lost age, 10)).
+//         p: a = (auto-scan range, scan cone in degrees, spiral N) from the host's SqA(); b = (close-scan range, 900 = hard-scan range, lock range);
+//         c = (lost age, hit-dir age, lost radius) in s, s, m; d = (KzPack, KzReserve, 0).
+//   .KZR  Flight -> Aux   MyTuple<long, Vector3D, Vector3D, double, double, int> = (id, pos, vel, radius, age, flags): one per threat of _kz (most urgent
+//         first), <= 4 per KZ pass (6 Hz), only while threats exist (KzAssess calls KzRayStep() then). pos / vel are the track extrapolated to the send
+//         time (Track.P / V), age = now - last sighting. flags: bit0 the Flight's target, bits 8-11 index, 12-15 count, 16-31 pass number (low 16 bits).
+//   .SCN  Aux -> Flight   MyTuple<long, int, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D>, MyTuple<Vector3D, Vector3D>> = (id, f, hit, vel, box(min, max),
+//         ori(fwd, up)). f bits 0-7 entity type, 8-15 relationship, 16 has hit, 20-22 source (1 SCAN, 2 SENSOR, 3 KZ, 4 LOCK), 24-27 lock result (0 ok,
+//         1 no forward camera, 2 nothing hit with the charge in hit.X). id 0 = heartbeat (every 30 ticks); any message counts as a heartbeat.
+// Rebuild (4.2): new MyDetectedEntityInfo(id, "", type, hit?, MatrixD.CreateWorld(box centre, fwd, up), vel, rel, box, 1) (TimeStamp 1: 0 would read
+//   IsEmpty()), then Valid(e) (FaSee, SvSee) and AddContact(e, "SCAN" / "SENSOR" / "KZ"). A LOCK result is not Valid()-filtered (as ManualLock was):
+//   friendly -> "Lock: target is friendly", else it becomes _tgt. Fallback if the game rejects the constructor: AddContactRaw(...), about +0.3k.
+// Sync: Flight run gap: SqGap() in the run-gap line sends .SCS at once and drops queued .SCN. Aux silent for 2 s: SqStatus() = "! Aux PB silent: camera
+//   search off". Hooks: SqInit() after LkInit(); SqRead() after LkRead(); SqSend() after LkSend(); "lock" -> _sqLk++; SqStatus() on the screen; host
+//   Vector3D SqA(), int SqF(). Uses: _now, _tick, _lkK, _tgt, _aiOn, _mode (IDLE), CloseScan, CloseScanRange, LockRange, UnderFire, Alerted, KzRays, KzPack,
+//   KzReserve, _kz, _kzRay, _lostPos, _lostVel, _lostT, _lostRad, _hitDir, _hitDirT, _err, Valid, Friendly, AddContact.
+IMyBroadcastListener _sqL; double _sqT = -99; int _sqF = -1, _sqLk;
+void SqInit() { _sqL = IGC.RegisterBroadcastListener(_lkK + ".SCN"); }
+void SqGap() { _sqF = -1; while (_sqL.HasPendingMessage) _sqL.AcceptMessage(); }
+string SqStatus() { return _now - _sqT > 2 ? "\n! Aux PB silent: camera search off" : ""; }
+void SqSend()
+{
+    int f = SqF() | (_mode != Mode.IDLE && CloseScan ? 2 : 0) | (UnderFire || Alerted ? 4 : 0) | (_tgt != null ? 8 : 0) | (_aiOn ? 16 : 0) | (KzRays ? 128 : 0) | (_sqLk & 255) << 8;
+    if (f == _sqF && _tick % 6 != 1) return;
+    _sqF = f;
+    IGC.SendBroadcastMessage(_lkK + ".SCS", new MyTuple<int, long, Vector3D, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D, Vector3D, Vector3D>>(f, _tgt != null ? _tgt.Id : 0,
+        _lostPos, _lostVel, _hitDir, new MyTuple<Vector3D, Vector3D, Vector3D, Vector3D>(SqA(), new Vector3D(CloseScanRange, 900, LockRange),
+        new Vector3D(_now - _lostT, _now - _hitDirT, _lostRad), new Vector3D(KzPack, KzReserve, 0))), TransmissionDistance.CurrentConstruct);
+}
+void SqRead()
+{
+    while (_sqL.HasPendingMessage)
+    {
+        var m = _sqL.AcceptMessage();
+        if (!(m.Data is MyTuple<long, int, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D>, MyTuple<Vector3D, Vector3D>>)) continue;
+        var d = (MyTuple<long, int, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D>, MyTuple<Vector3D, Vector3D>>)m.Data;
+        _sqT = _now;
+        if (d.Item1 == 0) continue;
+        int f = d.Item2, s = f >> 20 & 7, r = f >> 24 & 15;
+        if (s == 4 && r > 0) { _err = r == 1 ? "No forward camera for lock" : "Lock: nothing hit (range " + d.Item3.X.ToString("0") + " m)"; continue; }
+        var b = new BoundingBoxD(d.Item5.Item1, d.Item5.Item2);
+        var e = new MyDetectedEntityInfo(d.Item1, "", (MyDetectedEntityType)(f & 255), (f & 65536) != 0 ? d.Item3 : (Vector3D?)null,
+            MatrixD.CreateWorld(b.Center, d.Item6.Item1, d.Item6.Item2), (Vector3)d.Item4, (MyRelationsBetweenPlayerAndBlock)(f >> 8 & 255), b, 1);
+        if (s == 4) { if (Friendly(e)) _err = "Lock: target is friendly"; else { _err = ""; _tgt = AddContact(e, "LOCK"); } }
+        else if (Valid(e)) AddContact(e, s == 2 ? "SENSOR" : s == 3 ? "KZ" : "SCAN");
+    }
+}
+// KAMIKAZE DEFENCE v1.1 hook (replaces KZ RAYS): the Aux casts the refresh and pack rays for these threats and returns the hits as source KZ
+void KzRayStep()
+{
+    int n = Math.Min(4, _kz.Count); _kzRay++;
+    for (int i = 0; i < n; i++)
+    {
+        var t = _kz[i].T;
+        IGC.SendBroadcastMessage(_lkK + ".KZR", new MyTuple<long, Vector3D, Vector3D, double, double, int>(t.Id, t.P(_now), t.V(_now), t.Radius, _now - t.Seen,
+            (t == _tgt ? 1 : 0) | i << 8 | n << 12 | (_kzRay & 65535) << 16), TransmissionDistance.CurrentConstruct);
+    }
+}
+// <<< SEARCH LINK v1.0 <<<
 
 public Program()
 {
@@ -1072,15 +1089,11 @@ public Program()
     catch (Exception ex) { CtorErr("config", ex); }
     try
     {
-        KzLoad(); AiGateLoad();
-    }
-    catch (Exception ex) { CtorErr("modules", ex); }
-    try
-    {
         _ready = StartMode.Trim().ToUpperInvariant() == "READY"; _sentryAt = StartMode.Trim().ToUpperInvariant() == "SENTRY" ? 5 : -1; _mode = _ready ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
-        if (!string.IsNullOrEmpty(Storage))
+        string st = CfLoad();
+        if (st != "")
         {
-            var p = Storage.Split(';');
+            var p = st.Split(';');
             if (p.Length >= 5)
             {
                 _mode = ParseMode(p[0], _mode); _ready = p.Length > 5 && p[5] == "1"; _sentry = p.Length > 6 && p[6] == "1"; _sentryAt = -1;
@@ -1095,7 +1108,7 @@ public Program()
     {
         _lTgt = IGC.RegisterBroadcastListener(Tag + "_TGT");
         _lCmd = IGC.RegisterBroadcastListener(Tag + "_CMD");
-        LkInit(); SvInit(); PlInit();
+        LkInit(); CfInit(); DlInit(); SqInit(); SvInit(); PlInit();
         _lHome = IGC.RegisterBroadcastListener(Tag + "_HOME");
         _lSwarm = IGC.RegisterBroadcastListener(Tag + "_SWARM");
     }
@@ -1111,7 +1124,7 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", _ready ? "1" : "0", _sentry ? "1" : "0");
+    Storage = string.Join(";", _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", _ready ? "1" : "0", _sentry ? "1" : "0") + CfSave();
 }
 
 Mode ParseMode(string s, Mode def)
@@ -1146,34 +1159,27 @@ void Tick(string arg, UpdateType src)
     if ((src & UpdateType.Update1) == 0) return;
 
     double dt = Runtime.TimeSinceLastRun.TotalSeconds;
-    if (dt <= 0 || dt > 0.5) { if (dt > 0.5 && _tick > 3) { _svSentT = -99; _aiOn = !_aiOn; _firing = false; _aiKick = false; } dt = 1.0 / 60.0; }   // run gap (PB was off / halted): the Staff watchdog may have switched the AI blocks off, so force the next pass to send the AI and gun state again
+    if (dt <= 0 || dt > 0.5) { if (dt > 0.5 && _tick > 3) { _svSentT = -99; SqGap(); _aiOn = !_aiOn; _firing = false; _aiKick = false; } dt = 1.0 / 60.0; }   // run gap (PB was off / halted): the Staff watchdog may have switched the AI blocks off, so force the next pass to send the AI and gun state again
     _now += dt; _tick++;
     if (PgHold()) return;            // PRINTER GUARD: still welded to a printer, fly nothing
-    _avgMs = _avgMs * 0.98 + Runtime.LastRunTimeMs * 0.02;
 
     if (_tick % 600 == 0) GetBlocks();
     CheckGrid();
     if (_rc == null || !_rc.IsFunctional || !_rc.IsSameConstructAs(Me)) { _err = "No working Remote Control / cockpit"; if (!_rcOut || _tick % 60 == 0) { _rcOut = true; GetBlocks(); Display(); Release(); } return; }   // (not on this construct = a severed piece: same as no controller; look for another one at 1 Hz)
     _rcOut = false;
 
-    ReadIGC(); LkRead(); SvRead(); ReadSwarm();
+    ReadIGC(); LkRead(); CfRead(); DlRead(); SqRead(); SvRead(); ReadSwarm();
     if (_tick % 6 == 3) BroadcastStatus();
-    if (!Hot()) StepSlimScan();
-    if (_tick % 20 == 7) CheckDamage();
     if (_sentryAt > 0 && (LkBurn || _mode != Mode.IDLE)) _sentryAt = -1;   // launched or commanded first
     else if (_sentryAt > 0 && _now >= _sentryAt) { _sentryAt = -1; if (!SentryDocked()) Command("sentry"); }   // Start Mode SENTRY, after the 5 s grace: hold this spot
     if (_sentry && _tick % 30 == 11 && SentryDocked()) { SetMode(Mode.IDLE); _err = "Docked: SENTRY stands down (IDLE)"; }   // never fly a printer / carrier: its Staff PB hands over [Launch] Mode after take-off
     if (_tick % 6 == 0) PollDesignators();
-    if (_tick % 10 == 5 && !Hot()) PollSensors();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
-    if (_mode != Mode.IDLE && !Hot()) OmniScan();
-    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT || _mode == Mode.FOLLOW) && !Hot()) AutoScanStep();
     if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0 && !Hot()) ShareTarget();
 
     if (!LkBurn && !SvYield && !AiStep()) Control(dt);
-    LkSend(); SvSend();
-    _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
+    LkSend(); SqSend(); SvSend();
     if (_tick % 30 == 0) Display();
 }
 
@@ -1192,7 +1198,7 @@ void Command(string a)
         case "assist": SetMode(Mode.ASSIST); break;
         case "rtb": SetMode(Mode.RTB); break;
         case "idle": case "stop": SetMode(Mode.IDLE); break;
-        case "lock": ManualLock(); break;
+        case "lock": _sqLk++; break;
         case "unlock": _tgt = null; _contacts.Clear(); break;
         case "next": if (_tgt != null) IgnoreTarget(_tgt, 60, true); break;
         case "split": SplitFocus = true; break;
@@ -1207,7 +1213,7 @@ void Command(string a)
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
             double r; if (w.Length > 1 && double.TryParse(w[1], out r)) Standoff = MathHelper.Clamp(r, MinRange, MaxFireRange); break;
-        case "reload": LoadConfig(); KzLoad(); AiGateLoad(); GetBlocks(); break;
+        case "reload": CfWant = true; GetBlocks(); break;
     }
 }
 
@@ -1230,83 +1236,83 @@ void SetMode(Mode m)
 
 // =====================================================================
 //  CONFIG
-void LoadConfig()
+void LoadConfig()   // Tag and Start Mode only, Get-only (the IGC channels are registered in the constructor); the rest comes from the Staff (CONFIG LINK)
 {
     MyIniParseResult res;
     if (!_ini.TryParse(Me.CustomData, out res)) { _err = "CustomData parse error line " + res.LineNo; return; }
-    const string S = "Hornet";
-    Tag = Cfg(S, "IGC Tag", Tag);
-    StartMode = Cfg(S, "Start Mode (GUARD/HUNT/ASSIST/IDLE)", StartMode);
-    ProjSpeed = Cfg(S, "Projectile Speed", ProjSpeed);
-    InheritVel = Cfg(S, "Projectiles Inherit Ship Velocity", InheritVel);
-    MaxFireRange = Cfg(S, "Max Fire Range", MaxFireRange);
-    Standoff = Cfg(S, "Standoff Range", Standoff);
-    StandoffHuge = Cfg(S, "Standoff Range vs Huge Grids", StandoffHuge);
-    MinRange = Cfg(S, "Min Range", MinRange);
-    GuardRadius = Cfg(S, "Guard Radius", GuardRadius);
-    SentryRange = Cfg(S, "Sentry Range (m)", SentryRange);
-    MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
-    CruiseSpeed = Cfg(S, "Cruise Speed", CruiseSpeed);
-    OrbitSpeed = Cfg(S, "Orbit Speed", OrbitSpeed);
-    Jink = Cfg(S, "Evasive Jinking", Jink);
-    JinkSpeed = Cfg(S, "Jink Speed", JinkSpeed);
-    LockRange = Cfg(S, "Manual Lock Range", LockRange);
-    AutoScan = Cfg(S, "Auto Camera Scan", AutoScan);
-    CloseScan = Cfg(S, "All-around Close Scan", CloseScan);
-    CloseScanRange = Cfg(S, "Close Scan Range", CloseScanRange);
-    ScanRange = Cfg(S, "Scan Range", ScanRange);
-    ScanCone = Cfg(S, "Scan Cone Degrees", ScanCone);
-    TargetLarge = Cfg(S, "Target Large Grids", TargetLarge);
-    TargetSmall = Cfg(S, "Target Small Grids", TargetSmall);
-    TargetChars = Cfg(S, "Target Characters", TargetChars);
-    TargetNeutral = Cfg(S, "Target Neutral/Unowned", TargetNeutral);
-    ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
-    FriendCheck = Cfg(S, "Friendly Fire Check", FriendCheck);
-    FireStaleMax = Cfg(S, "Max Track Age To Fire (s)", FireStaleMax);
-    SepRange = Cfg(S, "Wingmate Separation Range", SepRange);
-    SepSpeed = Cfg(S, "Wingmate Separation Speed", SepSpeed);
-    MateClear = Cfg(S, "Wingmate Fire Clearance (m)", MateClear);
-    LooseFar = Cfg(S, "Loose Fire Beyond Standoff", LooseFar);
-    FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
-    LeadScale = Cfg(S, "Lead Scale (1: as calculated)", LeadScale);
-    LeadMargin = Cfg(S, "Aim Margin (predicted misses)", LeadMargin);
-    UseTargetAccel = Cfg(S, "Use Target Acceleration", UseTargetAccel);
-    SplitFocus = Cfg(S, "Split Targets Across Hive (false: focus fire)", SplitFocus);
-    DisabledGrace = Cfg(S, "Seconds Before Dropping Disabled Target", DisabledGrace);
-    EvadeSpeed = Cfg(S, "Evade Speed When Hit", EvadeSpeed);
-    SearchTenths = (int)Cfg(S, "Search Share Tenths (stale lock)", (double)SearchTenths);
-    SearchTenthsLate = (int)Cfg(S, "Search Share Tenths (stale > 1.5 s)", (double)SearchTenthsLate);
-    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();
-    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);
-    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);
-    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);
-    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);
-    WpShare = Cfg(S, "Share Weakpoints", WpShare);
-    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);
-    WpHold = Cfg(S, "Weakpoint Hold (s)", WpHold);
-    AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
-    AiConfirmRange = Cfg(S, "AI Confirm Raycast Range", AiConfirmRange);
-    AiConfirmLong = Cfg(S, "AI Confirm Long Raycast Range", AiConfirmLong);
-    AiConfirmAdaptive = Cfg(S, "AI Confirm Rays Shorten After A Fight", AiConfirmAdaptive);
-    AiSpiralMin = Cfg(S, "AI Confirm Spiral Min (deg)", AiSpiralMin);
-    AiSpiralMax = Cfg(S, "AI Confirm Spiral Max (deg)", AiSpiralMax);
-    AiSpiralPow = Cfg(S, "AI Confirm Spiral Exponent", AiSpiralPow);
-    AiStaleTakeover = Cfg(S, "AI Takes Over After Stale Lock (s)", AiStaleTakeover);
-    GhostTime = Cfg(S, "Ghost Target Time (s)", GhostTime);
-    Stickiness = Cfg(S, "Target Stickiness (score bonus for the current target)", Stickiness);
-    AiRepick = Cfg(S, "AI Re-pick Interval (s; 0 off)", AiRepick);
-    AiRepickWindow = Cfg(S, "AI Re-pick Only Within (s) Of Last Target", AiRepickWindow);
-    RtbBattery = Cfg(S, "RTB Battery Fraction", RtbBattery);
-    AimKp = Cfg(S, "Aim Kp", AimKp);
-    AimKd = Cfg(S, "Aim Kd", AimKd);
-    MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
-    SvLoad(_ini);
-    string out1 = _ini.ToString();
-    if (out1 != Me.CustomData) Me.CustomData = out1;
+    Tag = _ini.Get("Hornet", "IGC Tag").ToString(Tag); StartMode = _ini.Get("Hornet", "Start Mode (GUARD/HUNT/ASSIST/IDLE)").ToString(StartMode);
 }
-string Cfg(string s, string k, string d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToString(d); }
-double Cfg(string s, string k, double d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToDouble(d); }
-bool Cfg(string s, string k, bool d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToBoolean(d); }
+string CfKey() { return _lkK; }
+Vector3D SqA() { return new Vector3D(ScanRange, ScanCone, 120); }   // SEARCH LINK: auto-scan range, cone, spiral N
+int SqF() { return (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.GUARD || _mode == Mode.HUNT || _mode == Mode.FOLLOW) ? 1 : 0) | 96; }   // SEARCH LINK: AUTO, SENSORS, HITLOOK
+// CONFIG LINK host hooks (generated from tools/cfg_tables.json, flight_split P1-F): the [Hornet] values of the .CFG M line, in table order
+const string CfSchema = "1/63/20/4/8";
+void CfgIn()
+{
+    ProjSpeed = N();
+    InheritVel = B();
+    MaxFireRange = N();
+    Standoff = N();
+    StandoffHuge = N();
+    MinRange = N();
+    GuardRadius = N();
+    SentryRange = N();
+    MaxSpeed = N();
+    CruiseSpeed = N();
+    OrbitSpeed = N();
+    Jink = B();
+    JinkSpeed = N();
+    LockRange = N();
+    AutoScan = B();
+    CloseScan = B();
+    CloseScanRange = N();
+    ScanRange = N();
+    ScanCone = N();
+    TargetLarge = B();
+    TargetSmall = B();
+    TargetChars = B();
+    TargetNeutral = B();
+    ShareTargets = B();
+    FriendCheck = B();
+    FireStaleMax = N();
+    SepRange = N();
+    SepSpeed = N();
+    MateClear = N();
+    LooseFar = B();
+    FireTol = N();
+    LeadScale = N();
+    LeadMargin = N();
+    UseTargetAccel = B();
+    SplitFocus = B();
+    DisabledGrace = N();
+    EvadeSpeed = N();
+    SearchTenths = (int)N();
+    SearchTenthsLate = (int)N();
+    AimMode = T().Trim().ToUpperInvariant();
+    BreachAuto = B();
+    BreachMinRadius = N();
+    BreachStall = N();
+    WpOn = B();
+    WpShare = B();
+    WpCone = N();
+    WpHold = N();
+    AiAssist = B();
+    AiConfirmRange = N();
+    AiConfirmLong = N();
+    AiConfirmAdaptive = B();
+    AiSpiralMin = N();
+    AiSpiralMax = N();
+    AiSpiralPow = N();
+    AiStaleTakeover = N();
+    GhostTime = N();
+    Stickiness = N();
+    AiRepick = N();
+    AiRepickWindow = N();
+    RtbBattery = N();
+    AimKp = N();
+    AimKd = N();
+    MaxTurn = N();
+}
 
 // =====================================================================
 //  BLOCKS
@@ -1327,9 +1333,7 @@ void GetBlocks()
     GridTerminalSystem.GetBlocksOfType(_turrets, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_ctcs, b => b.IsSameConstructAs(Me));
     GridTerminalSystem.GetBlocksOfType(_bats, b => b.IsSameConstructAs(Me));
-    GridTerminalSystem.GetBlocksOfType(_sensors, b => b.IsSameConstructAs(Me));
     foreach (var c in _cams) c.EnableRaycast = true;
-    ScanSlims();
     FindAi();
 
     for (int i = 0; i < 6; i++) _thrDir[i].Clear();
@@ -1465,18 +1469,6 @@ IMyCameraBlock CamFor(Vector3D pos, double range)
     return best;
 }
 
-void ManualLock()
-{
-    IMyCameraBlock cam = null;
-    foreach (var c in _cams)
-        if (c.IsWorking && Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.99 && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
-    if (cam == null) { _err = "No forward camera for lock"; return; }
-    var e = cam.Raycast(Math.Min(LockRange, cam.AvailableScanRange));
-    if (e.IsEmpty() || e.Type == MyDetectedEntityType.Planet || e.Type == MyDetectedEntityType.Asteroid) { _err = "Lock: nothing hit (range " + cam.AvailableScanRange.ToString("0") + " m)"; return; }
-    if (Friendly(e)) { _err = "Lock: target is friendly"; return; }
-    _err = "";
-    _tgt = AddContact(e, "LOCK");
-}
 
 // ---- LOCK MAINTENANCE AND RE-ACQUISITION -------------------------------------------------------------------
 //  Each camera banks only 2 km/s of ray range, and a miss costs as much as a hit, so the rays have to be cheap and
@@ -1488,10 +1480,10 @@ double Stickiness = 400;             // score bonus (m-equivalents) for staying 
 double GhostTime = 8.0;             // how long a lost target is kept and searched for
 double AiStaleTakeover = 3.0;       // lock stale for this long: let the AI blocks hold the enemy (if there are any)
 double FireStaleMax = 2.0;    // never fire at a track older than this (extrapolation is a guess by then)
-int _missRun = 0, _spiralIdx = 0, _staleRay = 0;
+int _spiralIdx = 0, _staleRay = 0;
 bool Search2nd = true;   // when two cameras can cast in the same tick at a stale lock, the second ray goes to the search ellipse
 int SearchTenths = 1, SearchTenthsLate = 3;   // of 10 rays at a stale (> 0.6 s) lock, how many go to the widening search ellipse instead of the predicted point
-double _lostFlagUntil = -1, _lastStaleShare = -9;
+double _lastStaleShare = -9;
 Vector3D _lostPos, _lostVel; double _lostT = -99, _lostRad = 3;   // last known state of the target that was dropped
 void NoteLost(Track t)
 {
@@ -1533,11 +1525,9 @@ void MaintainLock()
         else if (probingAim && (e.IsEmpty() || !BreachMode(_tgt))) AimMissed(_tgt);   // breach: a drone in the way is no miss
         if (!e.IsEmpty() && e.EntityId == _tgt.Id)
         {
-            _missRun = 0;
             if (Valid(e)) AddContact(e, _tgt.Src == "IGC" ? "LOCK" : _tgt.Src); else _tgt.DeadAt = _now;
             return;
         }
-        _missRun++;
         if (!e.IsEmpty() && Valid(e)) AddContact(e, "LOCK"); // something else hostile in the way - track it too
     }
 }
@@ -1560,36 +1550,6 @@ Vector3D ReacquirePoint(Track t, Vector3D centre, Vector3D dir, double age)
     return centre + u * (major * s1) + v * (minor * s2) + dir * Math.Min(t.Radius + 0.5 * sigma, 25);
 }
 
-void AutoScanStep()
-{
-    IMyCameraBlock cam = null;
-    foreach (var c in _cams)
-        if (c.IsWorking && Forwardish(c) && c.AvailableScanRange >= ScanRange && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
-    if (cam == null) return;
-    _scanIdx++;
-    // just lost a target: every other ray goes round where it was last seen, widening with time
-    double lostAge = _now - _lostT;
-    if (lostAge < 25 && (_scanIdx & 1) == 0)
-    {
-        Vector3D lp = _lostPos + _lostVel * Math.Min(lostAge, 10);
-        double rr = Math.Min(250, _lostRad + 6 * lostAge) * Math.Sqrt(((_scanIdx >> 1) % 23 + 0.5) / 23.0), th2 = _scanIdx * 2.39996323;
-        Vector3D dl = lp - cam.GetPosition(); double dd = dl.Length();
-        if (dd > 30 && dd < ScanRange)
-        {
-            dl /= dd;
-            Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
-            Vector3D vv = Vector3D.Cross(dl, uu);
-            var le = cam.Raycast(lp + uu * (rr * Math.Cos(th2)) + vv * (rr * Math.Sin(th2)) + dl * 10);
-            if (Valid(le)) AddContact(le, "SCAN");
-            return;
-        }
-    }
-    const int N = 120;
-    double r = ScanCone * Math.Sqrt((_scanIdx % N + 0.5) / N);
-    double th = _scanIdx * 2.39996323; // golden-angle spiral
-    var e = cam.Raycast(ScanRange, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
-    if (Valid(e)) AddContact(e, "SCAN");
-}
 
 void PruneAndSelect()
 {
@@ -1824,7 +1784,7 @@ bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, out Vector3D point, ou
     else
     {
         double disc = b * b - 4 * a * cc;
-        if (disc < 0) { point = tp; dir = Vector3D.Normalize(rp); _leadT = 0; return rp.LengthSquared() > 1; }
+        if (disc < 0) { point = tp; dir = Vector3D.Normalize(rp); return rp.LengthSquared() > 1; }
         double sq = Math.Sqrt(disc);
         double t1 = (-b - sq) / (2 * a), t2 = (-b + sq) / (2 * a);
         tt = (t1 > 0 && (t1 < t2 || t2 <= 0)) ? t1 : t2;
@@ -1836,7 +1796,6 @@ bool Lead(Track t, Vector3D shooter, Vector3D shooterVel, out Vector3D point, ou
         p = rp0 + LeadOffset(t, off, los, tt) + (rv * tt + ta * LeadK(tt, h)) * LeadScale;
         tt = p.Length() / s;
     }
-    _leadT = tt;
     point = shooter + p;
     double len = p.Length();
     if (len < 1) { dir = Vector3D.Zero; return false; }
@@ -1992,29 +1951,17 @@ void Display()
 {
     string aim = "";
     if (_tgt != null) aim = "\nAim: " + AimLabel(_tgt) + " (" + _tgt.Hull.Count + " hull pts)" + AimInfo();
-    string s = "FLIGHT " + VER + "  " + (_sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString()) + "  tgt " + (_tgt != null ? _tgt.Src : "-") + "  staff " + (LkAlive ? "ok" : "none") + aim + SvStatus() + (_fc != "" ? "\n1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago" : "") + (_err != ""? "\n! " + _err : "") + (_crash != "" ? "\n! Script error: " + _crash : "");
+    string s = "FLIGHT " + VER + "  " + (_sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString()) + "  tgt " + (_tgt != null ? _tgt.Src : "-") + "  staff " + (LkAlive ? "ok" : "none") + aim + SvStatus() + "\n" + _cfSt + SqStatus() + (_fc != "" ? "\n1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago" : "") + (_err != ""? "\n! " + _err : "") + (_crash != "" ? "\n! Script error: " + _crash : "");
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);
 }
 
 // =====================================================================
 //  SENSORS (360 deg, ~50 m) + idle sweep
-List<IMySensorBlock> _sensors = new List<IMySensorBlock>();
-List<MyDetectedEntityInfo> _sensed = new List<MyDetectedEntityInfo>();
 Vector3D _sweepUp; bool _sweepUpSet = false;
 
 // (sensor setup: the Staff PB's STAFF SEARCH block writes the sensor properties)
 
-void PollSensors()
-{
-    foreach (var s in _sensors)
-    {
-        if (!s.IsWorking) continue;
-        _sensed.Clear();
-        s.DetectedEntities(_sensed);
-        foreach (var e in _sensed) { if (Valid(e)) AddContact(e, "SENSOR"); }
-    }
-}
 
 // Idle search attitude: keep yawing round while nodding the nose up and down (+/-34 deg, 16 s period),
 // so the camera scan cone covers above and below as well as the horizon.
@@ -2043,58 +1990,18 @@ Vector3D SweepDir(Vector3D gravUp)
 //  Cameras that don't face forward fire short rays in a spiral over their
 //  whole view cone, as fast as their charge allows, so enemies above,
 //  below, beside or behind are found without the drone turning to look.
-int _omniCam = 0, _omniIdx = 0;
 bool Forwardish(IMyCameraBlock c) { return Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.9; }
 // Under fire (or on a hive alarm) the side cameras reach HardScanRange: the shooter is usually a turret or gatling at up to 800 m.
 // The forward cameras stay out of it while the long auto-scan, the AI confirm rays or a lock need them: short close-scan rays used to
 // drain them below the auto-scan's range, so a drone under fire from 700 m never cast a long ray (in-game report 2026-10-13).
-double HardScanRange = 900;
-void OmniScan()
-{
-    if (!CloseScan || _cams.Count == 0) return;
-    for (int shots = 0, tries = 0; shots < 3 && tries < _cams.Count; tries++)
-    {
-        var c = _cams[_omniCam++ % _cams.Count];
-        bool hard = UnderFire || Alerted;
-        // nothing to track: the side cameras look far too (a 120 m close scan never finds the ship that is shooting from 700 m)
-        double rng = hard || _tgt == null ? Math.Max(CloseScanRange * 4, HardScanRange) : CloseScanRange;
-        if (!c.IsWorking || (Forwardish(c) && !(hard && _tgt == null && !_aiOn && !AutoScan)) || c.AvailableScanRange < rng * 2) continue; // keep charge for tracking
-        _omniIdx++;
-        MyDetectedEntityInfo e; Vector3D hp;
-        if (hard && _tgt == null && _now - _hitDirT < 10 && HitPoint(c, rng, out hp)) e = c.Raycast(hp);   // just hit: look where the shots came from
-        else
-        {
-            double r = 40 * Math.Sqrt((_omniIdx % 89 + 0.5) / 89.0), th = _omniIdx * 2.39996323;
-            e = c.Raycast(rng, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
-        }
-        if (Valid(e)) AddContact(e, "SCAN");
-        shots++;
-    }
-}
 // A point rng metres out, inside 35 deg of the side that was hit (golden-angle spiral), that camera c can see; false if none of 4 tries is in its cone.
-int _hitIdx = 0;
-bool HitPoint(IMyCameraBlock c, double rng, out Vector3D pt)
-{
-    Vector3D a = Vector3D.Cross(_hitDir, Math.Abs(_hitDir.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); a.Normalize();
-    Vector3D b = Vector3D.Cross(_hitDir, a), cp = c.GetPosition();
-    for (int k = 0; k < 4; k++)
-    {
-        _hitIdx++;
-        double r = Math.Tan(0.61 * Math.Sqrt((_hitIdx % 97 + 0.5) / 97.0)), th = _hitIdx * 2.39996323;
-        Vector3D d = Vector3D.Normalize(_hitDir + (a * Math.Cos(th) + b * Math.Sin(th)) * r);
-        pt = cp + d * rng;
-        if (Vector3D.Dot(d, c.WorldMatrix.Forward) > 0.72) return true;
-    }
-    pt = Vector3D.Zero; return false;
-}
 
 // =====================================================================
 //  v1.8: TARGET STATUS, DAMAGE SENSING, SPLIT FOCUS, ASSIST
 Dictionary<long, double> _ignore = new Dictionary<long, double>();
 Dictionary<long, int> _share = new Dictionary<long, int>(), _count = new Dictionary<long, int>();
 List<Track> _live = new List<Track>();
-List<IMySlimBlock> _slims = new List<IMySlimBlock>();
-List<double> _slimHp = new List<double>(); Vector3D _hitDir; double _hitDirT = -99;
+Vector3D _hitDir; double _hitDirT = -99;
 double _integ = -1, _hitAt = -99; int _hits = 0;
 Vector3D _assist; double _assistT = -99;
 string _crash = "";
@@ -2161,68 +2068,8 @@ double HiveScore(Track t)
 // Every block's integrity; a drop means this drone is being hit.
 // Incremental: walking the whole bounding box in one tick blows the PB instruction limit once the drone is
 // merged into a printer (one huge grid). Starts a pass; StepSlimScan() does SlimCellsPerTick cells per tick.
-List<IMySlimBlock> _slimsNew = new List<IMySlimBlock>(); HashSet<Vector3I> _slimSeen = new HashSet<Vector3I>();
-IMyCubeGrid _slimsGrid, _scanGrid; bool _slimBusy = false; int _sx, _sy, _sz, _mnx, _mny, _mnz, _mxx, _mxy, _mxz;
-const int SlimCellsPerTick = 200, SlimMaxCells = 30000;
-void ScanSlims()
-{
-    var g = Me.CubeGrid;
-    if (_slimsGrid != g) { _slims.Clear(); _integ = -1; }
-    _slimBusy = false;
-    Vector3I mn = g.Min, mx = g.Max;
-    if ((long)(mx.X - mn.X + 1) * (mx.Y - mn.Y + 1) * (mx.Z - mn.Z + 1) > SlimMaxCells) return;   // docked to something big: skip
-    _scanGrid = g; _slimsNew.Clear(); _slimSeen.Clear();
-    _mnx = mn.X; _mny = mn.Y; _mnz = mn.Z; _mxx = mx.X; _mxy = mx.Y; _mxz = mx.Z;
-    _sx = _mnx; _sy = _mny; _sz = _mnz; _slimBusy = true;
-}
-void StepSlimScan()
-{
-    if (!_slimBusy) return;
-    var g = _scanGrid;
-    if (g != Me.CubeGrid) { _slimBusy = false; return; }
-    for (int n = 0; n < SlimCellsPerTick; n++)
-    {
-        var p = new Vector3I(_sx, _sy, _sz);
-        if (g.CubeExists(p)) { var s = g.GetCubeBlock(p); if (s != null && _slimSeen.Add(s.Position)) _slimsNew.Add(s); }
-        if (++_sz > _mxz) { _sz = _mnz; if (++_sy > _mxy) { _sy = _mny; if (++_sx > _mxx) { _slimBusy = false; break; } } }
-    }
-    if (_slimBusy) return;
-    _slims.Clear(); _slims.AddRange(_slimsNew); _slimsGrid = g; _integ = -1;   // swap in the finished pass
-}
-void CheckDamage()
-{
-    double sum = 0; var g = Me.CubeGrid;
-    // which side was hit: blocks that lost integrity since the last check, as directions from the grid centre (the shooter is out that way)
-    bool cmp = _integ >= 0 && _slimHp.Count == _slims.Count;
-    if (!cmp) { _slimHp.Clear(); for (int i = 0; i < _slims.Count; i++) _slimHp.Add(0); }
-    Vector3D hd = Vector3D.Zero, gc = g.WorldVolume.Center;
-    for (int i = 0; i < _slims.Count; i++)
-    {
-        var s = _slims[i];
-        double v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0;
-        sum += v;
-        if (cmp && _slimHp[i] - v > 0.5) { _svNb++; _svMax = Math.Max(_svMax, _slimHp[i] - v); Vector3D d = g.GridIntegerToWorld(s.Position) - gc; double l = d.Length(); if (l > 0.3) hd += d / l; }
-        _slimHp[i] = v;
-    }
-    if (hd.LengthSquared() > 0.01)
-    {
-        hd.Normalize();
-        Vector3D m = _now - _hitDirT < 3 ? _hitDir * 0.6 + hd * 0.4 : hd;
-        if (m.LengthSquared() > 0.01) { _hitDir = Vector3D.Normalize(m); _hitDirT = _now; }
-    }
-    if (_integ >= 0 && sum < _integ - 0.5) { _hitAt = _now; _hits++; }
-    _integ = sum; SvDamage();
-}
 
 
-string HiveStatus()
-{
-    string s = "Hive: " + (_mates.Count + 1) + (SplitFocus ? " SPLIT" : " FOCUS");
-    if (UnderFire) s += "  !! UNDER FIRE (" + _hits + ")";
-    if (_tgt != null && _tgt.DisSince >= 0) s += "  tgt disabled";
-    if (_tgt != null) s += "\nAim: " + AimLabel(_tgt) + " (" + _tgt.Hull.Count + " hull pts)" + AimInfo();
-    return s + "\n" + AiStatus() + (_crash != "" ? "! Script error: " + _crash + "\n" : "");
-}
 
 class Mate { public long Id; public Vector3D Pos, Vel; public double Seen; public long Tgt; public int Flags; }
 Dictionary<long, Mate> _mates = new Dictionary<long, Mate>();
@@ -2517,7 +2364,6 @@ void FindAi()
 {
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
     foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
-    if (AiAssist) AiGateFind(_ai);   // (AI Assist off: the AI blocks stay as they came, "AI Behavior" off)
 }
 bool AiStep()
 {
@@ -2584,11 +2430,6 @@ void AiHeldIgnored(long id)
     if (id != _heldId || _now - _heldT > 10) { _heldId = id; _heldN = 0; }
     _heldT = _now;
     if (++_heldN >= 2) { _ignore.Remove(id); _heldN = 0; }
-}
-string AiStatus()
-{
-    if (_ai.Count == 0) return OwnAlert ? "AI alarm: searching\n" : "";
-    return AiGateStatus() + "AI: " + (_aiOn ? "searching" : _agT0 >= 0 ? "own search" : "standby") + " (" + _ai.Count + " blocks)" + (OwnAlert ? "  ALARM" : "") + "\n";
 }
 bool AiModeOk() { return _mode == Mode.GUARD || _mode == Mode.HUNT; }
 

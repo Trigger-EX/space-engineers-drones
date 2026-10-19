@@ -27,7 +27,7 @@ def func(text, header):
         elif c == '{': depth += 1
         elif c == '}':
             depth -= 1
-            if depth == 0: return m[i:k + 1]
+            if depth == 0: return m[i:k + 1].replace('\n', '')   # the minifier breaks lines wherever the length falls: compare without its line breaks
         k += 1
 
 LEAD = 'bool Lead(Track t'
@@ -38,6 +38,9 @@ class TestSolvers(unittest.TestCase):
         hornet = func(src('HornetDroneAI.cs'), LEAD)
         dispatch = 'if(_rkt)return BatRkt(t,shooter,shooterVel,out point,out dir);'
         self.assertIn(dispatch, shrike)
+        # flight_split M6 (2026-10-18): the Hornet's _leadT was write-only and was deleted as dead code; the Helm still reads it (HUD pip time), so its two
+        # writes are the Helm's own additions, like the dispatch line
+        for w in ('_leadT=0;', '_leadT=tt;'): self.assertIn(w, shrike); shrike = shrike.replace(w, '')
         self.assertEqual(shrike.replace(dispatch, ''), hornet)
 
     def test_rocket_solver_is_the_basilisks(self):

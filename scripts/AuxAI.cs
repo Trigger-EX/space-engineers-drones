@@ -1,29 +1,43 @@
 // =====================================================================
-//  AUX AI  v1.0  - the [Aux] PB of the split drones (docs/design/staff_split.md): REPAIR CLIENT and SEEKER, moved out of the Staff PB
+//  AUX AI  v1.1  - the [Aux] PB of the split drones (docs/design/staff_split.md, docs/design/flight_split.md): off-hot-path modules of the Staff and Flight PBs
 //  For Space Engineers (vanilla). Paste into a fourth Programmable Block on the SAME grid as the "[Flight] ..." and "[Staff] ..." PBs, named "[Aux] ...".
-//  ONE script for every model (Hornet, Watcher, Harrier, Lancer, Aegis, Wasp, Longbow, Mantis): everything model-specific comes from the Staff PB.
-//   * REPAIR CLIENT  repair bay dock (item 17), medic patient side (item 18), self-projector (item 15) - antenna channels <Tag>_RBAY/_RREQ/_RACK, <M>_AD/_REQ/_ACK/_WORK
-//   * SEEKER         the [Seeker] turret reader: its hull point goes to the Staff (.SKW) and from there into the WEAKPOINT RELAY (.WPT flag 4096 to the Flight)
+//  ONE script for every model (Hornet, Watcher, Harrier, Lancer, Aegis, Wasp, Longbow, Mantis, Basilisk): everything model-specific comes from the Staff
+//  (.SDK) and the Flight (.SCS) PBs.
+//   * REPAIR CLIENT    repair bay dock (item 17), medic patient side (item 18), self-projector (item 15) - antenna channels <Tag>_RBAY/_RREQ/_RACK, <M>_AD/_REQ/_ACK/_WORK
+//   * SEEKER           the [Seeker] turret reader: its hull point goes straight into the WEAKPOINT RELAY here (.WPT flag 4096 to the Flight)
+//   * WEAKPOINT RELAY  the wing's shared breach points (<ch>_WP through the antenna, .WPF from / .WPT to the Flight), values from the Staff (.SDK)
+//   * SEARCH           the Flight's camera and sensor search: auto-scan, close scan, hit-look, manual lock, sensor poll, kamikaze rays; hits go to the
+//                      Flight on .SCN (it keeps Valid / AddContact, tracking, aim and firing)
+//   * AI GATE SETUP    "AI Behavior", SpeedLimit and UpdateTargetInterval on the AI blocks, while the Flight runs with AI Assist (SDK bit 9)
 //  This PB NEVER writes a thruster or gyro override or DampenersOverride. During a dock approach it sends the setpoint (velocity, nose, roof) to the Staff on
 //  .DKS every tick and the Staff flies it (SURVIVAL STAFF dock actuator, FOL bit 2: the Flight lets go). The merge block (Enabled at ALIGN -> INSERT) and the
-//  "... Projector [Self]" are the only blocks it switches, plus the [Seeker] turret's targeting group and the cameras' raycast.
+//  "... Projector [Self]" are the only blocks it switches, plus the [Seeker] turret's targeting group, the cameras' raycast and the AI blocks' setup
+//  properties (never their Enabled: the Flight owns that).
 //  Link (TransmissionDistance.CurrentConstruct, key "WSPL" + the EntityId of the nearest "[Flight]" PB on this grid, re-checked every 10 s, on a grid change and
-//  at 1 Hz while the link is down), see tools/al_block.cs (AUX LINK, the Staff side):
-//   .SDK Staff -> Aux (mirror: damage latch, docked, Flight down, under fire, mode IDLE / RTB, target, Tag, seeker setup, limp cap, repair words)
-//   .DKS Aux -> Staff (FLY + setpoint, session, REPAIRED, the status lines for the Staff screen), .SKW Aux -> Staff (seeker finding),
+//  at 1 Hz while the link is down), see tools/al_block.cs (AUX LINK, the Staff side) and tools/sq_block.cs (SEARCH LINK, the Flight side):
+//   .SDK Staff -> Aux (mirror: damage latch, docked, Flight down, under fire, mode IDLE / RTB, target, AI Assist (bit 9), limp cap, repair words;
+//        cfg lines: Tag, SeekerGroup, fleet channel, Weakpoint Priority, Weakpoint Expire (s), "agSwitch|agTyped|agSpeed|agEvery")
+//   .DKS Aux -> Staff (FLY + setpoint, session, REPAIRED, the status lines for the Staff screen: repair, seek, weakpoint, search, AI setup)
 //   .D2S Aux -> Staff (a PB argument given to this PB: the Staff runs it and forwards it to the Flight), .S2F Aux -> Flight (the mode word after a medic repair).
+//   .SCS / .KZR Flight -> Aux (search state, lock requests, kamikaze threats), .SCN Aux -> Flight (hits, lock results, heartbeat every 30 ticks)
+//   .WPF Flight -> Aux, .WPT Aux -> Flight (weakpoint relay; the Staff no longer listens)
 //  Keys: none here. The repair keys (Repair At Bay, Dock Speed (m/s), Dock Final Speed (m/s), Call Medic, Medic Channel) are read from the [Survival] section
-//  of the Flight PB's Custom Data (re-read when it changes); the Staff writes their defaults. Seeker Group / Seeker Turret Guides Aim come through the Staff.
+//  of the Flight PB's Custom Data (re-read when it changes); the Staff writes their defaults. Seeker, [Fleet] and [AI Gate] setup values come through the Staff.
 //  Failure: no Staff message for 30 ticks (or none yet) = link down: no new requests, a dock in progress aborts ("staff silent"), no seeker; a medic session
-//  goes on. Flight down (SDK bit 2): the dock aborts. Without this PB the drone loses bay docking, medic calls, the self-projector and the seeker only.
+//  goes on; search goes on while the Flight sends .SCS (stale after 30 ticks: all scanning stops). Flight down (SDK bit 2): the dock aborts. Without this PB
+//  the drone loses bay docking, medic calls, the self-projector, the seeker, camera / sensor search, the kamikaze pack rays, wing weakpoint sharing and the
+//  AI-behaviour setup (setup already made persists).
 // =====================================================================
-
-const string VER = "1.0";
+const string VER = "1.1";
 
 // ---------------- mirror of the Staff (.SDK) ---------------------------
 string Tag = "", SeekerGroup = "PowerSystems", _svPrevVerb = "";
 bool SeekerOn, RpDockOk, _svRtb, _svDock, _down = true;
 int _fl; long _tgtId; double _svAmin = 1, _svCap, MaxSpeed = 100;
+string _flChan = "", _wpPriS = "", _wpExpS = "", _agLine = null;   // SDK cfg lines 3-6 (WEAKPOINT RELAY, AI GATE SETUP)
+bool _agLive, _aiA, _agDo; long _sdkUpTk = -999;                  // _agLive: no AI GATE core here (no "AI ok" suffix); _aiA: SDK bit 9 AI ASSIST
+List<IMyFunctionalBlock> _ai = new List<IMyFunctionalBlock>();
+long _f2sTick { get { return Math.Max(_scTk, _sdkUpTk); } }       // WEAKPOINT RELAY: the Flight was heard (.SCS, or the Staff says it is up)
 enum Mode { IDLE, GUARD, RTB }                              // REPAIR CLIENT names IDLE and RTB only; anything else is GUARD here
 Mode _mode = Mode.GUARD;
 
@@ -42,7 +56,24 @@ bool DkHold { get { return false; } }
 void SvRepaired() { _svRtb = false; _repT = _now; }        // DKS bit 3 for 2 s; the Staff clears its latch
 double SvCapV() { return _svCap; }
 void Fwd(string c) { if (_fk != "") IGC.SendBroadcastMessage(_fk + ".S2F", c, TransmissionDistance.CurrentConstruct); }
-void WpSeek(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d) { if (_fk != "") IGC.SendBroadcastMessage(_fk + ".SKW", d, TransmissionDistance.CurrentConstruct); }
+void WpCfg() { }                                           // WEAKPOINT RELAY v1.2 hook: the [Fleet] values come in the SDK cfg (WpSet in ReadSdk)
+// AI GATE SETUP values from the SDK cfg line "agSwitch|agTyped|agSpeed|agEvery" (bools 1/0 or true/false); a missing or bad field keeps its value
+void AgSet(string s)
+{
+    var a = (s ?? "").Split('|'); bool b; double x;
+    if (a.Length > 0 && AgB(a[0], out b)) AiBehaviorSwitch = b;
+    if (a.Length > 1 && AgB(a[1], out b)) AiTyped = b;
+    if (a.Length > 2 && double.TryParse(a[2], out x)) AiSpeed = Math.Max(1, x);           // (the AI GATE CONFIG post-ops)
+    if (a.Length > 3 && double.TryParse(a[3], out x)) AiSearchEvery = Math.Max(0, (int)x);
+}
+bool AgB(string s, out bool b) { s = s.Trim(); b = s == "1"; return b || s == "0" || bool.TryParse(s, out b); }
+// the [AI] blocks (the Flight's IsAiBlock rule) -> AI GATE SETUP; never their Enabled
+void AgFind()
+{
+    GridTerminalSystem.GetBlocksOfType(_ai, b => b.IsSameConstructAs(Me) && (b.CustomName.Contains("[AI]") || b.BlockDefinition.ToString().Contains("OffensiveCombat")
+        || b.BlockDefinition.ToString().Contains("FlightMovement")));
+    AiGateFind(_ai);
+}
 bool SvB(MyIni i, string k, bool d) { return i.Get("Survival", k).ToBoolean(d); }
 double SvD(MyIni i, string k, double d) { return i.Get("Survival", k).ToDouble(d); }
 string SvT(MyIni i, string s, string k, string d) { return i.Get(s, k).ToString(d); }
@@ -397,6 +428,461 @@ void SkStep()
 string SkStatus() { return _skT.Count > 0 ? "Seek   : " + _skLog + "\n" : ""; }
 // <<< SEEKER v1.0 <<<
 
+// >>> AI GATE SETUP v1.0 (sub-block of AI GATE v1.3: one-time AI-block setup; tools/ags_block.cs, synced by tools/blocks_sync.py) >>>
+// Switches "AI Behavior" on, sets IMyFlightMovementBlock.SpeedLimit (typed API, opt-in) and IMyOffensiveCombatBlock.UpdateTargetInterval on the [AI]
+// blocks. Off the hot path (terminal property writes that persist in the world), so it may run in another PB than the AI GATE core: final hosts AuxAI
+// (drones), StaffAI (Helm ships), GnatStaffAI (variant G2), WaspAI and TubeRamAI (standalone, with the core). The Aux sets the four fields from the
+// SDK cfg line "agSwitch|agTyped|agSpeed|agEvery" with its own host code (AgSet(string) in AuxAI.cs) and calls AiGateFind when SDK bit 9 AI ASSIST rises,
+// when those values change, and on its 600-tick block rescan while bit 9 is set (flight_split.md 6.4).
+// Hooks: AiGateFind(list of [AI] blocks) after the AI blocks are found; AiGateStatus() in the status text.
+// Uses from the script: _agLive (declared by the AI GATE core; a host without the core declares "bool _agLive;" itself, false = no "AI ok" suffix).
+bool AiBehaviorSwitch = true, AiTyped = false; double AiSpeed = 100; int AiSearchEvery = 5, _agFound = -1;   // _agFound: -1 not tried, else the number of AI blocks whose behaviour switch was found
+List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
+
+void AiGateFind(List<IMyFunctionalBlock> ai)
+{
+    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
+    if (!AiBehaviorSwitch || ai.Count == 0) return;
+    int n = 0;
+    foreach (var b in ai)
+    {
+        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
+        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
+        _agProps.Clear(); b.GetProperties(_agProps);
+        ITerminalProperty<bool> sw = null;
+        foreach (var p in _agProps)
+        {
+            string id = p.Id.ToLowerInvariant();
+            if (!id.Contains("behavio")) continue;
+            var bp = p.As<bool>();
+            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
+        }
+        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
+        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
+    }
+    _agFound = n;
+}
+
+string AiGateStatus()
+{
+    if (_agFound < 0) return "";
+    if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
+    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
+}
+// <<< AI GATE SETUP v1.0 <<<
+
+// >>> SEARCH v1.0 (camera and sensor search for the Flight PB, run in the [Aux] PB; tools/sc_block.cs, synced by tools/blocks_sync.py) >>>
+// Camera and sensor search moves Flight -> Aux (docs/design/flight_split.md sections 2, 3, 4.1, 6.3, 6.6). Final host: AuxAI (model-independent).
+// Content: auto-scan, omni-scan (all-round close scan), hit-look, the manual lock ray, sensor poll, KZ rays from the .KZR table, own CamFor / Forwardish.
+// The code is the Flight's AutoScanStep / OmniScan / HitPoint / ManualLock / PollSensors / KzRayStep; every model difference comes in .SCS (p, flags).
+// Finds NEW contacts only; the tracked target (MaintainLock, designators, Track, Lead) stays in the Flight. Never writes an override. Valid(), Friendly()
+// and AddContact() stay in the Flight: this block sends every non-empty hit except its own grid and planets (friendlies and asteroids feed FaSee).
+// Channels (TransmissionDistance.CurrentConstruct, key K = "WSPL"+<Flight PB EntityId>):
+//   .SCS  Flight -> Aux   MyTuple<int flags, long tgtId, Vector3D lostPos, Vector3D lostVel, Vector3D hitDir, MyTuple<Vector3D,Vector3D,Vector3D,Vector3D> p>
+//         Every 6 ticks + at once on a flag change. Stale at the Aux after 30 ticks: the Aux stops all scanning.
+//         flags: bit0 AUTO (no target, AI off, AutoScan on, mode GUARD/HUNT/FOLLOW), bit1 OMNI (mode not IDLE and CloseScan on), bit2 HARD (UnderFire or
+//         Alerted), bit3 has target, bit4 AI on, bit5 SENSORS, bit6 HITLOOK (off for the Gnat variant), bit7 KZRAYS, bits 8-15 lock request counter,
+//         bit17 lock camera uses Forwardish (0.9) instead of 0.99.
+//         p: a = (auto-scan range, scan cone in degrees, spiral N); b = (close-scan range, 900, lock range); c = (lost age, hit-dir age, lost radius);
+//         d = (KzPack, KzReserve, 0). The model differences (ScanRange vs WeaponRange x 1.1, N 120/150, Gnat without HitPoint, lock rule and range)
+//         are carried in p and the flags.
+//         lostPos / lostVel are the Flight's raw _lostPos / _lostVel, c.X = _now - _lostT and c.Y = _now - _hitDirT at sending (never hit / lost: any
+//         age >= 25); this block adds the time since the message arrived.
+//         Lock: the ray is cast in the tick a counter change arrives. The first .SCS after a silence of more than 30 ticks (Aux start, Flight rebuilt)
+//         only learns the counter.
+//   .KZR  Flight -> Aux   MyTuple<long id, Vector3D pos, Vector3D vel, double radius, double age, int flags>: bit0 is the Flight's target, bits 8-11 index,
+//         12-15 count, 16-31 pass number. From the KzRayStep() proxy, <= 4 per KZ pass (6 Hz), only while threats exist.
+//         pos = T.P(_now) and vel = T.Vel at sending, age = _now - T.Seen. A new pass number replaces the table; the rays of KZ RAYS run once per pass
+//         (refresh the stalest track that is not bit0, every 2nd pass a pack-search ray round entry (pass/2) % n), pos extrapolated by vel.
+//   .SCN  Aux -> Flight   MyTuple<long id, int f, Vector3D hit, Vector3D vel, MyTuple<Vector3D,Vector3D> box, MyTuple<Vector3D,Vector3D> ori(fwd, up)>:
+//         f bits 0-7 entity type, 8-15 relationship, 16 has hit, 20-22 source (1 SCAN, 2 SENSOR, 3 KZ, 4 LOCK), 24-27 lock result (0 ok, 1 no forward
+//         camera, 2 nothing hit with the charge in hit.X). id 0 = heartbeat. Per non-empty hit, except own grid and planets; friendlies and asteroids
+//         are sent because FaSee uses them. About <= 6 per tick. Heartbeat every 30 ticks.
+//         Heartbeat: id 0, f 0. A failed lock: id -1, f = 4 << 20 | result << 24 (1 no forward camera, 2 = the ray hit nothing, an asteroid, a planet or
+//         its own grid; charge in hit.X). A lock that hit something comes as a normal hit with source 4 and result 0 (Friendly() stays in the Flight).
+// Sync: scans only while .SCS is <= 30 ticks old. Aux rebuilt: re-binds to the nearest [Flight] (existing rule), resumes on the next .SCS (<= 6 ticks).
+//   Flight rebuilt: new key; the Aux re-scans at 1 Hz while stale. Aux run gap: drops .KZR entries older than 0.5 s (the whole queue of the gap tick).
+// Hooks: ScBlocks() in GetBlocks (cameras, sensors); ScStep() every tick (after the key _fk is known); ScStatus() in the status text.
+// Uses from the script: _fk, _tick, _now, _rc, Me.
+List<IMyCameraBlock> _cams = new List<IMyCameraBlock>(); List<IMySensorBlock> _scSen = new List<IMySensorBlock>();
+List<MyDetectedEntityInfo> _sensed = new List<MyDetectedEntityInfo>();
+List<MyTuple<long, Vector3D, Vector3D, double, double, int>> _kzT = new List<MyTuple<long, Vector3D, Vector3D, double, double, int>>();
+IMyBroadcastListener _scL, _scKL; string _scKey = null, _scSt = "";
+long _scTk = -99, _scTgt; int _scF, _scLk, _scN, _scHits, _scHitN, _kzPass = -1, _kzRay, _scanIdx, _omniCam, _omniIdx, _hitIdx;
+double _scT, _kzRx; bool _kzNew;
+Vector3D _scLp, _scLv, _scHd; MyTuple<Vector3D, Vector3D, Vector3D, Vector3D> _scP;
+
+void ScBlocks()
+{
+    GridTerminalSystem.GetBlocksOfType(_cams, b => b.IsSameConstructAs(Me));
+    foreach (var c in _cams) c.EnableRaycast = true;
+    GridTerminalSystem.GetBlocksOfType(_scSen, b => b.IsSameConstructAs(Me));
+}
+bool ScOn { get { return _scN > 0 && _tick - _scTk <= 30; } }
+void ScStep()
+{
+    if (_fk != _scKey)
+    {
+        if (_scL != null) IGC.DisableBroadcastListener(_scL);
+        if (_scKL != null) IGC.DisableBroadcastListener(_scKL);
+        _scKey = _fk; _scN = 0; _kzT.Clear(); _kzPass = -1;
+        _scL = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".SCS") : null;
+        _scKL = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".KZR") : null;
+    }
+    bool gap = Runtime.TimeSinceLastRun.TotalSeconds > 0.5, lk = false;
+    while (_scL != null && _scL.HasPendingMessage)
+    {
+        var m = _scL.AcceptMessage();
+        if (!(m.Data is MyTuple<int, long, Vector3D, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D, Vector3D, Vector3D>>)) continue;
+        var d = (MyTuple<int, long, Vector3D, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D, Vector3D, Vector3D>>)m.Data;
+        int c = d.Item1 >> 8 & 255;
+        if (ScOn && c != _scLk) lk = true;                // (after a silence the counter is only learnt: no lock from a stale request)
+        _scLk = c; _scF = d.Item1; _scTgt = d.Item2; _scLp = d.Item3; _scLv = d.Item4; _scHd = d.Item5; _scP = d.Item6;
+        _scT = _now; _scTk = _tick; _scN++;
+    }
+    while (_scKL != null && _scKL.HasPendingMessage)
+    {
+        var m = _scKL.AcceptMessage();
+        if (gap || !(m.Data is MyTuple<long, Vector3D, Vector3D, double, double, int>)) continue;   // run gap: the queue is old
+        var d = (MyTuple<long, Vector3D, Vector3D, double, double, int>)m.Data;
+        int ps = d.Item6 >> 16 & 65535;
+        if (ps != _kzPass) { _kzPass = ps; _kzT.Clear(); _kzNew = true; }
+        if (_kzT.Count < 16) _kzT.Add(d); _kzRx = _now;
+    }
+    if (_fk != "" && _tick % 30 == 17) ScTx(0, 0, Vector3D.Zero, Vector3D.Zero, new MyTuple<Vector3D, Vector3D>(), new MyTuple<Vector3D, Vector3D>());   // heartbeat
+    if (_tick % 30 == 0) { _scHitN = _scHits; _scHits = 0; _scSt = ScLine(); }
+    bool on = ScOn && _rc != null && _rc.IsFunctional;
+    if (on && lk) ManualLock();
+    if (!on) { _kzNew = false; return; }
+    if ((_scF & 32) != 0 && _tick % 10 == 5) PollSensors();
+    if (_kzNew && (_scF & 128) != 0 && _kzT.Count > 0 && _now - _kzRx < 0.5) KzRays();
+    _kzNew = false;
+    if (Runtime.CurrentInstructionCount > Runtime.MaxInstructionCount * 0.6) return;   // the optional scans wait for the next tick
+    if ((_scF & 2) != 0) OmniScan();
+    if ((_scF & 1) != 0) AutoScanStep();
+}
+void ScTx(long id, int f, Vector3D hit, Vector3D vel, MyTuple<Vector3D, Vector3D> box, MyTuple<Vector3D, Vector3D> ori)
+{
+    IGC.SendBroadcastMessage(_fk + ".SCN", new MyTuple<long, int, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D>, MyTuple<Vector3D, Vector3D>>(id, f, hit, vel, box, ori),
+        TransmissionDistance.CurrentConstruct);
+}
+// one hit -> .SCN (src 1 SCAN, 2 SENSOR, 3 KZ, 4 LOCK); false for nothing, own grid and planets
+bool ScSend(MyDetectedEntityInfo e, int src)
+{
+    if (_fk == "" || e.IsEmpty() || e.EntityId == Me.CubeGrid.EntityId || e.Type == MyDetectedEntityType.Planet) return false;
+    var b = e.BoundingBox;
+    ScTx(e.EntityId, ((int)e.Type & 255) | ((int)e.Relationship & 255) << 8 | (e.HitPosition.HasValue ? 65536 : 0) | src << 20, e.HitPosition ?? Vector3D.Zero,
+        new Vector3D(e.Velocity), new MyTuple<Vector3D, Vector3D>(b.Min, b.Max), new MyTuple<Vector3D, Vector3D>(e.Orientation.Forward, e.Orientation.Up));
+    _scHits++;
+    return true;
+}
+bool Forwardish(IMyCameraBlock c) { return Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.9; }
+IMyCameraBlock CamFor(Vector3D pos, double range)
+{
+    IMyCameraBlock best = null; double bestRange = 0;
+    foreach (var c in _cams)
+    {
+        if (!c.IsFunctional || !c.IsWorking) continue;
+        Vector3D d = pos - c.GetPosition();
+        double len = d.Length();
+        if (len < 1) continue;
+        if (Vector3D.Dot(d / len, c.WorldMatrix.Forward) < 0.72) continue; // ~44 deg cone
+        if (c.AvailableScanRange < Math.Max(range, len)) continue;   // a ray costs its length in charge; range 0 = "just to the point"
+        if (c.AvailableScanRange > bestRange) { best = c; bestRange = c.AvailableScanRange; }
+    }
+    return best;
+}
+
+// "lock": a ray straight ahead from the forward camera with the most charge (Friendly() and the new target are the Flight's)
+void ManualLock()
+{
+    double fw = (_scF & 131072) != 0 ? 0.9 : 0.99, rng = _scP.Item2.Z > 0 ? _scP.Item2.Z : 2500;
+    IMyCameraBlock cam = null;
+    foreach (var c in _cams)
+        if (c.IsWorking && Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > fw && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
+    var z = new MyTuple<Vector3D, Vector3D>();
+    if (cam == null) { ScTx(-1, 4 << 20 | 1 << 24, Vector3D.Zero, Vector3D.Zero, z, z); return; }
+    var e = cam.Raycast(Math.Min(rng, cam.AvailableScanRange));
+    if (e.Type == MyDetectedEntityType.Asteroid || !ScSend(e, 4)) ScTx(-1, 4 << 20 | 2 << 24, new Vector3D(cam.AvailableScanRange, 0, 0), Vector3D.Zero, z, z);
+}
+
+// auto-scan: a golden-angle spiral over the scan cone from the forward camera with the most charge; just lost a target: every other ray round its last place
+void AutoScanStep()
+{
+    double range = _scP.Item1.X, lostAge = _scP.Item3.X + _now - _scT;
+    IMyCameraBlock cam = null;
+    foreach (var c in _cams)
+        if (c.IsWorking && Forwardish(c) && c.AvailableScanRange >= range && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
+    if (cam == null) return;
+    _scanIdx++;
+    if (lostAge < 25 && (_scanIdx & 1) == 0)
+    {
+        Vector3D lp = _scLp + _scLv * Math.Min(lostAge, 10);
+        double rr = Math.Min(250, _scP.Item3.Z + 6 * lostAge) * Math.Sqrt(((_scanIdx >> 1) % 23 + 0.5) / 23.0), th2 = _scanIdx * 2.39996323;
+        Vector3D dl = lp - cam.GetPosition(); double dd = dl.Length();
+        if (dd > 30 && dd < range)
+        {
+            dl /= dd;
+            Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
+            Vector3D vv = Vector3D.Cross(dl, uu);
+            ScSend(cam.Raycast(lp + uu * (rr * Math.Cos(th2)) + vv * (rr * Math.Sin(th2)) + dl * 10), 1);
+            return;
+        }
+    }
+    int N = _scP.Item1.Z >= 1 ? (int)_scP.Item1.Z : 120;
+    double r = _scP.Item1.Y * Math.Sqrt((_scanIdx % N + 0.5) / N), th = _scanIdx * 2.39996323; // golden-angle spiral
+    ScSend(cam.Raycast(range, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th))), 1);
+}
+
+void PollSensors()
+{
+    foreach (var s in _scSen)
+    {
+        if (!s.IsWorking) continue;
+        _sensed.Clear();
+        s.DetectedEntities(_sensed);
+        foreach (var e in _sensed) ScSend(e, 2);
+    }
+}
+
+// close scan: cameras that don't face forward fire short rays in a spiral over their whole view cone (3 a tick, as their charge allows).
+// Under fire or with nothing to track they reach max(4 x close range, hard range); the forward cameras join only under fire with no target, AI off and no
+// auto-scan (AUTO clear), so they keep their charge for the long auto-scan, the AI confirm rays and a lock.
+void OmniScan()
+{
+    if (_cams.Count == 0) return;
+    bool hard = (_scF & 4) != 0, free = (_scF & 8) == 0;
+    double rng = hard || free ? Math.Max(_scP.Item2.X * 4, _scP.Item2.Y) : _scP.Item2.X, hAge = _scP.Item3.Y + _now - _scT;
+    bool look = (_scF & 64) != 0 && hard && free && hAge < 10 && _scHd.LengthSquared() > 0.5, fw = hard && free && (_scF & 17) == 0;
+    for (int shots = 0, tries = 0; shots < 3 && tries < _cams.Count; tries++)
+    {
+        var c = _cams[_omniCam++ % _cams.Count];
+        if (!c.IsWorking || (Forwardish(c) && !fw) || c.AvailableScanRange < rng * 2) continue; // keep charge for tracking
+        _omniIdx++;
+        MyDetectedEntityInfo e; Vector3D hp;
+        if (look && HitPoint(c, rng, out hp)) e = c.Raycast(hp);   // just hit: look where the shots came from
+        else
+        {
+            double r = 40 * Math.Sqrt((_omniIdx % 89 + 0.5) / 89.0), th = _omniIdx * 2.39996323;
+            e = c.Raycast(rng, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
+        }
+        ScSend(e, 1);
+        shots++;
+    }
+}
+// A point rng metres out, inside 35 deg of the side that was hit (golden-angle spiral), that camera c can see; false if none of 4 tries is in its cone.
+bool HitPoint(IMyCameraBlock c, double rng, out Vector3D pt)
+{
+    Vector3D a = Vector3D.Cross(_scHd, Math.Abs(_scHd.Y) < 0.9 ? Vector3D.Up : Vector3D.Right); a.Normalize();
+    Vector3D b = Vector3D.Cross(_scHd, a), cp = c.GetPosition();
+    for (int k = 0; k < 4; k++)
+    {
+        _hitIdx++;
+        double r = Math.Tan(0.61 * Math.Sqrt((_hitIdx % 97 + 0.5) / 97.0)), th = _hitIdx * 2.39996323;
+        Vector3D d = Vector3D.Normalize(_scHd + (a * Math.Cos(th) + b * Math.Sin(th)) * r);
+        pt = cp + d * rng;
+        if (Vector3D.Dot(d, c.WorldMatrix.Forward) > 0.72) return true;
+    }
+    pt = Vector3D.Zero; return false;
+}
+
+// KZ RAYS on the .KZR table, once per KZ pass: one ray refreshes the stalest incoming track that is not the Flight's target, one (every 2nd pass)
+// searches round a known kamikaze for the rest of its pack. A camera is used only with KzReserve metres of charge left over.
+void KzRays()
+{
+    Vector3D me = _rc.GetPosition();
+    double dt = _now - _kzRx, pk = _scP.Item4.X, res = _scP.Item4.Y;
+    int si = -1, n = _kzT.Count;
+    for (int i = 0; i < n; i++) { var k = _kzT[i]; if ((k.Item6 & 1) == 0 && k.Item5 + dt > 0.25 && (si < 0 || k.Item5 > _kzT[si].Item5)) si = i; }
+    if (si >= 0)
+    {
+        var k = _kzT[si];
+        Vector3D p = k.Item2 + k.Item3 * dt, d = p - me; double len = d.Length();
+        if (len > 1)
+        {
+            Vector3D aim = p + d / len * Math.Min(k.Item4 + 2, 8);
+            var c = CamFor(aim, len + res);
+            if (c != null) ScSend(c.Raycast(aim), 3);
+        }
+    }
+    if ((++_kzRay & 1) == 1) return;
+    var q = _kzT[(_kzRay >> 1) % n];
+    if (q.Item5 + dt > 1) return;
+    Vector3D pc = q.Item2 + q.Item3 * dt, dl = pc - me; double dd = dl.Length();
+    if (dd < 30) return;
+    dl /= dd;
+    Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
+    Vector3D vv = Vector3D.Cross(dl, uu);
+    double rr = pk * Math.Sqrt(((_kzRay >> 1) % 17 + 0.5) / 17.0), th = _kzRay * 2.39996323;
+    Vector3D pt = pc + uu * (rr * Math.Cos(th)) + vv * (rr * Math.Sin(th)) + dl * pk;
+    var cam = CamFor(pt, dd + pk + res);
+    if (cam != null) ScSend(cam.Raycast(pt), 3);
+}
+
+string ScLine()
+{
+    if (_scN == 0) return _fk == "" ? "" : "Search : waiting for the Flight (.SCS)\n";
+    if (!ScOn) return "Search : FLIGHT SILENT, scan off\n";
+    if ((_scF & 163) == 0) return "Search : idle (" + _cams.Count + " cam, " + _scSen.Count + " sensor)\n";
+    return "Search :" + ((_scF & 1) != 0 ? " auto" : "") + ((_scF & 2) != 0 ? ((_scF & 4) != 0 ? " close(far)" : " close") : "") + ((_scF & 32) != 0 && _scSen.Count > 0 ? " sensor" : "")
+        + ((_scF & 128) != 0 && _kzT.Count > 0 ? " kz" + _kzT.Count : "") + ", " + _scHitN * 2 + " hits/s\n";
+}
+string ScStatus() { return _scSt; }
+// <<< SEARCH v1.0 <<<
+
+// >>> WEAKPOINT RELAY v1.2 (shared block: the [Aux] PB of the drones and GnatStaffAI, see docs/design/hive_weakpoint.md, docs/hive-protocol.md, docs/design/flight_split.md 6.5) >>>
+// Fleet side of the shared breach point. The Flight PB sends its own findings on <Flight>.WPF; this PB puts them on the fleet channel <ch>_WP,
+// collects the findings of the whole wing, and sends the best hole for the Flight's current target back on <Flight>.WPT (once a second).
+//   <ch>_WP  MyTuple<long target, Vector3D s, Vector3D d, Vector3D info, long senderGrid, int flags>
+//     s = hull entry and d = drill direction, both in the TARGET frame; info = (hole depth m, vital depth hint m or -1, age s)
+//     flags: bits 0-2 kind (0 camera breach point, 1 PowerSystems, 2 Weapons, 3 Propulsion, 4 other), 8 seeker found it, 16 block position
+//     from the game, 32 DONE (everybody drops the hole), 64 STALL (that sender gave up), 128 ADOPTED (the sender took it from the wing and its own ray confirmed it)
+//     Relay -> Flight (.WPT): bits 8-11 = number of drones that support the hole.
+// A drone sends only its OWN confirmed findings; a received hole is never forwarded (no echo). Holes within 4 m of each other are one hole; the best
+// one wins (seeker kind by "Weakpoint Priority", then supporters, then depth, then the lowest grid id), so every drone picks the same hole.
+// [Fleet] keys: Weakpoint Priority=1,3,2 (power, propulsion, weapons)   Weakpoint Expire (s)=20
+// v1.1 (docs/design/survivability.md): the drone's OWN seeker turret (SEEKER -> WpSeek): that entry (map key ~own grid id,
+// internal flag 4096, kept 3 s) ranks above every other hole, goes to the wing like an own finding, and reaches the Flight with .WPT flag 4096 (the Flight
+// takes it as its own seeker point, BreachSet(s, d, true)); .WPT is sent twice a second while it is fresh, else once a second.
+// v1.2 (docs/design/flight_split.md 3, 6.5): hosts AuxAI (the 8 drones with an [Aux] PB) and GnatStaffAI. WpCfg() is a host hook: it gets the two
+// [Fleet] values and passes them to WpSet(priority text, expire s). AuxAI: the Staff writes the defaults and sends both values in the .SDK cfg (lines 4-5),
+// AuxAI calls WpSet when they change and its WpCfg() is empty; WpSeek is called locally by SEEKER (no .SKW). A Staff host keeps the v1.1 behaviour with:
+//   void WpCfg() { var ini = new MyIni(); MyIniParseResult r; if (!ini.TryParse(Me.CustomData, out r)) return;
+//     if (!ini.ContainsKey("Fleet", "Weakpoint Priority")) ini.Set("Fleet", "Weakpoint Priority", "1,3,2");
+//     if (!ini.ContainsKey("Fleet", "Weakpoint Expire (s)")) ini.Set("Fleet", "Weakpoint Expire (s)", 20.0);
+//     string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+//     WpSet(ini.Get("Fleet", "Weakpoint Priority").ToString("1,3,2"), ini.Get("Fleet", "Weakpoint Expire (s)").ToDouble(20)); }
+// Script hooks: WpStep() every tick (Staff: in Tick after Relay()); WpStatus() in the status text (AuxAI: in the .DKS status); WpCfg() (host).
+// Uses: _fk, _flChan, _tgtId, _tick, _now, _f2sTick (the tick the Flight was last heard: .WPT only while it is <= 90 ticks old), FleetV(), WpCfg().
+class WpE { public long Tgt, Snd; public Vector3D S, D, I; public int F; public double T; }
+Dictionary<long, WpE> _wpMap = new Dictionary<long, WpE>();
+IMyBroadcastListener _wpLf, _wpLw;
+string _wpKey = null; int[] _wpPri = new int[] { 1, 3, 2 }; double _wpExp = 20, _wpFleetT = -99, _wpFlT = -99, _wpEvSendT = -99; WpE _wpBest; int _wpBestK;
+List<WpE> _wpDone = new List<WpE>(); List<long> _wpDel = new List<long>(); MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> _wpLast;
+bool WpOkT(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
+{
+    double dl = d.Item3.Length();
+    return FleetV(d.Item2) && FleetV(d.Item4) && Math.Abs(d.Item2.X) < 1e4 && Math.Abs(d.Item2.Y) < 1e4 && Math.Abs(d.Item2.Z) < 1e4 && dl > 0.9 && dl < 1.1
+        && d.Item4.X >= 0 && d.Item4.X <= 100 && d.Item4.Y < 500 && !double.IsNaN(d.Item4.X + d.Item4.Y + d.Item4.Z);
+}
+// the two [Fleet] values (from the host's WpCfg(), or from the .SDK cfg in AuxAI)
+void WpSet(string pri, double exp)
+{
+    var l = new List<int>();
+    foreach (var p in (pri ?? "").Split(',')) { int k; if (int.TryParse(p.Trim(), out k)) l.Add(k); }
+    _wpPri = l.ToArray(); _wpExp = Math.Max(3, exp);
+}
+int WpRank(WpE e)
+{
+    if ((e.F & 4096) != 0) return 100;                     // own seeker turret, read this second
+    if ((e.F & 8) == 0) return 0;                           // camera breach points rank below anything a turret found
+    int k = e.F & 7, i = Array.IndexOf(_wpPri, k);
+    return i >= 0 ? 20 - i : 5;
+}
+WpE WpPut(long snd, MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
+{
+    WpE e;
+    if (!_wpMap.TryGetValue(snd, out e)) { if (_wpMap.Count >= 64) return null; e = new WpE(); _wpMap[snd] = e; }
+    e.Tgt = d.Item1; e.Snd = snd; e.S = d.Item2; e.D = d.Item3; e.I = d.Item4; e.F = d.Item6; e.T = _now;
+    return e;
+}
+void WpStep()
+{
+    string key = _flChan + "|" + _fk;
+    if (key != _wpKey)
+    {
+        if (_wpKey != null) { if (_wpLf != null) IGC.DisableBroadcastListener(_wpLf); if (_wpLw != null) IGC.DisableBroadcastListener(_wpLw); }
+        _wpKey = key; _wpMap.Clear(); _wpDone.Clear(); WpCfg();
+        _wpLf = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".WPF") : null;
+        _wpLw = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_WP") : null;
+    }
+    else if (_tick % 600 == 1) WpCfg();
+    long me = Me.CubeGrid.EntityId;
+    // my Flight PB -> map, and on to the fleet channel (changes and events at once, else every 2 s)
+    while (_wpLf != null && _wpLf.HasPendingMessage)
+    {
+        var m = _wpLf.AcceptMessage();
+        if (!(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
+        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
+        if (!WpOkT(d)) continue;
+        d.Item5 = me;
+        if ((d.Item6 & 96) != 0) WpEvent(d, me);
+        else WpPut(me, d);
+        bool changed = d.Item1 != _wpLast.Item1 || d.Item6 != _wpLast.Item6 || (d.Item2 - _wpLast.Item2).LengthSquared() > 1;
+        if (_wpLw != null && (changed || (d.Item6 & 96) != 0 || _now - _wpFleetT >= 2)) { IGC.SendBroadcastMessage(_flChan + "_WP", d); _wpFleetT = _now; _wpLast = d; }
+    }
+    // the wing -> map
+    while (_wpLw != null && _wpLw.HasPendingMessage)
+    {
+        var m = _wpLw.AcceptMessage();
+        if (m.Source == IGC.Me || !(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
+        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
+        if (d.Item5 == me || d.Item5 == 0 || !WpOkT(d)) continue;
+        if ((d.Item6 & 96) != 0) WpEvent(d, d.Item5); else WpPut(d.Item5, d);
+    }
+    _wpDel.Clear();
+    foreach (var kv in _wpMap) if (_now - kv.Value.T > ((kv.Value.F & 4096) != 0 ? 3 : _wpExp)) _wpDel.Add(kv.Key);
+    foreach (var k in _wpDel) _wpMap.Remove(k);
+    for (int i = _wpDone.Count - 1; i >= 0; i--) if (_now - _wpDone[i].T > 3) _wpDone.RemoveAt(i);
+    WpE sk; bool skf = _wpMap.TryGetValue(~me, out sk) && sk.Tgt == _tgtId && _tgtId != 0;
+    if (_tick % (skf ? 30 : 60) != 3) return;
+    // best hole for the Flight's target
+    _wpBest = null; _wpBestK = 0;
+    if (_tgtId != 0)
+    {
+        long bs = 0; int br = -1, bk = 0; double bd = -1; WpE bb = null;
+        foreach (var a in _wpMap.Values)
+        {
+            if (a.Tgt != _tgtId) continue;
+            int k = 0; double dep = 0; int rank = WpRank(a); long low = a.Snd; WpE rep = a;
+            foreach (var b in _wpMap.Values)
+            {
+                if (b.Tgt != _tgtId || (b.S - a.S).LengthSquared() > 16) continue;
+                k++; dep = Math.Max(dep, b.I.X); int rb = WpRank(b); if (rb > rank) { rank = rb; rep = b; } if (b.Snd < low) low = b.Snd;
+            }
+            if (rank > br || (rank == br && (k > bk || (k == bk && (dep > bd || (dep == bd && low < bs))))))
+            { br = rank; bk = k; bd = dep; bs = low; bb = rep; }
+        }
+        if (bb != null) { _wpBest = bb; _wpBestK = bk; _wpBestDep = bd; }
+    }
+    if (_fk == "" || _tick - _f2sTick > 90) return;
+    if (_wpBest != null)
+        IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(_wpBest.Tgt, _wpBest.S, _wpBest.D,
+            new Vector3D(_wpBestDep, _wpBest.I.Y, _now - _wpBest.T + _wpBest.I.Z), _wpBest.Snd, (_wpBest.F & 4127) | (Math.Min(_wpBestK, 15) << 8)), TransmissionDistance.CurrentConstruct);
+    foreach (var e in _wpDone)
+        if (e.Tgt == _tgtId) IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(e.Tgt, e.S, e.D, e.I, e.Snd, 32), TransmissionDistance.CurrentConstruct);
+}
+double _wpBestDep, _wpSkT = -99; MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> _wpSkLast;
+// own seeker finding (SEEKER): into the map as the top-ranked entry, to the wing on a change or every 2 s
+void WpSeek(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
+{
+    if (!WpOkT(d)) return;
+    long me = Me.CubeGrid.EntityId;
+    var e = WpPut(~me, d); if (e != null) { e.Snd = me; e.F |= 4096; }
+    if (_flChan != "" && (d.Item1 != _wpSkLast.Item1 || (d.Item2 - _wpSkLast.Item2).LengthSquared() > 1 || _now - _wpSkT >= 2))
+    { IGC.SendBroadcastMessage(_flChan + "_WP", d); _wpSkT = _now; _wpSkLast = d; }
+}
+// DONE: every hole within 4 m of it is gone (and the Flight is told for 3 s); STALL: that sender's support is gone
+void WpEvent(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d, long snd)
+{
+    if ((d.Item6 & 32) != 0)
+    {
+        _wpDel.Clear();
+        foreach (var kv in _wpMap) if (kv.Value.Tgt == d.Item1 && (kv.Value.S - d.Item2).LengthSquared() < 16) _wpDel.Add(kv.Key);
+        foreach (var k in _wpDel) _wpMap.Remove(k);
+        var e = new WpE(); e.Tgt = d.Item1; e.Snd = snd; e.S = d.Item2; e.D = d.Item3; e.I = d.Item4; e.F = 32; e.T = _now;
+        _wpDone.Add(e); if (_wpDone.Count > 8) _wpDone.RemoveAt(0);
+    }
+    else _wpMap.Remove(snd);
+}
+string WpStatus()
+{
+    if (_wpBest == null) return _wpMap.Count > 0 ? "Weakpt : " + _wpMap.Count + " report(s), none for the target\n" : "";
+    string[] kn = { "breach point", "power", "weapons", "propulsion", "block" };
+    return "Weakpt : " + kn[Math.Min(_wpBest.F & 7, 4)] + " hole " + _wpBestDep.ToString("0") + " m, " + _wpBestK + " drone(s), age " + (_now - _wpBest.T).ToString("0") + " s\n";
+}
+// <<< WEAKPOINT RELAY v1.2 <<<
+
 public Program()
 {
     try { GetBlocks(); } catch (Exception ex) { _crash = "setup: " + ex.Message; Echo(_crash); }
@@ -422,7 +908,7 @@ void GetBlocks()
         _lSdk = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".SDK") : null;
         _sdkN = 0; _cdTxt = null; _dksFull = true;
     }
-    RpBlocks(); SkBlocks();
+    RpBlocks(); SkBlocks(); ScBlocks();
     LoadCfg();
     _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.75f; _lcd.Font = "Monospace";
 }
@@ -460,6 +946,8 @@ void Tick(string arg, UpdateType src)
     if (_tick % 600 == 0 || Me.CubeGrid != _myGrid || (_down && _tick % 60 == 0)) { _myGrid = Me.CubeGrid; GetBlocks(); }
     if (_tick % 60 == 30) LoadCfg();
     ReadSdk();
+    if (_agDo || (_aiA && _tick % 600 == 0)) { _agDo = false; AgFind(); }   // flight_split.md 6.4: bit 9 rose, the values changed, the 600-tick rescan
+    ScStep(); WpStep();
     bool was = _down, stale = _sdkN == 0 || _tick - _sdkTk > 30;
     _down = stale || (_sdkF & 4) != 0;
     if (was && !_down) _dksFull = true;
@@ -480,6 +968,7 @@ void ReadSdk()
         var d = (MyTuple<int, long, Vector3D, string, string, string>)m.Data;
         if (m.Source != _sdkSrc) { _sdkSrc = m.Source; _dksFull = true; }   // a new (or rebuilt) Staff PB
         int f = d.Item1; _sdkF = f; _sdkTk = _tick; _sdkN++;
+        if ((f & 4) == 0) _sdkUpTk = _tick;
         _svRtb = (f & 1) != 0 && _now - _repT >= 2;          // just repaired: the Staff's latch clears with its next message
         _svDock = (f & 2) != 0; _fl = f & 16;
         _mode = (f & 32) != 0 ? Mode.IDLE : (f & 64) != 0 ? Mode.RTB : Mode.GUARD;
@@ -491,6 +980,11 @@ void ReadSdk()
         if (c[0] != Tag) { Tag = c[0]; RpListen(); }
         bool so = (f & 128) != 0; string sg = c.Length > 1 ? c[1] : "";
         if (so != SeekerOn || sg != SeekerGroup) { SeekerOn = so; SeekerGroup = sg; SkBlocks(); }
+        _flChan = c.Length > 2 ? c[2].Trim() : "";
+        if (c.Length > 4 && c[3].Trim() != "" && (c[3] != _wpPriS || c[4] != _wpExpS)) { double x; _wpPriS = c[3]; _wpExpS = c[4]; WpSet(c[3], double.TryParse(c[4], out x) ? x : 20); }
+        bool ai = (f & 512) != 0; string ag = c.Length > 5 ? c[5] : "";
+        if (ag != _agLine) { _agLine = ag; AgSet(ag); _agDo |= ai; }
+        _agDo |= ai && !_aiA; _aiA = ai;
         foreach (var l in (d.Item6 ?? "").Split('\n'))
         {
             if (l.Length < 1) continue;
@@ -505,7 +999,7 @@ void SendDks()
 {
     if (_fk == "") return;
     int f = (_rpFly ? 1 : 0) | (_rpS > 0 ? 2 : 0) | (_now - _repT < 2 ? 8 : 0);
-    string st = RpStatus() + SkStatus();
+    string st = RpStatus() + SkStatus() + WpStatus() + ScStatus() + (_aiA ? AiGateStatus() : "");
     if (!_rpFly && !_dksFull && !_dkRes && f == _dksF && st == _dksSt && _tick - _dksTk < 30) return;
     IGC.SendBroadcastMessage(_fk + ".DKS", new MyTuple<int, Vector3D, Vector3D, Vector3D, string>(f, _rpFly ? _dkV : Vector3D.Zero, _rpFly ? _dkF : Vector3D.Zero, _rpFly ? _dkU : Vector3D.Zero, st),
         TransmissionDistance.CurrentConstruct);
@@ -523,7 +1017,7 @@ void Display()
     else if (_tick - _sdkTk > 30) s.Append("STAFF PB SILENT  ").Append(((_tick - _sdkTk) / 60.0).ToString("0.0")).Append(" s\n");
     else s.Append("Staff  : link OK\n");
     if (_rc == null || !_rc.IsFunctional) s.Append("! No working Remote Control / cockpit\n");
-    s.Append(RpStatus()).Append(SkStatus());
+    s.Append(RpStatus()).Append(SkStatus()).Append(WpStatus()).Append(ScStatus()).Append(_aiA ? AiGateStatus() : "");
     if (Me.OwnerId == 0) s.Append("! PB has no owner: set ownership\n");
     if (_crash != "") s.Append("! ").Append(_crash).Append('\n');
     if (_lcd != null) _lcd.WriteText(s.ToString());

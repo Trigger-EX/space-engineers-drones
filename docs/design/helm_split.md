@@ -1,6 +1,6 @@
 # Helm Split: moving the off-hot-path modules of ShrikeAI.cs into the Staff PB
 
-Status: **implemented 2026-10-14, cuts 1 and 3** (fleet channel, damage sensing). **Cut 2 (cockpit HUD page and Run menu of MANUAL) is not moved yet**: it would take the Helm from 81,100 to about 79,000, and it
+Status: **implemented 2026-10-14, cuts 1 and 3** (fleet channel, damage sensing). **2026-10-18: Cut 2 done, and the config moved too** (docs/design/flight_split.md section 7.1, H1-H6: the Helm's config server, AI GATE SETUP, the cockpit HUD page and Run menu (`.HUD` / `.MNU`), part of the status text and the manual lock (`.LCK` / `.LKR`) run in StaffAI; ShrikeAI 77,994 minified, StaffAI 53,359). The text below is the 2026-10-14 state. **Cut 2 (cockpit HUD page and Run menu of MANUAL) is not moved yet**: it would take the Helm from 81,100 to about 79,000, and it
 touches the pilot-facing HUD (extra latency for a lag-sensitive display), so it waits for an in-game look at the split first. Measured: ShrikeAI.cs **81,100** minified (was 86,228; gate 86,000, restored),
 StaffAI.cs **29,054** (was about 23,000). Pattern: `docs/design/wasp_split.md`. Rules: CLAUDE.md "Script size".
 

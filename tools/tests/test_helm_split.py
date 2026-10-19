@@ -46,9 +46,10 @@ class Sources(unittest.TestCase):
 
     def test_helm_size_gate(self):
         n = len(C.minify(src('ShrikeAI.cs'))) if hasattr(C, 'minify') else 0
+        lim = getattr(C, 'PB_BUDGET', 80000)      # flight_split.md 9.4: ShrikeAI <= 80,000 (target 76,500, test_flight_split.Sizes)
         if n:
-            self.assertLessEqual(n, C.SCRIPT_LIMITS['ShrikeAI.cs'])
-        self.assertLessEqual(C.SCRIPT_LIMITS['ShrikeAI.cs'], 86000, 'the gate goes back to 86,000 once the split is in (CLAUDE.md: add a PB, do not raise the cap)')
+            self.assertLessEqual(n, lim, 'ShrikeAI over the PB budget: move an off-hot-path module into StaffAI (flight_split.md section 7.1)')
+        self.assertLessEqual(C.SCRIPT_LIMITS.get('ShrikeAI.cs', lim), lim, 'the ShrikeAI gate must not exceed the PB budget (CLAUDE.md: add a PB, do not raise the cap)')
 
 
 class Designs(unittest.TestCase):

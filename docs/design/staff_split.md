@@ -1,6 +1,6 @@
 # Staff split: a fourth PB, `[Aux]`, for the repair client and the seeker
 
-`docs/design/staff_split.md`. Planned 2026-10-17 on the uncommitted survivability working tree. **Implemented 2026-10-17** (blocks, scripts, designs, tests, sim harness; release zips not rebuilt). Implementation notes:
+`docs/design/staff_split.md`. Planned 2026-10-17 on the uncommitted survivability working tree. **Implemented 2026-10-17** (blocks, scripts, designs, tests, sim harness; release zips not rebuilt). **Extended 2026-10-18 by docs/design/flight_split.md:** WEAKPOINT RELAY (v1.2), camera / sensor search (SEARCH), the KZ pack rays and the AI-block setup now run in the `[Aux]` PB too; the Basilisk got its `[Aux]` PB (its Staff switched to AUX LINK v1.1, REPAIR CLIENT and SEEKER left it) and the Gnat traded its sensor for one; `.SKW` is gone (the seeker finding reaches the Flight on `.WPT` from the Aux). Sizes now: flight_split.md section 7. Implementation notes:
 - Measured sizes: the 7 Staff PBs 72.64-72.71k, Gnat 73.8k, Basilisk 73.5k, AuxAI 19.4k (section 8 estimated 72.0k / 17k).
 - SURVIVAL STAFF `DkRel()` also guards on `_dkOn` (set by `DkGo`): a release with nothing taken writes nothing (no stray `DampenersOverride` and no 2-tick FOL bit 2 on an abort from state 1, "bay did not answer"). AUX LINK's run-gap path clears `_dkOn` without a write.
 - REPAIR CLIENT v1.1 calls `DkRel()` directly instead of keeping an `RpRel()` wrapper.

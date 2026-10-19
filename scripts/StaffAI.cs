@@ -1,5 +1,5 @@
 // =====================================================================
-//  STAFF AI  v1.5  - the Staff script of the warships (corvette, frigate, dreadnought; also a second PB on the Shrike test ship)
+//  STAFF AI  v1.6  - the Staff script of the warships (corvette, frigate, dreadnought; also a second PB on the Shrike test ship)
 //  For Space Engineers (vanilla). Paste into a Programmable Block named "[Staff] ..." on the same construct as the "[Helm] ..." PB (ShrikeAI).
 //  Update10 + an IGC callback on the heartbeat. Staff never flies the ship and never writes an override; it only watches, talks and RELEASES.
 //
@@ -38,6 +38,11 @@
 //     the Helm, never through this PB's Command() - and copies the Helm's own shares (".FLT") to the fleet channel), DAMAGE SENSING (the block-integrity scan, hit counter and hit direction go
 //     back as ".DMG", 1 Hz, which is also the liveness beat), and nothing else: the Helm still writes every override. [Staff] Mothership=false (default true) on a ship that carries no drones
 //     (Ballista, Shrike): no <Type>_HOME / _HOMER, no fleet HOME, no turret-target relay. An old Helm (no bit 8) is served as before.
+//   * HELM CONFIG, HUD, MENU, AI SETUP, LOCK, AUTO-SCAN (v1.6, docs/design/flight_split.md H1-H7, ShrikeAI with HELMLINK 1.3): this PB is the only writer of the Helm PB's Custom
+//     Data (CONFIG SERVER: [Shrike], [Manual], [Battery], [Kamikaze Defence], [AI Gate] defaults written and parsed, sent as ".CFG" when H2S bit 9 asks; the Helm keeps IGC Tag,
+//     Start Mode and [Link] as Get-only reads); the AI GATE SETUP of the Helm's AI blocks while H2S bit 10 is set; the cockpit HUD page from ".HUD" on the Helm's [Manual] HUD Surface;
+//     the Helm's Run menu (".MNU": "Run Menu" / "Run Menu Wait" of the Helm's [Manual]); the "lock" ray (".LCK" -> ".LKR"); the camera auto-scan while H2S bit 11 is set (hits go
+//     back on ".LKR"); the Helm's AI and kamikaze lines on this PB's screen. None of these writes an override.
 //  CUSTOM DATA  [Staff] Ship Tag (SHIP, the Helm's [Link] Ship Tag), Trip Time (s) 1.5, Watch Helm, Cockpit Surface, Helm HUD Surface, Run Menu, Run Menu Wait,
 //   Display Name, Wing Surface, Wing Display Name, Mothership, Damage Blocks Per Run, Damage Cells Per Run, Block Prefix (e.g. [SH]: the lists of gyros / thrusters / guns / controllers / AI blocks only take blocks whose name starts with it,
 //   so drones clamped in the cradles are not adopted), Pod Gap (s) 20, Door Open Wait (s) 15, Door Close After (s) 10, Recall Satellite After (s) 12; [Wing] Types; [Hangar n] Group, Pod;
@@ -46,7 +51,7 @@
 //   every 10 ticks, so it lands up to 0.17 s after the 1.5 s).
 // =====================================================================
 
-const string VER = "1.5";
+const string VER = "1.6";
 MyIni _ini = new MyIni();
 string Ship = "SHIP", BlkPre = "", WingName = "wing display", WingOrder = "-", MenuItems = "wing satellite,wing follow,wing hunt,wing rtb,release 1,release all,launch,recall,doors open,doors close", DispName = "staff display";
 string[] Types = { "HORNET" }; string TurGroup = "", TurNames = "";   // [Staff] Turret Target Group / Turret Target Names (M6)
@@ -67,6 +72,24 @@ bool _split, MothershipOn = true, _dmgSend; int DmgBlocks = 600, DmgCells = 1200
 IMyBroadcastListener _flt; List<IMyBroadcastListener> _feed = new List<IMyBroadcastListener>(); Dictionary<long, MyTuple<long, Vector3D, Vector3D, double, long>> _rel = new Dictionary<long, MyTuple<long, Vector3D, Vector3D, double, long>>();
 string FeedTags = "HORNET,SHRIKE,LONGBOW,WASP,AEGIS,HARRIER,LANCER,MANTIS,BASILISK,WATCHER";   // the other fleets' target feeds (the Helm used to listen to these itself), minus the Helm's own IGC Tag
 StringBuilder _sb = new StringBuilder();
+// Helm config, HUD page, Run menu, AI-block setup and lock ray (v1.6, docs/design/flight_split.md H1-H6): CONFIG SERVER serves the Helm PB's Custom Data
+IMyProgrammableBlock _helm; IMyBroadcastListener _hud, _mnu, _lck, _lst; Vector3D _lsP, _lsV; double _lsT = -99, _lsR = 3; int _scanIdx; bool _kzOn = true; List<IMyCameraBlock> _cams = new List<IMyCameraBlock>(); List<IMyFunctionalBlock> _aig = new List<IMyFunctionalBlock>();
+MyTuple<int, Vector3D, Vector3D, Vector3D, Vector3D, string> _hd; string[] _hs = { }; IMyTextSurface _hsf;
+double _hdT = -99, _fcT, _hmT, _lcT = -99; int _hmI; bool _hmOn, _aiA, _agLive; string _fc0 = "", _lcN = "", _agS = "", HmItems = "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", HmSeatEx = "gunnery"; double HmWait = 2; int HmSurf = 0;
+const string FS = "Shrike", CfSh = "KA";
+// CONFIG SERVER host hooks: the Helm's tables (tools/cfg_tables.json, model Shrike). Lines: M [Shrike], U [Manual], B [Battery], then K, A (ShrikeAI CfSchema "1/15/15/10/20/4")
+string[] CfModel() { return new[] { "IGC Tag", "SHRIKE", "s", "Start Mode (GUARD/HUNT/ASSIST/IDLE)", "REACT", "s", "Sentry Range (m)", "2500", "d", "Standoff Range", "350", "d", "Wingmate Separation Range (m)", "70", "d", "Wingmate Separation Speed (m/s)", "25", "d", "Wingmate Fire Clearance (m)", "14", "d", "Min Range", "80", "d", "Combat Speed", "98", "d", "Orbit Speed", "22", "d", "Evasive Jinking", "true", "b", "Auto Camera Scan", "true", "b", "Share Targets Over IGC", "true", "b", "Fire Window Multiplier", "1", "d", "AI Block Search Assist", "true", "b", "Max Turn Rate rad/s", "5", "d", "Capital Standoff Range", "1000", "d" }; }
+readonly string[] CfMan = { "Seat Debounce", "0.4", "d", "Release Delay", "1.5", "d", "Assist (OFF/HUD/FBW)", "HUD", "s", "Assist Max Rate", "1.5", "d", "Pilot Rate Gain", "1.5", "d", "Pilot Rot Sign", "-1", "d", "Rotation Input Scale", "1", "d", "Pilot Priority Rate", "0.3", "d", "Auto Fire In Manual", "false", "b", "Scan In Manual", "false", "b", "Run Menu", "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", "s", "Run Menu Wait", "2", "d", "Deadman Timer Name", "Deadman", "s", "Seat Exclude (name part)", "gunnery", "s", "HUD Surface", "0", "i" },
+    CfBat = { "Primary (AUTO/B1..B4)", "AUTO", "s", "Standoff By Weapons", "true", "b", "Loose Fire Beyond Standoff", "true", "b", "Turret Only (AUTO/ON/OFF)", "AUTO", "s", "Auto Max Turn (AUTO/ON/OFF)", "AUTO", "s", "Salvo (AUTO/ON/OFF)", "OFF", "s", "Point Defence (OFF/B1..B4)", "OFF", "s", "Point Defence Max Radius (m)", "6", "d", "Point Defence Exclusive", "true", "b", "Kamikaze Rail Hold Range (m)", "0", "d" };
+IMyProgrammableBlock CfTarget() { return _helm; }
+string CfKey() { return _helm != null ? Ship + "." : ""; }
+string CfExtra(MyIni i)
+{   // the [Manual] and [Battery] lines; the menu and HUD keys of [Manual] are used here (the HUD page and the Run menu are this PB's since Cut 2)
+    string x = CfLine(i, "Manual", CfMan, "U") + CfLine(i, "Battery", CfBat, "B");
+    HmItems = i.Get("Manual", "Run Menu").ToString(HmItems); HmWait = i.Get("Manual", "Run Menu Wait").ToDouble(HmWait); HmSurf = i.Get("Manual", "HUD Surface").ToInt32(HmSurf);
+    HmSeatEx = i.Get("Manual", "Seat Exclude (name part)").ToString(HmSeatEx).ToLowerInvariant(); _kzOn = i.Get("Kamikaze Defence", "Enabled").ToBoolean(true);
+    return x;
+}
 // bays (M5)
 class BayRec { public string St = "?"; public long Id, Src; public float Ch; public double Seen; }
 class Hangar { public string Group = "", Pod = ""; }
@@ -442,6 +465,151 @@ string LkStatus()
 }
 // <<< LOOKOUT v1.1 <<<
 
+// >>> AI GATE SETUP v1.0 (sub-block of AI GATE v1.3: one-time AI-block setup; tools/ags_block.cs, synced by tools/blocks_sync.py) >>>
+// Switches "AI Behavior" on, sets IMyFlightMovementBlock.SpeedLimit (typed API, opt-in) and IMyOffensiveCombatBlock.UpdateTargetInterval on the [AI]
+// blocks. Off the hot path (terminal property writes that persist in the world), so it may run in another PB than the AI GATE core: final hosts AuxAI
+// (drones), StaffAI (Helm ships), GnatStaffAI (variant G2), WaspAI and TubeRamAI (standalone, with the core). The Aux sets the four fields from the
+// SDK cfg line "agSwitch|agTyped|agSpeed|agEvery" with its own host code (AgSet(string) in AuxAI.cs) and calls AiGateFind when SDK bit 9 AI ASSIST rises,
+// when those values change, and on its 600-tick block rescan while bit 9 is set (flight_split.md 6.4).
+// Hooks: AiGateFind(list of [AI] blocks) after the AI blocks are found; AiGateStatus() in the status text.
+// Uses from the script: _agLive (declared by the AI GATE core; a host without the core declares "bool _agLive;" itself, false = no "AI ok" suffix).
+bool AiBehaviorSwitch = true, AiTyped = false; double AiSpeed = 100; int AiSearchEvery = 5, _agFound = -1;   // _agFound: -1 not tried, else the number of AI blocks whose behaviour switch was found
+List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
+
+void AiGateFind(List<IMyFunctionalBlock> ai)
+{
+    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
+    if (!AiBehaviorSwitch || ai.Count == 0) return;
+    int n = 0;
+    foreach (var b in ai)
+    {
+        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
+        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
+        _agProps.Clear(); b.GetProperties(_agProps);
+        ITerminalProperty<bool> sw = null;
+        foreach (var p in _agProps)
+        {
+            string id = p.Id.ToLowerInvariant();
+            if (!id.Contains("behavio")) continue;
+            var bp = p.As<bool>();
+            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
+        }
+        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
+        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
+    }
+    _agFound = n;
+}
+
+string AiGateStatus()
+{
+    if (_agFound < 0) return "";
+    if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
+    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
+}
+// <<< AI GATE SETUP v1.0 <<<
+
+// >>> CONFIG SERVER v1.0 (Staff side of the config move, docs/design/flight_split.md sections 3, 4.1, 6.1; tools/cs_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 9 drone Staffs and StaffAI (Helm ships). The only writer of the target PB's Custom Data (the Flight / Helm PB): a table-driven MyIni
+// default writer and reader. On a WANT it re-parses the target's Custom Data, writes every missing default, reads every value, sends .CFG, and keeps
+// the four AI GATE SETUP values in CfAg. Tables: [Kamikaze Defence], [AI Gate] and [Survival] are here (cfg_tables.json "shared", in its order); the
+// model section comes from the host (CfModel(), section name FS).
+// Channel (TransmissionDistance.CurrentConstruct):
+//   .CFG  Staff -> Flight/Helm   string "CF1\t<schema>\t<status>\n" + one line per section, in this order: "M" model, then the host's CfExtra() lines
+//         (Helm: its [Manual] / [Battery] lines), then one line per letter of the host's CfSh: "K" [Kamikaze Defence], "A" [AI Gate] (the 4 core values
+//         only: Time-share, AI Window, Script Search Window, Max AI Hold), "S" [Survival]. A line = its letter, then "\t" + value for every sent key, in
+//         table order, then "\n". Not sent: the model's local keys (IGC Tag, Start Mode ...: the Flight reads them itself) and the 4 AI GATE SETUP values.
+//         Values are raw, the receiver applies the post-ops of cfg_tables.json ((int), Math.Max, Trim().ToUpperInvariant()): bools 1/0, d and i
+//         ToDouble().ToString("R"), strings as written (MyIni single-line values; a tab in one would break the line).
+//         schema = "1" (cfg_tables.json version) + "/" + the number of values of each line, in line order. Drones: "1/<model count without the
+//         locals>/20/4/8", e.g. Mantis "1/84/20/4/8", Gnat "1/59/20/4/8".
+//         status = "ok", or what CfExtra() set (Longbow / Mantis: the detected weapon name, e.g. "Small Railgun", "Gatling/Autocannon", "custom").
+//         Sent when the host's WANT is true (drones: F2S bit 16 CFG WANT on a fresh F2S; Helm: H2S bit 9), at most once per 30 ticks per key. The Staff
+//         never sends unasked; a target whose Custom Data does not parse gets nothing (_cfE says so on the Staff screen).
+//   CfAg = "agSwitch|agTyped|agSpeed|agEvery" (same value format, raw): the [AI Gate] setup values. Drone Staffs pass it to the Aux in the SDK cfg
+//   (AUX LINK v1.1); GnatStaffAI (G2) and StaffAI give it to their own AI GATE SETUP. It is filled on every parse: on a WANT and once on every new key
+//   (a Staff that starts next to a running Flight knows the values without a WANT; that parse writes missing defaults but sends nothing).
+// Host hooks (define CfModel() above this block: the tests read the first "CfModel()" in the file):
+//   string[] CfModel()          flat key / default / type triples of the model section, cfg_tables.json order and types (d double, i int, b bool, s string)
+//   IMyProgrammableBlock CfTarget()   the Flight / Helm PB whose Custom Data is served (null: nothing)
+//   string CfKey()              the target's link key; the channel is CfKey() + ".CFG" (drones "WSPL"+<Flight PB EntityId> = _fk); "" = no target
+//   string CfExtra(MyIni i)     after the model values are read, before the lines are built: may change model values in _cfV (index = triple number
+//                               in _cfT; Longbow and Mantis: DetectWeapon, host helpers CfGet / CfPut), set _cfSt, and return extra lines built with
+//                               CfLine (Helm sections); "" otherwise
+//   const string CfSh           the shared lines, in order ("KAS" drones)
+// Call: CfStep(bool want) once a tick (drones: after ReadF2S, want = (_fl & 65536) != 0 && _tick - _f2sTick < 30). _cfE on the screen ("" or the
+// target's parse error line).
+// Uses: _tick, FS, Me / IGC. Sync: answers every WANT (Staff rebuilt: nothing to do); a new key (Flight rebuilt: the Staff re-keys on its 1 Hz rescan)
+// resets the 30-tick gate.
+string _cfSt = "", CfAg = "", _cfK = "", _cfSc = "", _cfE = ""; string[] _cfT, _cfV; long _cfTk = -99;
+readonly string[] CfKz = {
+    "Enabled", "true", "b", "Max Kamikaze Radius (m)", "3.5", "d", "Warning Time (s)", "12", "d", "Miss Distance (m)", "40", "d",
+    "Miss Distance Per km Of Range (m)", "60", "d", "Min Closing Speed (m/s)", "15", "d", "Priority Bonus", "2500", "d", "Protect Hive Mates", "true", "b",
+    "Back Away", "true", "b", "Back Away Speed (m/s)", "60", "d", "Back Away Within (m)", "800", "d", "Back Away Reaction Time (s)", "10", "d",
+    "Break Sideways", "true", "b", "Break Time (s)", "2", "d", "Break Speed (m/s)", "40", "d", "Break Miss Distance (m)", "20", "d",
+    "Track And Pack Search Rays", "true", "b", "Pack Search Radius (m)", "60", "d", "Camera Charge Reserve (m)", "600", "d", "Share Threats With Hive", "true", "b"
+};
+readonly string[] CfAi = {
+    "Time-share With Script Search", "true", "b", "Switch On AI Behavior", "true", "B", "Use Typed AI Block API", "false", "B", "AI Flight Speed Limit (m/s)", "100", "D",
+    "AI Window (s)", "6", "d", "Script Search Window (s)", "8", "d", "Max AI Hold (s)", "60", "d", "AI Search Interval (s)", "5", "I"
+};
+readonly string[] CfSv = {
+    "Lead-Breaking Jinks", "true", "b", "Power Guard", "true", "b", "Jink Accel Fraction", "0.8", "d", "Enemy Projectile Speed (m/s)", "800", "d",
+    "Jink Period Min (s)", "0.4", "d", "Jink Period Max (s)", "3", "d", "Jink Period Random", "0.3", "d", "Power Guard Hold (s)", "2", "d"
+};
+
+void CfStep(bool want)
+{
+    string k = CfKey();
+    if (k != _cfK) { _cfK = k; _cfTk = -99; if (k != "") CfSend(false); }
+    if (want && k != "" && _tick - _cfTk >= 30) CfSend(true);
+}
+void CfSend(bool tx)
+{
+    var p = CfTarget(); if (p == null) return;
+    if (tx) _cfTk = _tick;
+    var i = new MyIni(); MyIniParseResult r;
+    if (!i.TryParse(p.CustomData, out r)) { _cfE = "! Flight Custom Data: error line " + r.LineNo + "\n"; return; }
+    _cfE = ""; _cfSt = "ok"; _cfSc = "1"; CfAg = "";
+    _cfT = CfModel(); _cfV = CfRd(i, FS, _cfT);
+    string x = CfExtra(i), sc = _cfSc; _cfSc = "1";   // CfExtra may change model values first, but its line counts go after M in the schema
+    string s = "M" + CfJ(_cfT, _cfV) + "\n" + x; _cfSc += sc.Substring(1);
+    foreach (char c in CfSh)
+    {
+        var t = c == 'K' ? CfKz : c == 'A' ? CfAi : CfSv;
+        s += CfLine(i, c == 'K' ? "Kamikaze Defence" : c == 'A' ? "AI Gate" : "Survival", t, c.ToString());
+    }
+    string o = i.ToString(); if (o != p.CustomData) p.CustomData = o;
+    if (tx) IGC.SendBroadcastMessage(_cfK + ".CFG", "CF1\t" + _cfSc + "\t" + _cfSt + "\n" + s, TransmissionDistance.CurrentConstruct);
+}
+// one section: write the missing defaults, read every value (raw, .CFG format)
+string[] CfRd(MyIni i, string s, string[] t)
+{
+    var v = new string[t.Length / 3];
+    for (int n = 0; n < v.Length; n++)
+    {
+        string k = t[3 * n], d = t[3 * n + 1]; char y = char.ToLower(t[3 * n + 2][0]);
+        if (!i.ContainsKey(s, k)) i.Set(s, k, d);
+        var g = i.Get(s, k);
+        v[n] = y == 'b' ? (g.ToBoolean(d == "true") ? "1" : "0") : y == 's' ? g.ToString(d) : g.ToDouble(double.Parse(d)).ToString("R");
+    }
+    return v;
+}
+// the sent values of a section ("\t" + value each); locals are skipped, upper-case types (AI GATE SETUP) go to CfAg; the count goes into the schema
+string CfJ(string[] t, string[] v)
+{
+    string b = ""; int c = 0;
+    for (int n = 0; n < v.Length; n++)
+    {
+        string k = t[3 * n];
+        if (k == "IGC Tag" || k.StartsWith("Start Mode")) continue;
+        if (char.IsUpper(t[3 * n + 2][0])) CfAg += (CfAg == "" ? "" : "|") + v[n];
+        else { b += "\t" + v[n]; c++; }
+    }
+    _cfSc += "/" + c; return b;
+}
+string CfLine(MyIni i, string s, string[] t, string l) { return l + CfJ(t, CfRd(i, s, t)) + "\n"; }
+// <<< CONFIG SERVER v1.0 <<<
+
 public Program()
 {
     try { Load(); FleetLoad(false); } catch (Exception ex) { Echo("setup: " + ex.Message); }
@@ -480,6 +648,17 @@ void Blocks()
     GridTerminalSystem.GetBlocksOfType(_ctl, b => Own(b) && b.CanControlShip);
     GridTerminalSystem.GetBlocksOfType(_turrets, b => Own(b)); GridTerminalSystem.GetBlocksOfType(_ctcs, b => Own(b));
     GridTerminalSystem.GetBlocksOfType(_ai, b => Own(b) && b.CustomName.IndexOf("[AI]", StringComparison.OrdinalIgnoreCase) >= 0);
+    GridTerminalSystem.GetBlocksOfType(_aig, b => Own(b) && (b.CustomName.Contains("[AI]") || b.BlockDefinition.ToString().Contains("OffensiveCombat") || b.BlockDefinition.ToString().Contains("FlightMovement")));   // the Helm's own AI-block rule (IsAiBlock): AiGateFind sets these up
+    GridTerminalSystem.GetBlocksOfType(_cams, b => Own(b)); foreach (var c in _cams) c.EnableRaycast = true;
+    var hl = new List<IMyProgrammableBlock>(); GridTerminalSystem.GetBlocksOfType(hl, b => b != Me && b.IsSameConstructAs(Me) && b.CustomName.StartsWith("[Helm]", StringComparison.OrdinalIgnoreCase)); _helm = hl.Count > 0 ? hl[0] : null;
+    _hsf = null;
+    foreach (var c in _ctl)
+    {   // the cockpit HUD page goes to the Helm's [Manual] HUD Surface of the first flight seat (not the Remote Control, not a seat named with Seat Exclude)
+        var sp = c as IMyTextSurfaceProvider;
+        if (sp == null || c is IMyRemoteControl || (HmSeatEx != "" && c.CustomName.ToLowerInvariant().Contains(HmSeatEx)) || HmSurf < 0 || HmSurf >= sp.SurfaceCount) continue;
+        try { _hsf = sp.GetSurface(HmSurf); _hsf.ContentType = ContentType.TEXT_AND_IMAGE; _hsf.FontSize = 0.8f; _hsf.Font = "Monospace"; } catch (Exception) { _hsf = null; }
+        break;
+    }
     GridTerminalSystem.GetBlocksOfType(_lcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(DispName));
     GridTerminalSystem.GetBlocksOfType(_wlcds, b => b.IsSameConstructAs(Me) && b.CustomName.ToLowerInvariant().Contains(WingName));
     if (TurGroup != "" && TurNames != "")   // the turrets named like that go for one subsystem of their target (SetTargetingGroup: Weapons / Propulsion / PowerSystems)
@@ -499,10 +678,13 @@ void Listen()
 {
     if (_lsnKey != Ship)
     {   // (a 'reload' with a new Ship Tag registers the listeners again)
-        _lsnKey = Ship; foreach (var l in new[] { _hb, _h2s, _pil, _p2s }) if (l != null) IGC.DisableBroadcastListener(l);
+        _lsnKey = Ship; foreach (var l in new[] { _hb, _h2s, _pil, _p2s, _hud, _mnu, _lck, _lst }) if (l != null) IGC.DisableBroadcastListener(l);
         _hb = IGC.RegisterBroadcastListener(Ship + ".HB"); _h2s = IGC.RegisterBroadcastListener(Ship + ".H2S"); _pil = IGC.RegisterBroadcastListener(Ship + ".PILOT");
         _hb.SetMessageCallback("hb");   // the beat is stamped the moment it arrives, not at the next Update10
         _p2s = IGC.RegisterBroadcastListener(Ship + ".P2S"); _p2s.SetMessageCallback("p2s");
+        _hud = IGC.RegisterBroadcastListener(Ship + ".HUD"); _hud.SetMessageCallback("hud");   // (v1.6) the HUD page is written in the run the Helm's data arrives
+        _mnu = IGC.RegisterBroadcastListener(Ship + ".MNU"); _mnu.SetMessageCallback("mnu"); _lck = IGC.RegisterBroadcastListener(Ship + ".LCK"); _lck.SetMessageCallback("lck");
+        _lst = IGC.RegisterBroadcastListener(Ship + ".LST");
         if (_flt != null) IGC.DisableBroadcastListener(_flt);
         _flt = IGC.RegisterBroadcastListener(Ship + ".FLT");
     }
@@ -542,7 +724,25 @@ void Pump()
         var d = (MyTuple<int, long, Vector3D, Vector3D, float, float>)m.Data;
         _fl = d.Item1; _tId = d.Item2; _tPos = d.Item3; _tVel = d.Item4; _tRad = d.Item5; _batt = d.Item6; _h2sT = _t;
         bool sp = (_fl & 256) != 0; if (sp && !_split) { _split = true; SplitStart(); } else if (!sp && _split) { _split = false; FleetLoad(false); }
+        if (_split) CfStep((_fl & 512) != 0);   // CONFIG SERVER: H2S bit 9 CFG WANT -> .CFG
+        if (CfAg != _agS)
+        {   // the four AI GATE SETUP values of the Helm's [AI Gate] section (CONFIG SERVER parse)
+            _agS = CfAg; var a = CfAg.Split('|'); double v;
+            if (a.Length == 4) { AiBehaviorSwitch = a[0] == "1"; AiTyped = a[1] == "1"; double.TryParse(a[2], out v); AiSpeed = Math.Max(1, v); double.TryParse(a[3], out v); AiSearchEvery = Math.Max(0, (int)v); if (_aiA) AiGateFind(_aig); }
+        }
+        bool ai = (_fl & 1024) != 0; if (ai && !_aiA) AiGateFind(_aig); _aiA = ai;   // H2S bit 10 AI ASSIST rises: set the AI blocks up (they keep the settings; the Helm alone switches them on and off)
     }
+    while (_hud.HasPendingMessage)
+    {
+        var m = _hud.AcceptMessage();
+        if (!(m.Data is MyTuple<int, Vector3D, Vector3D, Vector3D, Vector3D, string>)) continue;
+        _hd = (MyTuple<int, Vector3D, Vector3D, Vector3D, Vector3D, string>)m.Data; _hdT = _t; _hs = _hd.Item6.Split('|'); _agLive = (_hd.Item1 & 16384) != 0;
+        if (_hs.Length > 3 && _hs[3] != _fc0) { _fc0 = _hs[3]; _fcT = _t; }
+        HudW();
+    }
+    while (_mnu.HasPendingMessage) { _mnu.AcceptMessage(); _hmI = _hmOn ? _hmI + 1 : 0; _hmOn = true; _hmT = _t; HudW(); }   // a Run of the Helm PB without argument: step its Run Menu
+    while (_lck.HasPendingMessage) { _lck.AcceptMessage(); Lock(); }
+    while (_lst.HasPendingMessage) { var m = _lst.AcceptMessage(); if (m.Data is MyTuple<Vector3D, Vector3D, double, double>) { var d = (MyTuple<Vector3D, Vector3D, double, double>)m.Data; _lsP = d.Item1; _lsV = d.Item2; _lsT = _t - d.Item3; _lsR = d.Item4; } }
     while (_flt.HasPendingMessage) { var m = _flt.AcceptMessage(); if (_split && m.Data is MyTuple<long, Vector3D, Vector3D, double, long>) FleetSend((MyTuple<long, Vector3D, Vector3D, double, long>)m.Data); }
     for (int i = 0; i < _sw.Count; i++)
         while (_sw[i].HasPendingMessage)
@@ -570,7 +770,9 @@ void Pump()
 void Step()
 {
     _tick++;
-    if (_tick % 60 == 0) { Blocks(); if (_split) ScanSlims(); }
+    if (_tick % 60 == 0) { Blocks(); if (_split) ScanSlims(); if (_aiA) AiGateFind(_aig); }
+    if (_hmOn && _t - _hmT > HmWait) { _hmOn = false; var it = HmItems.Split(','); if (it.Length > 0) Fwd(it[_hmI % it.Length].Trim()); }   // the Helm's menu item goes back to the Helm
+    if (_split && (_fl & 2048) != 0 && _t - _h2sT < 0.5) ScanStep();   // H2S bit 11 SCAN: the Helm's camera auto-scan (H7)
     if (_menuOn && _t - _menuT > MenuWait) { _menuOn = false; var it = MenuItems.Split(','); if (it.Length > 0) Command(it[_menuI % it.Length]); }
     bool lost = Watch && _hbN > 0 && _t - _hbT > Trip;
     if (lost && !_lost) { _lost = true; _lostAt = _t; _trips++; ReleaseAll(true); }
@@ -667,6 +869,84 @@ void RelayRead(IMyBroadcastListener l)
 }
 
 void FwdHome(Vector3D p) { IGC.SendBroadcastMessage(Ship + ".S2H", new MyTuple<string, Vector3D, double>("", p, 0), TransmissionDistance.CurrentConstruct); }
+
+// ---- Helm HUD page, Run menu, lock ray and camera auto-scan (v1.6, flight_split.md H3, H6, H7) -----------------------------------------------------
+// The page the Helm wrote itself before Cut 2 (MANUAL ManHud), from its .HUD data; target range and speed come from H2S. Only while the Helm is alive.
+void HudW()
+{
+    if (_hsf == null || _lost || _t - _hdT > 2 || _hs.Length < 4) return;
+    var h = _hd; int f = h.Item1; var s = _hs; var b = new StringBuilder();
+    b.Append("MODE ").Append(s[0]).Append((f & 2) != 0 ? " (seat taken)" : "").Append('\n');
+    if (_tId != 0)
+    {
+        b.Append("TGT  ").Append(Vector3D.Distance(_tPos, Me.GetPosition()).ToString("0")).Append(" m  v ").Append(_tVel.Length().ToString("0")).Append("  seen ").Append(h.Item2.X.ToString("0.0")).Append("s  T ").Append(h.Item3.X.ToString("0.00")).Append('\n');
+        b.Append("PIP  R").Append(h.Item3.Y.ToString("+0.0;-0.0")).Append(" U").Append(h.Item3.Z.ToString("+0.0;-0.0")).Append("  err ").Append(h.Item4.X.ToString("0.0")).Append(" win ").Append(h.Item4.Y.ToString("0.0")).Append((f & 16) != 0 ? " FIRE" : "").Append("  B").Append((f >> 8 & 3) + 1).Append(s[1]).Append('\n');
+    }
+    else b.Append("TGT  none (").Append(f >> 16 & 255).Append(")\n");
+    b.Append("PWR ").Append((h.Item5.X * 100).ToString("0")).Append("% AMMO ").Append((h.Item5.Y * 100).ToString("0")).Append("% THR ").Append((h.Item5.Z * 100).ToString("0")).Append("% DAMP ").Append((f & 4) != 0 ? "on" : "off").Append("  DEADMAN ").Append((f & 32) == 0 ? "-" : (f & 8) != 0 ? "armed" : "off").Append('\n');
+    if (_hmOn) { var it = HmItems.Split(','); b.Append("MENU > ").Append(it[_hmI % it.Length].Trim()).Append(' ').Append(_hmI % it.Length + 1).Append('/').Append(it.Length).Append('\n'); }
+    if (s[2] != "") b.Append("! ").Append(s[2]).Append('\n');
+    if (_t - _lcT < 5) b.Append(_lcN).Append('\n');
+    try { _hsf.WriteText(b.ToString()); } catch (Exception) { _hsf = null; }
+}
+
+// the Helm's ray reference: its Remote Control, else the main cockpit, else the first controller (ShrikeAI GetBlocks)
+IMyShipController Ref() { foreach (var c in _ctl) if (c is IMyRemoteControl) return c; foreach (var c in _ctl) if (c.IsMainCockpit) return c; return _ctl.Count > 0 ? _ctl[0] : null; }
+
+// one ray result to the Helm on .LKR, as the .SCN tuple (flight_split 4.1): f = source / result bits; type, relationship and "has hit" are added here
+void Scn(MyDetectedEntityInfo e, int f, Vector3D h)
+{
+    var b = e.BoundingBox; var o = e.Orientation;
+    IGC.SendBroadcastMessage(Ship + ".LKR", new MyTuple<long, int, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D>, MyTuple<Vector3D, Vector3D>>(e.EntityId, f | (int)e.Type | (int)e.Relationship << 8 | (e.HitPosition.HasValue ? 65536 : 0), h, new Vector3D(e.Velocity), new MyTuple<Vector3D, Vector3D>(b.Min, b.Max), new MyTuple<Vector3D, Vector3D>(o.Forward, o.Up)), TransmissionDistance.CurrentConstruct);
+}
+
+// "lock" (.LCK): the Helm's old ManualLock, cast here: the forward camera with the most charge, 2,500 m; results 1 no camera, 2 nothing hit, 3 friendly
+void Lock()
+{
+    var r = Ref(); IMyCameraBlock cam = null;
+    if (r != null) foreach (var c in _cams) if (c.IsWorking && Vector3D.Dot(c.WorldMatrix.Forward, r.WorldMatrix.Forward) > 0.99 && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
+    var e = new MyDetectedEntityInfo(); int res = 1;
+    if (cam != null)
+    {
+        e = cam.Raycast(Math.Min(2500, cam.AvailableScanRange)); var rl = e.Relationship;
+        res = e.IsEmpty() || e.Type == MyDetectedEntityType.Planet || e.Type == MyDetectedEntityType.Asteroid ? 2 : rl == MyRelationsBetweenPlayerAndBlock.Owner || rl == MyRelationsBetweenPlayerAndBlock.FactionShare || rl == MyRelationsBetweenPlayerAndBlock.Friends ? 3 : 0;
+    }
+    _lcT = _t; _lcN = res == 1 ? "! No forward camera for lock" : res == 2 ? "! Lock: nothing hit (range " + cam.AvailableScanRange.ToString("0") + " m)" : res == 3 ? "! Lock: target is friendly" : "LOCK " + Vector3D.Distance(e.Position, Me.GetPosition()).ToString("0") + " m";
+    Scn(e, 4 << 20 | res << 24, res == 2 ? new Vector3D(cam.AvailableScanRange, 0, 0) : e.HitPosition ?? e.Position);
+    HudW();
+}
+
+// the Helm's camera auto-scan (its old AutoScanStep, H7), while H2S bit 11 is set: one ray per charged camera per run (the Helm cast one per tick; the
+// charge, 2 km/s per camera, is the limit either way). Every 2nd ray goes round the target the Helm just lost (.LST) for 25 s, the rest along a 120-step
+// golden-angle spiral in the 35 deg cone; a warship looks 1,800 m out through every camera, a small ship 1,200 m through its forward ones.
+void ScanStep()
+{
+    var r = Ref(); if (r == null) return;
+    bool big = Me.CubeGrid.GridSizeEnum == MyCubeSize.Large; double sr = big ? 1800 : 1200;
+    for (int k = 0; k < 10 && !Hot(); k++)
+    {
+        IMyCameraBlock cam = null;
+        foreach (var c in _cams) if (c.IsWorking && (big || Vector3D.Dot(c.WorldMatrix.Forward, r.WorldMatrix.Forward) > 0.9) && c.AvailableScanRange >= sr && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
+        if (cam == null) return;
+        _scanIdx++;
+        double la = _t - _lsT; MyDetectedEntityInfo e;
+        Vector3D lp = _lsP + _lsV * Math.Min(la, 10), dl = lp - cam.GetPosition(); double dd = dl.Length();
+        if (la < 25 && (_scanIdx & 1) == 0 && dd > 30 && dd < sr && Vector3D.Dot(dl / dd, cam.WorldMatrix.Forward) > 0.75)
+        {
+            double rr = Math.Min(250, _lsR + 6 * la) * Math.Sqrt(((_scanIdx >> 1) % 23 + 0.5) / 23.0), th2 = _scanIdx * 2.39996323;
+            dl /= dd;
+            Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
+            Vector3D vv = Vector3D.Cross(dl, uu);
+            e = cam.Raycast(lp + uu * (rr * Math.Cos(th2)) + vv * (rr * Math.Sin(th2)) + dl * 10);
+        }
+        else
+        {
+            double rs = 35 * Math.Sqrt((_scanIdx % 120 + 0.5) / 120), th = _scanIdx * 2.39996323;
+            e = cam.Raycast(sr, (float)(rs * Math.Sin(th)), (float)(rs * Math.Cos(th)));
+        }
+        if (!e.IsEmpty() && e.EntityId != Me.CubeGrid.EntityId && e.Type != MyDetectedEntityType.Planet) Scn(e, 1 << 20, e.HitPosition ?? e.Position);   // (friends too: the Helm's FaSee uses them)
+    }
+}
 
 // damage sensing (moved from the Helm): every block's integrity, a drop means the ship is being hit. Incremental: DmgCells cells / DmgBlocks blocks per run.
 List<IMySlimBlock> _slims = new List<IMySlimBlock>(), _slimsNew = new List<IMySlimBlock>(); List<double> _slimHp = new List<double>(); HashSet<Vector3I> _slimSeen = new HashSet<Vector3I>();
@@ -943,7 +1223,14 @@ string Text()
     int m = _md; b.Append("MODE  ").Append(m >= 0 && m < ModeNames.Length ? ModeNames[m] : "?").Append(_seat == 1 ? "  pilot aboard" : "").Append((_fl & 16) != 0 ? "  FIRING" : "").Append((_fl & 128) != 0 ? "  DEGRADED" : "").Append('\n');
     if (_tId != 0 && _t - _h2sT < 2) b.Append("TGT   ").Append(Vector3D.Distance(_tPos, Me.GetPosition()).ToString("0")).Append(" m  v ").Append(_tVel.Length().ToString("0")).Append('\n');
     else b.Append("TGT   none\n");
-    b.Append(_split ? "SPLIT  fleet relay + damage scan on (hits " + _dmgHits + ")\n" : "SPLIT  off (Helm without bit 8)\n");
+    b.Append(_split ? "SPLIT  fleet relay + damage scan on (hits " + _dmgHits + ")\n" : "SPLIT  off (Helm without bit 8)\n").Append(_cfE);
+    if (_t - _hdT < 3)
+    {   // the Helm's AI and kamikaze lines (they left its screen with flight_split H4)
+        int f = _hd.Item1, n = (int)_hd.Item4.Z, kz = f >> 24 & 15;
+        if (n == 0) b.Append((f & 8192) != 0 ? "AI alarm: searching\n" : "");
+        else b.Append(_fc0 != "" ? "1st contact " + _fc0 + " " + (_t - _fcT).ToString("0") + " s ago\n" : "").Append(AiGateStatus()).Append("AI: ").Append((f & 2048) != 0 ? "searching" : (f & 4096) != 0 ? "own search" : "standby").Append(" (").Append(n).Append(" blocks)").Append((f & 8192) != 0 ? "  ALARM" : "").Append('\n');
+        if (_kzOn) b.Append(kz == 0 ? "Kamikaze: none incoming\n" : "!! KAMIKAZE x" + kz + " (" + (f >> 28 & 7) + " at me)  next " + _hd.Item2.Y.ToString("0.0") + " s " + _hd.Item2.Z.ToString("0") + " m" + ((f & 32768) != 0 ? " (mate)" : "") + "\n");
+    }
     b.Append(BayText()); if (_rqNote != "") b.Append(_rqNote).Append('\n');
     b.Append("PWR ").Append((_batt * 100).ToString("0")).Append("%  DEADMAN ").Append((_fl & 64) != 0 ? "armed" : "-").Append("  WING ").Append(string.Join(",", Types)).Append(' ').Append(Alive()).Append(" up\n");
     if (_menuOn) { var it = MenuItems.Split(','); b.Append("MENU > ").Append(it[_menuI % it.Length].Trim()).Append(' ').Append(_menuI % it.Length + 1).Append('/').Append(it.Length).Append('\n'); }

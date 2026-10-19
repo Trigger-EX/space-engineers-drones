@@ -108,6 +108,8 @@ Other scripts in scope:
 
 **The 7 split drones over budget get a fourth PB, `[Aux] <Model> PB` (docs/design/staff_split.md).** Hornet/Watcher, Harrier, Lancer, Aegis, Wasp, Longbow and Mantis run REPAIR CLIENT (bay dock controller, medic patient side, self-projector) and the SEEKER turret reader in one shared script, `scripts/AuxAI.cs`; their Staff carries the thin AUX LINK block in their place. The Aux PB writes no override: during a dock approach it sends setpoints on `.DKS` and the Staff flies them (SURVIVAL STAFF dock actuator, FOL bit 2). Gnat and Basilisk keep both blocks in their Staff PB (under 75k; the Gnat has no free cell for a fourth PB).
 
+**Flight split (2026-10-18, docs/design/flight_split.md).** A second round of moves keeps every Flight PB under the 80k PB budget: all Flight config (the `[<Model>]`, `[Kamikaze Defence]`, `[AI Gate]` and `[Survival]` keys) is written and parsed by the Staff's CONFIG SERVER and reaches the Flight on `.CFG` (cached in `Storage`); damage sensing moved to the Staff (DAMAGE SENSE, `.DMG`; the Gnat's own copy with its hit-bearing estimator, `.HAX`); camera / sensor search, the KZ pack rays, the AI-block setup and WEAKPOINT RELAY moved to the `[Aux]` PB (SEARCH, `.SCS/.SCN/.KZR`). The Basilisk got the `[Aux]` PB too, and the Gnat traded its sensor for one. The SEEKER finding now reaches the Flight on `.WPT` from the Aux (no `.SKW`).
+
 **Phase 1 also moves four existing off-hot-path modules from Flight to Staff to make room.** Section 5 has the sizes.
 - **SEARCH PATROL:** HUNT with no target. Not combat.
 - **SENSOR SETUP:** writes the sensor terminal properties once.
@@ -143,6 +145,8 @@ Existing shared blocks that get edited:
 | BREACH + SEEKER (legacy sync `tools/aim_sync.py`, 9 Flight scripts) | `tools/aim_block.cs` | becomes BREACH + SEEKER v1.3: seeker removed, own-seeker hole taken from `.WPT` bit 4096 | A1 |
 | WEAKPOINT RELAY v1.1 (9 Staff scripts) | `tools/wp_block.cs` | own seeker entries rank first | B1 |
 
+Since flight_split (2026-10-18): CONFIG LINK / DAMAGE LINK / SEARCH LINK in the Flights, CONFIG SERVER / DAMAGE SENSE in the Staffs, SEARCH and WEAKPOINT RELAY v1.2 in AuxAI, AUX LINK v1.1 (also in BasiliskStaffAI); REPAIR CLIENT and SEEKER live only in AuxAI now. Host lists: `tools/blocks.json`; table: docs/design/flight_split.md section 3.
+
 **Rules for shared blocks:**
 - C# 6 only: `compile_check.sh` uses `-langversion:6`. No tuple syntax, no `out var`.
 - A shared block may name only `Mode.IDLE` and `Mode.RTB`. Gnat's enum is {IDLE, FORM, ATTACK, RTB}. Everything else goes through per-script hook functions, listed in each package.
@@ -163,6 +167,8 @@ Existing shared blocks that get edited:
 | Own merge `Enabled` | LAUNCH (Staff) switches it off after a take-off | LAUNCH | REPAIR CLIENT (Aux PB; Gnat/Basilisk Staff) switches it on at ALIGN -> INSERT | n/a | n/a |
 | Bay welders and projector | bay script | | | | bay script |
 | Medic welders | MedicAI | | | | |
+
+Since flight_split (2026-10-18), docs/design/flight_split.md section 5: the AI blocks' "AI Behavior" / `SpeedLimit` / `UpdateTargetInterval` are written by the `[Aux]` PB (StaffAI on Helm ships), no longer by the Flight; the Flight (and Helm) PB's Custom Data has one writer, the Staff. No override writer changed.
 
 **Flight `Release()` guard (hook).** First line: `if (LkBurn || SvYield) return;`.
 - Today an exception in Flight calls `Release()` once.
@@ -185,6 +191,7 @@ Existing shared blocks that get edited:
 - **Flight dead (Staff alive).** Item 5. The Aux PB sees SDK bit 2 and aborts a dock (every write is the Staff's).
 - **Aux PB missing or dead (the 7 split drones).** Lost: bay docking, medic calls, self-projector control and the seeker. Everything else works. The Staff screen says `! Aux PB silent` or, when none ever spoke, `! no [Aux] PB (repair, medic, seeker off)` after 5 s. A dock flight in progress: the Staff flies the last setpoint at most 15 ticks, releases, and the Flight resumes 2 ticks later. An in-game drone whose Staff script is updated without adding the PB loses exactly these, so paste `AuxAI.cs` into a PB named `[Aux] ...`.
 - **Staff dead, Aux alive.** The Aux shows `STAFF PB SILENT`, sends no requests and aborts a bay session in states 1-4 (`staff silent`); a medic session keeps broadcasting WORK. The seeker stops (no target).
+- **Since flight_split (2026-10-18), docs/design/flight_split.md 6.1-6.6.** Staff dead: the Flight keeps the config it has (`Storage` cache; `cfg: defaults (no Staff)` when it never had one) and counts one hit when `.DMG` stops (no false burst when it returns). Aux dead: camera auto-scan, close scan, hit-look, sensor poll, manual lock, KZ pack rays, wing weakpoint sharing and AI-behaviour setup stop (setup already made persists); the AI block, turret designators, hive / fleet shares and MaintainLock still find and track targets; the Flight screen says `! Aux PB silent: camera search off`. A Helm without a Staff runs on its cache or defaults and has no cockpit HUD page, Run menu or manual lock (they moved to StaffAI).
 
 ---
 
@@ -782,6 +789,7 @@ The `Target Small/Large Grids` and `Target Neutral/Unowned` keys stay Flight key
 - Key `K = "WSPL" + <Flight PB EntityId>`. Both PBs run Update1.
 - Existing channels (`.F2S .FOL .S2F .CMD .TGT .FLT .WPF .WPT`) are unchanged, except that `.WPT` gets flag bit 4096.
 - The `[Aux]` PB link (`.SDK .DKS .SKW .D2S`, plus `.S2F` from the Aux after a medic repair) is specified in docs/design/staff_split.md section 4.
+- Since flight_split (2026-10-18): `.CFG` (Staff → Flight config), `.DMG` (Staff → Flight damage), `.HAX` (Gnat Staff → Flight hit axis), `.SCS` / `.KZR` (Flight → Aux search requests), `.SCN` (Aux → Flight contacts); `.WPF` / `.WPT` now go to and from the Aux; `.SKW` is gone; F2S flag bits 16 CFG WANT, 17 AI ASSIST. Specification: docs/design/flight_split.md section 4.
 
 | Tag | Direction | Tuple | Rate |
 |---|---|---|---|
@@ -848,6 +856,8 @@ These use the default broadcast distance (antenna), like `_SWARM`.
 ---
 
 ## 5. PB budget table
+
+**Current sizes: docs/design/flight_split.md section 7** (measured 2026-10-18 after the flight split: every Flight PB 70.1-77.7k, every Staff 67.2-77.8k, AuxAI 35.1k). The 80,000-character per-PB budget is enforced by `tools/tests/test_pb_budget.py` and `_common.script_text()`. The tables below are the history of the survivability work.
 
 All values are minified characters (`python3 -I tools/minify_cs.py`), measured at bd7817a. The new block estimates are deliberately generous:
 - SURVIVAL LINK about 4.5k plus 0.5k of hooks;

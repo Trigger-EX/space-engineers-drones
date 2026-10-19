@@ -1,6 +1,5 @@
 {
  "_doc": "Shared in-game script blocks kept identical by tools/blocks_sync.py (control_arch D8). One entry per block: file = the block text (marker comments included), scripts = the scripts/*.cs files that carry it, anchor = regex of the line the block is inserted before when a script has none yet (default ^public Program\\(\\)), name = the marker word (markers are '// >>> NAME v...' and '// <<< NAME v...'). The seven blocks that predate this file keep their own tools/*_sync.py (lists inside); blocks_sync.py --check runs them too, so ONE command checks every shared block. New blocks (MANUAL, BATTERY, HELMLINK, ...) are added here, not as an eighth hard-coded sync script.",
- "_transition": "flight_split P0 (2026-10-18): 'scripts' is the FINAL host list of each block; 'leaving' = scripts that still carry the block until their phase-1 package removes it by hand; 'arriving' = final hosts that do not carry it yet (a package inserts it with blocks_sync.py --apply --only \"<BLOCK>\" --in <its scripts>). Phase 2 deletes every 'leaving'/'arriving' list; then --check is strict (same as --final now). See docs/design/flight_split.md, P0 handover.",
  "legacy": [
   "lead_sync.py",
   "ai_gate_sync.py",
@@ -92,21 +91,7 @@
   "WEAKPOINT RELAY": {
    "file": "tools/wp_block.cs",
    "scripts": [
-    "AuxAI",
-    "GnatStaffAI"
-   ],
-   "arriving": [
     "AuxAI"
-   ],
-   "leaving": [
-    "HornetStaffAI",
-    "HarrierStaffAI",
-    "LancerStaffAI",
-    "AegisStaffAI",
-    "WaspStaffAI",
-    "LongbowStaffAI",
-    "BasiliskStaffAI",
-    "MantisStaffAI"
    ]
   },
   "PATROL LINK": {
@@ -165,21 +150,13 @@
   "REPAIR CLIENT": {
    "file": "tools/rc_block.cs",
    "scripts": [
-    "GnatStaffAI",
     "AuxAI"
-   ],
-   "leaving": [
-    "BasiliskStaffAI"
    ]
   },
   "SEEKER": {
    "file": "tools/sk_block.cs",
    "scripts": [
-    "GnatStaffAI",
     "AuxAI"
-   ],
-   "leaving": [
-    "BasiliskStaffAI"
    ]
   },
   "AUX LINK": {
@@ -192,46 +169,21 @@
     "LongbowStaffAI",
     "WaspStaffAI",
     "MantisStaffAI",
-    "BasiliskStaffAI"
-   ],
-   "arriving": [
-    "BasiliskStaffAI"
+    "BasiliskStaffAI",
+    "GnatStaffAI"
    ]
   },
   "KZ CONFIG": {
    "file": "tools/kzc_block.cs",
    "scripts": [
     "WaspAI"
-   ],
-   "leaving": [
-    "HornetDroneAI",
-    "HarrierAI",
-    "LancerAI",
-    "AegisAI",
-    "WaspFlightAI",
-    "LongbowSniperAI",
-    "GnatSwarmAI",
-    "BasiliskAI",
-    "MantisAI",
-    "ShrikeAI"
    ]
   },
   "KZ RAYS": {
    "file": "tools/kzr_block.cs",
    "scripts": [
     "WaspAI",
-    "ShrikeAI",
-    "GnatSwarmAI"
-   ],
-   "leaving": [
-    "HornetDroneAI",
-    "HarrierAI",
-    "LancerAI",
-    "AegisAI",
-    "WaspFlightAI",
-    "LongbowSniperAI",
-    "BasiliskAI",
-    "MantisAI"
+    "ShrikeAI"
    ]
   },
   "AI GATE SETUP": {
@@ -239,26 +191,8 @@
    "scripts": [
     "AuxAI",
     "StaffAI",
-    "GnatStaffAI",
     "WaspAI",
     "TubeRamAI"
-   ],
-   "arriving": [
-    "AuxAI",
-    "StaffAI",
-    "GnatStaffAI"
-   ],
-   "leaving": [
-    "HornetDroneAI",
-    "HarrierAI",
-    "LancerAI",
-    "AegisAI",
-    "WaspFlightAI",
-    "LongbowSniperAI",
-    "GnatSwarmAI",
-    "BasiliskAI",
-    "MantisAI",
-    "ShrikeAI"
    ]
   },
   "AI GATE CONFIG": {
@@ -266,35 +200,11 @@
    "scripts": [
     "WaspAI",
     "TubeRamAI"
-   ],
-   "leaving": [
-    "HornetDroneAI",
-    "HarrierAI",
-    "LancerAI",
-    "AegisAI",
-    "WaspFlightAI",
-    "LongbowSniperAI",
-    "GnatSwarmAI",
-    "BasiliskAI",
-    "MantisAI",
-    "ShrikeAI"
    ]
   },
   "CONFIG LINK": {
    "file": "tools/cl_block.cs",
    "scripts": [
-    "HornetDroneAI",
-    "HarrierAI",
-    "LancerAI",
-    "AegisAI",
-    "WaspFlightAI",
-    "LongbowSniperAI",
-    "GnatSwarmAI",
-    "BasiliskAI",
-    "MantisAI",
-    "ShrikeAI"
-   ],
-   "arriving": [
     "HornetDroneAI",
     "HarrierAI",
     "LancerAI",
@@ -320,33 +230,11 @@
     "BasiliskStaffAI",
     "MantisStaffAI",
     "StaffAI"
-   ],
-   "arriving": [
-    "HornetStaffAI",
-    "HarrierStaffAI",
-    "LancerStaffAI",
-    "AegisStaffAI",
-    "WaspStaffAI",
-    "LongbowStaffAI",
-    "GnatStaffAI",
-    "BasiliskStaffAI",
-    "MantisStaffAI",
-    "StaffAI"
    ]
   },
   "DAMAGE SENSE": {
    "file": "tools/ds_block.cs",
    "scripts": [
-    "HornetStaffAI",
-    "HarrierStaffAI",
-    "LancerStaffAI",
-    "AegisStaffAI",
-    "WaspStaffAI",
-    "LongbowStaffAI",
-    "BasiliskStaffAI",
-    "MantisStaffAI"
-   ],
-   "arriving": [
     "HornetStaffAI",
     "HarrierStaffAI",
     "LancerStaffAI",
@@ -367,25 +255,13 @@
     "WaspFlightAI",
     "LongbowSniperAI",
     "BasiliskAI",
-    "MantisAI"
-   ],
-   "arriving": [
-    "HornetDroneAI",
-    "HarrierAI",
-    "LancerAI",
-    "AegisAI",
-    "WaspFlightAI",
-    "LongbowSniperAI",
-    "BasiliskAI",
-    "MantisAI"
+    "MantisAI",
+    "GnatSwarmAI"
    ]
   },
   "SEARCH": {
    "file": "tools/sc_block.cs",
    "scripts": [
-    "AuxAI"
-   ],
-   "arriving": [
     "AuxAI"
    ]
   },
@@ -399,17 +275,8 @@
     "WaspFlightAI",
     "LongbowSniperAI",
     "BasiliskAI",
-    "MantisAI"
-   ],
-   "arriving": [
-    "HornetDroneAI",
-    "HarrierAI",
-    "LancerAI",
-    "AegisAI",
-    "WaspFlightAI",
-    "LongbowSniperAI",
-    "BasiliskAI",
-    "MantisAI"
+    "MantisAI",
+    "GnatSwarmAI"
    ]
   }
  }

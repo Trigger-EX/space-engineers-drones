@@ -141,8 +141,10 @@ def gnat_frame(script, merge=True, sensor=True, name="Gnat", ai=True, side=None)
 
 def gnat(lite=False, name=None, side=None):
     name = name or ("Gnat Lite" if lite else "Gnat")
-    bp = gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=not lite, name=name, ai=not lite, side=side)
-    # two PBs (docs/design/gnat_split.md): the frame's PB is the Flight half (GnatSwarmAI), the Staff half (FLEET LINK + LAUNCH, GnatStaffAI) sits on the tail.  No [Thrust] PB: point-and-burn.
+    # no sensor (flight_split.md 7.2, G1a): the Gnat traded its 50 m sensor for the [Aux] Gnat PB (gnat_survival); the Aux's camera close scan covers that range
+    bp = gnat_frame(script_text("GnatSwarmAI.cs"), merge=(not lite) or LITE_KEEPS_MERGE, sensor=False, name=name, ai=not lite, side=side)
+    # three PBs (docs/design/gnat_split.md, flight_split.md G1a): the frame's PB is the Flight half (GnatSwarmAI), the Staff half (FLEET LINK + LAUNCH, GnatStaffAI) sits on
+    # the tail, the [Aux] PB (AuxAI: repair client, seeker, weakpoint relay, search, AI setup) takes the old sensor cell (1, 1, 3).  No [Thrust] PB: point-and-burn.
     # In gnat(), not gnat_frame: the Stinger fallback shares the frame.  Placed by hand on the tail (armour seat, then the PB): the generic spare search would pick a cell off the 2 x 2 hull.
     import pods
     for b in bp.blocks:
@@ -157,6 +159,9 @@ def gnat(lite=False, name=None, side=None):
     return bp
 
 GNAT_SECTION_X, GNAT_SECTION_Y = (0, 1), (0, 1)
+# the [Aux] Gnat PB, pinned by hand like LONGBOW_S_AUX_CELL (flight_split.md 7.2 dry runs): the only cell inside the 2 x 2 section where a PB mounts without
+# cutting a block off (armour cell (1, 1, -1) cuts the ion thrusters off, the nose (1, 1, -3) has no mount, the decoy takes (1, 1, 2)); facing Forward / Up
+GNAT_AUX_CELL, GNAT_AUX_ORI = (1, 1, 3), ("Forward", "Up")
 
 def gnat_section(bp):
     """the Gnat's set outline: its 2 x 2 section (x 0..1, y 0..1) over the hull length (the two side cameras predate the rule and stand outside it)"""
@@ -164,20 +169,25 @@ def gnat_section(bp):
     return {(x, y, z) for x in GNAT_SECTION_X for y in GNAT_SECTION_Y for z in range(lo[2], hi[2] + 1)}
 
 def gnat_survival(bp, name):
-    """Survival kit inside the 2 x 2 section (docs/design/survivability.md items 11-15).  The section has two free cells that are not an exhaust lane, both
-    in the upper right column: the tail (1, 1, 2..3, the sensor stands in 2) and the nose (1, 1, -3), where nothing mounts (thruster side, camera top and gyro
-    front have no mount there).  Decoy 1 takes the sensor's cell on the tail, on the AI Flight block, away from the core (RC, battery 1, gyro at
-    z -2..-1); the sensor (360 degrees, any spot will do) moves one cell back onto the decoy.  No cell is left for a second decoy, the flare launcher,
-    the self-projector or a second gyro (the gyro would also cost 614 kg, -21 % thrust-to-weight, and the single main / reverse thrusters stay one-hit
-    kills anyway): recorded as skipped in bp.kit."""
-    import pods
-    sn = [b for b in bp.blocks if b['xtype'] == 'MyObjectBuilder_SensorBlock']
-    if sn and tuple(sn[0]['min']) == (1, 1, 2) and (1, 1, 3) not in bp.reserve and (1, 1, 3) not in bp.occupancy():
-        bp.blocks.remove(sn[0])
+    """Survival kit and [Aux] PB inside the 2 x 2 section (docs/design/survivability.md items 11-15, flight_split.md 7.2 G1a).  The section has two free cells
+    that are not an exhaust lane, both in the upper right column: the tail (1, 1, 2..3) and the nose (1, 1, -3), where nothing mounts (thruster side, camera
+    top and gyro front have no mount there).  Decoy 1 takes (1, 1, 2) on the AI Flight block, away from the core (RC, battery 1, gyro at z -2..-1); the
+    [Aux] Gnat PB takes (1, 1, 3) behind it, facing Forward / Up (G1a: it replaced the 50 m sensor that stood there).  No cell is left for a second decoy,
+    the flare launcher, the self-projector or a second gyro (the gyro would also cost 614 kg, -21 % thrust-to-weight, and the single main / reverse thrusters
+    stay one-hit kills anyway): recorded as skipped in bp.kit."""
+    occ = bp.occupancy()
+    tail = all(c not in bp.reserve and c not in occ for c in ((1, 1, 2), GNAT_AUX_CELL))
+    if tail:
         C.add_survival_kit(bp, outline=gnat_section(bp), decoys=1, flares=0, projector=False, panels=False, model=name, decoy_cells=[(1, 1, 2)])
-        pods.orient_attached(bp, "MyObjectBuilder_SensorBlock", "SmallBlockSensor", (1, 1, 3), name=sn[0]['name'], kind="sensor")
-    else:       # test variants with another tail (testships 'Gnat Side*': the side thruster's flame crosses (1, 1, 3)): whatever free cell mounts a decoy
+        bp.add('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', GNAT_AUX_CELL, GNAT_AUX_ORI[0], GNAT_AUX_ORI[1], f"[Aux] {name} PB",
+               extra=pb_extra(script_text(C.AUX_SCRIPT)), kind='ctrl')
+    else:       # test variants with another tail (testships 'Gnat Side*': the side thruster's flame crosses (1, 1, 3)): whatever free cell mounts a decoy, and
+        # the Aux PB in a free section cell if one mounts (else none: the Staff runs without it, its screen says so)
         C.add_survival_kit(bp, outline=gnat_section(bp), decoys=1, flares=0, projector=False, panels=False, model=name)
+        spot = C.free_pb_spot(bp, 'SmallProgrammableBlock', GNAT_AUX_CELL, name=f"[Aux] {name} PB", inside=gnat_section(bp))
+        if spot: bp.add('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', spot[0], spot[1], spot[2], f"[Aux] {name} PB",
+                        extra=pb_extra(script_text(C.AUX_SCRIPT)), kind='ctrl')
+        else: bp.kit['skipped'].append('no cell for the [Aux] PB inside the 2 x 2 section')
     for what in ('decoy 2: no free cell left inside the 2 x 2 section', 'no cell for the flare launcher inside the 2 x 2 section',
                  'no cell for the self-projector inside the 2 x 2 section', 'no cell for a second gyro inside the 2 x 2 section'):
         bp.kit['skipped'].append(what)

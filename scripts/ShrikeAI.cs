@@ -27,6 +27,9 @@
 //   Assist Max Rate, Pilot Rate Gain, Pilot Rot Sign, Rotation Input Scale, Pilot Priority Rate, Auto Fire In Manual, Scan In Manual, Run Menu, Run Menu Wait,
 //   Deadman Timer Name, Seat Exclude (name part, default "gunnery": a seat with that word in its name does not switch the Helm to MANUAL), HUD Surface (cockpit text surface, -1 off); [Battery] Primary (AUTO/B1..B4), Standoff By Weapons, Turret Only (AUTO/ON/OFF), Auto Max Turn
 //   (AUTO/ON/OFF); [Fleet] [Kamikaze Defence] [AI Gate] as in the Hornet.
+//   FLIGHT SPLIT (docs/design/flight_split.md H1-H7): the Staff PB writes and parses this Custom Data (except IGC Tag, Start Mode and [Link], read here) and sends the values on
+//   "<Ship Tag>.CFG" (CONFIG LINK; cached in Storage, so the Helm also starts without its Staff: "cfg: cached" / "cfg: defaults (no Staff)"). The Staff also writes the cockpit HUD page,
+//   steps the Run menu, sets up the AI blocks, casts the "lock" ray and the camera auto-scan. Without a live Staff: no HUD page, no lock, no auto-scan; Run without argument = "pilot".
 //  LARGE-GRID SHIPS (Corsair, Warden, Leviathan: Me.CubeGrid is a large grid, "Big")   slow to turn, so: (1) the idle search turns steadily at half Max Turn and nods slowly (the Shrike's fast
 //   nod tipped a dreadnought back and forth); (2) every working camera scans, out to 1.8 km, also in REACT (no sweep there, the cameras look all round); (3) CAPITAL SHIPS (target radius >= 50 m,
 //   whose turrets reach 800 m by themselves): standoff = max(Standoff Range, Capital Standoff Range = 1000; 0 switches this and (4) off), and (4) one in the rear half inside that range makes the
@@ -58,9 +61,6 @@ double CruiseSpeed = 60;     // non-combat cap (saves power)
 double OrbitSpeed = 22;      // tangential speed around the target
 double JinkEvery = 1.0, JinkEveryRand = 1.0;   // a new random evasive direction every JinkEvery + rand x JinkEveryRand seconds
 double JinkSpeed = 12;       // random evasive velocity
-double LockRange = 2500;     // manual "lock" raycast distance
-double ScanRange = 1200;     // auto-scan raycast distance
-double ScanCone = 35;        // auto-scan half-angle (deg)
 double AimKp = 6, AimKd = 0.35, MaxTurn = 5; // gyro tuning (rad/s)
 double CapRange = 1000; const double FleeMax = 20; bool _flee; double _fleeT = -99;   // CAPITAL FLEE (see Control)
 double FireTol = 1.0;        // multiplier on silhouette fire window
@@ -164,11 +164,9 @@ double _powerScale = 1.0;
 bool _firing = false;
 double _holdFireUntil = 0;
 Vector3D _jink; double _nextJink = 0; double _orbitSign = 1;
-int _scanIdx = 0;
 Random _rng = new Random();
 string _err = "";
 double _aimErrDeg = 0, _fireWinDeg = 0, _leadT = 0;
-double _avgMs = 0; int _peakIns = 0;   // instruction counter: PB limit is Runtime.MaxInstructionCount per run
 StringBuilder _sb = new StringBuilder();
 
 // (the fleet channel and the other fleets' feeds live in the Staff PB since the Helm split: docs/design/helm_split.md; the Helm hears them as "<Ship Tag>.TGT" and ".S2H")
@@ -227,79 +225,6 @@ bool AiGate(bool want)
     return _agAi;
 }
 // <<< AI GATE <<<
-
-// >>> AI GATE SETUP v1.0 (sub-block of AI GATE v1.3: one-time AI-block setup; tools/ags_block.cs, synced by tools/blocks_sync.py) >>>
-// Switches "AI Behavior" on, sets IMyFlightMovementBlock.SpeedLimit (typed API, opt-in) and IMyOffensiveCombatBlock.UpdateTargetInterval on the [AI]
-// blocks. Off the hot path (terminal property writes that persist in the world), so it may run in another PB than the AI GATE core: final hosts AuxAI
-// (drones), StaffAI (Helm ships), GnatStaffAI (variant G2), WaspAI and TubeRamAI (standalone, with the core). The Aux sets the four fields from the
-// SDK cfg line "agSwitch|agTyped|agSpeed|agEvery" with its own host code (AgSet(string) in AuxAI.cs) and calls AiGateFind when SDK bit 9 AI ASSIST rises,
-// when those values change, and on its 600-tick block rescan while bit 9 is set (flight_split.md 6.4).
-// Hooks: AiGateFind(list of [AI] blocks) after the AI blocks are found; AiGateStatus() in the status text.
-// Uses from the script: _agLive (declared by the AI GATE core; a host without the core declares "bool _agLive;" itself, false = no "AI ok" suffix).
-bool AiBehaviorSwitch = true, AiTyped = false; double AiSpeed = 100; int AiSearchEvery = 5, _agFound = -1;   // _agFound: -1 not tried, else the number of AI blocks whose behaviour switch was found
-List<ITerminalProperty> _agProps = new List<ITerminalProperty>();
-
-void AiGateFind(List<IMyFunctionalBlock> ai)
-{
-    if (AiSearchEvery > 0) foreach (var b in ai) { var oc = b as IMyOffensiveCombatBlock; if (oc != null) oc.UpdateTargetInterval = AiSearchEvery; }
-    if (!AiBehaviorSwitch || ai.Count == 0) return;
-    int n = 0;
-    foreach (var b in ai)
-    {
-        var fm = AiTyped ? b as IMyFlightMovementBlock : null;
-        if (fm != null) fm.SpeedLimit = (float)AiSpeed;
-        _agProps.Clear(); b.GetProperties(_agProps);
-        ITerminalProperty<bool> sw = null;
-        foreach (var p in _agProps)
-        {
-            string id = p.Id.ToLowerInvariant();
-            if (!id.Contains("behavio")) continue;
-            var bp = p.As<bool>();
-            if (bp != null && (sw == null || id.Contains("activ"))) sw = bp;
-        }
-        if (sw != null && !sw.GetValue(b)) sw.SetValue(b, true);
-        if (fm != null ? fm.IsAutoPilotEnabled : sw != null) n++;
-    }
-    _agFound = n;
-}
-
-string AiGateStatus()
-{
-    if (_agFound < 0) return "";
-    if (_agFound == 0 && AiBehaviorSwitch) return "AI Behavior switch not found:\n turn AI Behavior on by hand\n";
-    return (AiBehaviorSwitch ? "AI Behavior on (" + _agFound + " blocks)" : "") + (_agLive ? " AI ok\n" : AiBehaviorSwitch ? "\n" : "");
-}
-// <<< AI GATE SETUP v1.0 <<<
-
-// >>> AI GATE CONFIG v1.0 (sub-block of AI GATE v1.3: the [AI Gate] section, read locally; tools/agc_block.cs, synced by tools/blocks_sync.py) >>>
-// Hosts that read their own Custom Data (WaspAI, TubeRamAI). Writes the 8 defaults on first run ("reload" re-reads them) into the AI GATE core fields
-// (AiGateOn, AiWin, ScriptWin, AiHoldMax) and the AI GATE SETUP fields (AiBehaviorSwitch, AiTyped, AiSpeed, AiSearchEvery): a host needs both blocks.
-// A split Flight / Helm gets these values from its Staff (CONFIG LINK AgSet4 for the core four; the setup four go to the Aux in the SDK cfg).
-// Hook: AiGateLoad() after FleetLoad(true).
-void AiGateLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "AI Gate";
-    if (!ini.ContainsKey(S, "Time-share With Script Search")) ini.Set(S, "Time-share With Script Search", AiGateOn);
-    if (!ini.ContainsKey(S, "Switch On AI Behavior")) ini.Set(S, "Switch On AI Behavior", AiBehaviorSwitch);
-    if (!ini.ContainsKey(S, "Use Typed AI Block API")) ini.Set(S, "Use Typed AI Block API", AiTyped);
-    if (!ini.ContainsKey(S, "AI Flight Speed Limit (m/s)")) ini.Set(S, "AI Flight Speed Limit (m/s)", AiSpeed);
-    if (!ini.ContainsKey(S, "AI Window (s)")) ini.Set(S, "AI Window (s)", AiWin);
-    if (!ini.ContainsKey(S, "Script Search Window (s)")) ini.Set(S, "Script Search Window (s)", ScriptWin);
-    if (!ini.ContainsKey(S, "Max AI Hold (s)")) ini.Set(S, "Max AI Hold (s)", AiHoldMax);
-    if (!ini.ContainsKey(S, "AI Search Interval (s)")) ini.Set(S, "AI Search Interval (s)", AiSearchEvery);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    AiGateOn = ini.Get(S, "Time-share With Script Search").ToBoolean(AiGateOn);
-    AiBehaviorSwitch = ini.Get(S, "Switch On AI Behavior").ToBoolean(AiBehaviorSwitch);
-    AiTyped = ini.Get(S, "Use Typed AI Block API").ToBoolean(AiTyped);
-    AiSpeed = Math.Max(1, ini.Get(S, "AI Flight Speed Limit (m/s)").ToDouble(AiSpeed));
-    AiWin = Math.Max(1, ini.Get(S, "AI Window (s)").ToDouble(AiWin));
-    ScriptWin = Math.Max(1, ini.Get(S, "Script Search Window (s)").ToDouble(ScriptWin));
-    AiHoldMax = Math.Max(AiWin, ini.Get(S, "Max AI Hold (s)").ToDouble(AiHoldMax));
-    AiSearchEvery = Math.Max(0, ini.Get(S, "AI Search Interval (s)").ToInt32(AiSearchEvery));
-}
-// <<< AI GATE CONFIG v1.0 <<<
 
 // >>> LEAD v1.0 (shared block: identical in every armed drone script, see docs/lead-v1.md) >>>
 // Target prediction for the lead solvers. Measured on an offline bench (tools/lead_bench/Bench.cs: rockets, gatling and railgun shots at
@@ -561,49 +486,6 @@ void KzShare()
 }
 // <<< KAMIKAZE DEFENCE <<<
 
-// >>> KZ CONFIG v1.0 (sub-block of KAMIKAZE DEFENCE v1.1: the [Kamikaze Defence] section, read locally; tools/kzc_block.cs, synced by tools/blocks_sync.py) >>>
-// Hosts that read their own Custom Data (WaspAI). A split Flight / Helm gets these values from its Staff (CONFIG LINK KzSet) and does not carry this block.
-// Writes the defaults of the [Kamikaze Defence] section on first run ("reload" re-reads it) into KAMIKAZE DEFENCE's fields (KzOn .. KzShareOn).
-// Hooks: KzLoad() next to every FleetLoad(true); _sb.Append(KzStatus()) after HiveStatus(). Uses from the core: the Kz* fields, _kz, _kzMine.
-void KzLoad()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Kamikaze Defence";
-    KzOn = KzB(ini, S, "Enabled", KzOn);
-    KzMaxRadius = KzD(ini, S, "Max Kamikaze Radius (m)", KzMaxRadius);
-    KzHorizon = KzD(ini, S, "Warning Time (s)", KzHorizon);
-    KzMiss = KzD(ini, S, "Miss Distance (m)", KzMiss);
-    KzMissPerKm = KzD(ini, S, "Miss Distance Per km Of Range (m)", KzMissPerKm);
-    KzMinClosing = KzD(ini, S, "Min Closing Speed (m/s)", KzMinClosing);
-    KzPriority = KzD(ini, S, "Priority Bonus", KzPriority);
-    KzMates = KzB(ini, S, "Protect Hive Mates", KzMates);
-    KzBack = KzB(ini, S, "Back Away", KzBack);
-    KzBackSpeed = KzD(ini, S, "Back Away Speed (m/s)", KzBackSpeed);
-    KzBackRange = KzD(ini, S, "Back Away Within (m)", KzBackRange);
-    KzReact = KzD(ini, S, "Back Away Reaction Time (s)", KzReact);
-    KzBreak = KzB(ini, S, "Break Sideways", KzBreak);
-    KzBreakTime = KzD(ini, S, "Break Time (s)", KzBreakTime);
-    KzBreakSpeed = KzD(ini, S, "Break Speed (m/s)", KzBreakSpeed);
-    KzBreakMiss = KzD(ini, S, "Break Miss Distance (m)", KzBreakMiss);
-    KzRays = KzB(ini, S, "Track And Pack Search Rays", KzRays);
-    KzPack = KzD(ini, S, "Pack Search Radius (m)", KzPack);
-    KzReserve = KzD(ini, S, "Camera Charge Reserve (m)", KzReserve);
-    KzShareOn = KzB(ini, S, "Share Threats With Hive", KzShareOn);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-}
-double KzD(MyIni i, string s, string k, double d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToDouble(d); }
-bool KzB(MyIni i, string s, string k, bool d) { if (!i.ContainsKey(s, k)) i.Set(s, k, d); return i.Get(s, k).ToBoolean(d); }
-
-string KzStatus()
-{
-    if (!KzOn) return "";
-    if (_kz.Count == 0) return "Kamikaze: none incoming\n";
-    var k = _kz[0];
-    return "!! KAMIKAZE x" + _kz.Count + " (" + _kzMine + " at me)  next " + k.Tgo.ToString("0.0") + " s " + k.Dist.ToString("0") + " m" + (k.Mine ? "" : " (mate)") + "\n";
-}
-// <<< KZ CONFIG v1.0 <<<
-
 // >>> KZ RAYS v1.0 (sub-block of KAMIKAZE DEFENCE v1.1: the kamikaze pack / refresh rays cast by this PB's own cameras; tools/kzr_block.cs, synced by tools/blocks_sync.py) >>>
 // Hosts that cast their own camera rays (WaspAI, ShrikeAI, GnatSwarmAI under variant G2). The 8 split drone Flights get KzRayStep() from SEARCH LINK
 // instead (a proxy that sends the threats on .KZR; the Aux PB casts the rays and returns hits on .SCN). Called by KzAssess() once per pass while threats exist.
@@ -644,53 +526,43 @@ void KzRayStep()
 
 void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }   // a failing setup step must not kill the script for good: the rest still runs and the error is on the screen
 
-// >>> MANUAL v1.1 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat, Run menu; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
+// >>> MANUAL v1.2 (shared block of the hand-flyable warships: seat detection, MANUAL mode, hand-over, assist levels, dead-man heartbeat; docs/design/control_arch.md s2, tools/blocks_sync.py) >>>
 // MANUAL is a mode of the Helm script, not another script. While somebody sits in a flight seat (an IMyShipController that CanControlShip and is not the Remote Control)
 // the script gives the ship to him: every gyro and thruster override is released the tick the seat is taken, the dampener switch goes back to his state, the AI blocks
 // go off, target tracking, sensors and turrets keep running, and ManFly() replaces Control(). The seat must stay taken for "Seat Debounce" before MANUAL is committed
 // (until then the ship is only held free), and stay empty for "Release Delay" before the script flies again from its saved auto mode (_mode, in Storage).
-// Verbs: manual | auto | pilot (toggle) | assist hud|fbw|off | fire auto|pilot. "manual" / "auto" override the seat until the seat changes. Run without an argument
-// (cockpit toolbar fallback when Run-with-argument does not save): each press steps through "Run Menu", the highlighted item runs 2 s after the last press.
-// Assist: HUD = lead pip and fire window text on the cockpit surface; FBW = fly-by-wire: the pilot's stick rate (Rotation Input Scale, Pilot Rate Gain, Pilot Rot Sign
+// Verbs: manual | auto | pilot (toggle) | assist hud|fbw|off | fire auto|pilot. "manual" / "auto" override the seat until the seat changes.
+// v1.2 (docs/design/flight_split.md H3, helm_split.md Cut 2): the cockpit HUD page and the Run menu live in the Staff PB (StaffAI.cs). The Helm sends the HUD data
+// on "<Ship Tag>.HUD" and a Run without argument as ".MNU" (HELMLINK 1.3); the Staff writes the page, steps "Run Menu" and sends the chosen verb back on .S2H.
+// Without a live Staff a Run without argument toggles "pilot". [Manual] Run Menu / Run Menu Wait / HUD Surface stay in this PB's Custom Data; the Staff reads them.
+// Assist: HUD = lead pip and fire window text on the cockpit surface (written by the Staff); FBW = fly-by-wire: the pilot's stick rate (Rotation Input Scale, Pilot Rate Gain, Pilot Rot Sign
 // are ASSUMED until the in-game tests K1/K2) plus the PD rate to the lead point, only while a lock exists, faded out by the stick (Pilot Priority Rate).
 // Dead-man: a Timer named like "Deadman" is re-armed (Stop + Start) once a second while the script flies; in MANUAL it is stopped.
-// Script hooks: ManCfg() at the end of LoadConfig; ManBlocks() at the end of GetBlocks; ManSeat() early in Tick, then "if (Man) ManFly(dt); else if (!AiStep()) Control(dt);";
-// ManTick() each Update1 tick and ManMenu() for a Run without argument; "if (ManCmd(w)) return;" at the top of Command; ManMode()/ManHud() in Display; ManSave() / ManLoad(..)
-// for Storage; ManCap() as the turn-rate cap of Aim.
-// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _sb, _ai, _aiOn, _aiKick, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
+// Script hooks: ManIn() for the [Manual] line of CONFIG LINK (CfgIn; the Staff's CONFIG SERVER writes and reads the section, H1); ManBlocks() at the end of GetBlocks; ManSeat() early in Tick, then
+// "if (Man) ManFly(dt); else if (!AiStep()) Control(dt);"; ManTick() each Update1 tick; "if (ManCmd(w)) return;" at the top of Command; ManMode() in Display; ManSave() / ManLoad(..)
+// for Storage; ManCap() as the turn-rate cap of Aim. _pipR / _pipU / _aimErrDeg / _fireWinDeg feed the HUD (HELMLINK HlkHud).
+// Uses from the script: _rc, _gyros, _thr, _tgt, _aimRef, _now, _tick, _mode, _ai, _aiOn, _aiKick, _havePrev, _prevErr, _firing, Lead(), AimW(), GyroRate(), SetFire(), Release*(), Command(), PrimGuns().
 List<IMyShipController> _seats = new List<IMyShipController>(); IMyShipController _seat;
-List<IMyTimerBlock> _dm = new List<IMyTimerBlock>(); IMyTextSurface _hud;
-bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _menuOn; int _force, _asLvl = 1, _menuI; // _force: 0 follow the seat, 1 manual, 2 auto
-double _rawT, _rampT = -99, _w0, _asG = 1, _menuT, _pipR, _pipU;
-double ManDebounce = 0.4, ManRelease = 1.5, ManAssistMax = 1.5, ManGain = 1.5, ManSign = -1, ManScale = 1, ManPrio = 0.3, ManMenuWait = 2;
-bool ManAutoFire, ManScan; string ManMenuItems = "manual,auto,assist hud,assist fbw,assist off,lock,next,unlock,hunt,guard,rtb,idle", ManDmName = "Deadman", ManSeatEx = "gunnery"; int ManHudSurf = 0;
+List<IMyTimerBlock> _dm = new List<IMyTimerBlock>();
+bool _man, _hold, _occ, _rawOcc, _asOv, _userDamp = true, _dampInit, _asKeep; int _force, _asLvl = 1; // _force: 0 follow the seat, 1 manual, 2 auto
+double _rawT, _rampT = -99, _w0, _asG = 1, _pipR, _pipU;
+double ManDebounce = 0.4, ManRelease = 1.5, ManAssistMax = 1.5, ManGain = 1.5, ManSign = -1, ManScale = 1, ManPrio = 0.3;
+bool ManAutoFire, ManScan; string ManDmName = "Deadman", ManSeatEx = "gunnery";
 bool Man { get { return _man || _hold; } }
 
-void ManCfg()
-{
-    const string M = "Manual";
-    ManDebounce = Cfg(M, "Seat Debounce", ManDebounce); ManRelease = Cfg(M, "Release Delay", ManRelease);
-    string a = Cfg(M, "Assist (OFF/HUD/FBW)", "HUD").Trim().ToUpperInvariant();
-    _asLvl = a == "FBW" ? 2 : a == "OFF" ? 0 : 1;
-    ManAssistMax = Cfg(M, "Assist Max Rate", ManAssistMax); ManGain = Cfg(M, "Pilot Rate Gain", ManGain); ManSign = Cfg(M, "Pilot Rot Sign", ManSign);
-    ManScale = Math.Max(1e-3, Cfg(M, "Rotation Input Scale", ManScale)); ManPrio = Math.Max(1e-3, Cfg(M, "Pilot Priority Rate", ManPrio));
-    ManAutoFire = Cfg(M, "Auto Fire In Manual", ManAutoFire); ManScan = Cfg(M, "Scan In Manual", ManScan);
-    ManMenuItems = Cfg(M, "Run Menu", ManMenuItems); ManMenuWait = Cfg(M, "Run Menu Wait", ManMenuWait);
-    ManDmName = Cfg(M, "Deadman Timer Name", ManDmName); ManSeatEx = Cfg(M, "Seat Exclude (name part)", ManSeatEx).ToLowerInvariant(); ManHudSurf = (int)Cfg(M, "HUD Surface", (double)ManHudSurf);
+void ManIn()
+{   // [Manual] values in cfg_tables.json order; Run Menu, Run Menu Wait and HUD Surface are the Staff's (HUD page and menu). The assist level saved in Storage wins until "reload".
+    ManDebounce = N(); ManRelease = N(); string a = T().Trim().ToUpperInvariant();
+    if (!_asKeep) _asLvl = a == "FBW" ? 2 : a == "OFF" ? 0 : 1;
+    ManAssistMax = N(); ManGain = N(); ManSign = N(); ManScale = Math.Max(1e-3, N()); ManPrio = Math.Max(1e-3, N()); ManAutoFire = B(); ManScan = B(); T(); N(); ManDmName = T(); ManSeatEx = T().ToLowerInvariant();
 }
 
 void ManBlocks()
 {
-    _seats.Clear(); _dm.Clear(); _hud = null;
+    _seats.Clear(); _dm.Clear();
     GridTerminalSystem.GetBlocksOfType(_seats, b => Own(b) && b.CanControlShip && !(b is IMyRemoteControl) && (ManSeatEx == "" || !b.CustomName.ToLowerInvariant().Contains(ManSeatEx)));   // (a gunnery seat does not take the ship from the Helm)
     string n = ManDmName.ToLowerInvariant();
     if (n != "") GridTerminalSystem.GetBlocksOfType(_dm, b => Own(b) && b.CustomName.ToLowerInvariant().Contains(n));
-    try
-    {
-        var sp = _seats.Count > 0 ? _seats[0] as IMyTextSurfaceProvider : null;
-        if (sp != null && ManHudSurf >= 0 && ManHudSurf < sp.SurfaceCount) { _hud = sp.GetSurface(ManHudSurf); _hud.ContentType = ContentType.TEXT_AND_IMAGE; _hud.FontSize = 0.8f; _hud.Font = "Monospace"; }
-    }
-    catch (Exception) { _hud = null; }
     if (!_dampInit && _rc != null) { _userDamp = _rc.DampenersOverride; _dampInit = true; }   // the pilot's own dampener switch, until MANUAL tracks it
 }
 
@@ -736,10 +608,8 @@ void ManDm(bool arm) { foreach (var t in _dm) { try { t.StopCountdown(); if (arm
 
 void ManTick()
 {
-    if (_menuOn && _now - _menuT > ManMenuWait) { _menuOn = false; var it = ManMenuItems.Split(','); if (it.Length > 0) Command(it[_menuI % it.Length]); }
     if (_tick % 60 == 11) ManDm(!Man);   // dead-man heartbeat: re-armed once a second while the script flies, stopped while a pilot does
 }
-void ManMenu() { _menuI = _menuOn ? _menuI + 1 : 0; _menuOn = true; _menuT = _now; }
 
 bool ManCmd(string[] w)
 {
@@ -754,7 +624,7 @@ bool ManCmd(string[] w)
 }
 
 string ManSave() { return _asLvl + ";" + (_userDamp ? "1" : "0"); }
-void ManLoad(string asl, string dmp) { int a; if (int.TryParse(asl, out a)) _asLvl = Math.Max(0, Math.Min(2, a)); if (dmp == "0" || dmp == "1") { _dampInit = true; _userDamp = dmp == "1"; } }
+void ManLoad(string asl, string dmp) { int a; if (int.TryParse(asl, out a)) { _asLvl = Math.Max(0, Math.Min(2, a)); _asKeep = true; } if (dmp == "0" || dmp == "1") { _dampInit = true; _userDamp = dmp == "1"; } }
 
 // MANUAL flight step (replaces Control): lead data for the HUD, optional auto fire, optional fly-by-wire
 void ManFly(double dt)
@@ -811,31 +681,9 @@ void ManFly(double dt)
 
 string ManMode() { return Man ? "MANUAL" + (_asLvl > 0 ? " ASSIST-" + (_asLvl == 2 ? "FBW" : "HUD") : "") : (_occ ? "AUTO (pilot aboard) " : "AUTO ") + (_sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString()); }
 
-// compact cockpit page (<= 8 lines)
-string ManHud()
-{
-    if (_rc == null) return "NO CONTROLLER\n";   // (the Remote Control was destroyed)
-    var b = new StringBuilder();
-    b.Append("MODE ").Append(ManMode()).Append(_hold ? " (seat taken)" : "").Append('\n');
-    if (_tgt != null)
-    {
-        b.Append("TGT  ").Append(Vector3D.Distance(_tgt.P(_now), _rc.GetPosition()).ToString("0")).Append(" m  v ").Append(_tgt.V(_now).Length().ToString("0")).Append("  seen ").Append((_now - _tgt.Seen).ToString("0.0")).Append("s  T ").Append(_leadT.ToString("0.00")).Append('\n');
-        b.Append("PIP  R").Append(_pipR.ToString("+0.0;-0.0")).Append(" U").Append(_pipU.ToString("+0.0;-0.0")).Append("  err ").Append(_aimErrDeg.ToString("0.0")).Append(" win ").Append(_fireWinDeg.ToString("0.0")).Append(_fireWinDeg > 0 && _aimErrDeg < _fireWinDeg ? " FIRE" : "").Append("  B").Append(_prim + 1).Append(_bat[_prim].Cls).Append('\n');
-    }
-    else b.Append("TGT  none (").Append(_contacts.Count).Append(")\n");
-    b.Append("PWR ").Append((_batFrac * 100).ToString("0")).Append("% AMMO ").Append((_ammoFrac * 100).ToString("0")).Append("% THR ").Append((_powerScale * 100).ToString("0")).Append("% DAMP ").Append(_rc.DampenersOverride ? "on" : "off").Append("  DEADMAN ").Append(_dm.Count == 0 ? "-" : Man ? "off" : "armed").Append('\n');
-    if (_menuOn) { var it = ManMenuItems.Split(','); b.Append("MENU > ").Append(it[_menuI % it.Length].Trim()).Append(' ').Append(_menuI % it.Length + 1).Append('/').Append(it.Length).Append('\n'); }
-    if (_err != "") b.Append("! ").Append(_err).Append('\n');
-    return b.ToString();
-}
-void ManShow()
-{
-    if (_hud == null) return;
-    try { _hud.WriteText(ManHud()); } catch (Exception) { _hud = null; }
-}
-// <<< MANUAL v1.1 <<<
+// <<< MANUAL v1.2 <<<
 
-// >>> BATTERY v1.1 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
+// >>> BATTERY v1.2 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
 // Fixed guns (never turrets) form up to four batteries by the tag in the block name: [B1] .. [B4]. An untagged gun joins by class: ballistic (gatling, autocannon) B1, rocket B2, railgun B3,
 // shell (artillery, assault cannon) B4. The class of a battery (BALL ROCK RAIL SHEL: speed, range, minimum range, shot interval, reload, dps, dispersion) comes from its first gun's
 // definition id (BatSpec); a battery of mixed guns is treated as its first gun's class.
@@ -854,7 +702,7 @@ void ManShow()
 //   (BatOk) and target selection puts it behind every track a battery can hit (BatHope, debounced 2 s). The Track class carries the field "public double Hl = -99;".
 // TURN-RATE CALIBRATION (BatTurn, Auto Max Turn AUTO = large grids, ON, OFF): while the first slews saturate the gyros, the peak angular acceleration a is measured; then
 //   MaxTurn = 0.85 x sqrt(2 a x 0.6 rad) and AimKp = MaxTurn / 0.6 (the ship can stop inside the 0.6 rad PD zone); stored in Storage (field 8).
-// Hooks: BatCfg() at the end of LoadConfig; BatSort() at the end of GetBlocks (after _guns); PrimGuns() instead of _guns for the gun centre in Control() and for SetFire(); SetFire() starts with
+// Hooks: BatIn() for the [Battery] line of CONFIG LINK (CfgIn; the Staff writes and reads the section); BatSort() at the end of GetBlocks (after _guns); PrimGuns() instead of _guns for the gun centre in Control() and for SetFire(); SetFire() starts with
 //   "if (_bat[_prim].Cool > 0) { _firing = on; BatShoot(_bat[_prim], on); return; }"; BatOk(_bat[_prim], dist) in the primary's fire decision (Control); BatFire(haveAim, myVel) after it
 //   (BatFire(false, ..) in IDLE, Release and ManFly); "+ BatHope(t) + BatKz(t, dist)" in the target score of PruneAndSelect; BatTurn(w) in Aim(); BatSave() / BatLoad(..) for Storage; BatStatus() in Display.
 class Bat
@@ -867,20 +715,15 @@ int _pd; bool PdEx = true; double KzHold = 0; double PdRad = 6;   // point-defen
 bool _rkt; int _prim, _batFix; double _primT = -99, _bs0, _br0; bool BatSo = true; string BatTur = "AUTO", BatCal = "AUTO", BatSal = "OFF";
 List<IMyUserControllableGun> PrimGuns() { return _bat[_prim].G; }
 
-void BatCfg()
-{
-    const string S = "Battery";
-    string p = Cfg(S, "Primary (AUTO/B1..B4)", "AUTO").Trim().ToUpperInvariant();
+void BatIn()
+{   // [Battery] values in cfg_tables.json order (raw: the post-ops are here)
+    string p = T().Trim().ToUpperInvariant();
     _batFix = p.Length == 2 && p[0] == 'B' && p[1] >= '1' && p[1] <= '4' ? p[1] - '0' : 0;
-    BatSo = Cfg(S, "Standoff By Weapons", BatSo);
-    LooseFar = Cfg(S, "Loose Fire Beyond Standoff", LooseFar);
-    BatTur = Cfg(S, "Turret Only (AUTO/ON/OFF)", BatTur).Trim().ToUpperInvariant();
-    BatCal = Cfg(S, "Auto Max Turn (AUTO/ON/OFF)", BatCal).Trim().ToUpperInvariant();
-    BatSal = Cfg(S, "Salvo (AUTO/ON/OFF)", BatSal).Trim().ToUpperInvariant();
-    string pd = Cfg(S, "Point Defence (OFF/B1..B4)", "OFF").Trim().ToUpperInvariant();   // that battery shoots only small / incoming-kamikaze tracks, one gun at a time; the other batteries leave those tracks alone
+    BatSo = B(); LooseFar = B(); BatTur = T().Trim().ToUpperInvariant(); BatCal = T().Trim().ToUpperInvariant(); BatSal = T().Trim().ToUpperInvariant();
+    string pd = T().Trim().ToUpperInvariant();   // that battery shoots only small / incoming-kamikaze tracks, one gun at a time; the other batteries leave those tracks alone
     _pd = pd.Length == 2 && pd[0] == 'B' && pd[1] >= '1' && pd[1] <= '4' ? pd[1] - '0' : 0;
-    PdRad = Cfg(S, "Point Defence Max Radius (m)", PdRad); PdEx = Cfg(S, "Point Defence Exclusive", PdEx);
-    KzHold = Cfg(S, "Kamikaze Rail Hold Range (m)", KzHold);   // 0 = off; > 0: railgun / shell batteries leave a classified incoming kamikaze alone beyond this range
+    PdRad = N(); PdEx = B();
+    KzHold = N();   // Kamikaze Rail Hold Range: 0 = off; > 0: railgun / shell batteries leave a classified incoming kamikaze alone beyond this range
 }
 
 void BatSp(Bat b, string c, double sp, double rg, double mr, double cool, double rel, double dps, double dsp)
@@ -1132,9 +975,9 @@ string BatStatus()
     for (int i = 0; i < 4; i++) if (_bat[i].G.Count > 0) s.Append(" B").Append(i + 1).Append(i == _prim ? "* " : " ").Append(_bat[i].Cls).Append('x').Append(BatN(_bat[i]));
     return s.Append(" so ").Append(Standoff.ToString("0")).Append(" w ").Append(MaxTurn.ToString("0.0")).Append(BatTO() ? " TO\n" : "\n").ToString();
 }
-// <<< BATTERY v1.1 <<<
+// <<< BATTERY v1.2 <<<
 
-// >>> HELMLINK v1.2 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
+// >>> HELMLINK v1.3 (shared block of the Helm scripts: IGC link to the Staff PB on the same construct, docs/design/control_arch.md s1.3, tools/blocks_sync.py) >>>
 // The Helm sends, with TransmissionDistance.CurrentConstruct (never leaves the ship, no secret needed), on "<Ship Tag>.<suffix>" (Ship Tag default SHIP, [Link] in Custom Data):
 //   .HB     long tick                                                   heartbeat every "Heartbeat (s)" (0.5): the Staff releases every override when it stays silent for 1.5 s
 //   .H2S    MyTuple<int flags, long tgtId, Vector3D tgtPos, Vector3D tgtVel, float tgtRadius, float batt>   5 Hz: flags bit0-2 mode (0 IDLE 1 GUARD 2 HUNT 4 RTB 5 MANUAL 6 ASSIST 7 REACT),
@@ -1142,20 +985,37 @@ string BatStatus()
 //   .PILOT  MyTuple<int mode, int seated>                               on change
 //   .FLT    MyTuple<long id, Vector3D pos, Vector3D vel, double radius, long sender>   the Helm's own target shares and "finished" (radius < 0): the Staff copies them to the fleet channel
 //   H2S flags bit 8 (256) = "split Helm" (v1.2): the Staff then takes over the fleet channel, the other fleets' target feeds and damage sensing (docs/design/helm_split.md)
+//   v1.3 (docs/design/flight_split.md 4.3): H2S bit 9 (512) CFG WANT (CONFIG LINK CfWant: the Staff answers with ".CFG"), bit 10 (1024) AI ASSIST (the runtime AiAssist:
+//   the Staff runs the AI-block setup AiGateFind while it is set), bit 11 (2048) SCAN (ScanOn: the Staff casts the camera auto-scan rays, H7)
+//   .HUD    MyTuple<int flags, Vector3D tgt(seenAge, kzTgo, kzDist), Vector3D lead(leadT, pipR, pipU), Vector3D win(aimErr, fireWin, AI blocks), Vector3D pwr(batt, ammo, thrust), string>
+//           with Display (every 10 ticks while MANUAL, else 30): the Staff writes the cockpit HUD page from it (Cut 2; target range and speed from H2S) and shows the AI /
+//           kamikaze lines on its own screen.
+//           flags: bit0 MANUAL, 1 seat taken (hold), 2 dampeners, 3 dead-man armed, 4 FIRE, 5 has a dead-man timer, 6-7 assist level, 8-9 primary battery, 10 free (target: H2S),
+//           11 AI blocks fly, 12 own search (AI gate), 13 AI alarm, 14 AI ok (_agLive), 15 next kamikaze is at a mate, 16-23 contacts (max 255), 24-27 kamikazes (max 15),
+//           28-30 kamikazes at me (max 7). string = mode|primary class|error|first contact
+//   .MNU    int 0   a Run of this PB without argument while the Staff is alive (the Staff steps the Run Menu and sends the verb back on .S2H)
+//   .LCK    int lock counter   "lock": the Staff casts the ray from the forward camera and answers on .LKR
+//   .LST    MyTuple<Vector3D pos, Vector3D vel, double age, double radius>   the target just lost (NoteLost): the Staff's auto-scan puts every 2nd ray round it for 25 s
+// and on .LKR  MyTuple<long id, int f, Vector3D hit, Vector3D vel, MyTuple<Vector3D, Vector3D> box, MyTuple<Vector3D, Vector3D> ori(fwd, up)>  (the .SCN tuple, flight_split 4.1: f bits 0-7
+//   entity type, 8-15 relationship, 16 has hit, 20-22 source 1 SCAN / 4 LOCK, 24-27 result 0 ok / 1 no forward camera / 2 nothing hit (charge in hit.X) / 3 friendly): a LOCK with
+//   result 0 becomes the target, a SCAN hit goes through Valid() (FaSee sees friends too) into the contacts. On a run gap queued hits are stale: harmless (AddContact keeps the newest).
 // and listens on .S2H  MyTuple<string cmd, Vector3D rally, double radius>   (cmd = any Command() verb; an EMPTY cmd carries the fleet home point in rally),
 //   .TGT  the fleet / feed target tuple (as .FLT), relayed by the Staff,   .DMG  MyTuple<int hits, Vector3D hitDir, float hitDirAge>  hit counter and direction from the Staff's damage scan, 1 Hz (also its liveness beat).
 // The Helm counts a hit only when the counter grows while the link was already alive; silence for 3 s after it was heard counts as one hit (a destroyed Staff means damage).
 // The link is optional: [Link] Enable (AUTO/ON/OFF) = AUTO switches it on while a PB named "[Staff] ..." is on the construct, so the single-PB ships are untouched.
-// Script hooks: HlkCfg() at the end of LoadConfig; HlkBlocks() at the end of GetBlocks; HlkTick() once per Update1 tick after ManTick().
-// Uses from the script: Cfg(), Command(), Man, _occ, _mode (Mode.IDLE/GUARD/HUNT/ASSIST/RTB), _tgt (Track), _now, _tick, _firing, _dm, _thr, _gyros, _batFrac.
+// Script hooks: HlkCfg() at the end of LoadConfig (Get-only: [Link] stays in this PB's Custom Data and is read, never written); HlkBlocks() at the end of GetBlocks; HlkTick() once per Update1 tick after ManTick(); HlkHud() in Display;
+// HlkMenu() for a Run without argument; HlkLock() for "lock"; bool ScanOn (the auto-scan condition, H2S bit 11); the .LST send in NoteLost().
+// Uses from the script: _ini, Command(), Man, _occ, _hold, _mode (Mode.IDLE/GUARD/HUNT/ASSIST/RTB), _tgt (Track), _now, _tick, _firing, _dm, _thr, _gyros, _batFrac, _ammoFrac,
+// _powerScale, _contacts, _prim, _bat, _err, _fc, _ai, _aiOn, _agT0, _agLive, OwnAlert, AiAssist, CfWant, KzOn, _kz, _kzMine, _leadT, _pipR, _pipU, _aimErrDeg, _fireWinDeg, ManMode(), AddContact(), Valid().
 // BLOCK PREFIX (v1.1, M5): [Link] Block Prefix (default empty = off) limits every block list the script builds to blocks whose name starts with it ("[SH]" on the warships), so the
 // blocks of drones that are merged to the ship's cradles (they are blocks of the SAME grid while clamped) are never adopted: Own(b) replaces b.IsSameConstructAs(Me) in the lists.
 // Ship Tag also falls back to the [Ship] Tag key of the ship designs' Custom Data.
 bool Own(IMyTerminalBlock b) { return b.IsSameConstructAs(Me) && (HlkPre == "" || b.CustomName.StartsWith(HlkPre, StringComparison.OrdinalIgnoreCase)); }
-bool HlkOn, _hlkLost; string HlkShip = "SHIP", HlkEn = "AUTO", HlkPre = "", _hlkKey = ""; double HlkHb = 0.5, _hlkDmgT = -99; int _hlkMd = -9, _hlkSeat = -9, _hlkHits; IMyBroadcastListener _hlkIn, _hlkTgt, _hlkDmg;
+bool HlkOn, _hlkLost; string HlkShip = "SHIP", HlkEn = "AUTO", HlkPre = "", _hlkKey = ""; double HlkHb = 0.5, _hlkDmgT = -99; int _hlkMd = -9, _hlkSeat = -9, _hlkHits, _hlkLck; IMyBroadcastListener _hlkIn, _hlkTgt, _hlkDmg, _hlkLkr;
 void HlkCfg()
 {
-    HlkEn = Cfg("Link", "Enable (AUTO/ON/OFF)", HlkEn).Trim().ToUpperInvariant(); HlkShip = Cfg("Link", "Ship Tag", _ini.Get("Ship", "Tag").ToString(HlkShip)).Trim().ToUpperInvariant(); HlkPre = Cfg("Link", "Block Prefix", HlkPre).Trim(); HlkHb = Math.Max(0.1, Cfg("Link", "Heartbeat (s)", HlkHb));
+    const string L = "Link";
+    HlkEn = _ini.Get(L, "Enable (AUTO/ON/OFF)").ToString(HlkEn).Trim().ToUpperInvariant(); HlkShip = _ini.Get(L, "Ship Tag").ToString(_ini.Get("Ship", "Tag").ToString(HlkShip)).Trim().ToUpperInvariant(); HlkPre = _ini.Get(L, "Block Prefix").ToString(HlkPre).Trim(); HlkHb = Math.Max(0.1, _ini.Get(L, "Heartbeat (s)").ToDouble(HlkHb));
 }
 void HlkBlocks()
 {
@@ -1164,8 +1024,8 @@ void HlkBlocks()
     HlkOn = HlkEn == "ON" || (HlkEn != "OFF" && l.Count > 0);
     string k = HlkOn ? HlkShip : "";
     if (k == _hlkKey) return;
-    foreach (var x in new[] { _hlkIn, _hlkTgt, _hlkDmg }) if (x != null) IGC.DisableBroadcastListener(x);
-    _hlkIn = k == "" ? null : IGC.RegisterBroadcastListener(k + ".S2H"); _hlkTgt = k == "" ? null : IGC.RegisterBroadcastListener(k + ".TGT"); _hlkDmg = k == "" ? null : IGC.RegisterBroadcastListener(k + ".DMG"); _hlkKey = k;
+    foreach (var x in new[] { _hlkIn, _hlkTgt, _hlkDmg, _hlkLkr }) if (x != null) IGC.DisableBroadcastListener(x);
+    _hlkIn = k == "" ? null : IGC.RegisterBroadcastListener(k + ".S2H"); _hlkTgt = k == "" ? null : IGC.RegisterBroadcastListener(k + ".TGT"); _hlkDmg = k == "" ? null : IGC.RegisterBroadcastListener(k + ".DMG"); _hlkLkr = k == "" ? null : IGC.RegisterBroadcastListener(k + ".LKR"); _hlkKey = k;
 }
 bool FleetV(Vector3D v) { return Math.Abs(v.X) < 1e9 && Math.Abs(v.Y) < 1e9 && Math.Abs(v.Z) < 1e9; }   // false for NaN and absurd values
 bool FleetOk(MyTuple<long, Vector3D, Vector3D, double, long> d) { return d.Item1 != Me.CubeGrid.EntityId && FleetV(d.Item2) && FleetV(d.Item3) && d.Item4 < 1e5 && !double.IsNaN(d.Item4); }
@@ -1191,18 +1051,40 @@ void HlkTick()
         if (d.Item3 < 5 && d.Item2.LengthSquared() > 0.01) { _hitDir = d.Item2; _hitDirT = _now - d.Item3; }
     }
     if (!_hlkLost && _hlkDmgT > -90 && _now - _hlkDmgT > 3) { _hlkLost = true; _hitAt = _now; _hits++; }   // the Staff went silent: count one hit (a destroyed PB means damage)
+    while (_hlkLkr.HasPendingMessage)
+    {   // the Staff's rays: lock (H6; result 0 = a grid that is not friendly, the Staff shows the failures on the HUD page) and auto-scan hits (H7)
+        var m = _hlkLkr.AcceptMessage();
+        if (!(m.Data is MyTuple<long, int, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D>, MyTuple<Vector3D, Vector3D>>)) continue;
+        var d = (MyTuple<long, int, Vector3D, Vector3D, MyTuple<Vector3D, Vector3D>, MyTuple<Vector3D, Vector3D>>)m.Data; var bx = new BoundingBoxD(d.Item5.Item1, d.Item5.Item2); int f = d.Item2;
+        if (f >> 24 != 0) continue;
+        var e = new MyDetectedEntityInfo(d.Item1, "", (MyDetectedEntityType)(f & 255), d.Item3, MatrixD.CreateWorld(bx.Center, d.Item6.Item1, d.Item6.Item2), (Vector3)d.Item4, (MyRelationsBetweenPlayerAndBlock)(f >> 8 & 255), bx, 1);   // (TimeStamp 0 would read as IsEmpty())
+        if ((f & 4194304) != 0) { _err = ""; _tgt = AddContact(e, "LOCK"); } else if (Valid(e)) AddContact(e, "SCAN");
+    }
     var cc = TransmissionDistance.CurrentConstruct;
     if (_tick % Math.Max(1, (int)(HlkHb * 60)) == 3) IGC.SendBroadcastMessage(HlkShip + ".HB", (long)_tick, cc);
     int md = Man ? 5 : _mode == Mode.ASSIST ? 6 : _mode == Mode.REACT ? 7 : (int)_mode, seat = _occ ? 1 : 0;
     if (md != _hlkMd || seat != _hlkSeat) { _hlkMd = md; _hlkSeat = seat; IGC.SendBroadcastMessage(HlkShip + ".PILOT", new MyTuple<int, int>(md, seat), cc); }
     if (_tick % 12 == 5)
     {
-        int f = md | seat << 3 | 256 | (_firing ? 16 : 0) | (_dm.Count > 0 && !Man ? 64 : 0) | (_thr.Count == 0 || _gyros.Count == 0 ? 128 : 0);
+        int f = md | seat << 3 | 256 | (CfWant ? 512 : 0) | (AiAssist ? 1024 : 0) | (ScanOn ? 2048 : 0) | (_firing ? 16 : 0) | (_dm.Count > 0 && !Man ? 64 : 0) | (_thr.Count == 0 || _gyros.Count == 0 ? 128 : 0);
         var t = _tgt;
         IGC.SendBroadcastMessage(HlkShip + ".H2S", new MyTuple<int, long, Vector3D, Vector3D, float, float>(f, t != null ? t.Id : 0, t != null ? t.P(_now) : Vector3D.Zero, t != null ? t.V(_now) : Vector3D.Zero, t != null ? (float)t.Radius : 0, (float)_batFrac), cc);
     }
 }
-// <<< HELMLINK v1.2 <<<
+bool HlkUp { get { return HlkOn && _now - _hlkDmgT < 3; } }   // the Staff answers (.DMG is its 1 Hz beat)
+void HlkMenu() { if (HlkUp) IGC.SendBroadcastMessage(HlkShip + ".MNU", 0, TransmissionDistance.CurrentConstruct); else Command("pilot"); }
+void HlkLock() { if (HlkUp) IGC.SendBroadcastMessage(HlkShip + ".LCK", ++_hlkLck, TransmissionDistance.CurrentConstruct); else _err = "lock: no Staff PB"; }
+void HlkHud()
+{
+    if (!HlkOn || _rc == null) return;
+    var t = _tgt; var k = _kz.Count > 0 ? _kz[0] : null;
+    IGC.SendBroadcastMessage(HlkShip + ".HUD", new MyTuple<int, Vector3D, Vector3D, Vector3D, Vector3D, string>((Man ? 1 : 0) | (_hold ? 2 : 0) | (_rc.DampenersOverride ? 4 : 0) | (_dm.Count > 0 ? Man ? 32 : 40 : 0)
+        | (_fireWinDeg > 0 && _aimErrDeg < _fireWinDeg ? 16 : 0) | _asLvl << 6 | _prim << 8 | (_aiOn ? 2048 : 0) | (_agT0 >= 0 ? 4096 : 0) | (OwnAlert ? 8192 : 0) | (_agLive ? 16384 : 0)
+        | (k != null && !k.Mine ? 32768 : 0) | Math.Min(255, _contacts.Count) << 16 | (KzOn ? Math.Min(15, _kz.Count) << 24 | Math.Min(7, _kzMine) << 28 : 0),
+        new Vector3D(t != null ? _now - t.Seen : 0, k != null ? k.Tgo : 0, k != null ? k.Dist : 0), new Vector3D(_leadT, _pipR, _pipU), new Vector3D(_aimErrDeg, _fireWinDeg, _ai.Count), new Vector3D(_batFrac, _ammoFrac, _powerScale),
+        ManMode() + "|" + _bat[_prim].Cls + "|" + _err + "|" + _fc), TransmissionDistance.CurrentConstruct);
+}
+// <<< HELMLINK v1.3 <<<
 
 // >>> FRIENDLY BEACON v1.0 (shared block, synced by tools/blocks_sync.py, see docs/friendly-avoidance.md) >>>
 // The sending half of FRIENDLY AVOIDANCE for the scripts that have no room for the whole block (Mantis, Wasp: 100,000-character limit) and
@@ -1385,6 +1267,84 @@ Vector3D HdWant(Vector3D want, double cap)
 string HdStatus() { return HdOn ? ((_hdF & 8) != 0 ? "!! HARASSER (evading)\n" : "!! FIRE FROM AN UNSEEN BEARING (evading)\n") : ""; }
 // <<< HARASSER LINK v1.1 <<<
 
+// >>> CONFIG LINK v1.0 (Flight / Helm side of the config move, docs/design/flight_split.md 3, 4.1, 4.3, 6.1; tools/cl_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 9 drone Flights and ShrikeAI. The PB never writes its own Custom Data any more: the Staff's CONFIG SERVER (tools/cs_block.cs) writes
+// every default there, parses the values and sends them on .CFG; this block applies them and caches the string in Storage.
+// Channel (TransmissionDistance.CurrentConstruct): listener CfKey() + ".CFG" (drones CfKey() = _lkK = "WSPL"+<Flight PB EntityId>; Helm "<Ship Tag>.").
+//   .CFG  Staff -> Flight/Helm, string (exact format, the CONFIG SERVER builds the same):
+//         line 0  "CF1\t<schema>\t<status>"      status: "ok", or (Longbow, Mantis) the weapon the Staff detected; kept in _cfX, shown after "cfg: Staff, "
+//         line i  "<letter>\t<v1>\t<v2>...\n"    one line per section, values in tools/cfg_tables.json order (empty lines are skipped)
+//         letters: M the model section (cfg_tables "sections" of the model, WITHOUT the "local" entries IGC Tag / Start Mode), K [Kamikaze Defence]
+//         (all 20), A [AI Gate] (only the 4 "block":"core" entries: AiGateOn, AiWin, ScriptWin, AiHoldMax; the 4 setup values go to the Aux in SDK),
+//         S [Survival] (all 8). Drone line order M K A S. Helm (4.3): one line per Helm section with its own letter (CfgIn switches on _cfV[0]), then K A.
+//         Values: bools "1"/"0" (anything else reads false), doubles and ints ToString("R") (read with double.TryParse, current culture on both PBs;
+//         ints are read as doubles and cast by the post-op), strings raw (no tab / newline). Values are sent RAW (as MyIni reads them); the post-ops
+//         of cfg_tables.json ((int), Math.Max clamps, .Trim().ToUpperInvariant()) are applied here, in CfgIn / AgSet4 (all are idempotent).
+//         schema = cfg_tables.json "version" + "/" + the value count of each line, in line order; drone example (Mantis) "1/84/20/4/8".
+//         The Flight accepts a message only if the header schema equals its const CfSchema AND the schema rebuilt from the lines it got equals it too;
+//         otherwise nothing is applied and the screen says "! config schema: update Flight and Staff together".
+//   WANT: CfWant rides on drone F2S flags bit 16 (SPLIT LINK v1.2: F2S goes out at least every 12 ticks); Helm H2S bit 9 (HELMLINK 1.3). The Staff answers
+//         a WANT within one F2S period, at most once per 30 ticks per key, re-reading the Flight's Custom Data at that moment ("reload" reaches both PBs).
+//   AI ASSIST (runtime AiAssist) rides beside it: F2S bit 17 / H2S bit 10; the Aux (SDK bit 9) or StaffAI does the AI-block setup.
+// Contract: value readers N() (double), B() (bool), T() (string) read the next value of the line being applied (_cfV, cursor _cfI, _cfV[0] = letter).
+//   bool CfApply(string): schema check, then applies atomically line by line: K -> KzSet(), A -> AgSet4(), S -> SvSet() (in SURVIVAL LINK v1.1),
+//   any other letter -> host CfgIn(). Returns false (nothing applied) on a mismatch. CfRead(): applies each .CFG, then clears CfWant, keeps the string
+//   (CfSave) and sets the screen line _cfSt. string CfLoad(): applies the Storage cache at start (status "cfg: cached") and returns the host's own part
+//   of Storage. string CfSave(): the suffix the host appends to its Storage in Save() ("\u0001" + the last applied .CFG). bool CfWant: true from start
+//   and "reload" until a matching .CFG is applied.
+// Host hooks: string CfKey(); const string CfSchema; void CfgIn() (model line(s), one statement per field in cfg_tables.json order with the post-ops,
+//   generated from cfg_tables.json); a Helm without SURVIVAL LINK declares "void SvSet() { }". Calls: CfInit() after the link key exists (drones: after
+//   LkInit()), "string st = CfLoad();" before the host parses Storage, CfRead() in the tick, "+ CfSave()" in Save(), "CfWant = true;" in "reload",
+//   "\n" + _cfSt on the screen. Tag and Start Mode stay local (Get-only reads; the IGC channels are registered in the constructor).
+// Sync: until a matching .CFG arrives the PB runs on its Storage cache, else on its field defaults ("cfg: defaults (no Staff)"); after an apply
+//   "cfg: Staff". Runtime words (aim, breach, wp, range, split/focus, ai on|off) last until the next start or "reload"; the Staff never pushes config
+//   unasked. Flight rebuilt: new key + WANT. Staff rebuilt: answers the next WANT. Run gap: nothing (the config is in memory).
+IMyBroadcastListener _cfL; bool CfWant = true; string _cfS = "", _cfX = "", _cfSt = "cfg: defaults (no Staff)"; string[] _cfV; int _cfI;
+double N() { double v; double.TryParse(_cfV[_cfI++], out v); return v; }
+bool B() { return _cfV[_cfI++] == "1"; }
+string T() { return _cfV[_cfI++]; }
+void CfInit() { _cfL = IGC.RegisterBroadcastListener(CfKey() + ".CFG"); }
+bool CfApply(string s)
+{
+    var L = s.Split('\n'); var h = L[0].Split('\t'); string c = "1";
+    for (int i = 1; i < L.Length; i++) if (L[i] != "") c += "/" + (L[i].Split('\t').Length - 1);
+    if (h.Length < 3 || h[0] != "CF1" || h[1] != CfSchema || c != CfSchema) return false;
+    _cfX = h[2];
+    for (int i = 1; i < L.Length; i++)
+    {
+        if (L[i] == "") continue;
+        _cfV = L[i].Split('\t'); _cfI = 1;
+        char k = _cfV[0][0];
+        if (k == 'K') KzSet(); else if (k == 'A') AgSet4(); else if (k == 'S') SvSet(); else CfgIn();
+    }
+    return true;
+}
+void CfRead()
+{
+    while (_cfL.HasPendingMessage)
+    {
+        var m = _cfL.AcceptMessage(); string s = m.Data as string;
+        if (s == null) continue;
+        if (!CfApply(s)) { _cfSt = "! config schema: update Flight and Staff together"; continue; }
+        CfWant = false; _cfS = s; _cfSt = "cfg: Staff" + (_cfX != "ok" && _cfX != "" ? ", " + _cfX : "");
+    }
+}
+string CfLoad()
+{
+    var p = Storage.Split('\u0001');
+    if (p.Length > 1 && CfApply(p[1])) { _cfS = p[1]; _cfSt = "cfg: cached"; }
+    return p[0];
+}
+string CfSave() { return _cfS != "" ? "\u0001" + _cfS : ""; }
+void KzSet()
+{
+    KzOn = B(); KzMaxRadius = N(); KzHorizon = N(); KzMiss = N(); KzMissPerKm = N(); KzMinClosing = N(); KzPriority = N(); KzMates = B(); KzBack = B();
+    KzBackSpeed = N(); KzBackRange = N(); KzReact = N(); KzBreak = B(); KzBreakTime = N(); KzBreakSpeed = N(); KzBreakMiss = N(); KzRays = B();
+    KzPack = N(); KzReserve = N(); KzShareOn = B();
+}
+void AgSet4() { AiGateOn = B(); AiWin = Math.Max(1, N()); ScriptWin = Math.Max(1, N()); AiHoldMax = Math.Max(AiWin, N()); }
+// <<< CONFIG LINK v1.0 <<<
+
 public Program()
 {
     for (int i = 0; i < 6; i++) _thrDir[i] = new List<IMyThrust>();
@@ -1395,15 +1355,11 @@ public Program()
     catch (Exception ex) { CtorErr("config", ex); }
     try
     {
-        KzLoad(); AiGateLoad();
-    }
-    catch (Exception ex) { CtorErr("modules", ex); }
-    try
-    {
         _sentry = StartMode.Trim().ToUpperInvariant() == "SENTRY"; _mode = _sentry ? Mode.GUARD : ParseMode(StartMode, Mode.IDLE);
-        if (!string.IsNullOrEmpty(Storage))
+        CfInit(); string st = CfLoad();   // CONFIG LINK: the last .CFG from the Staff, kept in Storage
+        if (!string.IsNullOrEmpty(st))
         {
-            var p = Storage.Split(';');
+            var p = st.Split(';');
             if (p.Length >= 5)
             {
                 _sentry = p[0] == "SENTRY"; _mode = _sentry ? Mode.GUARD : ParseMode(p[0], _mode);
@@ -1436,7 +1392,7 @@ public Program()
 
 public void Save()
 {
-    Storage = string.Join(";", _sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", ManSave(), BatSave());
+    Storage = string.Join(";", _sentry && _mode == Mode.GUARD ? "SENTRY" : _mode.ToString(), _home.X.ToString("R"), _home.Y.ToString("R"), _home.Z.ToString("R"), _homeSet ? "1" : "0", ManSave(), BatSave()) + CfSave();
 }
 
 Mode ParseMode(string s, Mode def)
@@ -1467,7 +1423,7 @@ void Tick(string arg, UpdateType src)
 {
     if ((src & (UpdateType.Trigger | UpdateType.Terminal | UpdateType.Script | UpdateType.Mod)) != 0)
     {
-        if (!string.IsNullOrWhiteSpace(arg)) Command(arg); else ManMenu();   // Run without an argument: the cockpit-toolbar menu (MANUAL block)
+        if (!string.IsNullOrWhiteSpace(arg)) Command(arg); else HlkMenu();   // Run without an argument: the cockpit-toolbar menu, stepped by the Staff (HELMLINK 1.3; no Staff: "pilot")
     }
     if ((src & UpdateType.Update1) == 0) return;
 
@@ -1486,12 +1442,10 @@ void Tick(string arg, UpdateType src)
     if (_tick % 6 == 0) PollDesignators();
     if (_tick % 10 == 0) { PruneAndSelect(); PowerAndHealth(); }
     MaintainLock();
-    if (_tgt == null && !_aiOn && AutoScan && (_mode == Mode.HUNT || Gd && (!Calm || Big)) && (!Man || ManScan) && !Hot()) AutoScanStep();
     if (ShareTargets && _tgt != null && _tgt.Src != "IGC" && _tick % 30 == 0 && _now - _tgt.Seen < 1.0 && !Hot()) ShareTarget();
 
-    ManTick(); HlkTick(); HdTick();
+    ManTick(); HlkTick(); CfRead(); HdTick();
     if (Man) ManFly(dt); else if (!AiStep()) Control(dt);
-    _peakIns = Math.Max(_peakIns, Runtime.CurrentInstructionCount);
     if (_tick % (Man ? 10 : 30) == 0) Display();
 }
 
@@ -1510,7 +1464,7 @@ void Command(string a)
         case "assist": SetMode(Mode.ASSIST); break;
         case "rtb": SetMode(Mode.RTB); break;
         case "idle": case "stop": SetMode(Mode.IDLE); break;
-        case "lock": ManualLock(); break;
+        case "lock": HlkLock(); break;   // the Staff casts the lock ray (.LCK / .LKR, flight_split H6)
         case "split": SplitFocus = true; break;
         case "focus": SplitFocus = false; break;
         case "unlock": _tgt = null; _contacts.Clear(); break;
@@ -1522,7 +1476,7 @@ void Command(string a)
         case "home": if (_rc != null) { _home = _rc.GetPosition(); _homeSet = true; } break;
         case "range":
             double r; if (w.Length > 1 && double.TryParse(w[1], out r)) Standoff = MathHelper.Clamp(r, MinRange, MaxFireRange); break;
-        case "reload": LoadConfig(); KzLoad(); AiGateLoad(); GetBlocks(); break;
+        case "reload": LoadConfig(); CfWant = true; _asKeep = false; GetBlocks(); break;   // (the Staff re-reads this PB's Custom Data on the WANT)
     }
 }
 
@@ -1535,32 +1489,27 @@ void SetMode(Mode m)
 // =====================================================================
 //  CONFIG
 void LoadConfig()
-{
+{   // H1 (docs/design/flight_split.md): the Staff's CONFIG SERVER writes this PB's Custom Data and sends the values on .CFG (CONFIG LINK, CfgIn below).
+    // Read here, Get-only: IGC Tag and Start Mode (the channels are registered in the constructor) and [Link] (HlkCfg).
     MyIniParseResult res;
     if (!_ini.TryParse(Me.CustomData, out res)) { _err = "CustomData parse error line " + res.LineNo; return; }
-    const string S = "Shrike";
-    Tag = Cfg(S, "IGC Tag", Tag);
-    StartMode = Cfg(S, "Start Mode (GUARD/HUNT/ASSIST/IDLE)", StartMode);
-    SentryRange = Cfg(S, "Sentry Range (m)", SentryRange);
-    Standoff = Cfg(S, "Standoff Range", Standoff);
-    SepRange = Cfg(S, "Wingmate Separation Range (m)", SepRange); SepSpeed = Cfg(S, "Wingmate Separation Speed (m/s)", SepSpeed); MateClear = Cfg(S, "Wingmate Fire Clearance (m)", MateClear);
-    MinRange = Cfg(S, "Min Range", MinRange);
-    MaxSpeed = Cfg(S, "Combat Speed", MaxSpeed);
-    OrbitSpeed = Cfg(S, "Orbit Speed", OrbitSpeed);
-    Jink = Cfg(S, "Evasive Jinking", Jink);
-    AutoScan = Cfg(S, "Auto Camera Scan", AutoScan);
-    ShareTargets = Cfg(S, "Share Targets Over IGC", ShareTargets);
-    FireTol = Cfg(S, "Fire Window Multiplier", FireTol);
-    AiAssist = Cfg(S, "AI Block Search Assist", AiAssist);
-    MaxTurn = Cfg(S, "Max Turn Rate rad/s", MaxTurn);
-    CapRange = Cfg(S, "Capital Standoff Range", CapRange);
-    ManCfg(); HlkCfg(); BatCfg();
-    string out1 = _ini.ToString();
-    if (out1 != Me.CustomData) Me.CustomData = out1;
+    Tag = _ini.Get("Shrike", "IGC Tag").ToString(Tag); StartMode = _ini.Get("Shrike", "Start Mode (GUARD/HUNT/ASSIST/IDLE)").ToString(StartMode);
+    HlkCfg();
 }
-string Cfg(string s, string k, string d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToString(d); }
-double Cfg(string s, string k, double d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToDouble(d); }
-bool Cfg(string s, string k, bool d) { if (!_ini.ContainsKey(s, k)) _ini.Set(s, k, d); return _ini.Get(s, k).ToBoolean(d); }
+// CONFIG LINK host hooks. Lines (cfg_tables.json order, raw values): M [Shrike] without IGC Tag / Start Mode, U [Manual], B [Battery], then K, A.
+const string CfSchema = "1/15/15/10/20/4";
+string CfKey() { return HlkShip + "."; }
+void SvSet() { }
+void CfgIn()
+{
+    char k = _cfV[0][0];
+    if (k == 'U') ManIn(); else if (k == 'B') BatIn();
+    else
+    {
+        SentryRange = N(); Standoff = N(); SepRange = N(); SepSpeed = N(); MateClear = N(); MinRange = N(); MaxSpeed = N(); OrbitSpeed = N();
+        Jink = B(); AutoScan = B(); ShareTargets = B(); FireTol = N(); AiAssist = B(); double m = N(); if (!_caDone) MaxTurn = m; CapRange = N();   // (a calibrated turn rate, BATTERY, stays)
+    }
+}
 
 // =====================================================================
 //  BLOCKS
@@ -1717,18 +1666,6 @@ IMyCameraBlock CamFor(Vector3D pos, double range)
     return best;
 }
 
-void ManualLock()
-{
-    IMyCameraBlock cam = null;
-    foreach (var c in _cams)
-        if (c.IsWorking && Vector3D.Dot(c.WorldMatrix.Forward, _rc.WorldMatrix.Forward) > 0.99 && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
-    if (cam == null) { _err = "No forward camera for lock"; return; }
-    var e = cam.Raycast(Math.Min(LockRange, cam.AvailableScanRange));
-    if (e.IsEmpty() || e.Type == MyDetectedEntityType.Planet || e.Type == MyDetectedEntityType.Asteroid) { _err = "Lock: nothing hit (range " + cam.AvailableScanRange.ToString("0") + " m)"; return; }
-    if (Friendly(e)) { _err = "Lock: target is friendly"; return; }
-    _err = "";
-    _tgt = AddContact(e, "LOCK");
-}
 
 // ---- LOCK MAINTENANCE AND RE-ACQUISITION -------------------------------------------------------------------
 //  Each camera banks only 2 km/s of ray range, and a miss costs as much as a hit, so the rays have to be cheap and
@@ -1749,6 +1686,7 @@ void NoteLost(Track t)
 {
     if (t.Src == "IGC" || t.DeadAt > 0 || t.DisSince >= 0) return;
     _lostPos = t.Pos; _lostVel = t.Vel; _lostT = t.Seen; _lostRad = t.Radius;
+    if (HlkOn) IGC.SendBroadcastMessage(HlkShip + ".LST", new MyTuple<Vector3D, Vector3D, double, double>(_lostPos, _lostVel, _now - _lostT, _lostRad), TransmissionDistance.CurrentConstruct);   // the Staff's auto-scan searches round it (H7)
 }
 double Uncertainty(Track t, double age)
 {
@@ -1812,37 +1750,6 @@ Vector3D ReacquirePoint(Track t, Vector3D centre, Vector3D dir, double age)
     return centre + u * (major * s1) + v * (minor * s2) + dir * Math.Min(t.Radius + 0.5 * sigma, 25);
 }
 
-void AutoScanStep()
-{
-    IMyCameraBlock cam = null;
-    double sr = Big ? 1800 : ScanRange;   // a warship looks 1.8 km out through every camera it has (a ray costs its length in charge; a capital ship's turrets reach only 800 m)
-    foreach (var c in _cams)
-        if (c.IsWorking && (Big || Forwardish(c)) && c.AvailableScanRange >= sr && (cam == null || c.AvailableScanRange > cam.AvailableScanRange)) cam = c;
-    if (cam == null) return;
-    _scanIdx++;
-    // just lost a target: every other ray goes round where it was last seen, widening with time
-    double lostAge = _now - _lostT;
-    if (lostAge < 25 && (_scanIdx & 1) == 0)
-    {
-        Vector3D lp = _lostPos + _lostVel * Math.Min(lostAge, 10);
-        double rr = Math.Min(250, _lostRad + 6 * lostAge) * Math.Sqrt(((_scanIdx >> 1) % 23 + 0.5) / 23.0), th2 = _scanIdx * 2.39996323;
-        Vector3D dl = lp - cam.GetPosition(); double dd = dl.Length();
-        if (dd > 30 && dd < sr && Vector3D.Dot(dl / dd, cam.WorldMatrix.Forward) > 0.75)
-        {
-            dl /= dd;
-            Vector3D uu = Vector3D.Cross(dl, Math.Abs(dl.Y) < 0.95 ? Vector3D.Up : Vector3D.Right); uu.Normalize();
-            Vector3D vv = Vector3D.Cross(dl, uu);
-            var le = cam.Raycast(lp + uu * (rr * Math.Cos(th2)) + vv * (rr * Math.Sin(th2)) + dl * 10);
-            if (Valid(le)) AddContact(le, "SCAN");
-            return;
-        }
-    }
-    const int N = 120;
-    double r = ScanCone * Math.Sqrt((_scanIdx % N + 0.5) / N);
-    double th = _scanIdx * 2.39996323; // golden-angle spiral
-    var e = cam.Raycast(sr, (float)(r * Math.Sin(th)), (float)(r * Math.Cos(th)));
-    if (Valid(e)) AddContact(e, "SCAN");
-}
 
 void PruneAndSelect()
 {
@@ -2284,12 +2191,12 @@ void Release()
 void Display()
 {
     _sb.Clear();
-    _sb.Append("SHRIKE AI v").Append(VER).Append('\n').Append(ManHud()).Append(BatStatus());
+    _sb.Append("SHRIKE AI v").Append(VER).Append("\nMODE ").Append(ManMode()).Append('\n').Append(_cfSt).Append('\n').Append(BatStatus());
     _sb.Append("Ins ").Append(Runtime.CurrentInstructionCount).Append('/').Append(Runtime.MaxInstructionCount).Append('\n');
-    _sb.Append(UnderFire ? "UNDER FIRE\n" : "").Append(AiStatus()).Append(_crash != "" ? "! Script error: " + _crash + "\n" : ""); _sb.Append(KzStatus()).Append(HdStatus());
+    _sb.Append(UnderFire ? "UNDER FIRE\n" : "").Append(_err != "" ? "! " + _err + "\n" : "").Append(_crash != "" ? "! Script error: " + _crash + "\n" : "").Append(HdStatus());   // (the HUD page, the AI and kamikaze lines are on the Staff's screens: HlkHud)
     string s = _sb.ToString();
     if (_lcd != null) _lcd.WriteText(s);
-    ManShow();
+    HlkHud();
     Echo(s);
 }
 
@@ -2572,12 +2479,6 @@ void BreachDrop()
     if (_bOn) { _bBad.Add(_bS); if (_bBad.Count > 12) _bBad.RemoveAt(0); }
     _bOn = false; _bMiss = 0;
 }
-string AimInfo()
-{
-    string s = "";
-    if (_bOn && _tgt != null && _bId == _tgt.Id && BreachMode(_tgt)) s += " hole " + _bDepth.ToString("0") + " m";
-    return s;
-}
 // <<< BREACH v1.0-lite <<<
 
 // =====================================================================
@@ -2617,8 +2518,7 @@ bool IsAiBlock(IMyTerminalBlock b)
 void FindAi()
 {
     GridTerminalSystem.GetBlocksOfType(_ai, b => IsAiBlock(b));
-    foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script
-    if (AiAssist) AiGateFind(_ai);   // (AI Assist off: the AI blocks stay as they came, "AI Behavior" off - switching it on lets the AI Flight block fly the ship away on its own)
+    foreach (var b in _ai) b.Enabled = _aiOn;   // never let them fight the script (the AI-block setup, AiGateFind, runs in the Staff while H2S bit 10 AI ASSIST is set: AI Assist off leaves them as they came)
 }
 bool AiStep()
 {
@@ -2687,11 +2587,6 @@ void AiHeldIgnored(long id)
     _heldT = _now;
     if (++_heldN >= 2) { _ignore.Remove(id); _heldN = 0; }
 }
-string AiStatus()
-{
-    if (_ai.Count == 0) return OwnAlert ? "AI alarm: searching\n" : "";
-    return (_fc != "" ? "1st contact " + _fc + " " + (_now - _fcT).ToString("0") + " s ago\n" : "") + AiGateStatus() + "AI: " + (_aiOn ? "searching" : _agT0 >= 0 ? "own search" : "standby") + " (" + _ai.Count + " blocks)" + (OwnAlert ? "  ALARM" : "") + "\n";
-}
 // The AI Flight block flies straight at what it found, and so do all the wingmates' AI blocks: three ships at one target meet in one spot. While a friendly grid is
 // in the ramp zone or on the straight line of my velocity (FaWant on a zero command pushes), the AI is switched off for 3 s and Control() flies with FaWant.
 double _faYT = -99;
@@ -2704,6 +2599,7 @@ bool AiModeOk() { return _mode == Mode.HUNT || Gd && !Calm; }
 // REACT: weapons, tracking and turrets live, but the ship does not sweep, scan or hand itself to the AI blocks until something wakes it:
 // an AI block alarm ("aialert" from an AI Defensive block, or a mate's alarm), damage taken, or a target already held.
 bool Big { get { return Me.CubeGrid.GridSizeEnum == MyCubeSize.Large; } }   // a large-grid ship: slow to turn, huge, many turrets
+bool ScanOn { get { return _tgt == null && !_aiOn && AutoScan && (_mode == Mode.HUNT || Gd && (!Calm || Big)) && (!Man || ManScan); } }   // the camera auto-scan: cast by the Staff while H2S bit 11 is set (flight_split H7)
 bool Gd { get { return _mode == Mode.GUARD || _mode == Mode.REACT; } }
 bool Calm { get { return _mode == Mode.REACT && _tgt == null && !Alerted && !UnderFire && _now - _hitDirT >= 10; } }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Staff split (docs/design/staff_split.md): REPAIR CLIENT and SEEKER moved from the 7 split Staff PBs into a fourth PB, [Aux] (scripts/AuxAI.cs),
 linked by AUX LINK (tools/al_block.cs).   python3 -I tools/tests/test_aux_split.py
-(a) the .SDK / .DKS / .SKW tuple types agree between sender and receiver, (b) what moved where and the Aux PB writes no override,
+(a) the .SDK / .DKS tuple types (.SKW is gone: flight_split.md 4.1) agree between sender and receiver, (b) what moved where and the Aux PB writes no override,
 (c) sizes, (d) designs: one [Aux] PB inside the outline next to its own [Flight] PB (skipped until tools/designs has SUPPORT_AUX)."""
 import os, re, sys, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -12,7 +12,9 @@ for p in (TOOLS, os.path.join(TOOLS, 'designs')):
 from minify_cs import minify                                         # noqa: E402
 
 SEVEN = ['HornetStaffAI', 'HarrierStaffAI', 'LancerStaffAI', 'AegisStaffAI', 'WaspStaffAI', 'LongbowStaffAI', 'MantisStaffAI']
-LOCAL = ['GnatStaffAI', 'BasiliskStaffAI']
+BASILISK = 'BasiliskStaffAI'      # flight_split.md 7.2: Basilisk gets an [Aux] too, so its Staff is an AUX LINK host
+GNAT = 'GnatStaffAI'              # flight_split.md 7.2 (G1a): the Gnat traded its sensor for an [Aux] PB, so its Staff is an AUX LINK host too
+SPLIT = SEVEN + [BASILISK, GNAT]
 
 def raw(path):
     with open(os.path.join(ROOT, path), encoding='utf-8') as f: return f.read()
@@ -44,11 +46,11 @@ class AuxSplit(unittest.TestCase):
         self.assertIn(s[0], takes(self.al))
         self.assertIn('RegisterBroadcastListener(_fk + ".DKS")', self.al)
 
-    def test_skw_and_d2s(self):
-        wp = re.search(r'void WpSeek\((MyTuple<[^)]*>) d\)', code('tools/wp_block.cs')).group(1)
-        self.assertIn('void WpSeek(' + wp + ' d)', self.aux)
-        self.assertIn('IGC.SendBroadcastMessage(_fk + ".SKW", d, TransmissionDistance.CurrentConstruct)', self.aux)
-        self.assertIn(wp, takes(self.al)); self.assertIn('RegisterBroadcastListener(_fk + ".SKW")', self.al)
+    def test_skw_gone_and_d2s(self):
+        """flight_split.md 4.1: .SKW is removed (WpSeek is local in the Aux); .D2S stays"""
+        for name, t in (('AuxAI', self.aux), ('al_block', self.al)):
+            self.assertNotIn('.SKW', t, name + ': the .SKW channel is removed (flight_split.md 4.1)')
+        self.assertRegex(self.aux, r'void WpSeek\(', 'AuxAI keeps a local WpSeek (WEAKPOINT RELAY v1.2)')
         self.assertIn('IGC.SendBroadcastMessage(_fk + ".D2S", arg, TransmissionDistance.CurrentConstruct)', self.aux)
         self.assertIn('RegisterBroadcastListener(_fk + ".D2S")', self.al)
         self.assertIn('Command((string)m.Data)', self.al)
@@ -59,20 +61,23 @@ class AuxSplit(unittest.TestCase):
                 self.assertIn('TransmissionDistance.CurrentConstruct', m.group(0), name + ' .' + m.group(1))
 
     # ---- (b) what moved
-    def test_seven_staffs_carry_aux_link_not_the_modules(self):
-        for n in SEVEN:
+    def test_split_staffs_carry_aux_link_not_the_modules(self):
+        for n in SPLIT:
             t, r = code(script(n)), raw(script(n))
-            self.assertIn('// >>> AUX LINK v1.0', r, n)
+            self.assertIn('// >>> AUX LINK v1.1', r, n)
             self.assertNotIn('// >>> REPAIR CLIENT v', r, n); self.assertNotIn('// >>> SEEKER v', r, n)
             for gone in ('void RpScan(', '_rpBays', 'void RpMedicStep(', 'GetTargetedEntity', 'Raycast(', '_skT', 'SetTargetingGroup'):
                 self.assertNotIn(gone, t, n + ': ' + gone)
             self.assertIn('void SkStep() { }', t, n)
             self.assertIn('scripts/AuxAI.cs', r.split('// =====')[1], n + ': the header names AuxAI.cs')
 
-    def test_local_hosts_keep_both_blocks(self):
-        for n in LOCAL:
+    def test_weakpoint_relay_moved_to_the_aux(self):
+        """flight_split.md 3 / 9.3b: the 9 drone Staffs (GnatStaffAI under G1a) lose WEAKPOINT RELAY (and WpStep); AuxAI carries v1.2"""
+        for n in SPLIT:
             r = raw(script(n))
-            self.assertIn('// >>> REPAIR CLIENT v1.1', r, n); self.assertIn('// >>> SEEKER v1.0', r, n); self.assertNotIn('// >>> AUX LINK', r, n)
+            self.assertNotIn('// >>> WEAKPOINT RELAY', r, n + ': WEAKPOINT RELAY must leave the Staff (flight_split.md P1-S)')
+            self.assertNotIn('void WpStep(', code(script(n)), n + ': void WpStep( must leave the Staff')
+        self.assertIn('// >>> WEAKPOINT RELAY v1.2', raw('scripts/AuxAI.cs'), 'AuxAI must carry WEAKPOINT RELAY v1.2 (P1-X)')
 
     def test_aux_has_the_modules_and_writes_no_override(self):
         r = raw('scripts/AuxAI.cs')
@@ -114,21 +119,20 @@ class AuxSplit(unittest.TestCase):
 
     # ---- (c) sizes
     def test_sizes(self):
-        for n in SEVEN:
-            self.assertLessEqual(len(minify(raw(script(n)))), 75000, n)
-        for n in LOCAL:
-            self.assertLessEqual(len(minify(raw(script(n)))), 75000, n)
-        self.assertLessEqual(len(minify(raw('scripts/AuxAI.cs'))), 30000)
+        """flight_split.md 9.3d / 9.4: Staff <= 78,000 (GnatStaffAI included under G1a), AuxAI <= 40,000 (the full table is test_flight_split.Sizes)"""
+        for n in SPLIT:
+            self.assertLessEqual(len(minify(raw(script(n)))), 78000, n + ' Staff over 78,000 minified: move a module out (CLAUDE.md Script size)')
+        self.assertLessEqual(len(minify(raw('scripts/AuxAI.cs'))), 40000, 'AuxAI over 40,000 minified')
 
     # ---- (d) designs
     def test_designs(self):
         """the 7 models (+ Watcher, Longbow L / L Seeker) carry one [Aux] PB inside kit_outline, nearest to their own [Flight] PB (<= 4 cells), the kit complete;
-        Gnat keeps [Flight] + [Staff] (no cell in its 2 x 2 section), Basilisk its 3 PBs (under budget)"""
+        Gnat (G1a) gets its [Aux] pinned at (1, 1, 3) inside the 2 x 2 section, Basilisk gets its [Aux] (4 PBs, flight_split.md 7.2)"""
         import designs, _common as C
         allm = {}
         for m in designs.load()[0].values():
             for n, f in getattr(m, 'MODELS', {}).items(): allm.setdefault(n, f)
-        for name in ('Hornet', 'Watcher', 'Harrier', 'Lancer', 'Aegis', 'Wasp', 'Longbow S', 'Longbow L', 'Longbow L Seeker', 'Mantis'):
+        for name in ('Hornet', 'Watcher', 'Harrier', 'Lancer', 'Aegis', 'Wasp', 'Longbow S', 'Longbow L', 'Longbow L Seeker', 'Mantis', 'Basilisk'):
             bp = allm[name](False); C.add_support_pbs(bp); bp.validate()
             ps = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
             aux = [b for b in ps if (b['name'] or '').startswith('[Aux]')]
@@ -139,10 +143,16 @@ class AuxSplit(unittest.TestCase):
             fl = min((b for b in ps if (b['name'] or '').startswith('[Flight]')), key=dist)
             self.assertLessEqual(dist(fl), 4, name + ': the Aux PB is too far from its Flight PB')
             self.assertEqual(getattr(bp, 'kit', {}).get('skipped', []), [], name)
-        bp = allm['Gnat'](False); C.add_support_pbs(bp)
-        self.assertEqual(sorted(b['name'] for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')), ['[Flight] Gnat PB', '[Staff] Gnat PB'])
+        import core
+        bp = allm['Gnat'](False); C.add_support_pbs(bp); bp.validate()
+        ps = [b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]
+        self.assertEqual(sorted(b['name'] for b in ps), ['[Aux] Gnat PB', '[Flight] Gnat PB', '[Staff] Gnat PB'])
+        aux = [b for b in ps if b['name'].startswith('[Aux]')][0]
+        self.assertTrue('void SendDks()' in aux['extra'], 'Gnat: the Aux PB carries AuxAI.cs')
+        self.assertEqual(tuple(aux['min']), core.GNAT_AUX_CELL, 'Gnat: the Aux PB is pinned at (1, 1, 3)')
+        self.assertIn(tuple(aux['min']), core.gnat_section(bp), 'Gnat: the Aux PB must stay inside the 2 x 2 section (CLAUDE.md outline rule)')
         bp = allm['Basilisk'](False); C.add_support_pbs(bp)
-        self.assertEqual(len([b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]), 3)
+        self.assertEqual(len([b for b in bp.blocks if b['xtype'].endswith('MyProgrammableBlock')]), 4, 'Basilisk: Flight, Staff, Thrust, Aux (add \'BASILISK\' to SUPPORT_AUX, P1-D)')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

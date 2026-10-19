@@ -66,7 +66,7 @@ class ShipTests(unittest.TestCase):
         for b in tur:
             self.assertTrue(b['name'].startswith('[SH] [PD]'), b['name'])           # the Helm's Link prefix; "[PD]" is the repo's point-defence tag
             self.assertGreater(sum(it.amount for it in bp.items_of(b)), 0)           # loaded
-        self.assertIn('Point Defence (OFF/B1..B4)', B._script('ShrikeAI.cs'))
+        self.assertIn('Point Defence (OFF/B1..B4)', B._script('StaffAI.cs'))   # flight_split H1: the Staff's CONFIG SERVER reads the Helm's [Battery] keys, .CFG carries them
 
     def test_turrets_target_drones_and_rockets_only(self):
         xml = full().build_xml()
@@ -100,7 +100,7 @@ class ShipTests(unittest.TestCase):
     def test_the_wing_spreads_out_and_clears_its_wingmates(self):
         for k in ('Kamikaze Rail Hold Range (m)', 'Wingmate Separation Range (m)', 'Wingmate Separation Speed (m/s)', 'Wingmate Fire Clearance (m)'):
             self.assertIn(k + '=', B.HELM_DATA)
-            self.assertIn(k, B._script('ShrikeAI.cs'))
+            self.assertIn(k, B._script('StaffAI.cs'))      # flight_split H1: Helm config is read by the Staff (CONFIG SERVER), sent on .CFG
 
     def test_no_dlc_no_prototech(self):
         pods.assert_clean(full())
@@ -251,13 +251,18 @@ class ScriptWiringTests(unittest.TestCase):
             self.assertIn(f'case "{verb}"', hive)
 
     def test_helm_custom_data_keys_are_literals_in_the_script(self):
-        hel = src('ShrikeAI.cs')
+        # flight_split H1 (2026-10-18): the Helm reads only IGC Tag, Start Mode and [Link] itself; every other Helm key is a literal in the Staff's
+        # tables (StaffAI.cs, CONFIG SERVER) and reaches the Helm on .CFG
+        hel, sta = src('ShrikeAI.cs'), src('StaffAI.cs')
+        local = ('IGC Tag', 'Start Mode (GUARD/HUNT/ASSIST/IDLE)', 'Block Prefix')
         for m in re.finditer(r'^([A-Za-z][^=\n\[]*?)=', B.HELM_DATA, re.M):
-            self.assertIn(m.group(1), hel, m.group(1))
+            k = m.group(1)
+            self.assertIn(k, hel if k in local else sta, k)
 
     def test_scripts_fit_the_programmable_block(self):
-        for f, lim in (('ShrikeAI.cs', C.SCRIPT_LIMITS['ShrikeAI.cs']), ('SpotterAI.cs', 100000), ('PeeperAI.cs', 100000), ('HiveMotherAI.cs', 100000)):
-            self.assertLessEqual(len(C.script_text(f)), lim, f)
+        lim = getattr(C, 'PB_BUDGET', 80000)      # flight_split.md 9.4: one budget for every script, ShrikeAI <= 80,000
+        for f in ('ShrikeAI.cs', 'SpotterAI.cs', 'PeeperAI.cs', 'HiveMotherAI.cs'):
+            self.assertLessEqual(len(C.script_text(f)), lim, f + ' is over the PB budget')
 
     def test_scripts_are_embedded(self):
         bp = full()

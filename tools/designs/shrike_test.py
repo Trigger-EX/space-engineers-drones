@@ -1,11 +1,14 @@
 """Shrike Test: sim/generator test ships for scripts/ShrikeAI.cs (control_arch M1, kind 'test': built into out/Blueprints, never packaged).
 
   Shrike Test        the Hornet hull (3x2x4 core, two fixed gatlings, 12 ion thrusters, cameras, sensor, AI blocks) with a SmallBlockCockpit on the deck
-                     and the Remote Control kept: ONE Programmable Block '[Helm] Shrike Test PB' running ShrikeAI, a Timer 'Shrike Test Deadman'
+                     and the Remote Control kept: ONE Programmable Block '[Helm] Shrike Test PB' running ShrikeAI (no Staff: since flight_split H1 its Helm runs on
+                     its defaults, the Staff's CONFIG SERVER is what sends a Helm its Custom Data), a Timer 'Shrike Test Deadman'
                      (5 s, Silent; toolbar: groups Thrusters and Weapons OnOff_Off, the hard dead-man of control_arch s2.6) and the block groups the
                      timer refers to. The two dive thrusters moved behind the cockpit, so the hull keeps its six-axis thrust. No Event
                      Controller (its event numbers are placeholders, K4): in MANUAL the script stops the timer itself, which is what the sim tests.
   Shrike Test Rocket   the same, but the right-hand gun is a SmallMissileLauncher tagged [B2], the left gatling [B1]: exercises BATTERY-lite.
+                       It carries a '[Staff] Shrike Test Rocket PB' (StaffAI) so the Helm gets its Custom Data on .CFG (as do Shrike Multi Test and
+                       Shrike Basilisk Test, the selftest m3 ships).
 Naming rules the real Shrike hull must keep (see ShrikeAI.cs header): PB name starts with '[Helm]'; a Remote Control (the script's reference) AND a flight
 seat (IMyShipController that CanControlShip, not the RC); a Timer whose name contains 'Deadman'; fixed guns tagged [B1]/[B2] (optional).
 Module contract: MODELS = {name: callable(lite)}, NO_LITE = names without a Lite variant, DOCS.
@@ -40,7 +43,7 @@ def _drop(bp, pred):
         bp.blocks.remove(b)
         for c in [c for c, why in bp.reserve.items() if why.endswith(' of ' + (b['name'] or b['sub']))]: del bp.reserve[c]
 
-def _shrike_test(name, weapon_b2=None, staff=False, rail=False, antenna=False):
+def _shrike_test(name, weapon_b2=None, staff=False, rail=False, antenna=False, cfg_staff=False):
     bp = hornet_frame(name, '', 'MyObjectBuilder_SmallGatlingGun', script_text('ShrikeAI.cs'), ai=True, sensor=True, merge=False)
     bp.legacy_shapes = False                       # sample-derived shapes: cockpit / timer / PB (enabled)
     # the cockpit stands on the rear deck (the antenna's place); the Hornet's cameras, dive thrusters, PB and 4 batteries stay where they are
@@ -73,9 +76,12 @@ def _shrike_test(name, weapon_b2=None, staff=False, rail=False, antenna=False):
                 bp.add('MyObjectBuilder_Reactor', 'SmallBlockSmallGenerator', (x, -1, z), 'Forward', 'Up', f'{name} Reactor {"L" if x < 0 else "R"}{z + 2}', kind='power', items=[Item.ingot('Uranium', 5)])
     bp.group('Weapons', guns)
     deadman_kit(bp, name, seat, timer=timer, ec_cell=(1, 1, 1) if staff else None, experimental=staff)     # Timer D (5 s, Silent, cuts the groups) [+ the cockpit EC on the split ship]
-    if staff:
-        # the second PB in the free cell behind the core (its front face goes into the armour at z = 0)
+    if staff or cfg_staff:
+        # the second PB in the free cell behind the core (its front face goes into the armour at z = 0).  cfg_staff (flight_split H1, 2026-10-18): the
+        # Staff's CONFIG SERVER reads the Helm's Custom Data and sends it on .CFG, so the M3 battery ships carry one; 'Shrike Test' stays the single-PB
+        # ship (selftest m2 "the link is optional"; a Helm without a Staff runs on its defaults).
         sp = bp.add('MyObjectBuilder_MyProgrammableBlock', 'SmallProgrammableBlock', (-1, 1, 1), 'Forward', 'Up', f'[Staff] {name} PB', extra=pb_extra(script_text('StaffAI.cs')), kind='ctrl')
+    if staff:
         bp.set_toolbars(seat, toolbar=[TB.run(pb), TB.run(sp)])                              # Run (no argument) = the menus of the two PBs
     return finalize(bp)
 
@@ -89,7 +95,7 @@ def shrike_wing_test(lite=False):
     return _shrike_test('Shrike Wing Test', staff=True, antenna=True)
 
 def shrike_multi_test(lite=False):
-    return _shrike_test('Shrike Multi Test', ('MyObjectBuilder_SmallMissileLauncher', ''), rail=True)
+    return _shrike_test('Shrike Multi Test', ('MyObjectBuilder_SmallMissileLauncher', ''), rail=True, cfg_staff=True)
 
 def shrike_basilisk_test(lite=False):
     """The Basilisk hull (large grid, 4 launchers, gatling turret on the roof) with ShrikeAI in a '[Helm]' PB instead of BasiliskAI; launchers tagged [B2]."""
@@ -102,11 +108,15 @@ def shrike_basilisk_test(lite=False):
     pb['custom_data'] = '[Shrike]\nStart Mode (GUARD/HUNT/ASSIST/IDLE)=GUARD\nStandoff Range=600\nEvasive Jinking=false\nOrbit Speed=10\nCombat Speed=40\nMin Range=150\n'
     for b in bp.blocks:
         if 'Launcher' in (b['name'] or ''): b['name'] = b['name'] + ' [B2]'
+    # the blank spare becomes the Staff (flight_split H1: the Staff's CONFIG SERVER reads the Helm's Custom Data and sends it on .CFG)
+    sp = [b for b in bp.blocks if (b['name'] or '').startswith('[Spare]') and b['xtype'].endswith('MyProgrammableBlock')][0]
+    sp['name'] = f'[Staff] {name} PB'
+    sp['extra'] = pb_extra(script_text('StaffAI.cs'))
     bp.name = name
     return bp
 
 def shrike_test_rocket(lite=False):
-    return _shrike_test('Shrike Test Rocket', ('MyObjectBuilder_SmallMissileLauncher', ''))
+    return _shrike_test('Shrike Test Rocket', ('MyObjectBuilder_SmallMissileLauncher', ''), cfg_staff=True)
 
 MODELS['Shrike Test'] = shrike_test
 MODELS['Shrike Test Rocket'] = shrike_test_rocket

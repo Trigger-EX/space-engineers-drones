@@ -1,4 +1,4 @@
-// >>> BATTERY v1.1 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
+// >>> BATTERY v1.2 (weapon batteries, one lead solver per class, primary choice, standoff, turret-only mode; docs/design/control_arch.md s3, tools/blocks_sync.py) >>>
 // Fixed guns (never turrets) form up to four batteries by the tag in the block name: [B1] .. [B4]. An untagged gun joins by class: ballistic (gatling, autocannon) B1, rocket B2, railgun B3,
 // shell (artillery, assault cannon) B4. The class of a battery (BALL ROCK RAIL SHEL: speed, range, minimum range, shot interval, reload, dps, dispersion) comes from its first gun's
 // definition id (BatSpec); a battery of mixed guns is treated as its first gun's class.
@@ -17,7 +17,7 @@
 //   (BatOk) and target selection puts it behind every track a battery can hit (BatHope, debounced 2 s). The Track class carries the field "public double Hl = -99;".
 // TURN-RATE CALIBRATION (BatTurn, Auto Max Turn AUTO = large grids, ON, OFF): while the first slews saturate the gyros, the peak angular acceleration a is measured; then
 //   MaxTurn = 0.85 x sqrt(2 a x 0.6 rad) and AimKp = MaxTurn / 0.6 (the ship can stop inside the 0.6 rad PD zone); stored in Storage (field 8).
-// Hooks: BatCfg() at the end of LoadConfig; BatSort() at the end of GetBlocks (after _guns); PrimGuns() instead of _guns for the gun centre in Control() and for SetFire(); SetFire() starts with
+// Hooks: BatIn() for the [Battery] line of CONFIG LINK (CfgIn; the Staff writes and reads the section); BatSort() at the end of GetBlocks (after _guns); PrimGuns() instead of _guns for the gun centre in Control() and for SetFire(); SetFire() starts with
 //   "if (_bat[_prim].Cool > 0) { _firing = on; BatShoot(_bat[_prim], on); return; }"; BatOk(_bat[_prim], dist) in the primary's fire decision (Control); BatFire(haveAim, myVel) after it
 //   (BatFire(false, ..) in IDLE, Release and ManFly); "+ BatHope(t) + BatKz(t, dist)" in the target score of PruneAndSelect; BatTurn(w) in Aim(); BatSave() / BatLoad(..) for Storage; BatStatus() in Display.
 class Bat
@@ -30,20 +30,15 @@ int _pd; bool PdEx = true; double KzHold = 0; double PdRad = 6;   // point-defen
 bool _rkt; int _prim, _batFix; double _primT = -99, _bs0, _br0; bool BatSo = true; string BatTur = "AUTO", BatCal = "AUTO", BatSal = "OFF";
 List<IMyUserControllableGun> PrimGuns() { return _bat[_prim].G; }
 
-void BatCfg()
-{
-    const string S = "Battery";
-    string p = Cfg(S, "Primary (AUTO/B1..B4)", "AUTO").Trim().ToUpperInvariant();
+void BatIn()
+{   // [Battery] values in cfg_tables.json order (raw: the post-ops are here)
+    string p = T().Trim().ToUpperInvariant();
     _batFix = p.Length == 2 && p[0] == 'B' && p[1] >= '1' && p[1] <= '4' ? p[1] - '0' : 0;
-    BatSo = Cfg(S, "Standoff By Weapons", BatSo);
-    LooseFar = Cfg(S, "Loose Fire Beyond Standoff", LooseFar);
-    BatTur = Cfg(S, "Turret Only (AUTO/ON/OFF)", BatTur).Trim().ToUpperInvariant();
-    BatCal = Cfg(S, "Auto Max Turn (AUTO/ON/OFF)", BatCal).Trim().ToUpperInvariant();
-    BatSal = Cfg(S, "Salvo (AUTO/ON/OFF)", BatSal).Trim().ToUpperInvariant();
-    string pd = Cfg(S, "Point Defence (OFF/B1..B4)", "OFF").Trim().ToUpperInvariant();   // that battery shoots only small / incoming-kamikaze tracks, one gun at a time; the other batteries leave those tracks alone
+    BatSo = B(); LooseFar = B(); BatTur = T().Trim().ToUpperInvariant(); BatCal = T().Trim().ToUpperInvariant(); BatSal = T().Trim().ToUpperInvariant();
+    string pd = T().Trim().ToUpperInvariant();   // that battery shoots only small / incoming-kamikaze tracks, one gun at a time; the other batteries leave those tracks alone
     _pd = pd.Length == 2 && pd[0] == 'B' && pd[1] >= '1' && pd[1] <= '4' ? pd[1] - '0' : 0;
-    PdRad = Cfg(S, "Point Defence Max Radius (m)", PdRad); PdEx = Cfg(S, "Point Defence Exclusive", PdEx);
-    KzHold = Cfg(S, "Kamikaze Rail Hold Range (m)", KzHold);   // 0 = off; > 0: railgun / shell batteries leave a classified incoming kamikaze alone beyond this range
+    PdRad = N(); PdEx = B();
+    KzHold = N();   // Kamikaze Rail Hold Range: 0 = off; > 0: railgun / shell batteries leave a classified incoming kamikaze alone beyond this range
 }
 
 void BatSp(Bat b, string c, double sp, double rg, double mr, double cool, double rel, double dps, double dsp)
@@ -295,4 +290,4 @@ string BatStatus()
     for (int i = 0; i < 4; i++) if (_bat[i].G.Count > 0) s.Append(" B").Append(i + 1).Append(i == _prim ? "* " : " ").Append(_bat[i].Cls).Append('x').Append(BatN(_bat[i]));
     return s.Append(" so ").Append(Standoff.ToString("0")).Append(" w ").Append(MaxTurn.ToString("0.0")).Append(BatTO() ? " TO\n" : "\n").ToString();
 }
-// <<< BATTERY v1.1 <<<
+// <<< BATTERY v1.2 <<<

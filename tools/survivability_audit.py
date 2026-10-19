@@ -49,13 +49,13 @@ GUN_X = re.compile(r'Gun|Missile|Railgun|Turret|Launcher|Warhead')
 def xt(b): return b['xtype'].replace('MyObjectBuilder_', '')
 
 def pb_role(b):
-    """name prefix [Flight] / [Staff] / [Thrust]; a PB without a prefix is the (only) flight PB"""
+    """name prefix [Flight] / [Staff] / [Thrust] / [Aux]; a PB without a prefix is the (only) flight PB"""
     m = re.match(r'\[([^\]]+)\]', b['name'] or '')
-    return m.group(1).lower() if m and m.group(1).lower() in ('flight', 'staff', 'thrust') else 'flight'
+    return m.group(1).lower() if m and m.group(1).lower() in ('flight', 'staff', 'thrust', 'aux') else 'flight'
 
 def systems(bp):
     """{system name: [blocks]}: the critical systems (empty ones left out).  Thruster axes are named 'thrust <dir>' (the direction the ship is pushed)."""
-    s = {'controller': [], 'flight PB': [], 'staff PB': [], 'thrust PB': [], 'gyro': [], 'power': [], 'guns': []}
+    s = {'controller': [], 'flight PB': [], 'staff PB': [], 'thrust PB': [], 'aux PB': [], 'gyro': [], 'power': [], 'guns': []}
     for d in DIRS: s['thrust ' + d] = []
     for b in bp.blocks:
         x = xt(b)

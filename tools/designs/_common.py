@@ -67,17 +67,19 @@ BAT_S = bat_extra(0.05)             # SmallBlockSmallBatteryBlock
 def ant_extra(r):
     return f"<BroadcastRadius>{r}</BroadcastRadius><ShowShipName>true</ShowShipName><EnableBroadcasting>true</EnableBroadcasting>"
 
-SCRIPT_LIMITS = {"ShrikeAI.cs": 86000, "TubeRamAI.cs": 80000}      # ship Helm scripts: <= 86,000 minified characters (control_arch s1.2 budget 80,000, +6,000 of link and feature code since). The PB limit is 100,000. Past ~80 k move an off-hot-path module into the Staff PB (docs/design/helm_split.md); do not raise this cap (CLAUDE.md)
+PB_BUDGET = 80000     # minified characters per Programmable Block (hard PB cap 100,000). Past it, move an off-hot-path module into another PB: CLAUDE.md 'Script size', docs/design/flight_split.md section 10
+SCRIPT_LIMITS = {"ShrikeAI.cs": 80000, "TubeRamAI.cs": 80000}      # per-script overrides of PB_BUDGET (none are looser). Do not raise a limit (CLAUDE.md)
 
 def script_text(filename):
     """read scripts/<filename> at call time, minified (comments/whitespace only): a Programmable Block takes at most 100,000
-    characters, the commented sources are larger. tools/minify_check.sh proves the minified text compiles to the same IL."""
+    characters, the commented sources are larger; the build budget is PB_BUDGET. tools/minify_check.sh proves the minified text compiles to the same IL.
+    LEGACY scripts (WaspAI.cs) are never passed here."""
     import sys as _s
     _s.path.insert(0, os.path.join(ROOT, 'tools'))
     from minify_cs import minify
     t = minify(open(os.path.join(ROOT, 'scripts', filename), encoding='utf-8').read())
-    lim = SCRIPT_LIMITS.get(filename, 100000)
-    if len(t) > lim: raise ValueError(f"{filename}: {len(t)} characters after minifying; the limit is {lim:,}" + ("" if lim == 100000 else " (ship Helm budget, control_arch s1.2; the PB limit is 100,000)"))
+    lim = SCRIPT_LIMITS.get(filename, PB_BUDGET)
+    if len(t) > lim: raise ValueError(f"{filename}: {len(t)} characters after minifying; over the {lim:,} PB budget: move an off-hot-path module into another PB (CLAUDE.md 'Script size', docs/design/flight_split.md section 10); do not trim features or raise the budget")
     return t
 
 # ---- block helpers ----
@@ -461,8 +463,9 @@ SUPPORT_STAFF = {'AEGIS': 'AegisStaffAI.cs', 'MANTIS': 'MantisStaffAI.cs', 'LONG
                  'HORNET': 'HornetStaffAI.cs', 'HARRIER': 'HarrierStaffAI.cs', 'LANCER': 'LancerStaffAI.cs', 'BASILISK': 'BasiliskStaffAI.cs', 'GNAT': 'GnatStaffAI.cs'}
 _SMALL_PB, _LARGE_PB = 'SmallProgrammableBlock', 'LargeProgrammableBlock'
 # the split drones whose Staff PB hands REPAIR CLIENT and the seeker to a fourth PB, `[Aux] ... PB` (scripts/AuxAI.cs, docs/design/staff_split.md), keyed by the
-# Flight script's default Tag like SUPPORT_STAFF (so the Watcher, HornetDroneAI, is included). Gnat: no free cell in its 2 x 2 section; Basilisk: under budget.
-SUPPORT_AUX = {'HORNET', 'HARRIER', 'LANCER', 'AEGIS', 'WASP', 'LONGBOW', 'MANTIS'}
+# Flight script's default Tag like SUPPORT_STAFF (so the Watcher, HornetDroneAI, is included). Gnat (flight_split.md 7.2, G1a): core.gnat() pins its Aux PB by hand at
+# GNAT_AUX_CELL (1, 1, 3), the old sensor cell, inside the 2 x 2 section; this function then finds it and adds nothing.
+SUPPORT_AUX = {'HORNET', 'HARRIER', 'LANCER', 'AEGIS', 'WASP', 'LONGBOW', 'MANTIS', 'BASILISK', 'GNAT'}
 AUX_SCRIPT = 'AuxAI.cs'
 NO_SUPPORT_PBS = ('Twin PB Test', 'Hornet Pilot Test')   # sim probe ships with a pinned PB count (SelfTestM0): no support PBs
 
@@ -556,6 +559,7 @@ def add_support_pbs(bp, avoid=(), aux_cell=None):
             p = prog[id(b)]
             m = re.search(r'string Tag\s*=\s*"([A-Z]+)"', p)
             if 'LkInit(' not in p or not m or m.group(1) not in SUPPORT_AUX: continue
+            if any(s.startswith('no cell for the [Aux] PB') for s in ((getattr(bp, 'kit', None) or {}).get('skipped') or ())): break   # the design searched its own outline (Gnat Side test ships)
             box = kit_outline(bp)
             if aux_cell is not None: assert in_outline(aux_cell, box), f'{bp.name}: Aux PB cell {aux_cell} is outside the outline'
             spot = free_pb_spot(bp, sub, b['min'], inside=box if aux_cell is None else {tuple(aux_cell)}, avoid=avoid)

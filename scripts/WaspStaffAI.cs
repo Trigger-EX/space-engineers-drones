@@ -8,6 +8,8 @@
 //   * DISPLAY      the full status screen (mode, target, aim, rockets, battery, hive, follow, launch, link state)
 //   * WATCHDOG     the Flight PB silent for 1.5 s (or switched off / destroyed): overrides released once, dampeners on, "FLIGHT PB DOWN"; then limp home (SURVIVAL STAFF)
 //   * SURVIVAL     STAFF SEARCH (patrol, sensors, feeds, seeker), SURVIVAL STAFF (damage RTB, limp, threats, missiles, gather), AUX LINK - docs/design/survivability.md
+//   * CONFIG       CONFIG SERVER: the only writer of the Flight PB's Custom Data; parses [Wasp], [Kamikaze Defence], [AI Gate], [Survival] and sends them on .CFG;
+//                  DAMAGE SENSE (block integrity, .DMG to the Flight). WEAKPOINT RELAY, camera search and AI setup run in the [Aux] PB (docs/design/flight_split.md)
 //   * [Aux] PB     REPAIR CLIENT (bay, medic, self-projector) and the seeker run in the [Aux] PB: paste scripts/AuxAI.cs into a PB named "[Aux] ..." on this grid
 //                  (docs/design/staff_split.md). Without it the drone loses bay docking, medic calls, the self-projector and the seeker; the screen says so.
 //  Link (TransmissionDistance.CurrentConstruct, key "WSPL" + the Flight PB's EntityId; both PBs run Update1) - see the header of WaspFlightAI.cs.
@@ -25,6 +27,37 @@ double MaxSpeed = 98, SepRange = 70;
 
 // survivability (docs/design/survivability.md): the Flight PB's Custom Data section, which STAFF SEARCH modules this model has, its orbit speed key
 readonly string FS = "Wasp", SvOrbK = "Orbit Speed"; const double SvOrbD = 40;
+
+// CONFIG SERVER (docs/design/flight_split.md 4.1): this Staff writes and parses the Flight PB's config and sends it on .CFG
+string[] CfModel() { return new[] {   // [Wasp] key / default / type, tools/cfg_tables.json order
+    "IGC Tag", "WASP", "s", "Start Mode (GUARD/HUNT/ASSIST/IDLE)", "SENTRY", "s", "Projectile Speed", "200", "d", "Rocket Launch Speed", "100", "d",
+    "Rocket Acceleration", "600", "d", "Rocket Top Speed", "200", "d", "Rocket Velocity Model (CAPPED/NONE/FULL)", "CAPPED", "s", "Aim Margin (predicted misses)", "1", "d",
+    "Max Fire Range", "420", "d", "Max Flight Time", "2", "d", "Min Launch Distance", "25", "d", "Friendly Flight Line Clearance", "4.5", "d",
+    "Friendly Blast Clearance", "9", "d", "Salvo Size", "4", "i", "Salvo Pause", "0.8", "d", "Seconds Between Shots Per Launcher", "1.05", "d",
+    "Seconds Between Launchers", "0.3", "d", "Jink Gate Radius Factor", "0.8", "d", "Jink Gate Min Miss (m)", "3", "d", "Conserve Below Rockets", "2", "i",
+    "Conserve Max Range", "400", "d", "Standoff Range", "250", "d", "Standoff Range (unlimited rockets)", "350", "d", "Max Fire Range (unlimited rockets)", "650", "d",
+    "Max Flight Time (unlimited rockets)", "3.5", "d", "Min Range", "60", "d", "Guard Radius", "1500", "d", "Sentry Range (m)", "2500", "d",
+    "Combat Speed", "98", "d", "Cruise Speed", "60", "d", "Orbit Speed", "40", "d", "Evasive Jinking", "true", "b",
+    "Jink Speed", "40", "d", "Manual Lock Range", "2500", "d", "Auto Camera Scan", "true", "b", "All-around Close Scan", "true", "b",
+    "Close Scan Range", "120", "d", "Scan Range", "1200", "d", "Scan Cone Degrees", "35", "d", "Target Large Grids", "true", "b",
+    "Target Small Grids", "true", "b", "Target Characters", "false", "b", "Target Neutral/Unowned", "false", "b", "Share Targets Over IGC", "true", "b",
+    "Friendly Fire Check", "true", "b", "Max Track Age To Fire (s)", "2", "d", "Search Share Tenths (stale lock)", "1", "i", "Search Share Tenths (stale > 1.5 s)", "3", "i",
+    "Wingmate Separation Range", "70", "d", "Wingmate Separation Speed", "25", "d", "Loose Fire Beyond Standoff", "true", "b", "Fire Window Multiplier", "1", "d",
+    "Minimum Fire Window (deg)", "0.1", "d", "Max Sideways Speed To Fire (0 off)", "0", "d", "Lead Scale (1: as calculated)", "1", "d", "Use Target Acceleration", "true", "b",
+    "Split Targets Across Hive (false: focus fire)", "true", "b", "Seconds Before Dropping Disabled Target", "5", "d", "Evade Speed When Hit", "20", "d", "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", "AUTO", "s",
+    "Breach Large Ships (AUTO)", "true", "b", "Breach Min Target Radius (m)", "25", "d", "Breach Stall (s)", "30", "d", "Use Fleet Weakpoints", "true", "b",
+    "Share Weakpoints", "true", "b", "Weakpoint Cone (deg)", "40", "d", "Weakpoint Hold (s)", "10", "d", "AI Block Search Assist", "true", "b",
+    "AI Confirm Raycast Range", "1000", "d", "AI Confirm Long Raycast Range", "2600", "d", "AI Confirm Boresight Rays (of 8)", "6", "i", "AI Confirm Rays Shorten After A Fight", "true", "b",
+    "AI Confirm Spiral Min (deg)", "0.15", "d", "AI Confirm Spiral Max (deg)", "2.5", "d", "AI Confirm Spiral Exponent", "1.5", "d", "AI Takes Over After Stale Lock (s)", "3", "d",
+    "Ghost Target Time (s)", "8", "d", "Target Stickiness (score bonus for the current target)", "400", "d", "AI Re-pick Interval (s; 0 off)", "6", "d", "Dash Along AI Heading", "false", "b",
+    "Dash Starts After AI Stint (s)", "4", "d", "Dash Length (s)", "8", "d", "Dash Re-aim By AI (s)", "2.5", "d", "Dash Speed", "90", "d",
+    "AI Re-pick Only Within (s) Of Last Target", "40", "d", "AI Confirm Cone Yaw (deg)", "4.5", "d", "AI Confirm Cone Pitch (deg)", "1.5", "d", "RTB Battery Fraction", "0.15", "d",
+    "Aim Kp", "6", "d", "Aim Kd", "0.35", "d", "Max Turn Rate rad/s", "5", "d"
+}; }
+const string CfSh = "KAS";
+IMyProgrammableBlock CfTarget() { return _fpb; }
+string CfKey() { return _fk; }
+string CfExtra(MyIni i) { return ""; }
 readonly bool SsPatrol = true, SsFeed = true, SsFoot = true, RpDockOk = true;
 bool SsHunt() { return _mode == Mode.HUNT; }
 bool SvFightMode() { return _mode == Mode.GUARD || _mode == Mode.HUNT; }   // a fight mode: an attack-together gather window may open
@@ -703,155 +736,6 @@ void ReadSwarm()
 // =====================================================================
 //  SETUP
 void CtorErr(string w, Exception ex) { _crash = "setup " + w + ": " + ex.Message; Echo(_crash); }
-
-// >>> WEAKPOINT RELAY v1.1 (shared block: identical in every drone Staff PB, see docs/design/hive_weakpoint.md and docs/hive-protocol.md) >>>
-// Fleet side of the shared breach point. The Flight PB sends its own findings on <Flight>.WPF; this PB puts them on the fleet channel <ch>_WP,
-// collects the findings of the whole wing, and sends the best hole for the Flight's current target back on <Flight>.WPT (once a second).
-//   <ch>_WP  MyTuple<long target, Vector3D s, Vector3D d, Vector3D info, long senderGrid, int flags>
-//     s = hull entry and d = drill direction, both in the TARGET frame; info = (hole depth m, vital depth hint m or -1, age s)
-//     flags: bits 0-2 kind (0 camera breach point, 1 PowerSystems, 2 Weapons, 3 Propulsion, 4 other), 8 seeker found it, 16 block position
-//     from the game, 32 DONE (everybody drops the hole), 64 STALL (that sender gave up), 128 ADOPTED (the sender took it from the wing and its own ray confirmed it)
-//     Staff -> Flight (.WPT): bits 8-11 = number of drones that support the hole.
-// A drone sends only its OWN confirmed findings; a received hole is never forwarded (no echo). Holes within 4 m of each other are one hole; the best
-// one wins (seeker kind by "Weakpoint Priority", then supporters, then depth, then the lowest grid id), so every drone picks the same hole.
-// [Fleet] keys: Weakpoint Priority=1,3,2 (power, propulsion, weapons)   Weakpoint Expire (s)=20
-// v1.1 (docs/design/survivability.md): the drone's OWN seeker turret is read by the Staff (STAFF SEARCH -> WpSeek): that entry (map key ~own grid id,
-// internal flag 4096, kept 3 s) ranks above every other hole, goes to the wing like an own finding, and reaches the Flight with .WPT flag 4096 (the Flight
-// takes it as its own seeker point, BreachSet(s, d, true)); .WPT is sent twice a second while it is fresh, else once a second.
-// Script hooks: WpStep() in Tick after Relay(); _sb.Append(WpStatus()) in Display(). Uses: _fk, _flChan, _tgtId, _tick, _now, _f2sTick.
-class WpE { public long Tgt, Snd; public Vector3D S, D, I; public int F; public double T; }
-Dictionary<long, WpE> _wpMap = new Dictionary<long, WpE>();
-IMyBroadcastListener _wpLf, _wpLw;
-string _wpKey = null; int[] _wpPri = new int[] { 1, 3, 2 }; double _wpExp = 20, _wpFleetT = -99, _wpFlT = -99, _wpEvSendT = -99; WpE _wpBest; int _wpBestK;
-List<WpE> _wpDone = new List<WpE>(); List<long> _wpDel = new List<long>(); MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> _wpLast;
-bool WpOkT(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
-{
-    double dl = d.Item3.Length();
-    return FleetV(d.Item2) && FleetV(d.Item4) && Math.Abs(d.Item2.X) < 1e4 && Math.Abs(d.Item2.Y) < 1e4 && Math.Abs(d.Item2.Z) < 1e4 && dl > 0.9 && dl < 1.1
-        && d.Item4.X >= 0 && d.Item4.X <= 100 && d.Item4.Y < 500 && !double.IsNaN(d.Item4.X + d.Item4.Y + d.Item4.Z);
-}
-void WpCfg()
-{
-    var ini = new MyIni(); MyIniParseResult res;
-    if (!ini.TryParse(Me.CustomData, out res)) return;
-    const string S = "Fleet";
-    if (!ini.ContainsKey(S, "Weakpoint Priority")) ini.Set(S, "Weakpoint Priority", "1,3,2");
-    if (!ini.ContainsKey(S, "Weakpoint Expire (s)")) ini.Set(S, "Weakpoint Expire (s)", 20.0);
-    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
-    var l = new List<int>();
-    foreach (var p in ini.Get(S, "Weakpoint Priority").ToString("1,3,2").Split(',')) { int k; if (int.TryParse(p.Trim(), out k)) l.Add(k); }
-    _wpPri = l.ToArray(); _wpExp = Math.Max(3, ini.Get(S, "Weakpoint Expire (s)").ToDouble(20));
-}
-int WpRank(WpE e)
-{
-    if ((e.F & 4096) != 0) return 100;                     // own seeker turret, read this second
-    if ((e.F & 8) == 0) return 0;                           // camera breach points rank below anything a turret found
-    int k = e.F & 7, i = Array.IndexOf(_wpPri, k);
-    return i >= 0 ? 20 - i : 5;
-}
-WpE WpPut(long snd, MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
-{
-    WpE e;
-    if (!_wpMap.TryGetValue(snd, out e)) { if (_wpMap.Count >= 64) return null; e = new WpE(); _wpMap[snd] = e; }
-    e.Tgt = d.Item1; e.Snd = snd; e.S = d.Item2; e.D = d.Item3; e.I = d.Item4; e.F = d.Item6; e.T = _now;
-    return e;
-}
-void WpStep()
-{
-    string key = _flChan + "|" + _fk;
-    if (key != _wpKey)
-    {
-        if (_wpKey != null) { if (_wpLf != null) IGC.DisableBroadcastListener(_wpLf); if (_wpLw != null) IGC.DisableBroadcastListener(_wpLw); }
-        _wpKey = key; _wpMap.Clear(); _wpDone.Clear(); WpCfg();
-        _wpLf = _fk != "" ? IGC.RegisterBroadcastListener(_fk + ".WPF") : null;
-        _wpLw = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_WP") : null;
-    }
-    else if (_tick % 600 == 1) WpCfg();
-    long me = Me.CubeGrid.EntityId;
-    // my Flight PB -> map, and on to the fleet channel (changes and events at once, else every 2 s)
-    while (_wpLf != null && _wpLf.HasPendingMessage)
-    {
-        var m = _wpLf.AcceptMessage();
-        if (!(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
-        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
-        if (!WpOkT(d)) continue;
-        d.Item5 = me;
-        if ((d.Item6 & 96) != 0) WpEvent(d, me);
-        else WpPut(me, d);
-        bool changed = d.Item1 != _wpLast.Item1 || d.Item6 != _wpLast.Item6 || (d.Item2 - _wpLast.Item2).LengthSquared() > 1;
-        if (_wpLw != null && (changed || (d.Item6 & 96) != 0 || _now - _wpFleetT >= 2)) { IGC.SendBroadcastMessage(_flChan + "_WP", d); _wpFleetT = _now; _wpLast = d; }
-    }
-    // the wing -> map
-    while (_wpLw != null && _wpLw.HasPendingMessage)
-    {
-        var m = _wpLw.AcceptMessage();
-        if (m.Source == IGC.Me || !(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
-        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
-        if (d.Item5 == me || d.Item5 == 0 || !WpOkT(d)) continue;
-        if ((d.Item6 & 96) != 0) WpEvent(d, d.Item5); else WpPut(d.Item5, d);
-    }
-    _wpDel.Clear();
-    foreach (var kv in _wpMap) if (_now - kv.Value.T > ((kv.Value.F & 4096) != 0 ? 3 : _wpExp)) _wpDel.Add(kv.Key);
-    foreach (var k in _wpDel) _wpMap.Remove(k);
-    for (int i = _wpDone.Count - 1; i >= 0; i--) if (_now - _wpDone[i].T > 3) _wpDone.RemoveAt(i);
-    WpE sk; bool skf = _wpMap.TryGetValue(~me, out sk) && sk.Tgt == _tgtId && _tgtId != 0;
-    if (_tick % (skf ? 30 : 60) != 3) return;
-    // best hole for the Flight's target
-    _wpBest = null; _wpBestK = 0;
-    if (_tgtId != 0)
-    {
-        long bs = 0; int br = -1, bk = 0; double bd = -1; WpE bb = null;
-        foreach (var a in _wpMap.Values)
-        {
-            if (a.Tgt != _tgtId) continue;
-            int k = 0; double dep = 0; int rank = WpRank(a); long low = a.Snd; WpE rep = a;
-            foreach (var b in _wpMap.Values)
-            {
-                if (b.Tgt != _tgtId || (b.S - a.S).LengthSquared() > 16) continue;
-                k++; dep = Math.Max(dep, b.I.X); int rb = WpRank(b); if (rb > rank) { rank = rb; rep = b; } if (b.Snd < low) low = b.Snd;
-            }
-            if (rank > br || (rank == br && (k > bk || (k == bk && (dep > bd || (dep == bd && low < bs))))))
-            { br = rank; bk = k; bd = dep; bs = low; bb = rep; }
-        }
-        if (bb != null) { _wpBest = bb; _wpBestK = bk; _wpBestDep = bd; }
-    }
-    if (_fk == "" || _tick - _f2sTick > 90) return;
-    if (_wpBest != null)
-        IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(_wpBest.Tgt, _wpBest.S, _wpBest.D,
-            new Vector3D(_wpBestDep, _wpBest.I.Y, _now - _wpBest.T + _wpBest.I.Z), _wpBest.Snd, (_wpBest.F & 4127) | (Math.Min(_wpBestK, 15) << 8)), TransmissionDistance.CurrentConstruct);
-    foreach (var e in _wpDone)
-        if (e.Tgt == _tgtId) IGC.SendBroadcastMessage(_fk + ".WPT", new MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>(e.Tgt, e.S, e.D, e.I, e.Snd, 32), TransmissionDistance.CurrentConstruct);
-}
-double _wpBestDep, _wpSkT = -99; MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> _wpSkLast;
-// own seeker finding (STAFF SEARCH): into the map as the top-ranked entry, to the wing on a change or every 2 s
-void WpSeek(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d)
-{
-    if (!WpOkT(d)) return;
-    long me = Me.CubeGrid.EntityId;
-    var e = WpPut(~me, d); if (e != null) { e.Snd = me; e.F |= 4096; }
-    if (_flChan != "" && (d.Item1 != _wpSkLast.Item1 || (d.Item2 - _wpSkLast.Item2).LengthSquared() > 1 || _now - _wpSkT >= 2))
-    { IGC.SendBroadcastMessage(_flChan + "_WP", d); _wpSkT = _now; _wpSkLast = d; }
-}
-// DONE: every hole within 4 m of it is gone (and the Flight is told for 3 s); STALL: that sender's support is gone
-void WpEvent(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> d, long snd)
-{
-    if ((d.Item6 & 32) != 0)
-    {
-        _wpDel.Clear();
-        foreach (var kv in _wpMap) if (kv.Value.Tgt == d.Item1 && (kv.Value.S - d.Item2).LengthSquared() < 16) _wpDel.Add(kv.Key);
-        foreach (var k in _wpDel) _wpMap.Remove(k);
-        var e = new WpE(); e.Tgt = d.Item1; e.Snd = snd; e.S = d.Item2; e.D = d.Item3; e.I = d.Item4; e.F = 32; e.T = _now;
-        _wpDone.Add(e); if (_wpDone.Count > 8) _wpDone.RemoveAt(0);
-    }
-    else _wpMap.Remove(snd);
-}
-string WpStatus()
-{
-    if (_wpBest == null) return _wpMap.Count > 0 ? "Weakpt : " + _wpMap.Count + " report(s), none for the target\n" : "";
-    string[] kn = { "breach point", "power", "weapons", "propulsion", "block" };
-    return "Weakpt : " + kn[Math.Min(_wpBest.F & 7, 4)] + " hole " + _wpBestDep.ToString("0") + " m, " + _wpBestK + " drone(s), age " + (_now - _wpBest.T).ToString("0") + " s\n";
-}
-// <<< WEAKPOINT RELAY v1.1 <<<
 
 // >>> STAFF SEARCH v1.1 (patrol, sensor setup, target feeds, seeker keys; moved from the Flight PB, docs/design/survivability.md) >>>
 // The four search modules that left the Flight PB (off the hot path, docs/design/survivability.md s1.1). Keys keep their names in the Flight PB's [<FS>] section;
@@ -1625,27 +1509,32 @@ string SvStatus()
 }
 // <<< SURVIVAL STAFF v1.1 <<<
 
-// >>> AUX LINK v1.0 (the Staff side of the [Aux] PB: REPAIR CLIENT and SEEKER run there, docs/design/staff_split.md) >>>
+// >>> AUX LINK v1.1 (the Staff side of the [Aux] PB: REPAIR CLIENT, SEEKER, WEAKPOINT RELAY, SEARCH and AI GATE SETUP run there, docs/design/staff_split.md, flight_split.md) >>>
 // REPAIR CLIENT (bay dock, medic, self-projector) and the SEEKER turret reader run in a fourth PB, "[Aux] <Model> PB" (scripts/AuxAI.cs, one script for every
 // model). This block gives SURVIVAL STAFF and STAFF SEARCH the same function names as proxies. The Aux PB never writes an override: during a dock approach it
 // sends setpoints and the Staff flies them with the SURVIVAL STAFF dock actuator (DkGo / DkSteer / DkRel, FOL bit 2). Link (CurrentConstruct, key _fk):
 //   .SDK  Staff -> Aux    MyTuple<int flags, long tgtId, Vector3D aux, string cfg, string prevVerb, string ops>: flags bit0 DAMAGED (_svRtb), bit1 docked / welded,
-//         bit2 FLIGHT DOWN, bit3 Staff steers a dock, bit4 under fire, bit5 mode IDLE, bit6 mode RTB, bit7 SeekerOn, bit8 RpDockOk; aux = (_svAmin, SvCapV(),
-//         MaxSpeed); cfg = Tag + "\n" + SeekerGroup; ops = queued repair words, one a line ("w<k>" RpWant(k), "s<why>" RpStop(why)). Every 10 ticks, at once on
-//         a change or with ops; at once on a new Aux (DKS source), a new key, a Staff run gap and SkBlocks() (the "seeker" word).
+//         bit2 FLIGHT DOWN, bit3 Staff steers a dock, bit4 under fire, bit5 mode IDLE, bit6 mode RTB, bit7 SeekerOn, bit8 RpDockOk, bit9 AI ASSIST (F2S bit 17);
+//         aux = (_svAmin, SvCapV(), MaxSpeed); cfg = Tag \n SeekerGroup \n flChan (FLEET LINK _flChan) \n wpPri \n wpExp \n agSwitch|agTyped|agSpeed|agEvery
+//         (wpPri / wpExp: [Fleet] "Weakpoint Priority" / "Weakpoint Expire (s)" of this Staff PB as written, defaults 1,3,2 / 20 written here; the last line
+//         is CONFIG SERVER's CfAg, "" until its first parse); ops = queued repair words, one a line ("w<k>" RpWant(k), "s<why>" RpStop(why)). Every 10 ticks,
+//         at once on a change or with ops; at once on a new Aux (DKS source), a new key, a Staff run gap and SkBlocks() (the "seeker" word).
 //   .DKS  Aux -> Staff    MyTuple<int flags, Vector3D vel, Vector3D fwd, Vector3D up, string status>: bit0 FLY (DkSteer(vel, fwd, up)), bit1 repair session,
-//         bit3 REPAIRED (SvRepaired()); status = the Aux's Repair / Project / Seek lines for this screen.
-//   .SKW  Aux -> Staff    MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> = the WpSeek() argument (own seeker finding) -> WpSeek().
+//         bit3 REPAIRED (SvRepaired()); status = the Aux's Repair / Project / Seek / weakpoint (WpStatus) / search / AI-setup lines for this screen.
+//   v1.1: .SKW is gone (WEAKPOINT RELAY runs in the Aux next to its seeker). The Staff still listens to the wing's <flChan>_WP (receive only) and keeps the
+//   turret holes (kind 2 Weapons) in _wpMap for SURVIVAL STAFF's exposure score (SvExpo); entries drop after wpExp s or on DONE.
 //   .D2S  Aux -> Staff    string: a PB argument given to the Aux PB -> Command().
 // FLY counts while the last DKS is at most 15 ticks old and the Flight is up: its rise calls DkGo(), its fall DkRel(); a Staff run gap drops it without a write.
 // Without an [Aux] PB: no bay dock, medic, self-projector or seeker (the screen says so after 5 s); everything else works.
 // Hooks: the REPAIR CLIENT / SEEKER call sites of SURVIVAL STAFF and STAFF SEARCH (RpRead in SvsRead, RpStep in SvWatch, SkBlocks in SsBlocks, ...).
 // Uses: _fk, _now, _tick, _mode (IDLE/RTB), _fl, _tgtId, _down, Tag, MaxSpeed, RpDockOk, SeekerOn, SeekerGroup, _svRtb, _svDock, _svAmin, _svPrevVerb, SvCapV(),
-//   SvB/SvD/SvT, DkGo/DkRel/DkSteer/DkHold/SvRepaired, _dkOn, _dkRelTk, WpSeek(), Command().
-string RpMedCh = "MEDIC", _alSt = "", _alOps = "", _alCfg = "", _alPv = "";
+//   SvB/SvD/SvT, DkGo/DkRel/DkSteer/DkHold/SvRepaired, _dkOn, _dkRelTk, Command(), _flChan, FleetV(), CfAg (CONFIG SERVER).
+string RpMedCh = "MEDIC", _alSt = "", _alOps = "", _alCfg = "", _alPv = "", _alWp = "1,3,2\n20"; double _alWx = 20;
 IMyBroadcastListener _alLd, _alLa, _alLs; long _alSrc, _alTgt, _alTk = -99, _alDkTk = -99; int _alF = -1, _alDf; double _alDkT = -99;
 bool _dkFly, _alFull = true; Vector3D _alV, _alW, _alU;
 bool SvFly { get { return _dkFly || DkHold; } }
+class WpE { public long Tgt; public Vector3D S; public int F; public double T; }
+Dictionary<long, WpE> _wpMap = new Dictionary<long, WpE>(); List<long> _alDel = new List<long>();
 
 void RpCfg(MyIni i)
 {   // the Aux reads these itself (Flight PB [Survival]); listed here so that the Staff writes their defaults
@@ -1657,10 +1546,21 @@ void RpListen()
 {
     foreach (var l in new[] { _alLd, _alLa, _alLs }) if (l != null) IGC.DisableBroadcastListener(l);
     _alLd = _alLa = _alLs = null;
-    if (_fk != "") { _alLd = IGC.RegisterBroadcastListener(_fk + ".DKS"); _alLa = IGC.RegisterBroadcastListener(_fk + ".D2S"); _alLs = IGC.RegisterBroadcastListener(_fk + ".SKW"); }
+    if (_fk != "") { _alLd = IGC.RegisterBroadcastListener(_fk + ".DKS"); _alLa = IGC.RegisterBroadcastListener(_fk + ".D2S"); }
+    _alLs = _flChan != "" ? IGC.RegisterBroadcastListener(_flChan + "_WP") : null;
     _alFull = true;
 }
-void RpBlocks() { }
+void RpBlocks()
+{   // the [Fleet] weakpoint keys of this PB: the Aux's WEAKPOINT RELAY gets them in the SDK cfg
+    var ini = new MyIni(); MyIniParseResult res;
+    if (!ini.TryParse(Me.CustomData, out res)) return;
+    const string S = "Fleet", P = "Weakpoint Priority", E = "Weakpoint Expire (s)";
+    if (!ini.ContainsKey(S, P)) ini.Set(S, P, "1,3,2");
+    if (!ini.ContainsKey(S, E)) ini.Set(S, E, 20.0);
+    string o = ini.ToString(); if (o != Me.CustomData) Me.CustomData = o;
+    _alWx = Math.Max(3, ini.Get(S, E).ToDouble(20));
+    _alWp = ini.Get(S, P).ToString("1,3,2").Replace('\n', ' ') + "\n" + _alWx;
+}
 void RpRead()
 {
     while (_alLd != null && _alLd.HasPendingMessage)
@@ -1674,10 +1574,15 @@ void RpRead()
     }
     while (_alLa != null && _alLa.HasPendingMessage) { var m = _alLa.AcceptMessage(); if (m.Data is string) Command((string)m.Data); }
     while (_alLs != null && _alLs.HasPendingMessage)
-    {
+    {   // the wing's weakpoints (receive only): turret holes for SvExpo
         var m = _alLs.AcceptMessage();
-        if (m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>) WpSeek((MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data);
+        if (!(m.Data is MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)) continue;
+        var d = (MyTuple<long, Vector3D, Vector3D, Vector3D, long, int>)m.Data;
+        if ((d.Item6 & 32) != 0) { _wpMap.Remove(d.Item5); continue; }
+        if ((d.Item6 & 7) != 2 || !FleetV(d.Item2) || (!_wpMap.ContainsKey(d.Item5) && _wpMap.Count >= 64)) continue;
+        _wpMap[d.Item5] = new WpE { Tgt = d.Item1, S = d.Item2, F = d.Item6, T = _now };
     }
+    if (_tick % 60 == 0) { _alDel.Clear(); foreach (var kv in _wpMap) if (_now - kv.Value.T > _alWx) _alDel.Add(kv.Key); foreach (var k in _alDel) _wpMap.Remove(k); }
     bool f = (_alDf & 1) != 0 && _tick - _alDkTk <= 15 && !_down;
     if (Runtime.TimeSinceLastRun.TotalSeconds > 0.5)
     {   // run gap: let go without a write (the Flight may fly already); a FLY still coming re-takes with the 3-tick gate
@@ -1687,8 +1592,8 @@ void RpRead()
     else if (f != _dkFly) { if (f) DkGo(); else DkRel(); _dkFly = f; }
     if (_fk == "") { _alOps = ""; return; }
     int fl = (_svRtb ? 1 : 0) | (_svDock ? 2 : 0) | (_down ? 4 : 0) | (_dkFly ? 8 : 0) | ((_fl & 16) != 0 ? 16 : 0) | (_mode == Mode.IDLE ? 32 : 0)
-        | (_mode == Mode.RTB ? 64 : 0) | (SeekerOn ? 128 : 0) | (RpDockOk ? 256 : 0);
-    string c = Tag + "\n" + SeekerGroup;
+        | (_mode == Mode.RTB ? 64 : 0) | (SeekerOn ? 128 : 0) | (RpDockOk ? 256 : 0) | ((_fl & 131072) != 0 ? 512 : 0);
+    string c = Tag + "\n" + SeekerGroup + "\n" + _flChan + "\n" + _alWp + "\n" + CfAg;
     if (!_alFull && _alOps == "" && fl == _alF && _tgtId == _alTgt && c == _alCfg && _svPrevVerb == _alPv && _tick - _alTk < 10) return;
     IGC.SendBroadcastMessage(_fk + ".SDK", new MyTuple<int, long, Vector3D, string, string, string>(fl, _tgtId, new Vector3D(_svAmin, SvCapV(), MaxSpeed), c, _svPrevVerb, _alOps),
         TransmissionDistance.CurrentConstruct);
@@ -1705,7 +1610,189 @@ string RpStatus()
 void SkBlocks() { _alFull = true; }
 void SkStep() { }
 string SkStatus() { return ""; }
-// <<< AUX LINK v1.0 <<<
+// <<< AUX LINK v1.1 <<<
+
+// >>> CONFIG SERVER v1.0 (Staff side of the config move, docs/design/flight_split.md sections 3, 4.1, 6.1; tools/cs_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 9 drone Staffs and StaffAI (Helm ships). The only writer of the target PB's Custom Data (the Flight / Helm PB): a table-driven MyIni
+// default writer and reader. On a WANT it re-parses the target's Custom Data, writes every missing default, reads every value, sends .CFG, and keeps
+// the four AI GATE SETUP values in CfAg. Tables: [Kamikaze Defence], [AI Gate] and [Survival] are here (cfg_tables.json "shared", in its order); the
+// model section comes from the host (CfModel(), section name FS).
+// Channel (TransmissionDistance.CurrentConstruct):
+//   .CFG  Staff -> Flight/Helm   string "CF1\t<schema>\t<status>\n" + one line per section, in this order: "M" model, then the host's CfExtra() lines
+//         (Helm: its [Manual] / [Battery] lines), then one line per letter of the host's CfSh: "K" [Kamikaze Defence], "A" [AI Gate] (the 4 core values
+//         only: Time-share, AI Window, Script Search Window, Max AI Hold), "S" [Survival]. A line = its letter, then "\t" + value for every sent key, in
+//         table order, then "\n". Not sent: the model's local keys (IGC Tag, Start Mode ...: the Flight reads them itself) and the 4 AI GATE SETUP values.
+//         Values are raw, the receiver applies the post-ops of cfg_tables.json ((int), Math.Max, Trim().ToUpperInvariant()): bools 1/0, d and i
+//         ToDouble().ToString("R"), strings as written (MyIni single-line values; a tab in one would break the line).
+//         schema = "1" (cfg_tables.json version) + "/" + the number of values of each line, in line order. Drones: "1/<model count without the
+//         locals>/20/4/8", e.g. Mantis "1/84/20/4/8", Gnat "1/59/20/4/8".
+//         status = "ok", or what CfExtra() set (Longbow / Mantis: the detected weapon name, e.g. "Small Railgun", "Gatling/Autocannon", "custom").
+//         Sent when the host's WANT is true (drones: F2S bit 16 CFG WANT on a fresh F2S; Helm: H2S bit 9), at most once per 30 ticks per key. The Staff
+//         never sends unasked; a target whose Custom Data does not parse gets nothing (_cfE says so on the Staff screen).
+//   CfAg = "agSwitch|agTyped|agSpeed|agEvery" (same value format, raw): the [AI Gate] setup values. Drone Staffs pass it to the Aux in the SDK cfg
+//   (AUX LINK v1.1); GnatStaffAI (G2) and StaffAI give it to their own AI GATE SETUP. It is filled on every parse: on a WANT and once on every new key
+//   (a Staff that starts next to a running Flight knows the values without a WANT; that parse writes missing defaults but sends nothing).
+// Host hooks (define CfModel() above this block: the tests read the first "CfModel()" in the file):
+//   string[] CfModel()          flat key / default / type triples of the model section, cfg_tables.json order and types (d double, i int, b bool, s string)
+//   IMyProgrammableBlock CfTarget()   the Flight / Helm PB whose Custom Data is served (null: nothing)
+//   string CfKey()              the target's link key; the channel is CfKey() + ".CFG" (drones "WSPL"+<Flight PB EntityId> = _fk); "" = no target
+//   string CfExtra(MyIni i)     after the model values are read, before the lines are built: may change model values in _cfV (index = triple number
+//                               in _cfT; Longbow and Mantis: DetectWeapon, host helpers CfGet / CfPut), set _cfSt, and return extra lines built with
+//                               CfLine (Helm sections); "" otherwise
+//   const string CfSh           the shared lines, in order ("KAS" drones)
+// Call: CfStep(bool want) once a tick (drones: after ReadF2S, want = (_fl & 65536) != 0 && _tick - _f2sTick < 30). _cfE on the screen ("" or the
+// target's parse error line).
+// Uses: _tick, FS, Me / IGC. Sync: answers every WANT (Staff rebuilt: nothing to do); a new key (Flight rebuilt: the Staff re-keys on its 1 Hz rescan)
+// resets the 30-tick gate.
+string _cfSt = "", CfAg = "", _cfK = "", _cfSc = "", _cfE = ""; string[] _cfT, _cfV; long _cfTk = -99;
+readonly string[] CfKz = {
+    "Enabled", "true", "b", "Max Kamikaze Radius (m)", "3.5", "d", "Warning Time (s)", "12", "d", "Miss Distance (m)", "40", "d",
+    "Miss Distance Per km Of Range (m)", "60", "d", "Min Closing Speed (m/s)", "15", "d", "Priority Bonus", "2500", "d", "Protect Hive Mates", "true", "b",
+    "Back Away", "true", "b", "Back Away Speed (m/s)", "60", "d", "Back Away Within (m)", "800", "d", "Back Away Reaction Time (s)", "10", "d",
+    "Break Sideways", "true", "b", "Break Time (s)", "2", "d", "Break Speed (m/s)", "40", "d", "Break Miss Distance (m)", "20", "d",
+    "Track And Pack Search Rays", "true", "b", "Pack Search Radius (m)", "60", "d", "Camera Charge Reserve (m)", "600", "d", "Share Threats With Hive", "true", "b"
+};
+readonly string[] CfAi = {
+    "Time-share With Script Search", "true", "b", "Switch On AI Behavior", "true", "B", "Use Typed AI Block API", "false", "B", "AI Flight Speed Limit (m/s)", "100", "D",
+    "AI Window (s)", "6", "d", "Script Search Window (s)", "8", "d", "Max AI Hold (s)", "60", "d", "AI Search Interval (s)", "5", "I"
+};
+readonly string[] CfSv = {
+    "Lead-Breaking Jinks", "true", "b", "Power Guard", "true", "b", "Jink Accel Fraction", "0.8", "d", "Enemy Projectile Speed (m/s)", "800", "d",
+    "Jink Period Min (s)", "0.4", "d", "Jink Period Max (s)", "3", "d", "Jink Period Random", "0.3", "d", "Power Guard Hold (s)", "2", "d"
+};
+
+void CfStep(bool want)
+{
+    string k = CfKey();
+    if (k != _cfK) { _cfK = k; _cfTk = -99; if (k != "") CfSend(false); }
+    if (want && k != "" && _tick - _cfTk >= 30) CfSend(true);
+}
+void CfSend(bool tx)
+{
+    var p = CfTarget(); if (p == null) return;
+    if (tx) _cfTk = _tick;
+    var i = new MyIni(); MyIniParseResult r;
+    if (!i.TryParse(p.CustomData, out r)) { _cfE = "! Flight Custom Data: error line " + r.LineNo + "\n"; return; }
+    _cfE = ""; _cfSt = "ok"; _cfSc = "1"; CfAg = "";
+    _cfT = CfModel(); _cfV = CfRd(i, FS, _cfT);
+    string x = CfExtra(i), sc = _cfSc; _cfSc = "1";   // CfExtra may change model values first, but its line counts go after M in the schema
+    string s = "M" + CfJ(_cfT, _cfV) + "\n" + x; _cfSc += sc.Substring(1);
+    foreach (char c in CfSh)
+    {
+        var t = c == 'K' ? CfKz : c == 'A' ? CfAi : CfSv;
+        s += CfLine(i, c == 'K' ? "Kamikaze Defence" : c == 'A' ? "AI Gate" : "Survival", t, c.ToString());
+    }
+    string o = i.ToString(); if (o != p.CustomData) p.CustomData = o;
+    if (tx) IGC.SendBroadcastMessage(_cfK + ".CFG", "CF1\t" + _cfSc + "\t" + _cfSt + "\n" + s, TransmissionDistance.CurrentConstruct);
+}
+// one section: write the missing defaults, read every value (raw, .CFG format)
+string[] CfRd(MyIni i, string s, string[] t)
+{
+    var v = new string[t.Length / 3];
+    for (int n = 0; n < v.Length; n++)
+    {
+        string k = t[3 * n], d = t[3 * n + 1]; char y = char.ToLower(t[3 * n + 2][0]);
+        if (!i.ContainsKey(s, k)) i.Set(s, k, d);
+        var g = i.Get(s, k);
+        v[n] = y == 'b' ? (g.ToBoolean(d == "true") ? "1" : "0") : y == 's' ? g.ToString(d) : g.ToDouble(double.Parse(d)).ToString("R");
+    }
+    return v;
+}
+// the sent values of a section ("\t" + value each); locals are skipped, upper-case types (AI GATE SETUP) go to CfAg; the count goes into the schema
+string CfJ(string[] t, string[] v)
+{
+    string b = ""; int c = 0;
+    for (int n = 0; n < v.Length; n++)
+    {
+        string k = t[3 * n];
+        if (k == "IGC Tag" || k.StartsWith("Start Mode")) continue;
+        if (char.IsUpper(t[3 * n + 2][0])) CfAg += (CfAg == "" ? "" : "|") + v[n];
+        else { b += "\t" + v[n]; c++; }
+    }
+    _cfSc += "/" + c; return b;
+}
+string CfLine(MyIni i, string s, string[] t, string l) { return l + CfJ(t, CfRd(i, s, t)) + "\n"; }
+// <<< CONFIG SERVER v1.0 <<<
+
+// >>> DAMAGE SENSE v1.0 (damage sensing moved Flight -> Staff, docs/design/flight_split.md sections 2, 3, 4.1, 6.2; tools/ds_block.cs, synced by tools/blocks_sync.py) >>>
+// Final hosts: the 8 drone Staffs. GnatStaffAI does not carry it: its own GNAT HIT BEARING section (2-tick checks plus the hit-bearing estimator, flight_split P2-G2)
+// sends the same .DMG tuple.
+// Content: the Flight's ScanSlims / StepSlimScan / CheckDamage verbatim (a pass over the grid's cells, 200 cells per tick while the instruction count is
+// below 60 %; CheckDamage every 20 ticks), plus the .DMG sender. The Staff's own survival logic keeps reading damage from .SVF (SURVIVAL LINK in the Flight,
+// fed by DAMAGE LINK).
+// Channel (TransmissionDistance.CurrentConstruct, key K = "WSPL"+<Flight PB EntityId> = _fk):
+//   .DMG  Staff -> Flight   MyTuple<int hits, double integ, Vector3D hitDir, double hitDirAge, int blocksHit, double maxDrop>; hits is a cumulative counter
+//         (+1 per CheckDamage whose integrity sum fell by more than 0.5), integ the integrity sum (-1 while a pass has not been compared yet), hitDir the
+//         smoothed hit direction (world, from the grid centre), hitDirAge the seconds since it was set (99 = never), blocksHit / maxDrop the blocks that
+//         lost integrity and the largest drop since the previous .DMG (the Flight's _svNb / _svMax). After each CheckDamage with a drop (<= 3 Hz),
+//         else 1 Hz.
+// Receiver: DAMAGE LINK (tools/dl_block.cs) in the Flight.
+// Hooks: ScanSlims() in GetBlocks; DsStep() once a tick (before the no-controller return). Uses: _fk, _now, _tick, Me, IGC.
+List<IMySlimBlock> _slims = new List<IMySlimBlock>();
+List<double> _slimHp = new List<double>(); Vector3D _hitDir; double _hitDirT = -99, _integ = -1, _svMax, _dsT = -99; int _hits, _svNb;
+List<IMySlimBlock> _slimsNew = new List<IMySlimBlock>(); HashSet<Vector3I> _slimSeen = new HashSet<Vector3I>();
+IMyCubeGrid _slimsGrid, _scanGrid; bool _slimBusy = false; int _sx, _sy, _sz, _mnx, _mny, _mnz, _mxx, _mxy, _mxz;
+const int SlimCellsPerTick = 200, SlimMaxCells = 30000;
+void ScanSlims()
+{
+    var g = Me.CubeGrid;
+    if (_slimsGrid != g) { _slims.Clear(); _integ = -1; }
+    _slimBusy = false;
+    Vector3I mn = g.Min, mx = g.Max;
+    if ((long)(mx.X - mn.X + 1) * (mx.Y - mn.Y + 1) * (mx.Z - mn.Z + 1) > SlimMaxCells) return;   // docked to something big: skip
+    _scanGrid = g; _slimsNew.Clear(); _slimSeen.Clear();
+    _mnx = mn.X; _mny = mn.Y; _mnz = mn.Z; _mxx = mx.X; _mxy = mx.Y; _mxz = mx.Z;
+    _sx = _mnx; _sy = _mny; _sz = _mnz; _slimBusy = true;
+}
+void StepSlimScan()
+{
+    if (!_slimBusy) return;
+    var g = _scanGrid;
+    if (g != Me.CubeGrid) { _slimBusy = false; return; }
+    for (int n = 0; n < SlimCellsPerTick; n++)
+    {
+        var p = new Vector3I(_sx, _sy, _sz);
+        if (g.CubeExists(p)) { var s = g.GetCubeBlock(p); if (s != null && _slimSeen.Add(s.Position)) _slimsNew.Add(s); }
+        if (++_sz > _mxz) { _sz = _mnz; if (++_sy > _mxy) { _sy = _mny; if (++_sx > _mxx) { _slimBusy = false; break; } } }
+    }
+    if (_slimBusy) return;
+    _slims.Clear(); _slims.AddRange(_slimsNew); _slimsGrid = g; _integ = -1;   // swap in the finished pass
+}
+void CheckDamage()
+{
+    double sum = 0; var g = Me.CubeGrid;
+    // which side was hit: blocks that lost integrity since the last check, as directions from the grid centre (the shooter is out that way)
+    bool cmp = _integ >= 0 && _slimHp.Count == _slims.Count;
+    if (!cmp) { _slimHp.Clear(); for (int i = 0; i < _slims.Count; i++) _slimHp.Add(0); }
+    Vector3D hd = Vector3D.Zero, gc = g.WorldVolume.Center;
+    for (int i = 0; i < _slims.Count; i++)
+    {
+        var s = _slims[i];
+        double v = g.CubeExists(s.Position) ? s.BuildIntegrity - s.CurrentDamage : 0;
+        sum += v;
+        if (cmp && _slimHp[i] - v > 0.5) { _svNb++; _svMax = Math.Max(_svMax, _slimHp[i] - v); Vector3D d = g.GridIntegerToWorld(s.Position) - gc; double l = d.Length(); if (l > 0.3) hd += d / l; }
+        _slimHp[i] = v;
+    }
+    if (hd.LengthSquared() > 0.01)
+    {
+        hd.Normalize();
+        Vector3D m = _now - _hitDirT < 3 ? _hitDir * 0.6 + hd * 0.4 : hd;
+        if (m.LengthSquared() > 0.01) { _hitDir = Vector3D.Normalize(m); _hitDirT = _now; }
+    }
+    bool hit = _integ >= 0 && sum < _integ - 0.5;
+    if (hit) _hits++;
+    _integ = sum;
+    if (_fk == "" || (!hit && _svNb == 0 && _now - _dsT < 1)) return;
+    IGC.SendBroadcastMessage(_fk + ".DMG", new MyTuple<int, double, Vector3D, double, int, double>(_hits, _integ, _hitDir, Math.Min(99, _now - _hitDirT), _svNb, _svMax),
+        TransmissionDistance.CurrentConstruct);
+    _dsT = _now; _svNb = 0; _svMax = 0;
+}
+void DsStep()
+{
+    if (Runtime.CurrentInstructionCount < Runtime.MaxInstructionCount * 0.6) StepSlimScan();
+    if (_tick % 20 == 7) CheckDamage();
+}
+// <<< DAMAGE SENSE v1.0 <<<
 
 public Program()
 {
@@ -1747,7 +1834,7 @@ void GetBlocks()
     _fk = _fpb != null ? "WSPL" + _fpb.EntityId : "";
     if (_fk != oldK) { _f2sN = 0; _f2sTick = _tick; _down = false; }
     LoadFlightCfg();
-    SvBlocks(); SsBlocks();
+    SvBlocks(); SsBlocks(); ScanSlims();
     _lcd = Me.GetSurface(0); _lcd.ContentType = ContentType.TEXT_AND_IMAGE; _lcd.FontSize = 0.75f; _lcd.Font = "Monospace";
     string sig = Tag + "|" + _fk;
     if (sig != _sig) { _sig = sig; LoadMods(); }
@@ -1786,7 +1873,9 @@ void Tick(string arg, UpdateType src)
     _now += dt; _tick++;
     if (_tick % 600 == 0 || Me.CubeGrid != _myGrid) { _myGrid = Me.CubeGrid; GetBlocks(); }
     ReadF2S();
+    CfStep((_fl & 65536) != 0 && _tick - _f2sTick < 30);
     SvsRead();
+    DsStep();
     if (_down && _tick % 60 == 0) GetBlocks();   // Flight is down: look for it (rebuilt PB = new EntityId) at 1 Hz
     if (_rc == null || !_rc.IsFunctional || !_rc.IsSameConstructAs(Me)) { if (_tick % 60 == 0) GetBlocks(); SvWatch(false); if (_tick % 30 == 0) Display(); return; }
     ReadIGC();
@@ -1794,7 +1883,6 @@ void Tick(string arg, UpdateType src)
     if (_tick % 10 == 5) PollSensors();
     bool burn = LaunchStep(dt, _mode == Mode.IDLE, StartMode, _dynHomeT > 0, _dynHome, Cb);   // automatic take-off after the release from a printer (LAUNCH block)
     Relay();
-    WpStep();
     SendFol(burn || SvFly);
     SvWatch(burn || _lnS == 2);
     if (_tick % 30 == 0) Display();
@@ -1917,8 +2005,8 @@ void Display()
     _sb.Append(LaunchStatus());
     if (Me.OwnerId == 0) _sb.Append("! PB has no owner: set ownership\n");
     if (_crash != "") _sb.Append("! ").Append(_crash).Append('\n');
-    _sb.Append(WpStatus());
     _sb.Append(SvStatus());
+    _sb.Append(_cfE);
     string s = _sb.ToString();
     if (_lcd != null) _lcd.WriteText(s);
     Echo(s);

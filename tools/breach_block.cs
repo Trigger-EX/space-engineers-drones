@@ -52,10 +52,4 @@ void BreachDrop()
     if (_bOn) { _bBad.Add(_bS); if (_bBad.Count > 12) _bBad.RemoveAt(0); }
     _bOn = false; _bMiss = 0;
 }
-string AimInfo()
-{
-    string s = "";
-    if (_bOn && _tgt != null && _bId == _tgt.Id && BreachMode(_tgt)) s += " hole " + _bDepth.ToString("0") + " m";
-    return s;
-}
 // <<< BREACH v1.0-lite <<<

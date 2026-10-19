@@ -236,7 +236,7 @@ namespace SeSim.Run
             {
                 long leaveTick = 16 * 60, backTick = -1; bool tgtAll = true; int tgtNow = 0; double maxW = 0; bool ramp = true, hunt = false; double worstRatio = 0;
                 string modeBack = "";
-                var sc = Duel("Shrike Test", "Hornet", "3:sit;4:run Helm lock;5:run Helm hunt;12:rot 0 0.6;13:stop;16:leave", 600, true, "idle");
+                var sc = Duel("Shrike Staff Test", "Hornet", "3:sit;4:run Helm lock;5:run Helm hunt;12:rot 0 0.6;13:stop;16:leave", 600, true, "idle");   // the lock ray is the Staff's (H6)
                 Go(sc, seed, 26, (w, sh, prog) =>
                 {
                     var b = sh.Main; long t = w.Tick;
@@ -309,18 +309,22 @@ namespace SeSim.Run
             }
             Check(okM == 3, "script killed while MANUAL: the dead-man timer was stopped, it never fires (" + okM + "/3 seeds)");
 
-            // Run without an argument: the menu (first press: item 0 'manual'; a second press within 2 s: item 1 'auto'; executes 2 s after the last press)
+            // Run without an argument: the menu (first press: item 0 'manual'; a second press within 2 s: item 1 'auto'; executes 2 s after the last press).
+            // flight_split H3 (Cut 2, 2026-10-18): the Helm's Run menu lives in the Staff (StaffAI _hmOn/_hmI, fed by the Helm's .MNU), so this runs on the
+            // split test ship; the executed item still reaches the Helm (_man).
             int okR = 0;
             for (int seed = 0; seed < 3; seed++)
             {
                 bool m1 = false, m2 = false, m3 = false, m4 = false; string item = "";
-                var sc = Duel("Shrike Test", "Hornet", "4:run Helm;10:run Helm;11:run Helm", 1200, true, "hunt");
+                var sc = Duel("Shrike Staff Test", "Hornet", "4:run Helm;10:run Helm;11:run Helm", 1200, true, "hunt");
                 Go(sc, seed, 16, (w, sh, prog) =>
                 {
                     long t = w.Tick;
-                    if (t == 5 * 60) { m1 = Fld<bool>(prog, "_menuOn"); item = Fld<int>(prog, "_menuI").ToString(); }
-                    if (t == 7 * 60) m2 = Fld<bool>(prog, "_man") && !Fld<bool>(prog, "_menuOn");       // 2 s after the single press: 'manual' ran
-                    if (t == 11 * 60 + 30) m3 = Fld<int>(prog, "_menuI") == 1;
+                    var sp = sh.PbsByTag("Staff"); object st = sp.Count > 0 ? sp[0].Program : null;
+                    if (st == null) return;
+                    if (t == 5 * 60) { m1 = Fld<bool>(st, "_hmOn"); item = Fld<int>(st, "_hmI").ToString(); }
+                    if (t == 7 * 60) m2 = Fld<bool>(prog, "_man") && !Fld<bool>(st, "_hmOn");          // 2 s after the single press: 'manual' ran
+                    if (t == 11 * 60 + 30) m3 = Fld<int>(st, "_hmI") == 1;
                     if (t == 14 * 60) m4 = !Fld<bool>(prog, "_man");                                      // two presses -> item 1 'auto' ran at 13 s
                 });
                 if (m1 && m2 && m3 && m4) okR++;
@@ -333,11 +337,13 @@ namespace SeSim.Run
         static void TestAssist()
         {
             Console.WriteLine("-- 6 assist hud / fbw --");
+            // flight_split H3 / H6 (2026-10-18): the cockpit HUD page is drawn by the Staff and the manual lock ray is cast by the Staff (.LCK / .LKR),
+            // so both checks run on the split test ship (a Helm without a Staff has no HUD page and no manual lock).
             int okH = 0;
             for (int seed = 0; seed < Seeds; seed++)
             {
                 string text = "";
-                var sc = Duel("Shrike Test", "Hornet", "3:sit;4:run Helm lock", 600, true, "idle");
+                var sc = Duel("Shrike Staff Test", "Hornet", "3:sit;4:run Helm lock", 600, true, "idle");
                 Go(sc, seed, 12, (w, sh, prog) =>
                 {
                     if (w.Tick == 11 * 60) { var s = Seat(sh); if (s != null) text = s.GetSurface(0).GetText(); }
@@ -353,7 +359,7 @@ namespace SeSim.Run
             {
                 double errStart = 0, errEnd = 999, maxW = 0, gMin = 1, gAtMotion = 1; int dropTicks = -1; bool held = true;
                 long motion = 18 * 60;
-                var sc = Duel("Shrike Test", "Hornet", "3:sit;4:run Helm lock;5:run Helm assist fbw;6:rot 0 0.2;7:stop;18:rot 0 0.5", 600, true, "idle");
+                var sc = Duel("Shrike Staff Test", "Hornet", "3:sit;4:run Helm lock;5:run Helm assist fbw;6:rot 0 0.2;7:stop;18:rot 0 0.5", 600, true, "idle");
                 Go(sc, seed, 20, (w, sh, prog) =>
                 {
                     long t = w.Tick; var b = sh.Main;

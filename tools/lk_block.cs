@@ -1,10 +1,11 @@
-// >>> SPLIT LINK v1.1 (shared block: identical in every Flight half of a two-PB drone, synced by tools/split_sync.py, see docs/design/wasp_split.md) >>>
+// >>> SPLIT LINK v1.2 (shared block: identical in every Flight half of a two-PB drone, synced by tools/split_sync.py, see docs/design/wasp_split.md) >>>
 // Flight side of the Flight/Staff link; the Staff PB (scripts/<Drone>StaffAI.cs) has the other end. Everything that is not on the hot path lives there:
 // FLEET LINK, FOLLOW / SATELLITE geometry, LAUNCH (take-off burn), the status screen. IGC key "WSPL" + this PB's EntityId, TransmissionDistance.CurrentConstruct.
 // Script hooks: LkInit() with the other listener setup; ReadIGC(); LkRead(); LkSend() in the tick; "if (!LkBurn && !AiStep()) Control(dt)"; "if (LkBurn) return;" first in Control();
 // LkWantOk/_lkWant/LkFar/LkBack/LkEngage/_lkOwner/_lkOwnerP in the FOLLOW code; ReadTgt(_lkTgt); LkAmmo() = the script's ammo count (0-254, 255 unknown).
-// Uses: _now, _tick, _mode, _firing, _aiOn, UnderFire, LockStale, _tgt, _aimErrDeg, _fireWinDeg, _batFrac, _gateWhy, _dynHome, _dynHomeT, MaxSpeed, ParseMode, Command.
-// WEAKPOINT: .WPT (Staff -> Flight) feeds the BREACH block's _wp* slot, WpSend() carries its .WPF (Flight -> Staff); the relay itself is the Staff PB's WEAKPOINT RELAY block.
+// Uses: _now, _tick, _mode, _firing, _aiOn, UnderFire, LockStale, _tgt, _aimErrDeg, _fireWinDeg, _batFrac, _gateWhy, _dynHome, _dynHomeT, MaxSpeed, ParseMode, Command, CfWant (CONFIG LINK), AiAssist.
+// WEAKPOINT: .WPT (Aux -> Flight) feeds the BREACH block's _wp* slot, WpSend() carries its .WPF (Flight -> Aux); the relay itself is the Aux PB's WEAKPOINT RELAY block.
+// v1.2 (flight_split): F2S flags bit 16 CFG WANT (CONFIG LINK CfWant; F2S goes out at least every 12 ticks), bit 17 AI ASSIST (runtime AiAssist: the Aux does the AI-block setup).
 string _lkK = ""; IMyBroadcastListener _lkFol, _lkCmd, _lkTgt, _lkWpt;
 Vector3D _lkWant, _lkOwnerP, _lkOwnerV; double _lkEng = 800, _lkLeash = 1200, _lkT = -99, _aBrake = 5; int _lkFl, _lkMd = -9; bool _lkOwner;
 bool LkAlive { get { return _now - _lkT < 1.0; } }                       // the Staff PB talks (a FOL at least every 0.5 s)
@@ -15,7 +16,7 @@ void LkInit()
 {
     _lkK = "WSPL" + Me.EntityId;
     _lkFol = IGC.RegisterBroadcastListener(_lkK + ".FOL"); _lkCmd = IGC.RegisterBroadcastListener(_lkK + ".S2F"); _lkTgt = IGC.RegisterBroadcastListener(_lkK + ".TGT");
-    _lkWpt = IGC.RegisterBroadcastListener(_lkK + ".WPT");   // best fleet weakpoint for my target (WEAKPOINT RELAY, Staff PB) -> the _wp* slot of the BREACH block
+    _lkWpt = IGC.RegisterBroadcastListener(_lkK + ".WPT");   // best fleet weakpoint for my target (WEAKPOINT RELAY, Aux PB) -> the _wp* slot of the BREACH block
 }
 void WpSend(MyTuple<long, Vector3D, Vector3D, Vector3D, long, int> tup) { if (LkAlive) IGC.SendBroadcastMessage(_lkK + ".WPF", tup, TransmissionDistance.CurrentConstruct); }
 bool LkFar(Vector3D me) { double l = LkAlive ? _lkLeash : 1200; return _lkOwner && Vector3D.DistanceSquared(me, _lkOwnerP) > l * l; }
@@ -53,7 +54,7 @@ void LkSend()
     int md = (int)_mode;
     if (md == _lkMd && _tick % 12 != 5) return;
     _lkMd = md;
-    int f = md | (_firing ? 8 : 0) | (UnderFire ? 16 : 0) | (LockStale ? 32 : 0) | (_aiOn ? 64 : 0) | (LkAmmo() < 0 ? 255 : Math.Min(254, LkAmmo())) << 8;
+    int f = md | (_firing ? 8 : 0) | (UnderFire ? 16 : 0) | (LockStale ? 32 : 0) | (_aiOn ? 64 : 0) | (LkAmmo() < 0 ? 255 : Math.Min(254, LkAmmo())) << 8 | (CfWant ? 65536 : 0) | (AiAssist ? 131072 : 0);
     var t = _tgt;
     IGC.SendBroadcastMessage(_lkK + ".F2S", new MyTuple<int, long, Vector3D, Vector3D, float, string>(f, t != null ? t.Id : 0, t != null ? t.P(_now) : Vector3D.Zero,
         new Vector3D(_aimErrDeg, _fireWinDeg, _aBrake), (float)_batFrac, LkGate()), TransmissionDistance.CurrentConstruct);

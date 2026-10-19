@@ -69,8 +69,9 @@ class LinkTests(unittest.TestCase):
 
     def test_sizes(self):
         import _common as C
-        self.assertLessEqual(len(C.script_text('ShrikeAI.cs')), C.SCRIPT_LIMITS['ShrikeAI.cs'])
-        self.assertLessEqual(len(C.script_text('SpotterAI.cs')), 80000)
+        lim = getattr(C, 'PB_BUDGET', 80000)
+        self.assertLessEqual(len(C.script_text('ShrikeAI.cs')), lim, 'ShrikeAI over the PB budget (flight_split.md 7.1)')
+        self.assertLessEqual(len(C.script_text('SpotterAI.cs')), lim)
 
 
 class CornerMathTests(unittest.TestCase):

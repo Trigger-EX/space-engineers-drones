@@ -5,7 +5,8 @@
   python3 -I tools/aim_sync.py --apply   insert/replace the block (after AimMissed) and add the hooks (idempotent)
 
 Hooks (one line each, same text in every script): AimLabel/AimOffset/ProbePoint/AimMissed switch to BREACH, the lock-ray result
-feeds BreachHit, the status line shows AimInfo(), config keys and the "breach" / "wp" commands.
+feeds BreachHit, the status line shows AimInfo(), config keys (since flight_split: the CfgIn() assignments, values from the Staff) and the
+"breach" / "wp" commands.
 v1.3 (docs/design/survivability.md): the SEEKER turret moved to the Staff PB (STAFF SEARCH); its finding comes back as the .WPT slot with flag
 4096. So the seeker hooks are gone, and --apply also strips them from scripts wired by an older version (SeekerTick -> WpTick, the two seeker
 keys, the "seeker" command, the SeekerSetup() line after the camera scan).
@@ -43,15 +44,17 @@ HOOKS = [
      '        if (probingAim && !e.IsEmpty() && e.EntityId == _tgt.Id) BreachHit(_tgt, e, aim);\n'
      '        else if (probingAim && (e.IsEmpty() || !BreachMode(_tgt))) AimMissed(_tgt);   // breach: a drone in the way is no miss\n'),
     ('" hull pts)";', '" hull pts)" + AimInfo();'),
-    ('    AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n',
-     '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
-     '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
-     '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
-     '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
-     '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
-     '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
-     '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'
-     '    WpHold = Cfg(S, "Weakpoint Hold (s)", WpHold);\n'),
+    # flight_split P1-F: the [<Model>] keys come from the Staff on .CFG (CONFIG LINK); the BREACH / weakpoint keys are assignments in the
+    # generated CfgIn() (tools/cfg_tables.json order), so the hook is now a check that CfgIn carries them (the Staff's table writes the keys)
+    ('    AimMode = T().Trim().ToUpperInvariant();\n',
+     '    AimMode = T().Trim().ToUpperInvariant();\n'
+     '    BreachAuto = B();\n'
+     '    BreachMinRadius = N();\n'
+     '    BreachStall = N();\n'
+     '    WpOn = B();\n'
+     '    WpShare = B();\n'
+     '    WpCone = N();\n'
+     '    WpHold = N();\n'),
     ('        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n',
      '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
      '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
@@ -62,40 +65,6 @@ PREVIOUS = {
     'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n': [
         'Vector3D AimOffset(Track t)\n{\n    SeekerTick(t);\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n',
         'Vector3D AimOffset(Track t)\n{\n    if (!AimActive(t)) return Vector3D.Zero;\n    if (BreachMode(t)) return BreachOffset(t);\n'],
-    '    AimMode = Cfg(S, "Aim Point (AUTO/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n': [
-        # v1.2 (seeker keys, before the seeker moved to the Staff PB)
-        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
-        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
-        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
-        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
-        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
-        '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
-        '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
-        '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
-        '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n'
-        '    WpHold = Cfg(S, "Weakpoint Hold (s)", WpHold);\n',
-        # v1.1 (with the weakpoint keys, before Weakpoint Hold)
-        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
-        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
-        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
-        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
-        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
-        '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n'
-        '    WpOn = Cfg(S, "Use Fleet Weakpoints", WpOn);\n'
-        '    WpShare = Cfg(S, "Share Weakpoints", WpShare);\n'
-        '    WpCone = Cfg(S, "Weakpoint Cone (deg)", WpCone);\n',
-        # v1.0 (newest first: the shorter, older wirings below are prefixes of it)
-        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
-        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
-        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
-        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
-        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'
-        '    SeekerOn = Cfg(S, "Seeker Turret Guides Aim", SeekerOn);\n',
-        '    AimMode = Cfg(S, "Aim Point (AUTO/BREACH/ENGINES/FACING/SPREAD/CENTER)", AimMode).Trim().ToUpperInvariant();\n'
-        '    BreachAuto = Cfg(S, "Breach Large Ships (AUTO)", BreachAuto);\n'
-        '    BreachMinRadius = Cfg(S, "Breach Min Target Radius (m)", BreachMinRadius);\n'
-        '    BreachStall = Cfg(S, "Breach Stall (s)", BreachStall);\n'
-        '    SeekerGroup = Cfg(S, "Seeker Group (PowerSystems/Weapons/Propulsion)", SeekerGroup).Trim();\n'],
     '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n': [
         '        case "aim": if (w.Length > 1) AimMode = w[1].ToUpperInvariant(); break;\n'
         '        case "breach": if (w.Length > 1) BreachAuto = w[1] == "on"; break;\n'
