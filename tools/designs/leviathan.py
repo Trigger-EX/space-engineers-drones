@@ -517,13 +517,13 @@ def _sensing(S, full):
             S.put('sensor', b)
 
 
-def _decoys(S, res):
+def _decoys(S, res, seeds=None):
     """six pairs of decoys flush in the skin (flat plates with exactly one exposed face), symmetric pairs"""
     bp = S.bp
     def ok(c):
         b = res.cell_block.get(c)
         return b is not None and res.cell_kind.get(c) == 'block' and len(res.exposure.get(c, ())) == 1 and b['sub'].endswith('ArmorBlock')
-    seeds = [(8, 2, 14), (11, 2, 36), (11, 2, 55), (8, 6, 60), (13, 4, 80), (8, 0, 56)]
+    seeds = seeds or [(8, 2, 14), (11, 2, 36), (11, 2, 55), (8, 6, 60), (13, 4, 80), (8, 0, 56)]
     used = []
     for k, (sx, sy, sz) in enumerate(seeds):
         best = None
@@ -584,12 +584,14 @@ def _terminals(S):
     return out
 
 
-def _conveyors(S):
+def _conveyors(S, terms=None, start=None, first=1, toward=(0, 2, 82)):
     """one junction network (LargeBlockConveyor cubes; adjacent junctions connect) from the tanks to every manoeuvring thruster, every artillery / assault / rocket turret base and
-    the four ammo lockers.  Routed by Dijkstra through free hull cavity (cost 1) and hidden interior armour cubes (cost 4, replaced by a junction), never next to a hangar connector."""
+    the four ammo lockers.  Routed by Dijkstra through free hull cavity (cost 1) and hidden interior armour cubes (cost 4, replaced by a junction), never next to a hangar connector.
+    terms = [(cell, role, label)] (default _terminals(S)); start = the first network cell (default the first tank terminal); first = number of the first junction name;
+    toward = the point the routing order sorts by.  S.conveyors is appended to, so a ship can route several independent networks."""
     bp, res = S.bp, S.res
     env, resv = S.env, S.resv
-    terms = _terminals(S)
+    terms = _terminals(S) if terms is None else terms
     tcells = {c for c, r, n in terms}
     conn_nb = set()
     for s in S.conns:
@@ -609,10 +611,10 @@ def _conveyors(S):
     for c, r, n in terms:
         assert cost(c, True) is not None, f'{bp.name}: no junction cell for {n} at {c} ({S.occ.get(c) and (S.occ[c]["name"] or S.occ[c]["sub"])})'
     net = set()
-    start = [c for c, r, n in terms if r == 'tank'][0]
+    start = start or [c for c, r, n in terms if r == 'tank'][0]
     net.add(start)
     todo = [c for c, r, n in terms if c != start]
-    todo.sort(key=lambda c: (abs(c[0]) + abs(c[1] - 2) + abs(c[2] - 82), c))
+    todo.sort(key=lambda c: (abs(c[0] - toward[0]) + abs(c[1] - toward[1]) + abs(c[2] - toward[2]), c))
     while todo:
         dist = {c: 0 for c in net}
         prev = {}
@@ -636,7 +638,7 @@ def _conveyors(S):
         while c not in net:
             net.add(c); c = prev[c]
         todo = [t for t in todo if t not in net]
-    S.conveyors = []
+    if not hasattr(S, 'conveyors'): S.conveyors = []
     for i, c in enumerate(sorted(net, key=lambda c: (c[2], c[1], c[0]))):
         old = S.occ.get(c)
         if old is not None:
@@ -644,7 +646,7 @@ def _conveyors(S):
             if old in res.blocks: res.blocks.remove(old)
             res.cell_block.pop(c, None)
             del S.occ[c]
-        b = bp.add('MyObjectBuilder_Conveyor', 'LargeBlockConveyor', c, 'Forward', 'Up', nm(f'Junction {i + 1}'), GUND, kind='conv')
+        b = bp.add('MyObjectBuilder_Conveyor', 'LargeBlockConveyor', c, 'Forward', 'Up', nm(f'Junction {first + i}'), GUND, kind='conv')
         S.put('conv', b)
         S.conveyors.append(b)
     return net
@@ -700,7 +702,7 @@ def _world_boxes(bp, only=None):
     return out
 
 
-def check_hangar(bp, pod, s, min_gap=0.3):
+def check_hangar(bp, pod, s, min_gap=0.3, door_x=None, hangar_y=None, hangar_z=None):
     """pod `pod` sits inside the hangar of side s: no cell of the pod within `min_gap` metres of a ship block (connector planes excepted, they meet at the lock gap), the
     launch lane outboard of the doors (12 m, the hangar's z and y extent) is empty, and the pod nose points down the lane"""
     bp.grids()
@@ -718,9 +720,10 @@ def check_hangar(bp, pod, s, min_gap=0.3):
             gap = max(max(slo[i] - hi[i], lo[i] - shi[i], 0.0) for i in range(3))
             if gap < need and not (pb['kind'] == 'conn' and sb['kind'] == 'conn'): bad.append((pb['name'] or pb['sub'], sb['name'] or sb['sub'], round(gap, 3)))
     assert not bad, f'{bp.name}: pod too close to the hull: {bad[:4]}'
-    x_out = (HW + 1) * 2.5
-    lane_lo = (x_out if s > 0 else -x_out - 12.0, HANGAR_Y[0] * 2.5, HANGAR_Z[0] * 2.5)
-    lane_hi = (x_out + 12.0 if s > 0 else -x_out, (HANGAR_Y[1] + 1) * 2.5, (HANGAR_Z[1] + 1) * 2.5)
+    x_out = (HW + 1) * 2.5 if door_x is None else door_x            # world x of the outer door plane (default: the Leviathan's)
+    hy, hz = hangar_y or HANGAR_Y, hangar_z or HANGAR_Z
+    lane_lo = (x_out if s > 0 else -x_out - 12.0, hy[0] * 2.5, hz[0] * 2.5)
+    lane_hi = (x_out + 12.0 if s > 0 else -x_out, (hy[1] + 1) * 2.5, (hz[1] + 1) * 2.5)
     inside = [(sb['name'] or sb['sub']) for slo, shi, sb in ship
               if all(slo[i] < lane_hi[i] - 1e-6 and shi[i] > lane_lo[i] + 1e-6 for i in range(3))]
     assert not inside, f'{bp.name}: blocks in the launch lane of side {s}: {inside[:4]}'

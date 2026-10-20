@@ -19,7 +19,7 @@ for p in (os.path.join(TOOLS, 'designs'), TOOLS):
     if p not in sys.path: sys.path.insert(0, p)
 import designs                                 # noqa: E402
 import _common as C                            # noqa: E402
-import shrike, corsair, warden, leviathan      # noqa: E402
+import shrike, corsair, warden, leviathan, aegis_carrier      # noqa: E402
 from minify_cs import minify                   # noqa: E402
 
 _CACHE = {}
@@ -27,7 +27,7 @@ def ship(name):
     if name not in _CACHE:
         _CACHE[name] = {'Shrike': lambda: shrike.shrike_shipped(False),  # shipped: carries the [Staff] that reads the Helm's Custom Data
                          'Corsair': lambda: corsair.corsair(False), 'Corsair Wing': lambda: corsair.corsair_wing(False),
-                        'Warden': lambda: warden.warden(False), 'Leviathan': lambda: leviathan.leviathan(False)}[name]()
+                        'Warden': lambda: warden.warden(False), 'Leviathan': lambda: leviathan.leviathan(False), 'Aegis Carrier': lambda: aegis_carrier.aegis_carrier()}[name]()
     return _CACHE[name]
 
 def src(script):
@@ -85,9 +85,10 @@ class CustomDataTests(unittest.TestCase):
     def test_corsair(self): self.check_keys('Corsair', ship('Corsair'))
     def test_warden(self): self.check_keys('Warden', ship('Warden'))
     def test_leviathan(self): self.check_keys('Leviathan', ship('Leviathan'))
+    def test_aegis_carrier(self): self.check_keys('Aegis Carrier', ship('Aegis Carrier'))
 
     def test_every_pb_has_its_script(self):
-        for model in ('Shrike', 'Corsair', 'Warden', 'Leviathan'):
+        for model in ('Shrike', 'Corsair', 'Warden', 'Leviathan', 'Aegis Carrier'):
             for name, script, data, _g in pbs(ship(model)):
                 self.assertIsNotNone(script, f'{model} {name} carries no known script')
                 if name.startswith('[Helm]'): self.assertEqual(script, 'ShrikeAI.cs', name)
@@ -100,7 +101,7 @@ class WiringTests(unittest.TestCase):
         return (data.get(sec, {}).get(key) or data.get('Ship', {}).get('Tag') or 'SHIP').upper()
 
     def test_ship_tag_agrees_between_helm_staff_and_pods(self):
-        for model in ('Corsair', 'Warden', 'Leviathan'):
+        for model in ('Corsair', 'Warden', 'Leviathan', 'Aegis Carrier'):
             tags = {}
             for name, script, data, _g in pbs(ship(model)):
                 if script == 'ShrikeAI.cs': tags['helm'] = self.ship_tag(data, 'Link', 'Ship Tag')
@@ -110,7 +111,7 @@ class WiringTests(unittest.TestCase):
             self.assertEqual(tags['pods'], {tags['helm']}, model)
 
     def test_block_prefix_agrees_and_the_ship_wears_it(self):
-        for model in ('Corsair', 'Warden', 'Leviathan'):
+        for model in ('Corsair', 'Warden', 'Leviathan', 'Aegis Carrier'):
             bp = ship(model)
             helm = [d for n, s, d, g in pbs(bp) if s == 'ShrikeAI.cs'][0]; staff = [d for n, s, d, g in pbs(bp) if s == 'StaffAI.cs'][0]
             pre = helm['Link']['Block Prefix']
@@ -123,7 +124,7 @@ class WiringTests(unittest.TestCase):
                     self.assertTrue((b['name'] or '').startswith(pre), f'{model}: {t} {b["name"]!r} does not start with {pre}')
 
     def test_the_helm_finds_a_deadman_timer_and_a_seat(self):
-        for model in ('Shrike', 'Corsair', 'Warden', 'Leviathan'):
+        for model in ('Shrike', 'Corsair', 'Warden', 'Leviathan', 'Aegis Carrier'):
             host = ship(model).grids()[0][0]
             timers = [b['name'] for b in host.blocks if b['xtype'].endswith('TimerBlock') and 'deadman' in (b['name'] or '').lower()]
             self.assertEqual(len(timers), 1, f'{model}: {timers}')
@@ -131,13 +132,13 @@ class WiringTests(unittest.TestCase):
             self.assertEqual(len(seats), 1, f'{model}: the Helm needs exactly one seat that is not a gunnery seat: {seats}')
 
     def test_batteries_are_tagged_for_the_fixed_guns_only(self):
-        for model in ('Shrike', 'Corsair', 'Warden', 'Leviathan'):
+        for model in ('Shrike', 'Corsair', 'Warden', 'Leviathan', 'Aegis Carrier'):
             for b in ship(model).grids()[0][0].blocks:
                 if '[B' in (b['name'] or '') and re.search(r'\[B[1-4]\]', b['name']):
                     self.assertFalse('Turret' in b['xtype'], f'{model}: turret {b["name"]} tagged as a battery')
 
     def test_staff_hangars_and_bays_name_real_blocks(self):
-        for model in ('Corsair', 'Warden', 'Leviathan'):
+        for model in ('Corsair', 'Warden', 'Leviathan', 'Aegis Carrier'):
             bp = ship(model)
             names = {b['name'] for b in all_blocks(bp) if b['name']}
             groups = set(bp.groups)
@@ -146,7 +147,7 @@ class WiringTests(unittest.TestCase):
                 if script == 'StaffAI.cs':
                     for sec, kv in data.items():
                         if sec.startswith('Hangar '):
-                            self.assertIn(kv['Group'], groups, f'{model}: {sec} group')
+                            if 'Group' in kv: self.assertIn(kv['Group'], groups, f'{model}: {sec} group')            # a pod without doors (the Aegis Carrier's well) names none
                             self.assertIn(kv['Pod'], names, f'{model}: {sec} pod PB')
                 if script == 'CradleBayAI.cs':
                     for sec, kv in data.items():
@@ -155,7 +156,7 @@ class WiringTests(unittest.TestCase):
                             if 'Timer' in kv: self.assertIn(kv['Timer'], names, f'{model}: {name} {sec} timer')
 
     def test_turret_target_names_hit_turrets_and_spare_the_point_defence(self):
-        for model in ('Warden', 'Leviathan'):
+        for model in ('Warden', 'Leviathan', 'Aegis Carrier'):
             bp = ship(model)
             staff = [d for n, s, d, g in pbs(bp) if s == 'StaffAI.cs'][0]['Staff']
             names = [w.strip().lower() for w in staff['Turret Target Names'].split(',')]
@@ -173,7 +174,7 @@ class PackagerTests(unittest.TestCase):
     def test_kinds(self):
         mods, _ = designs.load()
         kind = {m: k for k, mod, m, fn in designs.iter_models(mods)}
-        for m in ('Shrike', 'Corsair', 'Corsair Wing', 'Warden', 'Warden Wing', 'Leviathan', 'Leviathan Wing', 'Cradle Pod'): self.assertEqual(kind[m], 'ship', m)
+        for m in ('Shrike', 'Corsair', 'Corsair Wing', 'Warden', 'Warden Wing', 'Leviathan', 'Leviathan Wing', 'Aegis Carrier', 'Cradle Pod'): self.assertEqual(kind[m], 'ship', m)
         for m in ('Hornet', 'Basilisk', 'Gnat'): self.assertEqual(kind[m], 'drone', m)
         for m in ('Shrike Test', 'Shrike Staff Test', 'Cradle Test', 'Cradle Pod Test'): self.assertEqual(kind[m], 'test', m)
 

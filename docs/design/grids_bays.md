@@ -239,3 +239,7 @@ C11: small block placed on a large hull in the game: confirm it is a separate gr
 2. Bay PB (cut-down HiveMother) with the dock-launch sim extension (7.2).
 3. Corvette pylons, then Pod P4 + frigate hangar (C2-C4, C8).
 4. Recovery (5.6) only after launch works in game.
+
+## 11. Vertical launch well (Aegis Carrier, 2026-10-20)
+
+The Aegis Carrier (`docs/design/ships/Aegis_Carrier.md`) carries six 4-slot pods: two in side bays (the Leviathan hangar layout shifted out to the rim) and four in an open, door-less well in the middle of the disc, **standing nose up on two large floor Connectors each** (contact face Up, 12.5 m apart along the ship's z). The pod's nose ring is flush with the hub top, so a drone's default take-off burn (`[Launch] Clear Distance` = 8 m, launch-protocol section 3) ends clear of the rim; a deeper well would leave drones hovering inside it (that would need a `[Bay n] Clear Distance` key written by CradleBayAI). `Pod Up` points away from the well axis, so neighbouring pods are mirror images. Build-time checks: `aegis_carrier.check_well` (no ship block within 0.3 m of a pod cell except the connector planes, a 12 m lane above the pod empty, nose up). `[Hangar n] Pod=` for n = 3..6 carry no `Group` (the well has no doors); StaffAI reads `[Hangar 1..8]`. Unverified in the game: that the nose-up pods lock and hold under 1.9 m/s2, and that the drones clear the well.

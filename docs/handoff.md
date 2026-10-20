@@ -12,6 +12,8 @@ Keep the drone/warship project consistent (scripts, generators, sim, zips). Noth
 ## Current state
 All on `main`, zips NOT rebuilt. `selftest hsplit m2 m3 m6` green; `m1 m4 m5` and 5 scenario checks fail as before the split. Five blueprints (Wasp, Aegis, Mantis, Longbow S/L) failed `build_all` at 100k until the thrust-vector split fixed them (check `build_all`).
 
+Aegis Carrier (Starscape-style disc mega carrier, `tools/designs/aegis_carrier.py`, `docs/design/ships/Aegis_Carrier.md`) is built and tested (28 tests), 24 drone slots in 6 pods; sim smoke and compile check not run (no dotnet / mcs in the cloud box); zips not rebuilt.
+
 ## Open questions
 Why the 4-Ballista cluster did not lock on while the pilot was in the line (friendly in the way? unverified); kamikaze defence unverified (sim Stingers crawl); HUD/menu (cut 2) not moved.
 

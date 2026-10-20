@@ -404,14 +404,14 @@ PACKAGES = [   # (zip base name, kinds, variants, template, intro)
     ('Printers_v%s_Lite' % VERSION, ('printer',), (True,), 'README_Printers.md.tmpl',
      'Drone printers in their **Lite** design. Each projector holds the **Lite** drone; no cargo containers.'),
     ('Warships_v%s_Full' % VERSION, ('ship',), (False,), 'README_Warships.md.tmpl',
-     'The warships Shrike, Corsair, Warden and Leviathan in their **Full** design, with the Cradle Pod. Paste-ready scripts for the Helm, Staff and bay Programmable Blocks are in Scripts/.'),
+     'The warships Shrike, Corsair, Warden, Leviathan and the Aegis Carrier in their **Full** design, with the Cradle Pod. Paste-ready scripts for the Helm, Staff and bay Programmable Blocks are in Scripts/.'),
     ('Warships_v%s_Lite' % VERSION, ('ship',), (True,), 'README_Warships.md.tmpl',
      'The warships Shrike, Corsair, Warden and Leviathan in their **Lite** design (only block shapes seen in a game-written blueprint: no turrets, sensors or decoys), with the Cradle Pod.'),
     ('SpaceEngineers_Drones_v%s_All' % VERSION, ('drone', 'ship', 'printer'), (False, True), 'README_All.md.tmpl',
      'Every drone, every warship and every printer, Full design, in one zip.'),
 ]
 
-SHIP_PB = {'ShrikeAI.cs': 'Helm (every ship)', 'TurretAI.cs': 'Turret PB (Shrike, Corsair, Warden, Leviathan)', 'StaffAI.cs': 'Staff (Corsair, Warden, Leviathan)', 'CradleBayAI.cs': 'Bay / Pod PB (Corsair, each pod)',
+SHIP_PB = {'ShrikeAI.cs': 'Helm (every ship)', 'TurretAI.cs': 'Turret PB (Shrike, Corsair, Warden, Leviathan)', 'StaffAI.cs': 'Staff (Corsair, Warden, Leviathan, Aegis Carrier)', 'CradleBayAI.cs': 'Bay / Pod PB (Corsair, each pod)',
            'HornetDroneAI.cs': 'the Hornets of the Wing ships'}
 
 def script_sizes_md(scripts):

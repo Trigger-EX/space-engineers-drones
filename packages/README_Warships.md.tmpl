@@ -12,6 +12,7 @@ from their seat and fly and fight by themselves when nobody sits in it. Nothing 
 | **Corsair** | corvette, 36 m | small | `[Helm] Corsair`, `[Staff] Corsair`, `[Bay] Corsair` | 2 cradles in the outrigger pylons (`Corsair Wing` = with two Hornets) |
 | **Warden** | frigate, 85 m | large | `[Helm][SH] Warden Helm`, `[Staff][SH] Warden Staff`, `[Pod] Pod PB` (on the docked pod) | one docked 4-slot pod (`Warden Wing` = with four Hornets) |
 | **Leviathan** | dreadnought, 222 m | large | `[Helm][SH] Leviathan Helm`, `[Staff][SH] Leviathan Staff`, `[Pod] Pod PB 1` and `2` (on the two docked pods) | two docked 4-slot pods (`Leviathan Wing` = with eight Hornets) |
+| **Aegis Carrier** | mega carrier (a Starscape-style disc), 160 m | large | `[Helm][SH] Aegis Helm`, `[Staff][SH] Aegis Staff`, `[Pod] Pod PB 1` to `6` (on the six docked pods) | six docked 4-slot pods = 24 drone slots: four stand nose-up in the launch well, one in each side bay (not the Aegis escort drone) |
 | **Cradle Pod** | empty 4-slot drone pod | small | `[Pod] Pod PB` | docks into a Warden / Leviathan hangar |
 
 ## Install
@@ -29,7 +30,7 @@ from their seat and fly and fight by themselves when nobody sits in it. Nothing 
 6. Drones for the cradles come from the **Drones** package (Hornet, Wasp, Lancer, Harrier, Aegis, Mantis, Watcher); the `* Wing` ships already carry Hornets.
 
 **Warship specifics.** Large-grid ships are pasted as a free ship in creative mode (or from a projector in survival). The Warden (about 10,300 PCU with its pod) and the Leviathan
-(about 33,000 PCU with both pods) need a world limit to match: the repository file `docs/design/ships/Leviathan.md` lists what to delete for a 20,000 PCU world. The pods are separate grids in the same
+(about 33,000 PCU with both pods) need a world limit to match (the Aegis Carrier: about 40,000 PCU with its six empty pods and about 64,000 with 24 Hornets, see `docs/design/ships/Aegis_Carrier.md`): the repository file `docs/design/ships/Leviathan.md` lists what to delete for a 20,000 PCU world. The pods are separate grids in the same
 blueprint, docked by two connector pairs: after the paste look at the hangar connectors in the terminal and press **Lock** on each pair that is not locked. Every ship comes with its
 guns loaded, its tanks and batteries full and its Programmable Blocks programmed and configured; there is nothing to copy into a PB. The scripts are in `Scripts/` only for re-pasting.
 

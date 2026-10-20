@@ -23,15 +23,15 @@ def door_problems(bp):
     return out
 
 class HangarDoors(unittest.TestCase):
-    def test_warden_and_leviathan_doors_face_out(self):
-        mods, _ = designs.load(('warden', 'leviathan'))
+    def test_warden_leviathan_and_aegis_carrier_doors_face_out(self):
+        mods, _ = designs.load(('warden', 'leviathan', 'aegis_carrier'))
         seen = 0
         for _, _, m, fn in designs.iter_models(mods):
             if m.endswith('Wing'): continue
             bp = fn(False); seen += 1
             self.assertTrue(any(b['xtype'] == 'MyObjectBuilder_AirtightHangarDoor' for b in bp.blocks), m)
             self.assertEqual(door_problems(bp), [], m)
-        self.assertEqual(seen, 2)
+        self.assertEqual(seen, 3)
 
 if __name__ == '__main__':
     unittest.main()

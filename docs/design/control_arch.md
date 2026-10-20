@@ -497,3 +497,5 @@ K1 `MoveIndicator`/`RotationIndicator`/`RollIndicator` signs, ranges and units w
 `[TU] Turret PB` (`TurretAI.cs`, `docs/design/turrets.md`) runs the rotor + hinge turrets. It listens to the Helm's `<Ship Tag>.H2S`, the fleets' `<TAG>_TGT` feeds and the ship's vanilla turrets / controllers (designators),
 writes only the motors' `TargetVelocityRad` and the head guns' `Shoot`, and sends `<Ship Tag>.TUR` (mounts, tracking, firing) on the construct. Everything it owns is named `[TU] ...`: the Helm's `Own()` (prefix `[SH]`) and the Staff's
 block prefix never adopt it, so turrets stay out of the batteries (D5: turrets are designators and automatic weapons, never batteries). The dead-man timer's `Weapons` group cannot reach the head guns (other grid); `hold` does.
+
+- **Hangar sections (2026-10-20):** `StaffAI.cs` reads `[Hangar 1]` .. `[Hangar 8]` (was 1..4); a section with `Pod=` and no `Group=` is a pod with no doors (the Aegis Carrier's four well pods).

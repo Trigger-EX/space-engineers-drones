@@ -45,7 +45,7 @@
 //     back on ".LKR"); the Helm's AI and kamikaze lines on this PB's screen. None of these writes an override.
 //  CUSTOM DATA  [Staff] Ship Tag (SHIP, the Helm's [Link] Ship Tag), Trip Time (s) 1.5, Watch Helm, Cockpit Surface, Helm HUD Surface, Run Menu, Run Menu Wait,
 //   Display Name, Wing Surface, Wing Display Name, Mothership, Damage Blocks Per Run, Damage Cells Per Run, Block Prefix (e.g. [SH]: the lists of gyros / thrusters / guns / controllers / AI blocks only take blocks whose name starts with it,
-//   so drones clamped in the cradles are not adopted), Pod Gap (s) 20, Door Open Wait (s) 15, Door Close After (s) 10, Recall Satellite After (s) 12; [Wing] Types; [Hangar n] Group, Pod;
+//   so drones clamped in the cradles are not adopted), Pod Gap (s) 20, Door Open Wait (s) 15, Door Close After (s) 10, Recall Satellite After (s) 12; [Wing] Types; [Hangar n] Group, Pod (n = 1..8);
 //   [Fleet] as in the drones (send side only). Ship Tag also falls back to [Ship] Tag.
 //  NOT MEASURED IN THE GAME: IGC latency CurrentConstruct (K8), the number of IGC callback runs a PB survives, Update10 timing of the PB (the trip is checked
 //   every 10 ticks, so it lands up to 0.17 s after the 1.5 s).
@@ -629,7 +629,7 @@ void Load()
     Ship = Cfg(S, "Ship Tag", _ini.Get("Ship", "Tag").ToString(Ship)).Trim().ToUpperInvariant(); BlkPre = Cfg(S, "Block Prefix", BlkPre).Trim();
     PodGap = Cfg(S, "Pod Gap (s)", PodGap); DoorWait = Cfg(S, "Door Open Wait (s)", DoorWait); DoorClose = Cfg(S, "Door Close After (s)", DoorClose); RecallWait = Cfg(S, "Recall Satellite After (s)", RecallWait);
     _hg.Clear();
-    for (int n = 1; n <= 4; n++) if (_ini.ContainsSection("Hangar " + n)) _hg.Add(new Hangar { Group = Cfg("Hangar " + n, "Group", ""), Pod = Cfg("Hangar " + n, "Pod", "") }); Trip = Math.Max(0.5, Cfg(S, "Trip Time (s)", Trip)); Watch = Cfg(S, "Watch Helm", Watch);
+    for (int n = 1; n <= 8; n++) if (_ini.ContainsSection("Hangar " + n)) _hg.Add(new Hangar { Group = Cfg("Hangar " + n, "Group", ""), Pod = Cfg("Hangar " + n, "Pod", "") }); Trip = Math.Max(0.5, Cfg(S, "Trip Time (s)", Trip)); Watch = Cfg(S, "Watch Helm", Watch);
     CockSurf = (int)Cfg(S, "Cockpit Surface", (double)CockSurf); HudSurf = (int)Cfg(S, "Helm HUD Surface", (double)HudSurf);
     MenuItems = Cfg(S, "Run Menu", MenuItems); MenuWait = Cfg(S, "Run Menu Wait", MenuWait); DispName = Cfg(S, "Display Name", DispName).ToLowerInvariant();
     WingSurf = (int)Cfg(S, "Wing Surface", (double)WingSurf); WingName = Cfg(S, "Wing Display Name", WingName).ToLowerInvariant();
