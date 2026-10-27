@@ -42,7 +42,7 @@ TAG = 'AEGISC'
 # ------------------------------------------------------------------------------------------------------------
 # layout constants (cells; x Right, y Up, z Backward, bow at -z, the disc axis is the centre of cell (0, *, 0), mirror x -> -x, cell = 2.5 m)
 # ------------------------------------------------------------------------------------------------------------
-R, P = 31.5, 2.6                       # superellipse radius (cells) and exponent: 2 = circle, 2.6 = the rounded square of the reference
+R, P = 31.5, 2.25                      # superellipse radius (cells) and exponent: 2 = circle (the reference is nearly round)
 WELL_R, HUB_TOP_R, HUB_R = 9.0, 14.6, 16.0
 X_CONN = 26                            # side-bay connector wall (|x|), pod interior |x| 27..30, doors at |x| = 31
 X_DOOR = 31
@@ -92,7 +92,7 @@ def _bay_modules():
 
 def _pod_boxes():
     """the four corner pods: 10 x 7 x 10 boxes with chamfered vertical edges"""
-    return B((22, -3, 22), (32, 4, 32)).chamfer('y', 2).mirror('x', 0.5).mirror('z', 0.5)
+    return B((22, -3, 22), (32, 4, 32)).chamfer("y", 3).mirror('x', 0.5).mirror('z', 0.5)
 
 
 def _cabin():
@@ -256,7 +256,7 @@ def hull(bp):
     shell = shell | B((-CAB_X, 6, CAB_Z[0]), (CAB_X + 1, 7, CAB_Z[1] + 1))                 # + the cabin floor
     shell = Volume(shell.cells & solid.cells)
     win = lambda c: (c[1] in (7, 8) and ((c[2] == CAB_Z[0] and abs(c[0]) <= CAB_X - 1) or (abs(c[0]) == CAB_X and CAB_Z[0] + 1 <= c[2] <= CAB_Z[1] - 1 and (c[2] != -12 or c[1] == 8))))
-    res = H.build_hull(bp, solid, fill=shell, reserved=reserved, skin_around=['hangar', 'doors', 'hconn', 'wconn', 'thr', 'rails'], zones=_zones(), windows=win)
+    res = H.build_hull(bp, solid, fill=shell, reserved=reserved, skin_around=["hangar", "doors", "hconn", "wconn", "thr", "rails"], zones=_zones(), windows=win, round_edges=True)
     return res, v
 
 
