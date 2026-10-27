@@ -43,7 +43,7 @@ TAG = 'AEGISC'
 # layout constants (cells; x Right, y Up, z Backward, bow at -z, the disc axis is the centre of cell (0, *, 0), mirror x -> -x, cell = 2.5 m)
 # ------------------------------------------------------------------------------------------------------------
 R, P = 31.5, 2.25                      # superellipse radius (cells) and exponent: 2 = circle (the reference is nearly round)
-WELL_R, HUB_TOP_R, HUB_R = 9.0, 14.6, 16.0
+WELL_R, HUB_TOP_R, HUB_R = 9.0, 14.5, 15.5
 X_CONN = 26                            # side-bay connector wall (|x|), pod interior |x| 27..30, doors at |x| = 31
 X_DOOR = 31
 BAY_Y = (-1, 1)                        # bay interior y
@@ -57,17 +57,26 @@ CAB_X, CAB_Z = 4, (-14, -10)           # bridge cabin: x -4..4, z -14..-10, y 7.
 MAX_POD_PCU = 0
 
 
+def _oct(x, z, c):
+    """octagon norm with flat sides on the axes and on the diagonals |x| + |z| = m + c.  Along every grid row it grows by exactly one per cell (also where the diagonal side
+    dominates), so a bevel of one cell of height per cell of radius is a run of plain slopes and corners; a circular contour, or the regular-octagon norm (0.71 per diagonal
+    row), gives treads of one and two cells that alternate and leave a tooth at every tread edge"""
+    return max(abs(x), abs(z), abs(x) + abs(z) - c)
+
+
 def rho(x, z):
-    return (abs(x) ** P + abs(z) ** P) ** (1 / P)
+    """planform norm of the disc: a regular octagon of apothem R (c = 0.414 R)"""
+    return _oct(x, z, 13.0)
 
 
 def rc(x, z):
-    return math.hypot(x, z)
+    """norm of the hub ring and the well (an octagon of apothem about 12: c = 5)"""
+    return _oct(x, z, 5.0)
 
 
 def half_t(r):
-    """half thickness (cells) of the disc at planform radius r: 2:1 rim bevel in steps of 2 cells"""
-    return 4 if r <= 26 else 3 if r <= 28 else 2 if r <= 30 else 1
+    """half thickness (cells) of the disc at planform radius r: a 45 degree bevel, one cell of height per cell of radius, so the hull builder meets it with plain slopes"""
+    return 4 if r <= 24.5 else 3 if r <= 25.5 else 2 if r <= 26.5 else 1
 
 
 # ------------------------------------------------------------------------------------------------------------
@@ -86,13 +95,42 @@ def _disc():
     return Volume.from_function((-32, -4, -32), (33, 7, 33), f)
 
 
+def _despike(vol, passes=4):
+    """remove single-column teeth from a disc-like volume: a column top (or bottom) with three or more of its four neighbours lower (higher) is cut by one cell, and a pit
+    with three or more higher neighbours is filled by one; a few passes leave only slopes, corners and flat treads on the bevels (no isolated cubes)"""
+    cells = set(vol.cells)
+    for _ in range(passes):
+        top, bot = {}, {}
+        for x, y, z in cells:
+            if (x, z) not in top or y > top[(x, z)]: top[(x, z)] = y
+            if (x, z) not in bot or y < bot[(x, z)]: bot[(x, z)] = y
+        changed = False
+        for (x, z), t in top.items():
+            nb = [(x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)]
+            lower = sum(1 for n in nb if n not in top or top[n] < t)
+            higher = sum(1 for n in nb if n in top and top[n] > t)
+            if lower >= 3 and t > bot[(x, z)] + 1 and sum(1 for n in nb if n in top) >= 3:
+                cells.discard((x, t, z)); changed = True
+            elif higher >= 3 and all(n in top for n in nb):
+                cells.add((x, t + 1, z)); changed = True
+        for (x, z), t in bot.items():
+            nb = [(x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)]
+            higher = sum(1 for n in nb if n not in bot or bot[n] > t)
+            if higher >= 3 and top[(x, z)] > t + 1 and sum(1 for n in nb if n in bot) >= 3:
+                cells.discard((x, t, z)); changed = True
+        if not changed: break
+    return Volume(cells)
+
+
 def _bay_modules():
     return B((X_CONN - 3, -2, -5), (X_DOOR + 1, 3, 5)).mirror('x', 0.5)
 
 
 def _pod_boxes():
     """the four corner pods: 10 x 7 x 10 boxes with chamfered vertical edges"""
-    return B((22, -3, 22), (32, 4, 32)).chamfer("y", 3).mirror('x', 0.5).mirror('z', 0.5)
+    pod = B((22, -3, 22), (32, 4, 32)).chamfer("y", 2).chamfer("x", 2).chamfer("z", 2, corners=[(-1, -1), (-1, 1)])
+    root = B((19, -2, 19), (25, 3, 25))                      # the pod's root: a short stub that overlaps the octagon's diagonal side
+    return (pod | root).mirror('x', 0.5).mirror('z', 0.5)
 
 
 def _cabin():
@@ -116,7 +154,7 @@ def _pod_cell(sx, sz, box):
 
 
 LOCAL = dict(axial1=(2, -1, 7, 3, 3, 3), axial2=(5, -1, 7, 3, 3, 3), lat_lo=(7, -3, 2, 3, 3, 3), lat_hi=(7, 1, 2, 3, 3, 3), up=(1, 1, 1, 3, 3, 3), down=(1, -3, 1, 3, 3, 3),
-             tank=(4, -1, 2, 3, 3, 3), locker=(0, -1, 4, 3, 3, 3), art=(4, 4, 5, 3, 3, 3), assault=(4, -5, 5, 3, 2, 3))
+             tank=(4, -1, 2, 3, 3, 3), locker=(0, -2, 4, 3, 3, 3), art=(4, 4, 5, 3, 3, 3), assault=(4, -5, 5, 3, 2, 3))
 
 
 def thruster_sites():
@@ -162,7 +200,7 @@ def _vol(mn, size):
 
 def _volumes():
     v = {}
-    v['solid'] = _disc() | _bay_modules() | _pod_boxes() | _cabin() | _aft_pod()
+    v['solid'] = _despike(_disc()) | _bay_modules() | _pod_boxes() | _cabin() | _aft_pod()
     v['rails'] = [B((x, 0, RAIL_Z[0]), (x + 1, 2, RAIL_Z[1] + 1)) for x in RAIL_X]
     v['hangar'] = []
     v['doors'] = []
@@ -252,11 +290,13 @@ def hull(bp):
     reserved['turrets_dn'] = [c for t, r in v['turrets'] if t['up'] == 'Down' and t['role'] == 'assault' for c in r]
     reserved['tanks'] = [c for r in v['tanks'] for c in r]
     reserved['lockers'] = [c for r in v['lockers'] for c in r]
-    shell = solid.hollow(1)
+    shell = Volume(solid.cells - solid.erode(1, 'box').cells)           # 26-neighbour skin: stays one piece along the 45 degree walls (the 6-neighbour skin splits there)
+    pb = _pod_boxes()
+    shell = shell | Volume(pb.cells - pb.erode(1, 'box').cells)               # each engine pod keeps its own sealed wall inside the disc (its fuel island) and joins the disc skin
     shell = shell | B((-CAB_X, 6, CAB_Z[0]), (CAB_X + 1, 7, CAB_Z[1] + 1))                 # + the cabin floor
     shell = Volume(shell.cells & solid.cells)
     win = lambda c: (c[1] in (7, 8) and ((c[2] == CAB_Z[0] and abs(c[0]) <= CAB_X - 1) or (abs(c[0]) == CAB_X and CAB_Z[0] + 1 <= c[2] <= CAB_Z[1] - 1 and (c[2] != -12 or c[1] == 8))))
-    res = H.build_hull(bp, solid, fill=shell, reserved=reserved, skin_around=["hangar", "doors", "hconn", "wconn", "thr", "rails"], zones=_zones(), windows=win, round_edges=True)
+    res = H.build_hull(bp, solid, fill=shell, reserved=reserved, skin_around=["hangar", "doors", "hconn", "wconn", "thr", "rails"], zones=_zones(), windows=win, round_edges=True, slope2=False)
     return res, v
 
 
@@ -347,7 +387,7 @@ def _interior(S):
             for z in range(z0, z0 + 6):
                 n += 1
                 S.add('gyro', 'MyObjectBuilder_Gyro', 'LargeBlockGyro', (x, -3, z), 'Forward', 'Up', nm(f'Gyroscope {n}'), toward='Down', kind='gyro')
-    S.add('cargo_bow', 'MyObjectBuilder_CargoContainer', 'LargeBlockLargeContainer', (-1, -3, -24), 'Forward', 'Up', nm('Ammo Locker Bow'), toward='Down', kind='cargo', items=BOW_RESERVE)
+    S.add('cargo_bow', 'MyObjectBuilder_CargoContainer', 'LargeBlockLargeContainer', (-1, -3, -21), 'Forward', 'Up', nm('Ammo Locker Bow'), toward='Down', kind='cargo', items=BOW_RESERVE)
 
 
 def _bridge(S):
@@ -417,10 +457,15 @@ def _sensing(S):
     for tag, mn, look, up in (('Top', (0, 9, 12), 'Up', 'Forward'), ('Belly', (0, -5, 18), 'Down', 'Forward')):
         S.put('cam', C.cam(bp, mn, look, up, nm(f'Camera {tag}'), 3))
     S.add('ant', 'MyObjectBuilder_RadioAntenna', 'LargeBlockCompactRadioAntenna', (0, 9, 11), 'Up', 'Backward', nm('Antenna'), extra=ant_extra(20000), kind='ant', toward='Down')
+    d = DIR['Down']
     for tag, sgn in (('Lane P', -1), ('Lane S', 1)):
-        for c in [(sgn * x, -4, z) for x in (26, 25, 24, 27) for z in (0, 4, -4, 8)]:
+        cands = sorted(((abs(c[0] - sgn * 24) + abs(c[2]) + 3 * abs(c[1] + 3), c) for c, b in S.res.cell_block.items()
+                        if S.res.cell_kind.get(c) == 'block' and S.res.exposure.get(c) == frozenset({d}) and b['sub'].endswith('ArmorBlock') and c[0] * sgn > 0))
+        for k, c in cands[:60]:
+            m = (c[0], c[1] - 1, c[2])
+            if m in S.occ or m in bp.reserve: continue
             try:
-                blk = orient_attached(bp, 'MyObjectBuilder_SensorBlock', 'LargeBlockSensor', c, toward='Up', prefer=(('Forward', 'Up'),), occ=S.occ, name=nm(f'Sensor {tag}'), color=GUND, kind='sensor')
+                blk = orient_attached(bp, 'MyObjectBuilder_SensorBlock', 'LargeBlockSensor', m, toward='Up', prefer=(('Forward', 'Up'),), occ=S.occ, name=nm(f'Sensor {tag}'), color=GUND, kind='sensor')
             except AssertionError:
                 continue
             S.put('sensor', blk)
@@ -433,10 +478,8 @@ DECOY_SEEDS = [(8, 4, -24), (24, 3, -12), (12, 4, 24), (30, 0, 14), (26, -3, 26)
 
 
 def _greebles(res):
-    """thin armour panels (ArmorPanel, 1 PCU each): the instrument studs of the hub, seams on the disc top and the engine pod sides"""
-    H.greeble(res, 'panel', pattern='grid', every=3, normals=('Up',), where=lambda c: c[1] == 6 and WELL_R + 1.6 < rc(c[0], c[2]) <= HUB_TOP_R and not (abs(c[0]) <= 3 and CAB_Z[0] - 1 <= c[2] <= CAB_Z[1] + 1), color=SEAM)
-    H.greeble(res, 'panel', pattern='grid', every=4, normals=('Up',), where=lambda c: c[1] == 4 and HUB_R + 1 < rc(c[0], c[2]) and rho(c[0], c[2]) < 26 and abs(c[0]) > 3, color=SEAM, seed=3)
-    H.greeble(res, 'panel', pattern='grid', every=3, normals=('Left', 'Right', 'Forward', 'Backward'), where=lambda c: abs(c[0]) >= 22 and abs(c[2]) >= 22 and (abs(c[0]) == 31 or abs(c[2]) == 31) and abs(c[1]) <= 2, color=PLATE_M)
+    """no surface studs or panels: the owner wants a clean sloped hull without cubes standing proud of it (seams are paint, see _zones)"""
+    return []
 
 
 def _terminals(S):
