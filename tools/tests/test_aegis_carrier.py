@@ -181,12 +181,12 @@ class LoadoutTests(unittest.TestCase):
     def test_figures(self):
         """the figures of docs/design/ships/Aegis_Carrier.md"""
         n = A.numbers(ship())
-        self.assertTrue(12_000 <= n['mass_t_total'] <= 19_000, n['mass_t_total'])
-        for d, a in n['accel_loaded_m_s2'].items(): self.assertTrue(1.6 <= a <= 2.2, (d, a))
+        self.assertTrue(11_000 <= n['mass_t_total'] <= 19_000, n['mass_t_total'])
+        for d, a in n['accel_loaded_m_s2'].items(): self.assertTrue(1.6 <= a <= 2.6, (d, a))
         self.assertTrue(35_000 <= n['pcu_total'] <= 45_000, n['pcu_total'])
         self.assertTrue(26_000 <= n['pcu_ship'] <= 34_000, n['pcu_ship'])
         self.assertGreaterEqual(n['power']['generation_MW'], 1.5 * n['power']['railgun_recharge_MW'])
-        self.assertTrue(140 <= n['dims_m'][0] <= 175 and 140 <= n['dims_m'][2] <= 175, n['dims_m'])
+        self.assertTrue(130 <= n['dims_m'][0] <= 175 and 130 <= n['dims_m'][2] <= 175, n['dims_m'])
         self.assertTrue(n['hp_M'] >= 50, n['hp_M'])
         self.assertGreater(n['angular_accel_rad_s2'][0], 0.04)
 

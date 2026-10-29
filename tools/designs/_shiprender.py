@@ -94,6 +94,7 @@ def _planes_for(bp, b):
     if 'Slope2' in sub: k = 'slope2base' if sub.endswith('Base') else 'slope2tip'
     elif sub.endswith('Slope') or sub.endswith('Window1x1Slope'): k = 'slope'
     elif sub.endswith('ArmorCorner') and 'Inv' not in sub: k = 'corner'
+    elif sub.endswith('ArmorCornerInv'): k = 'cornerinv'
     else: return []
     if k in ('slope2base', 'slope2tip'):
         a = _V[b['up']]; r = _neg(_V[b['fwd']])
@@ -105,6 +106,11 @@ def _planes_for(bp, b):
     op = [_V[d] for d in _V if area.get(_V[d], 0) <= 0.01]
     if k == 'slope' and len(op) == 2:
         return [((op[0][0]+op[1][0], op[0][1]+op[1][1], op[0][2]+op[1][2]), 0.0)]
+    if k == 'cornerinv':
+        part = [_V[d] for d in _V if 0.01 < area.get(_V[d], 1.0) < 0.99]            # the three faces next to the cut vertex
+        if len(part) == 3:
+            return [((part[0][0]+part[1][0]+part[2][0], part[0][1]+part[1][1]+part[2][1], part[0][2]+part[1][2]+part[2][2]), 0.5)]
+        return []
     if k == 'corner' and len(op) == 3:
         return [((op[0][0]+op[1][0]+op[2][0], op[0][1]+op[1][1]+op[2][1], op[0][2]+op[1][2]+op[2][2]), -0.5)]
     return []

@@ -42,7 +42,7 @@ TAG = 'AEGISC'
 # ------------------------------------------------------------------------------------------------------------
 # layout constants (cells; x Right, y Up, z Backward, bow at -z, the disc axis is the centre of cell (0, *, 0), mirror x -> -x, cell = 2.5 m)
 # ------------------------------------------------------------------------------------------------------------
-R = 29.5                               # planform radius (cells) of the disc: an octagon of apothem 29.5, then 45 degree bevels
+R = 28.5                               # planform radius (cells) of the disc: an octagon of apothem 28.5 (57 cells = 142.5 m), then 45 degree bevels
 WELL_R, HUB_TOP_R, HUB_R = 9.0, 14.5, 15.5
 X_CONN = 26                            # side-bay connector wall (|x|), pod interior |x| 27..30, doors at |x| = 31
 X_DOOR = 31
@@ -51,7 +51,9 @@ BAY_Z = (-4, 3)                        # bay interior z (8 cells = 20 m)
 CONN_Z = (-3, 2)                       # connector cells (5 cells = 12.5 m apart, the pod's ConnectorMedium spacing)
 WELL_FLOOR_Y = 3                       # the well floor skin; the pods stand on it
 WELL_X = (-5, -2, 2, 5)                # the well pods' connector columns
-POD0 = 22                              # the engine pods' inner corner: |x|, |z| = 22 .. 31 (they stand in the corners of the square disc)
+POD0 = 18                              # the engine pods' inner corner: |x|, |z| = 18 .. 27 (they stand in notched corners of the octagon)
+OCT_C = 12                             # the octagon's diagonal sides are |x| + |z| = r + OCT_C
+PLANE_K = 29                           # on the diagonal bevels the top cell of a column sits at y = PLANE_K - r (r = 25..28): one plane x + y + z = PLANE_K + OCT_C
 RAIL_X = (-3, 3)
 RAIL_Z = (-31, -24)
 CAB_X, CAB_Z = 4, (-14, -10)           # bridge cabin: x -4..4, z -14..-10, y 7..9 (interior x -3..3, y 7..8, z -13..-11)
@@ -66,8 +68,9 @@ def _oct(x, z, c):
 
 
 def rho(x, z):
-    """planform norm of the disc: a regular octagon of apothem R (c = 0.414 R)"""
-    return max(abs(x), abs(z))
+    """planform norm of the disc: a regular octagon (flat sides on the axes and on the diagonals |x| + |z| = r + 12). Along every grid row it grows by one per cell, so a bevel of
+    one cell of height per cell of radius is exactly the plane x + y + z = const on the diagonal sides, which Corner and CornerInv pieces tile smoothly (see _plane_tiles)"""
+    return max(abs(x), abs(z), abs(x) + abs(z) - OCT_C)
 
 
 def rc(x, z):
@@ -77,7 +80,7 @@ def rc(x, z):
 
 def half_t(r):
     """half thickness (cells) of the disc at planform radius r: a 45 degree bevel, one cell of height per cell of radius, so the hull builder meets it with plain slopes"""
-    return 4 if r <= 24.5 else 3 if r <= 25.5 else 2 if r <= 26.5 else 1 if r <= 27.5 else 0
+    return 4 if r <= 25.5 else 3 if r <= 26.5 else 2 if r <= 27.5 else 1
 
 
 # ------------------------------------------------------------------------------------------------------------
@@ -176,7 +179,7 @@ def thruster_sites():
 
 
 # PD gatling turrets (3x3x3): dorsal on the top deck (min cell y = 5), ventral under the belly (min cell y = -7)
-PD_XZ = {'N': (-1, -22), 'S': (-1, 20), 'E': (20, -1), 'W': (-22, -1), 'NE': (17, -19), 'NW': (-19, -19), 'SE': (17, 17), 'SW': (-19, 17)}
+PD_XZ = {'N': (-1, -22), 'S': (-1, 20), 'E': (20, -1), 'W': (-22, -1), 'NE': (16, -17), 'NW': (-18, -17), 'SE': (16, 15), 'SW': (-18, 15)}
 
 
 def turret_sites():
@@ -278,6 +281,55 @@ def _zones():
         default_color=PLATE)
 
 
+def _orient_for(sub, kind, toward):
+    """(fwd, up) of the Corner / CornerInv block whose three faces `toward` are the ones that matter: Corner = the three half faces (mount area > 0) are `toward`,
+    CornerInv = the three partly cut faces (area < 1) are `toward`"""
+    want = frozenset(toward)
+    for (f, u), area in H.orient_areas(sub, 'Large').items():
+        faces = frozenset(d for d, a in area.items() if (a > 0.01 if kind == 'corner' else a < 0.99))
+        if faces == want:
+            return f, u
+    raise AssertionError(f'no orientation of {sub} with faces {sorted(want)}')
+
+
+def _plane_tiles(res, vol):
+    """the diagonal sides of the octagon: every column of the 45 degree bevel (r = 25..28, |x|, |z| > OCT_C) holds, from the top, a Corner (the 1/6 tetrahedron at the cell's inner
+    vertex) and under it a CornerInv (the cell minus its outer tetrahedron): together with the neighbouring columns they tile ONE flat plane x + y + z = const (the owner's
+    `slopedcorner` sample); a cube under the corner piece pokes through that plane and was the jagged tooth.  The belly is the mirror image.  Where the column's lower cell
+    would be the middle cell of the rim (y = 0) it is left to the hull builder (a sideways slope)."""
+    bp = res.bp
+    n = 0
+    for x in range(-33, 34):
+        for z in range(-33, 34):
+            if abs(x) <= OCT_C or abs(z) <= OCT_C or (abs(x) >= POD0 - 1 and abs(z) >= POD0 - 1): continue
+            r = rho(x, z)
+            if not 25 <= r <= 28 or abs(x) + abs(z) - OCT_C != r: continue
+            yt = PLANE_K - r
+            sx, sz = (1 if x > 0 else -1), (1 if z > 0 else -1)
+            for sy in (1, -1):
+                for k, kind in ((0, 'corner'), (1, 'corner_inv')):
+                    y = sy * (yt - k)
+                    c = (x, y, z)
+                    if kind == 'corner_inv' and abs(y) < 1: continue
+                    old = res.cell_block.get(c)
+                    if old is None: continue
+                    heavy = 'Heavy' in old['sub']
+                    sub = H.subtype(kind, 'Large', heavy)
+                    inward = [(-sx, 0, 0), (0, -sy, 0), (0, 0, -sz)]
+                    outward = [(sx, 0, 0), (0, sy, 0), (0, 0, sz)]
+                    f, u = _orient_for(sub, kind, inward if kind == 'corner' else outward)
+                    bp.blocks.remove(old)
+                    res.blocks.remove(old)
+                    b = bp.add('MyObjectBuilder_CubeBlock', sub, c, fwd=f, up=u, color=old['color'], kind=old['kind'])
+                    b['mass'] = H.block_stat(b)[0]
+                    res.blocks.append(b)
+                    res.cell_block[c] = b
+                    res.cell_kind[c] = kind
+                    res.exposure[c] = frozenset(outward)
+                    n += 1
+    res.plane_tiles = n
+
+
 def hull(bp):
     v = _volumes()
     solid = v['solid']
@@ -298,6 +350,7 @@ def hull(bp):
     shell = Volume(shell.cells & solid.cells)
     win = lambda c: (c[1] in (7, 8) and ((c[2] == CAB_Z[0] and abs(c[0]) <= CAB_X - 1) or (abs(c[0]) == CAB_X and CAB_Z[0] + 1 <= c[2] <= CAB_Z[1] - 1 and (c[2] != -12 or c[1] == 8))))
     res = H.build_hull(bp, solid, fill=shell, reserved=reserved, skin_around=["hangar", "doors", "hconn", "wconn", "thr", "rails"], zones=_zones(), windows=win, round_edges=True, slope2=False, fillets=True)
+    _plane_tiles(res, v)
     return res, v
 
 
@@ -445,7 +498,7 @@ def _flat_cam(S, look, near, up='Up'):
 def _sensing(S):
     """six hull cameras in mirrored pairs on the flat outer faces of the engine pods (Front P/S, Rear P/S, Port, Starboard), plus Top and Belly on the centre line"""
     bp = S.bp
-    for tag, look, near, up in (('Front', 'Forward', (24, 0, -30), 'Up'), ('Rear', 'Backward', (24, 0, 30), 'Up'), ('Starboard', 'Right', (30, 0, -24), 'Up')):
+    for tag, look, near, up in (('Front', 'Forward', (22, 0, -29), 'Up'), ('Rear', 'Backward', (22, 0, 29), 'Up'), ('Starboard', 'Right', (29, 0, -22), 'Up')):
         c = _flat_cam(S, look, near)
         mirror = (-c[0], c[1], c[2])
         assert mirror not in S.occ and mirror not in bp.reserve, f'camera {tag}: no mirrored cell'
