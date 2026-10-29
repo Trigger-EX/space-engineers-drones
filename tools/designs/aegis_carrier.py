@@ -42,7 +42,7 @@ TAG = 'AEGISC'
 # ------------------------------------------------------------------------------------------------------------
 # layout constants (cells; x Right, y Up, z Backward, bow at -z, the disc axis is the centre of cell (0, *, 0), mirror x -> -x, cell = 2.5 m)
 # ------------------------------------------------------------------------------------------------------------
-R, P = 31.5, 2.25                      # superellipse radius (cells) and exponent: 2 = circle (the reference is nearly round)
+R = 29.5                               # planform radius (cells) of the disc: an octagon of apothem 29.5, then 45 degree bevels
 WELL_R, HUB_TOP_R, HUB_R = 9.0, 14.5, 15.5
 X_CONN = 26                            # side-bay connector wall (|x|), pod interior |x| 27..30, doors at |x| = 31
 X_DOOR = 31
@@ -51,6 +51,7 @@ BAY_Z = (-4, 3)                        # bay interior z (8 cells = 20 m)
 CONN_Z = (-3, 2)                       # connector cells (5 cells = 12.5 m apart, the pod's ConnectorMedium spacing)
 WELL_FLOOR_Y = 3                       # the well floor skin; the pods stand on it
 WELL_X = (-5, -2, 2, 5)                # the well pods' connector columns
+POD0 = 22                              # the engine pods' inner corner: |x|, |z| = 22 .. 31 (they stand in the corners of the square disc)
 RAIL_X = (-3, 3)
 RAIL_Z = (-31, -24)
 CAB_X, CAB_Z = 4, (-14, -10)           # bridge cabin: x -4..4, z -14..-10, y 7..9 (interior x -3..3, y 7..8, z -13..-11)
@@ -66,17 +67,17 @@ def _oct(x, z, c):
 
 def rho(x, z):
     """planform norm of the disc: a regular octagon of apothem R (c = 0.414 R)"""
-    return _oct(x, z, 13.0)
+    return max(abs(x), abs(z))
 
 
 def rc(x, z):
-    """norm of the hub ring and the well (an octagon of apothem about 12: c = 5)"""
-    return _oct(x, z, 5.0)
+    """norm of the hub ring and the well: a square (no diagonal walls, which would be stairs of cubes)"""
+    return max(abs(x), abs(z))
 
 
 def half_t(r):
     """half thickness (cells) of the disc at planform radius r: a 45 degree bevel, one cell of height per cell of radius, so the hull builder meets it with plain slopes"""
-    return 4 if r <= 24.5 else 3 if r <= 25.5 else 2 if r <= 26.5 else 1
+    return 4 if r <= 24.5 else 3 if r <= 25.5 else 2 if r <= 26.5 else 1 if r <= 27.5 else 0
 
 
 # ------------------------------------------------------------------------------------------------------------
@@ -128,9 +129,8 @@ def _bay_modules():
 
 def _pod_boxes():
     """the four corner pods: 10 x 7 x 10 boxes with chamfered vertical edges"""
-    pod = B((22, -3, 22), (32, 4, 32)).chamfer("y", 2).chamfer("x", 2).chamfer("z", 2, corners=[(-1, -1), (-1, 1)])
-    root = B((19, -2, 19), (25, 3, 25))                      # the pod's root: a short stub that overlaps the octagon's diagonal side
-    return (pod | root).mirror('x', 0.5).mirror('z', 0.5)
+    pod = B((POD0, -3, POD0), (POD0 + 10, 4, POD0 + 10)).chamfer("y", 2).chamfer("x", 2).chamfer("z", 2, corners=[(-1, -1), (-1, 1)])
+    return pod.mirror('x', 0.5).mirror('z', 0.5)
 
 
 def _cabin():
@@ -141,15 +141,15 @@ def _aft_pod():
     return B((-2, 7, 10), (3, 9, 14))
 
 
-# ---- engine pod sites: (u, y, w) local coordinates, u = |x| - 22, w = |z| - 22 (both grow outward) ----
+# ---- engine pod sites: (u, y, w) local coordinates, u = |x| - POD0, w = |z| - POD0 (both grow outward) ----
 POD_NAMES = {(-1, -1): 'NW', (1, -1): 'NE', (-1, 1): 'SW', (1, 1): 'SE'}
 
 
 def _pod_cell(sx, sz, box):
     """box = (u, y, w, su, sy, sw) -> min cell (x, y, z) and size in ship cells"""
     u, y, w, su, sy, sw = box
-    x0 = 22 + u if sx > 0 else -(22 + u + su - 1)
-    z0 = 22 + w if sz > 0 else -(22 + w + sw - 1)
+    x0 = POD0 + u if sx > 0 else -(POD0 + u + su - 1)
+    z0 = POD0 + w if sz > 0 else -(POD0 + w + sw - 1)
     return (x0, y, z0), (su, sy, sw)
 
 
@@ -176,7 +176,7 @@ def thruster_sites():
 
 
 # PD gatling turrets (3x3x3): dorsal on the top deck (min cell y = 5), ventral under the belly (min cell y = -7)
-PD_XZ = {'N': (-1, -22), 'S': (-1, 20), 'E': (20, -1), 'W': (-22, -1), 'NE': (14, -16), 'NW': (-16, -16), 'SE': (14, 14), 'SW': (-16, 14)}
+PD_XZ = {'N': (-1, -22), 'S': (-1, 20), 'E': (20, -1), 'W': (-22, -1), 'NE': (17, -19), 'NW': (-19, -19), 'SE': (17, 17), 'SW': (-19, 17)}
 
 
 def turret_sites():
@@ -200,7 +200,8 @@ def _vol(mn, size):
 
 def _volumes():
     v = {}
-    v['solid'] = _despike(_disc()) | _bay_modules() | _pod_boxes() | _cabin() | _aft_pod()
+    disc = Volume(c for c in _disc().cells if not (abs(c[0]) >= POD0 and abs(c[2]) >= POD0))       # the engine pods stand in notched corners
+    v['solid'] = disc | _bay_modules() | _pod_boxes() | _cabin() | _aft_pod()
     v['rails'] = [B((x, 0, RAIL_Z[0]), (x + 1, 2, RAIL_Z[1] + 1)) for x in RAIL_X]
     v['hangar'] = []
     v['doors'] = []
@@ -256,13 +257,13 @@ def _zones():
         return min(abs(((a - k + 180) % 360) - 180) for k in (0, 90, 180, 270)) <= tol
 
     hub_strip = lambda c: WELL_R < d_(c) <= 10.6 and c[1] == 6 and abs(c[2]) <= 4
-    rim_strip = lambda c: 28 < r_(c) <= 30.5 and abs(c[1]) >= 1 and near_cardinal(c) and not (abs(c[0]) >= 23 and abs(c[2]) <= 6)
-    nozzle = lambda c: c in ring and abs(c[0]) >= 22 and abs(c[2]) >= 22
+    rim_strip = lambda c: 25.5 < r_(c) <= 27.5 and abs(c[1]) >= 1 and near_cardinal(c) and not (abs(c[0]) >= 23 and abs(c[2]) <= 6)
+    nozzle = lambda c: c in ring and abs(c[0]) >= POD0 and abs(c[2]) >= POD0
     door_frame = lambda c: abs(c[0]) == X_DOOR and BAY_Z[0] - 1 <= c[2] <= BAY_Z[1] + 1 and (c[1] in (BAY_Y[0] - 1, BAY_Y[1] + 1) or c[2] in (BAY_Z[0] - 1, BAY_Z[1] + 1))
     well = lambda c: d_(c) <= 10.6 and c[1] >= WELL_FLOOR_Y
     seams = lambda c: c[1] >= 4 and (c[0] == 0 or c[2] == 0) and d_(c) > HUB_R and r_(c) < 28
     ring_seam = lambda c: c[1] >= 4 and 22 <= r_(c) < 23
-    pods = lambda c: abs(c[0]) >= 22 and abs(c[2]) >= 22
+    pods = lambda c: abs(c[0]) >= POD0 and abs(c[2]) >= POD0
     return Zones(
         Zone('hub_strip', hub_strip, color=CYAN, heavy=True, kind='accent'),
         Zone('rim_strip', rim_strip, color=CYAN, kind='accent'),
@@ -271,7 +272,7 @@ def _zones():
         Zone('well', well, heavy=True, color=SEAM, kind='dark'),
         Zone('seams', lambda c: seams(c) or ring_seam(c), color=SEAM, kind='dark'),
         Zone('pods', pods, heavy=True, color=PLATE_M, kind='plate'),
-        Zone('rim_belt', lambda c: r_(c) >= 29, heavy=True, color=PLATE_M, kind='plate'),
+        Zone('rim_belt', lambda c: r_(c) >= 27.5, heavy=True, color=PLATE_M, kind='plate'),
         Zone('bow_guard', lambda c: c[2] <= -28 and abs(c[0]) <= 6, heavy=True, kind='armor'),
         Zone('belly', lambda c: c[1] <= -1, color=SEAM, kind='dark'),
         default_color=PLATE)
@@ -296,7 +297,7 @@ def hull(bp):
     shell = shell | B((-CAB_X, 6, CAB_Z[0]), (CAB_X + 1, 7, CAB_Z[1] + 1))                 # + the cabin floor
     shell = Volume(shell.cells & solid.cells)
     win = lambda c: (c[1] in (7, 8) and ((c[2] == CAB_Z[0] and abs(c[0]) <= CAB_X - 1) or (abs(c[0]) == CAB_X and CAB_Z[0] + 1 <= c[2] <= CAB_Z[1] - 1 and (c[2] != -12 or c[1] == 8))))
-    res = H.build_hull(bp, solid, fill=shell, reserved=reserved, skin_around=["hangar", "doors", "hconn", "wconn", "thr", "rails"], zones=_zones(), windows=win, round_edges=True, slope2=False)
+    res = H.build_hull(bp, solid, fill=shell, reserved=reserved, skin_around=["hangar", "doors", "hconn", "wconn", "thr", "rails"], zones=_zones(), windows=win, round_edges=True, slope2=False, fillets=True)
     return res, v
 
 
@@ -444,7 +445,7 @@ def _flat_cam(S, look, near, up='Up'):
 def _sensing(S):
     """six hull cameras in mirrored pairs on the flat outer faces of the engine pods (Front P/S, Rear P/S, Port, Starboard), plus Top and Belly on the centre line"""
     bp = S.bp
-    for tag, look, near, up in (('Front', 'Forward', (27, 0, -33), 'Up'), ('Rear', 'Backward', (27, 0, 33), 'Up'), ('Starboard', 'Right', (33, 0, -27), 'Up')):
+    for tag, look, near, up in (('Front', 'Forward', (24, 0, -30), 'Up'), ('Rear', 'Backward', (24, 0, 30), 'Up'), ('Starboard', 'Right', (30, 0, -24), 'Up')):
         c = _flat_cam(S, look, near)
         mirror = (-c[0], c[1], c[2])
         assert mirror not in S.occ and mirror not in bp.reserve, f'camera {tag}: no mirrored cell'
@@ -496,7 +497,7 @@ def _networks(S):
     terms = _terminals(S)
     first = 1
     for (sx, sz), pn in POD_NAMES.items():
-        mine = [t for t in terms if abs(t[0][0]) >= 22 and abs(t[0][2]) >= 22 and _pod_of(t[0]) == pn]
+        mine = [t for t in terms if abs(t[0][0]) >= POD0 and abs(t[0][2]) >= POD0 and _pod_of(t[0]) == pn]
         assert mine, f'no terminals in pod {pn}'
         before = len(S.conveyors) if hasattr(S, 'conveyors') else 0
         L._conveyors(S, terms=mine, first=first, toward=(sx * 26, 0, sz * 26))
